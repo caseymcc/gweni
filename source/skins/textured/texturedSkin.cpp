@@ -525,6 +525,9 @@ std::unordered_map<std::string, gweni::Color*> TexturedSkin::textColorRegistry()
         {"ToastText",&Colors.Toast.Text},{"ToastInfo",&Colors.Toast.Info},
         {"ToastPositive",&Colors.Toast.Positive},{"ToastWarning",&Colors.Toast.Warning},
         {"ToastNegative",&Colors.Toast.Negative},
+        {"TreeTableExpander",&Colors.TreeTable.Expander},
+        {"TreeTableExpanderHover",&Colors.TreeTable.ExpanderHover},
+        {"TreeTableExpanderDisabled",&Colors.TreeTable.ExpanderDisabled},
     };
 }
 
@@ -1371,6 +1374,10 @@ void TexturedSkin::setThemeColors()
     Colors.Toast.Positive=Green;
     Colors.Toast.Warning=Yellow;
     Colors.Toast.Negative=Red;
+    // a TreeTable's chevron as a TreeNode toggle's
+    Colors.TreeTable.Expander=FgDark;
+    Colors.TreeTable.ExpanderHover=Fg;
+    Colors.TreeTable.ExpanderDisabled=Muted;
     // a CodeEditor's line numbers, the caret's line's lifted
     Colors.CodeEditor.LineNumber=gweni::Color(0x3b, 0x42, 0x61);
     Colors.CodeEditor.LineNumberCurrent=gweni::Color(0x73, 0x7a, 0xa2);

@@ -186,6 +186,11 @@ public:
     GWENI_CONTROL(DataTableRow, Selectable);
 
 public:
+    //! A cell's text padding: CellPaddingX on the left and right, CellPaddingY
+    //! above and below.
+    static constexpr int CellPaddingX=6;
+    static constexpr int CellPaddingY=3;
+
     ~DataTableRow() override;
 
     //! The cell's text. Out of range does nothing (an empty string).
@@ -409,6 +414,10 @@ public:
 protected:
     //! A requested size is the table's outer size: the body scrolls inside.
     bool sizedByRequest(Dim dim) const override { return hasRequestedSize(dim); }
+    //! Source mode: makes one pooled row in the body's inner panel (the table
+    //! then gives it its cells). A subclass makes a subclass of DataTableRow,
+    //! so every pooled row has its parts from the start.
+    virtual DataTableRow *newSourceRow(Base *parent);
 
 private:
     friend class internal::DataTableColumnGrip;

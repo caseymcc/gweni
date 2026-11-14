@@ -41,6 +41,7 @@
 #include "gweni/controls/toast.h"
 #include "gweni/controls/properties.h"
 #include "gweni/controls/dataTable.h"
+#include "gweni/controls/treeTable.h"
 #include "gweni/controls/treeNode.h"
 #include "gweni/controls/propertyTree.h"
 #include "gweni/tools/inspector.h"
@@ -1407,6 +1408,54 @@ void DataTableRow::update(renderer::Base *renderer, controls::Base *baseControl)
 
         renderer->drawIcon(m_primitives[2+i], gweni::Rect(x-1, bounds.y, 3, bounds.h), 6, 1, line, z+1);
     }
+}
+
+///////////////////////////////////////////////////////////////////////////
+//TreeTableExpander
+void TreeTableExpander::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.size() < 2)
+        return;
+
+    controls::internal::TreeTableExpander *expander=
+        static_cast<controls::internal::TreeTableExpander *>(baseControl);
+    const auto &colors=baseControl->getSkin()->Colors.TreeTable;
+    const gweni::Rect r=baseControl->getRenderBounds();
+    const bool visible=baseControl->visible() && r.w > 0 && r.h > 0;
+    const tokyonight::Surface *surface=nullptr;
+    gweni::Color glyph=colors.Expander;
+
+    if(expander->isDisabled())
+        glyph=colors.ExpanderDisabled;
+    else if(expander->isDepressed())
+    {
+        surface=&tokyonight::TreeTableExpanderDown;
+        glyph=colors.ExpanderHover;
+    }
+    else if(expander->isHovered())
+    {
+        surface=&tokyonight::TreeTableExpanderHover;
+        glyph=colors.ExpanderHover;
+    }
+
+    // at rest there is no surface: a hidden slot, not a transparent rect
+    // that would write depth over the row's fill
+    if(visible && surface)
+        tokyonight::paintSurface(renderer, &m_primitives[0], baseControl, *surface);
+    else
+        renderer->hidePrimitive(m_primitives[0]);
+
+    if(visible)
+    {
+        // kind 1's directions: 0 down, 3 right
+        const int sz=std::min(r.w, r.h)*6/10;
+        const gweni::Rect chevron{ r.x+(r.w-sz)/2, r.y+(r.h-sz)/2, sz, sz };
+
+        renderer->drawIcon(m_primitives[1], chevron, 1, expander->isExpanded()?0:3, glyph,
+            baseControl->getZIndex()+1);
+    }
+    else
+        renderer->hidePrimitive(m_primitives[1]);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -5055,6 +5104,7 @@ template class ControlRegister<DataTableHeader>;
 template class ControlRegister<DataTableHeaderCell>;
 template class ControlRegister<DataTableColumnGrip>;
 template class ControlRegister<DataTableRow>;
+template class ControlRegister<TreeTableExpander>;
 
 }//namespace textured
 }//namespace skin

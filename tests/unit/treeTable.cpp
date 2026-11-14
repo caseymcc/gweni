@@ -11,16 +11,37 @@
  *  including after scrolling and a rebind. An expand/collapse binds only the
  *  changed suffix on screen, an offscreen change binds nothing, and neither
  *  makes/deletes controls or ids. At 1 000 and 100 000 nodes the pool, subtree
- *  and live ids are identical, with every id returned at teardown. No GL
+ *  and live ids are identical, with every id returned at teardown.
+ *
+ *  The tree column: every pooled row is a TreeTableRow made with its
+ *  expander; the tree cell's left padding is the cell padding plus one Indent
+ *  per depth plus the expander's column (a leaf's too), the other cells keep
+ *  theirs, the expander sits after the indent, ExpanderSize square, centred,
+ *  clipped to the tree cell, hidden for a node with no children and showing
+ *  its node's expansion, also on the toggled row that is not bound again; an
+ *  expand that adds no row marks the expander alone, with no binding or
+ *  layout; setTreeColumn moves all of it to another column. A one-row scroll
+ *  that binds a row to a node at another depth enters as many controls as one
+ *  at the same depth but the moved expander. A click on the expander toggles
+ *  without selecting the row; a click on the row selects it; a double-click
+ *  toggles a parent and activates a leaf (onNodeActivated). The textured
+ *  renderer draws no surface at rest, TreeTableExpanderHover hovered and
+ *  TreeTableExpanderDown pressed, and a kind-1 chevron pointing right while
+ *  collapsed and down while expanded in the TreeTableExpander, -Hover and
+ *  -Disabled text colours, all of them in the theme's registries. No GL
  *  context or resources are needed.
  */
 #include "headlessFixture.h"
 
 #include <gweni/controls/treeTable.h>
 #include <gweni/inputHandler.h>
+#include <gweni/platforms/platform.h>
+#include <gweni/skins/textured/texturedControls.h>
+#include <gweni/skins/textured/texturedSkin.h>
 
 #include <doctest/doctest.h>
 
+#include <set>
 #include <tuple>
 
 using namespace gweni;
@@ -40,9 +61,23 @@ struct Scene
     TreeTable *table=nullptr;
     using Bind=std::tuple<controls::DataTableRow *, NodeId, size_t>;
     std::vector<Bind> binds;
+    float clock=nextClock();
+
+    //! The input handler keeps the last click's time and place across cases,
+    //! so each scene's clock starts well after the last one's.
+    static float nextClock()
+    {
+        static float start=0.0f;
+
+        start+=1000.0f;
+        return start;
+    }
 
     Scene()
     {
+        // a second apart per click, so two clicks are a double click only
+        // when a test makes them one
+        platform::setTimeSource([this]() { return clock; });
         canvas=new controls::Canvas(&skin);
         canvas->setSize(600, 400);
         table=canvas->newChild<TreeTable>();
@@ -61,12 +96,61 @@ struct Scene
             });
     }
 
+    Scene(const Scene &)=delete;
+    Scene &operator=(const Scene &)=delete;
+
     ~Scene()
     {
+        input::onMouseClicked(canvas, 0, false);
         HoveredControl=nullptr;
         KeyboardFocus=nullptr;
         MouseFocus=nullptr;
         delete canvas;
+        platform::setTimeSource(nullptr);
+    }
+
+    static Point centreOf(controls::Base *control)
+    {
+        const Point at=control->localPosToCanvas();
+
+        return Point(at.x+control->getWidth()/2, at.y+control->getHeight()/2);
+    }
+
+    //! Presses on the control's centre, a second after the last click.
+    void press(controls::Base *control)
+    {
+        const Point at=centreOf(control);
+
+        clock+=1.0f;
+        canvas->inputMouseMoved(at.x, at.y, 0, 0);
+        input::onMouseClicked(canvas, 0, true);
+    }
+
+    void release()
+    {
+        input::onMouseClicked(canvas, 0, false);
+    }
+
+    void click(controls::Base *control)
+    {
+        press(control);
+        release();
+        frame();
+    }
+
+    //! Two presses at one place and time: the second is a double click.
+    void doubleClick(controls::Base *control)
+    {
+        press(control);
+        release();
+        input::onMouseClicked(canvas, 0, true);
+        release();
+        frame();
+    }
+
+    controls::TreeTableRow *row(size_t item) const
+    {
+        return gweni_cast<controls::TreeTableRow>(table->rowForItem(item));
     }
 
     void frame()
@@ -129,8 +213,10 @@ struct Events: event::Handler
 {
     std::vector<NodeId> expanded;
     std::vector<NodeId> collapsed;
+    std::vector<NodeId> activated;
     void expand(event::Info info) { expanded.push_back(info.integer); }
     void collapse(event::Info info) { collapsed.push_back(info.integer); }
+    void activate(event::Info info) { activated.push_back(info.integer); }
 };
 
 }//namespace
@@ -409,4 +495,382 @@ TEST_CASE("TreeTable: 1000 and 100000 nodes keep the same pool and live ids and 
     }
     REQUIRE(counts.size() == 2);
     CHECK(counts[0] == counts[1]);
+}
+
+TEST_CASE("TreeTable: the tree cell is indented by depth and a parent's expander shows its state")
+{
+    Scene scene;
+    TreeTable *table=scene.table;
+    using Row=controls::DataTableRow;
+
+    table->addNode(Root, 10);
+    table->addNode(10, 11);
+    table->addNode(11, 12);
+    table->addNode(10, 13);
+    table->addNode(Root, 20, true); // advertised children, none supplied
+    table->addNode(Root, 30);
+    table->setExpanded(10, true);
+    table->setExpanded(11, true);
+    scene.settle();
+    checkIndex(table, {10, 11, 12, 13, 20, 30});
+
+    // every pooled row is a TreeTableRow with its expander, spare included
+    for(controls::Base *control : table->getVirtualBody()->getRows())
+    {
+        auto *row=gweni_cast<controls::TreeTableRow>(control);
+
+        REQUIRE(row != nullptr);
+        REQUIRE(row->getExpander() != nullptr);
+        CHECK(row->getExpander()->getParent() == row);
+    }
+
+    auto checkRow=[&](size_t item, int treeColumn)
+        {
+            CAPTURE(item);
+            controls::TreeTableRow *row=scene.row(item);
+            REQUIRE(row != nullptr);
+            const TreeTable::Node *node=table->getNode(table->nodeForItem(item));
+            REQUIRE(node != nullptr);
+            CHECK(row->getDepth() == node->depth);
+
+            for(int column=0; column < row->getCellCount(); ++column)
+            {
+                CAPTURE(column);
+                const Padding padding=row->getCell(column)->getPadding();
+                const int left=(column == treeColumn)?
+                    Row::CellPaddingX+int(node->depth)*TreeTable::Indent+TreeTable::Indent:Row::CellPaddingX;
+
+                CHECK(padding.left == left);
+                CHECK(padding.right == Row::CellPaddingX);
+                CHECK(padding.top == Row::CellPaddingY);
+                CHECK(padding.bottom == Row::CellPaddingY);
+            }
+
+            controls::internal::TreeTableExpander *expander=row->getExpander();
+            const Rect cell=row->getCell(treeColumn)->getBounds();
+            const Rect bounds=expander->getBounds();
+
+            CHECK(expander->hidden() == !node->hasChildren);
+            CHECK(expander->isExpanded() == node->expanded);
+            CHECK(bounds.x == cell.x+Row::CellPaddingX+int(node->depth)*TreeTable::Indent);
+            CHECK(bounds.w == TreeTable::ExpanderSize);
+            CHECK(bounds.h == TreeTable::ExpanderSize);
+            CHECK(bounds.y == (row->getHeight()-TreeTable::ExpanderSize)/2);
+            const Rect *clip=row->getChildClipRect(expander);
+            REQUIRE((clip != nullptr));
+            CHECK((*clip == Rect(cell.x, 0, cell.w, row->getHeight())));
+            CHECK((row->getChildClipRect(row->getCell(treeColumn)) == nullptr));
+        };
+    for(size_t item=0; item < 6; ++item)
+        checkRow(item, 0);
+
+    // an expand that adds no row (advertised children) marks its expander
+    // alone, with no binding and no layout
+    controls::TreeTableRow *advertised=scene.row(4);
+    table->setExpanded(20, true);
+    CHECK(advertised->getExpander()->isExpanded());
+    CHECK(advertised->getExpander()->getStateChange() == controls::StateChange_Background);
+    scene.frame();
+    CHECK(scene.binds.empty());
+    CHECK(scene.canvas->getLayoutStats().passes == 0);
+    checkRow(4, 0);
+
+    // a collapse shows the toggled row's new state without binding it
+    controls::TreeTableRow *toggled=scene.row(0);
+    table->setExpanded(10, false);
+    scene.frame();
+    CHECK(scene.row(0) == toggled);
+    CHECK_FALSE(toggled->getExpander()->isExpanded());
+    for(const auto &bind : scene.binds)
+        CHECK(std::get<0>(bind) != toggled);
+    checkIndex(table, {10, 20, 30});
+    for(size_t item=0; item < 3; ++item)
+        checkRow(item, 0);
+    table->expandAll();
+    scene.frame();
+    for(size_t item=0; item < 6; ++item)
+        checkRow(item, 0);
+    table->collapseAll();
+    scene.frame();
+    for(size_t item=0; item < 3; ++item)
+        checkRow(item, 0);
+    table->expandAll();
+    scene.settle();
+
+    // the tree in another column; out of range is refused
+    table->setTreeColumn(1);
+    CHECK(table->getTreeColumn() == 1);
+    table->setTreeColumn(3);
+    table->setTreeColumn(-1);
+    CHECK(table->getTreeColumn() == 1);
+    scene.frame();
+    CHECK(scene.binds.empty());
+    for(size_t item=0; item < 6; ++item)
+        checkRow(item, 1);
+
+    // a narrow tree column cuts the expander: the clip follows the column
+    table->setColumnWidth(1, TreeTable::DefaultMinColumnWidth);
+    scene.frame();
+    for(size_t item=0; item < 6; ++item)
+        checkRow(item, 1);
+}
+
+TEST_CASE("TreeTable: a row bound to a node at another depth lays out that row alone")
+{
+    // Two scrolls by one row with the same text lengths: one brings in a row
+    // at the depth of the item that left, the other one at another depth.
+    // Both bind and lay out one row, so they enter as many controls but the
+    // moved expander of the row at another depth (its entries, at most one
+    // per calculateSize and arrange in each axis).
+    auto scrollVisited=[](bool otherDepth)
+        {
+            Scene scene;
+            TreeTable *table=scene.table;
+
+            // ids of one digit count, so the rows' strings are as long, and
+            // each a collapsed parent, so every row shows its expander
+            table->addNode(Root, 100);
+            for(NodeId id=101; id < 200; ++id)
+                table->addNode(otherDepth?NodeId(100):Root, id);
+            for(NodeId id=100; id < 200; ++id)
+                table->addNode(id, id+100);
+            table->setExpanded(100, true);
+            // the depth in no cell's text: only the tree cell's padding
+            // follows it
+            table->setNodeBinder([&scene](controls::DataTableRow *row, NodeId id, size_t depth)
+                {
+                    scene.binds.emplace_back(row, id, depth);
+                    row->setCellText(0, "node "+std::to_string(id));
+                    row->setCellText(1, "size");
+                    row->setCellText(2, "2026-11-14");
+                });
+            scene.settle();
+            const auto pool=table->getVirtualBody()->getRows();
+            controls::TreeTableRow *leaving=scene.row(0);
+            const size_t depthBefore=leaving->getDepth();
+
+            table->getVirtualBody()->scrollByRows(1);
+            scene.frame();
+            REQUIRE(scene.binds.size() == 1);
+            CHECK(std::get<0>(scene.binds.front()) == leaving);
+            CHECK(table->getVirtualBody()->getRows() == pool);
+            CHECK(scene.canvas->getLayoutStats().passes == 1);
+            CHECK((leaving->getDepth() != depthBefore) == otherDepth);
+            CHECK(leaving->getCell(0)->getPadding().left
+                == controls::DataTableRow::CellPaddingX+int(leaving->getDepth())*TreeTable::Indent+TreeTable::Indent);
+            return scene.canvas->getLayoutStats().visited;
+        };
+
+    const size_t same=scrollVisited(false);
+    const size_t other=scrollVisited(true);
+
+    CHECK(same > 0);
+    CHECK(other >= same);
+    CHECK(other-same <= 4);
+}
+
+TEST_CASE("TreeTable: the expander toggles its node and a double-click toggles a parent or activates a leaf")
+{
+    Scene scene;
+    TreeTable *table=scene.table;
+    Events events;
+
+    table->onExpanded.add(&events, &Events::expand);
+    table->onCollapsed.add(&events, &Events::collapse);
+    table->onNodeActivated.add(&events, &Events::activate);
+    table->addNode(Root, 10);
+    table->addNode(10, 11);
+    table->addNode(10, 12);
+    table->addNode(Root, 20);
+    scene.settle();
+
+    controls::TreeTableRow *parent=scene.row(0);
+    REQUIRE(parent != nullptr);
+    scene.click(parent->getExpander());
+    CHECK(table->isExpanded(10));
+    checkIndex(table, {10, 11, 12, 20});
+    CHECK(events.expanded == std::vector<NodeId>{10});
+    // the expander takes the press: the row is not selected, nothing focused
+    CHECK(table->getSelectedItem() == TreeTable::NoItem);
+    CHECK(KeyboardFocus != parent->getExpander());
+    scene.frame();
+    CHECK(parent->getExpander()->isExpanded());
+
+    scene.click(parent->getExpander());
+    CHECK_FALSE(table->isExpanded(10));
+    checkIndex(table, {10, 20});
+    CHECK(events.collapsed == std::vector<NodeId>{10});
+    scene.frame();
+
+    // a click on the row selects it and toggles nothing
+    scene.click(parent->getCell(1));
+    CHECK(table->getSelectedItem() == 0);
+    CHECK_FALSE(table->isExpanded(10));
+
+    // a double-click on a parent's row toggles it, once per double-click
+    scene.doubleClick(parent->getCell(1));
+    CHECK(table->isExpanded(10));
+    checkIndex(table, {10, 11, 12, 20});
+    CHECK(events.expanded == std::vector<NodeId>{10, 10});
+    CHECK(events.activated.empty());
+    scene.frame();
+    scene.doubleClick(parent->getCell(1));
+    CHECK_FALSE(table->isExpanded(10));
+    CHECK(events.collapsed == std::vector<NodeId>{10, 10});
+    scene.frame();
+
+    // on a leaf it activates the node
+    controls::TreeTableRow *leaf=scene.row(1);
+    REQUIRE(table->nodeForItem(1) == 20);
+    CHECK(leaf->getExpander()->hidden());
+    scene.doubleClick(leaf->getCell(0));
+    CHECK(events.activated == std::vector<NodeId>{20});
+    CHECK(table->getSelectedItem() == 1);
+    CHECK(events.expanded.size() == 2);
+    CHECK(events.collapsed.size() == 2);
+
+    // a single click on a leaf activates nothing
+    scene.click(leaf->getCell(1));
+    CHECK(events.activated.size() == 1);
+
+    // toggleExpanded on a leaf or an unknown id does nothing
+    table->toggleExpanded(20);
+    table->toggleExpanded(999);
+    CHECK(events.expanded.size() == 2);
+}
+
+namespace
+{
+
+//! Records each slot's last chevron and rounded-rect fill, and hides.
+class ExpanderRecorder: public test::StubRenderer
+{
+public:
+    struct Draw
+    {
+        size_t id;
+        bool hidden;
+        bool icon;
+        int kind;
+        int direction;
+        Color color;
+    };
+
+    void drawRoundedRect(size_t id, Rect, float, float, Color top, Color, Color, int) override
+    {
+        draws.push_back({id, false, false, 0, 0, top});
+    }
+
+    void drawIcon(size_t id, Rect, int kind, int direction, Color color, int) override
+    {
+        draws.push_back({id, false, true, kind, direction, color});
+    }
+
+    void hidePrimitive(size_t id) override
+    {
+        draws.push_back({id, true, false, 0, 0, Color()});
+    }
+
+    const Draw *last(size_t id) const
+    {
+        for(auto it=draws.rbegin(); it != draws.rend(); ++it)
+        {
+            if(it->id == id)
+                return &*it;
+        }
+        return nullptr;
+    }
+
+    std::vector<Draw> draws;
+};
+
+}//namespace
+
+TEST_CASE("TreeTable: the textured expander draws a chevron by its state and a surface while hovered or pressed")
+{
+    namespace tokyonight=skin::textured::tokyonight;
+    float clock=Scene::nextClock();
+    platform::setTimeSource([&clock]() { return clock; });
+    ExpanderRecorder renderer;
+    skin::textured::TexturedSkin skin{&renderer};
+    auto *canvas=new controls::Canvas(&skin);
+    canvas->setSize(600, 400);
+    auto *table=canvas->newChild<TreeTable>();
+    table->setBounds(10, 10, 400, 200);
+    table->setColumnCount(2);
+    table->addNode(Root, 1);
+    table->addNode(1, 2);
+    table->addNode(Root, 3);
+    auto frame=[&]()
+        {
+            canvas->updateCanvas();
+            canvas->renderCanvas();
+        };
+    frame();
+    frame();
+
+    auto *parent=gweni_cast<controls::TreeTableRow>(table->rowForItem(0));
+    REQUIRE(parent != nullptr);
+    controls::internal::TreeTableExpander *expander=parent->getExpander();
+    std::vector<size_t> ids, textIds;
+    REQUIRE(expander->getSkinControl() != nullptr);
+    expander->getSkinControl()->appendIds(ids, textIds);
+    REQUIRE(ids.size() >= 2);
+    const auto &colors=skin.Colors.TreeTable;
+
+    auto check=[&](bool surface, const tokyonight::Surface *expected, int direction, Color glyph)
+        {
+            const ExpanderRecorder::Draw *fill=renderer.last(ids[0]);
+            const ExpanderRecorder::Draw *chevron=renderer.last(ids[1]);
+
+            REQUIRE(fill != nullptr);
+            REQUIRE(chevron != nullptr);
+            CHECK(fill->hidden == !surface);
+            if(surface)
+                CHECK((fill->color == expected->top));
+            CHECK_FALSE(chevron->hidden);
+            CHECK(chevron->icon);
+            CHECK(chevron->kind == 1);
+            CHECK(chevron->direction == direction);
+            CHECK((chevron->color == glyph));
+        };
+
+    // at rest: no surface, a right chevron
+    check(false, nullptr, 3, colors.Expander);
+    // hovered
+    const Point at=Scene::centreOf(expander);
+    canvas->inputMouseMoved(at.x, at.y, 0, 0);
+    frame();
+    check(true, &tokyonight::TreeTableExpanderHover, 3, colors.ExpanderHover);
+    // pressed
+    input::onMouseClicked(canvas, 0, true);
+    frame();
+    check(true, &tokyonight::TreeTableExpanderDown, 3, colors.ExpanderHover);
+    // released: the node expands and the chevron points down
+    input::onMouseClicked(canvas, 0, false);
+    frame();
+    CHECK(table->isExpanded(1));
+    check(true, &tokyonight::TreeTableExpanderHover, 0, colors.ExpanderHover);
+    // the mouse away: at rest, down
+    canvas->inputMouseMoved(500, 350, 0, 0);
+    frame();
+    check(false, nullptr, 0, colors.Expander);
+    // disabled
+    expander->setDisabled(true);
+    frame();
+    check(false, nullptr, 0, colors.ExpanderDisabled);
+
+    // the names are in the theme's registries
+    CHECK(tokyonight::surfaceRegistry().count("TreeTableExpanderHover") == 1);
+    CHECK(tokyonight::surfaceRegistry().count("TreeTableExpanderDown") == 1);
+    const auto textColors=skin.textColorRegistry();
+    CHECK(textColors.count("TreeTableExpander") == 1);
+    CHECK(textColors.count("TreeTableExpanderHover") == 1);
+    CHECK(textColors.count("TreeTableExpanderDisabled") == 1);
+
+    HoveredControl=nullptr;
+    KeyboardFocus=nullptr;
+    MouseFocus=nullptr;
+    delete canvas;
+    platform::setTimeSource(nullptr);
 }

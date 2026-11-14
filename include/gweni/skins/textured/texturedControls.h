@@ -1544,6 +1544,24 @@ public:
     inline static const std::string_view name="OpenToggleButton";
 };
 
+// A TreeTable row's expander: [0] a surface only while hovered or pressed
+// (TreeTableExpanderHover, TreeTableExpanderDown), [1] a chevron (icon kind
+// 1) at getZIndex()+1, right while the node is collapsed and down while it is
+// expanded, in the TreeTableExpander* text colours.
+class TreeTableExpander:public textured::ControlRegister<TreeTableExpander>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    // the chevron is drawn at getZIndex()+1, its Text child after it
+    size_t depthLayers() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="TreeTableExpander";
+};
+
 
 // The track of both bars (VerticalScrollBar and HorizontalScrollBar find it
 // through their parent type): one ScrollTrack surface the whole length of the

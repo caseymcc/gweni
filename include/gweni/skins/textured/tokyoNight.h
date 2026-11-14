@@ -278,6 +278,10 @@ inline Surface DataTableHeader     { Color(0x24,0x28,0x3b), Color(0x1f,0x22,0x33
 inline Surface DataTableHeaderHover{ BgHighlight,           BgHighlight,           BgHighlight, 0.0f, 0.0f };
 inline Surface DataTableHeaderDown { Surf,                  Surf,                  Surf,        0.0f, 0.0f };
 inline Surface DataTableStripe     { Color(0x1f,0x21,0x30), Color(0x1f,0x21,0x30), BgDark,      0.0f, 0.0f };
+// A TreeTable row's expander: a button's hover and press under its chevron,
+// nothing at rest (the slot is hidden, so the row's fill shows).
+inline Surface TreeTableExpanderHover{ SurfHover,             SurfHi,                Blue,  Radius, BorderW };
+inline Surface TreeTableExpanderDown { Surf,                  BgStorm,               Blue,  Radius, BorderW };
 
 // A PlotHistogram: its frame (an inset, like a TextBox's) and its bars, flat
 // and square, so only top is read; the hovered bar is lifted.
@@ -495,6 +499,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"PropertyColumnEditing",&PropertyColumnEditing},
         {"DataTableHeader",&DataTableHeader},{"DataTableHeaderHover",&DataTableHeaderHover},
         {"DataTableHeaderDown",&DataTableHeaderDown},{"DataTableStripe",&DataTableStripe},
+        {"TreeTableExpanderHover",&TreeTableExpanderHover},{"TreeTableExpanderDown",&TreeTableExpanderDown},
         {"PlotFrame",&PlotFrame},{"PlotBar",&PlotBar},{"PlotBarHover",&PlotBarHover},{"PlotLine",&PlotLine},
         {"ChartFrame",&ChartFrame},{"ChartGrid",&ChartGrid},{"ChartAxis",&ChartAxis},{"ChartSpan",&ChartSpan},
         {"ChartMarker",&ChartMarker},{"ChartCrosshair",&ChartCrosshair},

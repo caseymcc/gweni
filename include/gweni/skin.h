@@ -501,6 +501,15 @@ public:
             gweni::Color Negative{0xe0, 0x40, 0x40};
         } Toast;
 
+        //! A TreeTable expander's chevron: at rest, hovered or pressed, and
+        //! disabled.
+        struct TreeTable_t
+        {
+            gweni::Color Expander{0x60, 0x60, 0x60};
+            gweni::Color ExpanderHover{0, 0, 0};
+            gweni::Color ExpanderDisabled{0x80, 0x80, 0x80};
+        } TreeTable;
+
     } Colors;
 
     //! Sizes a skin sets for its controls, in logical units. Read when a

@@ -289,7 +289,7 @@ void DataTableRow::setCellCount(int count)
         Label *cell=newChild<Label>();
 
         cell->setPlacement(Placement::Owner);
-        cell->setPadding(Padding(6, 3, 6, 3));
+        cell->setPadding(Padding(CellPaddingX, CellPaddingY, CellPaddingX, CellPaddingY));
         cell->setTextAlignment(Alignment::Left|Alignment::CenterV);
         cell->setTextColor(getTextColor());
         m_cells.push_back(cell);
@@ -905,7 +905,7 @@ void DataTable::enterSourceMode()
     m_virtualBody->setRowHeight(m_rowHeight);
     m_virtualBody->setRowFactory([this](Base *parent) -> Base *
         {
-            DataTableRow *row=parent->newChild<DataTableRow>();
+            DataTableRow *row=newSourceRow(parent);
 
             row->m_table=this;
             row->setCellCount(getColumnCount());
@@ -913,6 +913,11 @@ void DataTable::enterSourceMode()
         });
     m_virtualBody->setRowBinder([this](Base *row, size_t item) { bindRow(row, item); });
     m_body=m_virtualBody;
+}
+
+DataTableRow *DataTable::newSourceRow(Base *parent)
+{
+    return parent->newChild<DataTableRow>();
 }
 
 // The row takes the stripe and the selection of its item, as the row-mode

@@ -14,17 +14,233 @@ namespace gweni
 namespace controls
 {
 
+namespace internal
+{
+
+///////////////////////////////////////////////////////////////////////////
+//TreeTableExpander
+
+// A glyph with no caption, as a TreeNode's toggle: a fixed square that takes
+// the mouse but no keyboard focus.
+GWENI_CONTROL_CONSTRUCTOR(TreeTableExpander)
+{
+    setTabable(false);
+    setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    setSize(TreeTable::ExpanderSize, TreeTable::ExpanderSize);
+}
+
+void TreeTableExpander::onPress(event::Info info)
+{
+    ParentClass::onPress(info);
+
+    if(m_row)
+        m_row->expanderPressed();
+}
+
+void TreeTableExpander::setExpanded(bool expanded)
+{
+    if(m_expanded == expanded)
+        return;
+
+    m_expanded=expanded;
+    // the chevron's direction, this button only
+    addStateChange(StateChange_Background);
+}
+
+}//namespace internal
+
+///////////////////////////////////////////////////////////////////////////
+//TreeTableRow
+
+// The expander is made with the row, so binding a parent to a pooled row
+// later shows it and makes nothing. It is owner-placed in the tree cell.
+GWENI_CONTROL_CONSTRUCTOR(TreeTableRow)
+{
+    m_expander=newChild<internal::TreeTableExpander>();
+    m_expander->m_row=this;
+    m_expander->setPlacement(Placement::Owner);
+    m_expander->setHidden(true);
+}
+
+// The tree cell's text starts past the indent and the expander's column, a
+// leaf's too, so siblings' text lines up whether they have children or not:
+// a child's expander is under its parent's text.
+void TreeTableRow::setTreeState(int column, size_t depth, bool hasChildren, bool expanded)
+{
+    if(column != m_treeColumn)
+    {
+        if(Label *previous=getCell(m_treeColumn))
+            previous->setPadding(Padding(CellPaddingX, CellPaddingY, CellPaddingX, CellPaddingY));
+        m_treeColumn=column;
+        invalidate();
+    }
+
+    if(Label *cell=getCell(column))
+    {
+        const int left=CellPaddingX+static_cast<int>(depth)*TreeTable::Indent+TreeTable::Indent;
+
+        cell->setPadding(Padding(left, CellPaddingY, CellPaddingX, CellPaddingY));
+    }
+
+    if(depth != m_depth)
+    {
+        m_depth=depth;
+        // the expander's place
+        invalidate();
+    }
+
+    m_expander->setHidden(!hasChildren);
+    m_expander->setExpanded(expanded);
+}
+
+void TreeTableRow::expanderPressed()
+{
+    if(!m_tree)
+        return;
+
+    m_tree->toggleExpanded(m_tree->nodeForItem(m_tree->itemForRow(this)));
+}
+
+void TreeTableRow::onMouseDoubleClickLeft(int x, int y)
+{
+    ParentClass::onMouseDoubleClickLeft(x, y);
+
+    if(m_tree && !isDisabled())
+        m_tree->rowDoubleClicked(this);
+}
+
+const Rect *TreeTableRow::getChildClipRect(const Base *child) const
+{
+    return child == m_expander?&m_expanderClip:nullptr;
+}
+
+// The expander after the tree cell's padding and the indent, clipped to the
+// cell: a column narrower than the indent cuts it, as it cuts the text. A new
+// clip with the same bounds still re-stamps its slots.
+void TreeTableRow::arrangeHorizontal(skin::Base *skin)
+{
+    ParentClass::arrangeHorizontal(skin);
+
+    Rect clip(0, m_expanderClip.y, 0, m_expanderClip.h);
+    int x=0;
+
+    if(Label *cell=getCell(m_treeColumn))
+    {
+        clip.x=cell->getX();
+        clip.w=cell->getWidth();
+        x=cell->getX()+CellPaddingX+static_cast<int>(m_depth)*TreeTable::Indent;
+    }
+
+    placeChild(m_expander, x, m_expander->getY(), TreeTable::ExpanderSize, m_expander->getHeight());
+
+    if(!(clip == m_expanderClip))
+    {
+        m_expanderClip=clip;
+        m_expander->addStateChangeRecursive(StateChange_Geometry);
+    }
+}
+
+void TreeTableRow::arrangeVertical(skin::Base *skin)
+{
+    ParentClass::arrangeVertical(skin);
+
+    const int size=std::min(TreeTable::ExpanderSize, getHeight());
+    const Rect clip(m_expanderClip.x, 0, m_expanderClip.w, getHeight());
+
+    placeChild(m_expander, m_expander->getX(), (getHeight()-size)/2, m_expander->getWidth(), size);
+
+    if(!(clip == m_expanderClip))
+    {
+        m_expanderClip=clip;
+        m_expander->addStateChangeRecursive(StateChange_Geometry);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////
+//TreeTable
+
 GWENI_CONTROL_CONSTRUCTOR(TreeTable)
 {
     DataTable::setRowBinder([this](DataTableRow *row, size_t item)
         {
-            if(item < m_visible.size() && m_nodeBinder)
-            {
-                const VisibleNode node=m_visible[item];
+            if(item >= m_visible.size())
+                return;
 
+            const VisibleNode node=m_visible[item];
+
+            if(TreeTableRow *treeRow=gweni_cast<TreeTableRow>(row))
+                showNode(treeRow, node);
+            if(m_nodeBinder)
                 m_nodeBinder(row, node.id, node.depth);
-            }
         });
+}
+
+DataTableRow *TreeTable::newSourceRow(Base *parent)
+{
+    TreeTableRow *row=parent->newChild<TreeTableRow>();
+
+    row->m_tree=this;
+    return row;
+}
+
+void TreeTable::showNode(TreeTableRow *row, const VisibleNode &visible)
+{
+    const Node *node=getNode(visible.id);
+
+    row->setTreeState(m_treeColumn, visible.depth, node && node->hasChildren, node && node->expanded);
+}
+
+// The rows before the changed suffix keep their nodes, but one of them may be
+// the node whose expansion changed: its expander shows the new state. The
+// suffix's rows are bound again, which shows theirs.
+void TreeTable::syncExpanders(size_t before)
+{
+    for(Base *control : getVirtualBody()->getRows())
+    {
+        const size_t item=getVirtualBody()->itemForRow(control);
+
+        if(item == NoItem || item >= before || item >= m_visible.size())
+            continue;
+        if(TreeTableRow *row=gweni_cast<TreeTableRow>(control))
+            showNode(row, m_visible[item]);
+    }
+}
+
+void TreeTable::setTreeColumn(int column)
+{
+    if(column < 0 || column >= getColumnCount() || column == m_treeColumn)
+        return;
+
+    m_treeColumn=column;
+    syncExpanders(m_visible.size());
+}
+
+void TreeTable::toggleExpanded(NodeId id)
+{
+    if(const Node *node=getNode(id))
+        setExpanded(id, !node->expanded);
+}
+
+void TreeTable::rowDoubleClicked(TreeTableRow *row)
+{
+    const NodeId id=nodeForItem(itemForRow(row));
+    const Node *node=getNode(id);
+
+    if(!node)
+        return;
+
+    if(node->hasChildren)
+        toggleExpanded(id);
+    else
+        activateNode(id);
+}
+
+void TreeTable::activateNode(NodeId id)
+{
+    event::Info info(this);
+
+    info.integer=id;
+    onNodeActivated.call(this, info);
 }
 
 const TreeTable::Node *TreeTable::getNode(NodeId id) const
@@ -175,6 +391,8 @@ void TreeTable::setExpanded(NodeId id, bool expanded)
 
     if(item != NoItem)
     {
+        syncExpanders(item+1);
+
         const size_t at=item+1;
 
         if(expanded)
@@ -236,6 +454,7 @@ void TreeTable::setAllExpanded(bool expanded)
         m_visible.swap(visible);
         visibleChanged(first);
     }
+    syncExpanders(first);
 
     for(NodeId id : changed)
         expansionEvent(id, expanded);
