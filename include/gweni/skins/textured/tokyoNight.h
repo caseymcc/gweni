@@ -99,10 +99,11 @@ inline Surface TextBoxFocus   { BgDark,                BgDark,                Bl
 inline Surface TextBoxDisabled{ Color(0x1f,0x22,0x33), Color(0x1f,0x22,0x33), BgHighlight, RadiusSm, BorderW };
 // A TextBox in its error state (TextBox::setError): the theme's red border,
 // two units thick while focused (as a focused field's blue is the accent), and
-// half see-through over the disabled fill on a disabled field
+// halfway to the disabled fill on a disabled field (a border's alpha does not
+// blend with the fill under it, so the mix is made here)
 inline Surface TextBoxError         { BgDark,                BgDark,                Red,   RadiusSm, BorderW };
 inline Surface TextBoxErrorFocus    { BgDark,                BgDark,                Red,   RadiusSm, 2.0f };
-inline Surface TextBoxErrorDisabled { Color(0x1f,0x22,0x33), Color(0x1f,0x22,0x33), Color(Red.r, Red.g, Red.b, 0x80), RadiusSm, BorderW };
+inline Surface TextBoxErrorDisabled { Color(0x1f,0x22,0x33), Color(0x1f,0x22,0x33), Color((Red.r+0x1f)/2, (Red.g+0x22)/2, (Red.b+0x33)/2), RadiusSm, BorderW };
 // The selection behind a TextBox's selected glyphs (Tokyo Night's visual-mode
 // background), drawn square and borderless by default.
 inline Surface TextSelection  { Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), 0.0f, 0.0f };

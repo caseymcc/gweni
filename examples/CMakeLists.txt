@@ -103,6 +103,8 @@ set(GWENI_DEMO_SOURCES
     demo/chipBadge.cpp
     demo/switch.cpp
     demo/switch.h
+    demo/fieldValidation.cpp
+    demo/fieldValidation.h
     demo/chipBadge.h
     demo/navigationRail.cpp
     demo/navigationRail.h

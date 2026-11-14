@@ -228,10 +228,10 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # variable-height VirtualList, the code editor, the log view, the
     # badges' counts and anchor moves, the dialogs, the toasts, a Flow's
     # resizes and rebuilds, the switches' toggles, the navigation rail's
-    # collapse/selection and the board's wheels and edits
+    # collapse/selection, the board's wheels and edits and the fields' messages
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
-            dialog toast flow switch navigation-rail board)
+            dialog toast flow switch navigation-rail board field-validation)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail")
@@ -581,6 +581,17 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_navigation_rail 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario navigation-rail --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/navigation_rail@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # FieldValidationDemo, the clock frozen: the app's set and clear of a
+    # field's error lay out the field alone, write its frame's slot and the
+    # message's glyphs and change no pixel outside it, the clear giving the
+    # frame back; typing into a Change-validated field shows and clears its
+    # error within the field; Tab off an empty FocusLoss field shows
+    # "required"; settled frames write nothing
+    gweni_whole_app_test(controltest_field_validation 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario field-validation --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/field_validation@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # gweni::tools::Inspector over the settled Demo, opened and closed by F12:

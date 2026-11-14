@@ -984,6 +984,26 @@
  *                 the hide runs no animation, the thumb at its end; settled
  *                 frames write nothing; the demo gives every id back. Exits
  *                 non-zero if any check is no.
+ *    field-validation
+ *                 FieldValidationDemo, the clock frozen and the mouse off
+ *                 the canvas between inputs (field-validation.png,
+ *                 field-validation-error.png, field-validation-required.png):
+ *                 the key field's error set and cleared by the app
+ *                 (FieldValidationDemo::setKeyError, clearKeyError), then by
+ *                 its two buttons; "a", "b", "cdefg" and "h" typed into the
+ *                 Change-validated password; a click into the empty host
+ *                 field and Tab. One line
+ *                   field-validation app_set=yes|no ... ids_back=yes|no
+ *                 reports the checks: the set and the clear each lay out the
+ *                 field alone (one pass, entering no more than the way down
+ *                 to it and its subtree), write its frame's slot and the
+ *                 message's glyphs alone and change no pixel outside it, at
+ *                 the same height; the clear gives the frame before the set
+ *                 back; the buttons do the same; "a" shows the error in the
+ *                 field's ids alone, "b" writes no message glyph, "h" (the
+ *                 eighth) clears it; Tab shows "required"; settled frames
+ *                 write nothing; the demo gives every id back. Exits non-zero
+ *                 if any check is no.
  *    virtual-list VirtualListDemo with its list at 1 000 and then 100 000
  *                 items, the clock frozen: a settled frame, a one-row scroll
  *                 from the top (scrollByRows) and a wheel notch over the list
@@ -1233,6 +1253,7 @@
 #include <demo/popup.h>
 #include <demo/chipBadge.h>
 #include <demo/switch.h>
+#include <demo/fieldValidation.h>
 #include <gweni/controls/switch.h>
 #include <demo/navigationRail.h>
 #include <gweni/controls/navigationRail.h>
@@ -1398,7 +1419,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(ChartAreasDemo) X(TimelineDemo) X(ComboBoxDemo) \
     X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(NavigationRailDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
-    X(CheckBoxDemo) X(SwitchDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
+    X(CheckBoxDemo) X(SwitchDemo) X(FieldValidationDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
     X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo) X(InspectorDemo) X(ThemeEditorDemo) \
@@ -2547,7 +2568,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
-    ChipBadge, NavigationRail, Flow, Board, Switch };
+    ChipBadge, NavigationRail, Flow, Board, Switch, FieldValidation };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2587,6 +2608,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "flow") scenario=Scenario::Flow;
     else if(name == "board") scenario=Scenario::Board;
     else if(name == "switch") scenario=Scenario::Switch;
+    else if(name == "field-validation") scenario=Scenario::FieldValidation;
     else return false;
     return true;
 }
@@ -12567,6 +12589,235 @@ static bool runNavigationRailScenario(Session &s, const std::string &shotDir, bo
     return ok;
 }
 
+//-----------------------------------------------------------------------------
+// --scenario field-validation: FieldValidationDemo's fields, the clock frozen
+//
+// A TextBox's message line is a Text of its own under the field part, its
+// room reserved in the box's height (TextBox::setReserveMessageLine, a
+// helper text, a validator), so a message set, changed or cleared lays out
+// the box alone and writes its frame's slot (the error look) and the
+// message's glyphs, and changes no pixel outside it.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+// The frame's slot and the message's text id of a field with a message line.
+struct FieldIds
+{
+    size_t frame=0;
+    std::set<size_t> message;
+    std::set<size_t> primitives;    // the field's subtree's
+    std::set<size_t> texts;
+};
+
+FieldIds fieldIds(gweni::controls::TextBox *box)
+{
+    FieldIds ids;
+    std::set<size_t> unused;
+
+    ids.frame=box->getSkinControl()->getPrimitives().at(0);
+    subtreeIds(const_cast<gweni::controls::internal::Text *>(box->getMessageText()), unused, ids.message);
+    subtreeIds(box, ids.primitives, ids.texts);
+    return ids;
+}
+
+// The controls a layout of `box` alone enters: the way down to it and its
+// subtree, four entries each.
+size_t fieldEntries(gweni::controls::Base *box)
+{
+    size_t path=0;
+
+    for(gweni::controls::Base *at=box->getActualParent(); at; at=at->getActualParent())
+        ++path;
+    return 4*(path+subtreeControls(box));
+}
+
+}//namespace
+
+static bool runFieldValidationScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    checks.scenario="field-validation";
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    gweni::controls::Base *control=addControl(s, "FieldValidationDemo");
+    auto *demo=gweni::gweni_cast<gweni::FieldValidationDemo>(control);
+
+    if(!demo || !demo->keyField() || !demo->passwordField() || !demo->hostField())
+    {
+        std::cerr<<"ControlTest: field-validation: FieldValidationDemo was not built\n";
+        return false;
+    }
+
+    s.label="field-validation";
+    renderFrames(s, s.frames);
+    forgetMouse(s);
+
+    bool ok=shoot(s, shotDir+"/field-validation.png");
+    std::vector<uint8_t> pixels;
+    size_t idleWork=settleCodeEditor(s, pixels);
+
+    // (1) the app's set and clear: the field alone, its frame's slot and the
+    // message's glyphs, no pixel outside it; the clear gives the frame back
+    gweni::controls::TextBox *key=demo->keyField();
+    const FieldIds keyIds=fieldIds(key);
+    const gweni::Rect keyRect=key->getCanvasBounds();
+    const int keyHeight=key->getHeight();
+    const size_t keyEntries=fieldEntries(key);
+    const std::vector<uint8_t> beforeSet=pixels;
+
+    demo->setKeyError();
+
+    const CodeEditorFrame set=codeEditorFrame(s);
+    const size_t setOutside=differencesOutsideRects(s, beforeSet, set.pixels, {keyRect});
+
+    checks.check("app_set",
+        key->hasError() && set.passes == 1 && set.visited <= keyEntries
+            && idsWithin(set.primitives, {keyIds.frame}) && set.primitives.count(keyIds.frame)
+            && idsWithin(set.texts, keyIds.message) && !set.texts.empty()
+            && setOutside == 0 && key->getHeight() == keyHeight && set.pixels != beforeSet,
+        "the set wrote "+std::to_string(set.primitives.size())+" primitive ids (the frame's alone allowed) and "
+        +std::to_string(set.texts.size())+" text ids (the message's alone), ran "+std::to_string(set.passes)
+        +" passes entering "+std::to_string(set.visited)+" (the field's way and subtree, "
+        +std::to_string(keyEntries)+", allowed) and changed "+std::to_string(setOutside)
+        +" pixels outside the field");
+    shoot(s, shotDir+"/field-validation-error.png");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    demo->clearKeyError();
+
+    const CodeEditorFrame clear=codeEditorFrame(s);
+    const size_t clearOutside=differencesOutsideRects(s, pixels, clear.pixels, {keyRect});
+
+    checks.check("app_clear",
+        !key->hasError() && clear.passes == 1 && clear.visited <= keyEntries
+            && idsWithin(clear.primitives, {keyIds.frame}) && idsWithin(clear.texts, keyIds.message)
+            && clearOutside == 0 && key->getHeight() == keyHeight,
+        "the clear wrote "+std::to_string(clear.primitives.size())+" primitive and "
+        +std::to_string(clear.texts.size())+" text ids, ran "+std::to_string(clear.passes)+" passes entering "
+        +std::to_string(clear.visited)+" and changed "+std::to_string(clearOutside)+" pixels outside the field");
+    checks.check("clear_gives_back", clear.pixels == beforeSet,
+        "the frame after the clear is not the one before the set");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (2) the buttons take the same path
+    const gweni::Rect setButton=demo->setErrorButton()->getCanvasBounds();
+    const gweni::Rect clearButton=demo->clearErrorButton()->getCanvasBounds();
+
+    clickMouse(s, setButton.x+setButton.w/2, setButton.y+setButton.h/2);
+    renderFrames(s, 1);
+    const bool buttonSet=key->getError() == "a key already in this file";
+    clickMouse(s, clearButton.x+clearButton.w/2, clearButton.y+clearButton.h/2);
+    renderFrames(s, 1);
+    const bool buttonCleared=!key->hasError();
+    forgetMouse(s);
+    renderFrames(s, 1);
+
+    checks.check("buttons", buttonSet && buttonCleared,
+        std::string("Set error ")+(buttonSet?"set":"did not set")+" the error and Clear error "
+        +(buttonCleared?"cleared":"did not clear")+" it");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (3) typing into the Change-validated password: the frame that makes it
+    // invalid shows the error, within the field's ids (its typed glyphs, caret
+    // and frame, the message's glyphs), one that keeps the message writes no
+    // message glyph, and the one that makes it valid clears it
+    gweni::controls::PasswordTextBox *password=demo->passwordField();
+    const gweni::Rect passwordRect=password->getCanvasBounds();
+
+    clickMouse(s, passwordRect.x+passwordRect.w/2, passwordRect.y+password->getFieldHeight()/2);
+    forgetMouse(s);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    const FieldIds passwordIds=fieldIds(password);
+
+    typeText(s, "a");
+
+    const CodeEditorFrame invalid=codeEditorFrame(s);
+    const size_t invalidOutside=differencesOutsideRects(s, pixels, invalid.pixels, {passwordRect});
+
+    checks.check("typed_invalid",
+        password->getError() == gweni::FieldValidationDemo::PasswordTooShort
+            && idsWithin(invalid.primitives, passwordIds.primitives) && idsWithin(invalid.texts, passwordIds.texts)
+            && invalid.texts.size() >= 2 && invalidOutside == 0 && invalid.passes <= 1
+            && invalid.visited <= fieldEntries(password),
+        "typing \"a\" set the error \""+password->getError()+"\", wrote "+std::to_string(invalid.primitives.size())
+        +" primitive and "+std::to_string(invalid.texts.size())+" text ids (the field's, its typed text and its message, wanted), ran "
+        +std::to_string(invalid.passes)+" passes entering "+std::to_string(invalid.visited)+" and changed "
+        +std::to_string(invalidOutside)+" pixels outside the field");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    typeText(s, "b");
+
+    const CodeEditorFrame kept=codeEditorFrame(s);
+    bool messageKept=true;
+
+    for(size_t id : kept.texts)
+    {
+        if(passwordIds.message.count(id))
+            messageKept=false;
+    }
+    checks.check("typed_kept",
+        messageKept && idsWithin(kept.primitives, passwordIds.primitives) && idsWithin(kept.texts, passwordIds.texts),
+        "a keystroke that keeps the message wrote "+std::to_string(kept.texts.size())+" text ids, "
+        +std::string(messageKept?"none":"one")+" of them the message's");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    typeText(s, "cdefg");
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+    typeText(s, "h");
+
+    const CodeEditorFrame valid=codeEditorFrame(s);
+    const size_t validOutside=differencesOutsideRects(s, pixels, valid.pixels, {passwordRect});
+
+    checks.check("typed_valid",
+        !password->hasError() && idsWithin(valid.primitives, passwordIds.primitives)
+            && idsWithin(valid.texts, passwordIds.texts) && validOutside == 0,
+        "the eighth character left the error \""+password->getError()+"\" or wrote outside the field ("
+        +std::to_string(validOutside)+" pixels outside it)");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (4) Tab off the FocusLoss host field, empty: "required"
+    gweni::controls::TextBox *host=demo->hostField();
+    const gweni::Rect hostRect=host->getCanvasBounds();
+    const bool hostHadError=host->hasError();
+
+    clickMouse(s, hostRect.x+hostRect.w/2, hostRect.y+host->getFieldHeight()/2);
+    forgetMouse(s);
+    renderFrames(s, 1);
+    const bool typingClean=!host->hasError();
+    glfwKey(s, GLFW_KEY_TAB, GLFW_PRESS, 0);
+    glfwKey(s, GLFW_KEY_TAB, GLFW_RELEASE, 0);
+    renderFrames(s, 1);
+
+    checks.check("tab_required", !hostHadError && typingClean && host->getError() == "required" && !host->isFocussed(),
+        "Tab off the empty host field left the error \""+host->getError()+"\"");
+    shoot(s, shotDir+"/field-validation-required.png");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    checks.check("settled", idleWork == 0, "settled frames wrote or changed "+std::to_string(idleWork));
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()+liveTextIds()-idsBefore;
+
+    checks.check("ids_back", idsLeft == 0, std::to_string(idsLeft)+" ids not given back");
+
+    passed=checks.allPassed();
+    std::cout<<"field-validation";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<" set_prims="<<set.primitives.size()<<" set_texts="<<set.texts.size()<<" set_visited="<<set.visited
+             <<" field_entries="<<keyEntries<<" typed_texts="<<invalid.texts.size()<<"\n";
+    return ok;
+}
+
 static bool runCodeEditorScenario(Session &s, const std::string &shotDir, bool &passed)
 {
     s.freezeClock=true;
@@ -16994,6 +17245,15 @@ int main(int argc, char *argv[])
             ok=runNavigationRailScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;
+            break;
+        }
+
+        case Scenario::FieldValidation:
+        {
+            bool passed=false;
+            ok=runFieldValidationScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a message set or cleared did more than its field's part
             break;
         }
 

@@ -38,6 +38,7 @@
 #include "demo/popup.h"
 #include "demo/chipBadge.h"
 #include "demo/switch.h"
+#include "demo/fieldValidation.h"
 #include "demo/dialog.h"
 #include "demo/toast.h"
 #include "demo/crossSplitter.h"
@@ -246,6 +247,7 @@ void Demo::init(const String &name)
         addDemo<RadioButtonDemo>(cat, "RadioButtonDemo", "Radio button");
         addDemo<CheckBoxDemo>(cat, "CheckBoxDemo", "Check box");
         addDemo<SwitchDemo>(cat, "SwitchDemo", "Switch");
+        addDemo<FieldValidationDemo>(cat, "FieldValidationDemo", "Field validation");
         addDemo<NumericDemo>(cat, "NumericDemo", "Numeric");
         addDemo<SliderDemo>(cat, "SliderDemo", "Slider");
         addDemo<SliderTextDemo>(cat, "SliderTextDemo", "Slider text");
