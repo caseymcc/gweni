@@ -3528,6 +3528,54 @@ two programs and the draws. What follows describes both together:
   cell would take as its least), so in a row or a layout cell it is its text and
   padding wide. `tests/unit/chip.cpp` pins it; ChipBadgeDemo shows the tones, the
   palette, clickable and removable chips.
+- **The switch.** `controls::Switch` (`include/gweni/controls/switch.h`) is an on/off
+  toggle, a pill track with a round thumb (left while off, right while on), built on
+  `Button`'s toggle: `setIsToggle(true)`, the state is `getToggleState()` (`setOn`,
+  `isOn`, `toggle`), and a change fires Button's toggle callers, then `onToggled` and
+  `onToggledOn` or `onToggledOff`, once per real change, from a click, a key or `setOn`
+  alike; `setOn` with the value it has fires and marks nothing. Its label is the
+  switch's own Text (`setText`), not a control beside it as a `CheckBoxWithLabel`'s
+  is: the track sits in the switch's padding on the label's other side
+  (`setLabelOnLeft`, `TrackWidth` and `Gap` units wide), so a hover or a click
+  anywhere on it, label included, is the switch's, and a hover writes the track's
+  slot alone, with no `setLabelHovered` relay between two controls. Its colour stays
+  `Colors.Label.Default` (followed, so a theme edit reaches it) whatever the state,
+  hover and press, `Colors.Button.Disabled` while disabled, so none of them writes a
+  glyph. Its size is the track's (`TrackWidth` x `TrackHeight`, constants in the
+  header) and the label's beside it, so a toggle lays nothing out. It takes the
+  keyboard focus and Tab; Space and Return toggle it on their release, since a held
+  key repeats its press. Disabled, it takes no press, no keys, no focus and no Tab,
+  and gives up the focus it holds (`setDisabled`: a click would otherwise focus it,
+  as it does any control taking keys).
+
+  The textured `Switch` renderer has two slots: the track (style 4, its surface by
+  state: `SwitchTrackOff`, `SwitchTrackOffHover`, `SwitchTrackOn`,
+  `SwitchTrackOnHover`, `SwitchTrackDisabled`, `SwitchTrackOnDisabled`; focused, its
+  border is `SwitchFocus`'s colour and width, as a focused TextBox shows
+  `TextBoxFocus`'s border) and the thumb (style 4, `SwitchThumbOff`, `SwitchThumbOn`,
+  `SwitchThumbDisabled`, at `getZIndex()+1`, `depthLayers()` 2), each as round as its
+  height allows (the surfaces' radius is clamped to half of it). The thumb's look
+  follows the state alone, so a hover rewrites the track's slot and the thumb's keeps
+  its bytes.
+
+  A toggle slides the thumb over `SlideSeconds` (0.15 s for the whole travel, a half
+  cosine ease), on the canvas clock, by an animation registered with `anim::add` when
+  the slide starts and cancelled by the step that arrives, as the indeterminate
+  ProgressBar's is registered only while it moves. A toggle mid-slide starts again
+  from where the thumb is, over the part of the travel it has left. Each step places
+  the thumb (`getThumbPosition()`, 0..1; `getThumbRect()` rounds it to whole units)
+  and marks `StateChange_Background` only when that rect changed, as the
+  ProgressBar's `m_segmentMarked` does; the track's slot is redrawn with the same
+  bytes, so a slide frame writes the thumb's slot alone. The thumb jumps to its end,
+  with no animation, when the switch is not `visible()`, has not been rendered yet
+  (`Switch::render` notes the first time: a switch set on as its demo is built would
+  otherwise slide in its first frames; `StateChange_Created` is not a reliable sign of
+  that there) or `GWENI_ANIMATE` is off; a step that finds the switch not `visible()`
+  (a page hidden mid-slide) puts the thumb at its end and cancels itself, so the
+  frame after the hide runs no animation. The step has to run once for that: nothing
+  tells a control its `visible()` changed. `tests/unit/switch.cpp` pins the control;
+  `--scenario switch` (`controltest_switch`) its slots, pixels and animations on
+  SwitchDemo.
 - **Scale and the device-pixel grid.** Controls lay out in logical units (integers);
   `renderer::Base::translate()` turns them into device pixels at `scale()` (set by
   `Canvas::setScale`). It snaps **edges**, not origin and size apart: a point is
