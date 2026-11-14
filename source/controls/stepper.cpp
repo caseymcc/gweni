@@ -6,6 +6,7 @@
 
 
 #include <gweni/controls/stepper.h>
+#include <gweni/controls/canvas.h>
 #include <gweni/gweni.h>
 #include <gweni/skin.h>
 
@@ -348,6 +349,10 @@ GWENI_CONTROL_CONSTRUCTOR(Stepper)
 {
     m_body=newChild<Base>();
     m_body->setPlacement(Placement::Owner);
+    // the page area before the bar (Center is filled after the edges), so
+    // Tab goes through the page's controls before Back and Next
+    m_pageArea=m_body->newChild<Base>();
+    m_pageArea->setDock(DockPosition::Center);
     m_navigation=m_body->newChild<Base>();
     m_navigation->setDock(DockPosition::Bottom);
     m_navigation->setMargin(Margin(0, NavigationGap, 0, 0));
@@ -357,8 +362,6 @@ GWENI_CONTROL_CONSTRUCTOR(Stepper)
     m_next=m_navigation->newChild<Button>();
     navigationButton(m_next, FinishText, DockPosition::Right);
     m_next->onPressCaller.add(this, &ThisClass::onNextPressed);
-    m_pageArea=m_body->newChild<Base>();
-    m_pageArea->setDock(DockPosition::Center);
 }
 
 // The steps are deleted by Base's destructor; none may ask the stepper
@@ -391,6 +394,9 @@ Base *Stepper::addStep(const String &title, const String &subtitle)
     step->setSubtitle(subtitle);
     m_steps.push_back(step);
     updateStepInput(step);
+    // the body after every step, so Tab reaches the steps before the page
+    // and its Back and Next (Tab walks the children in order)
+    m_body->bringToFront();
 
     Step data;
 
@@ -422,6 +428,10 @@ void Stepper::setCurrentStep(int index)
     // with it
     if(isVertical())
         invalidate();
+    // another page under a resting mouse, and when vertical the steps after
+    // the new one and the body moved: hit-test the hover again once laid out
+    if(Canvas *canvas=getCanvas())
+        canvas->hoverMayHaveMoved();
 }
 
 void Stepper::setStepState(int index, StepState state)
