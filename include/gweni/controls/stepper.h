@@ -45,7 +45,10 @@ enum class StepLook
 //! the disabled one).
 //!
 //! It is the Stepper's to place and to give its look (setLook); a step is a
-//! Button so that a non-linear stepper's steps take the mouse and the keys.
+//! Button so that a non-linear stepper's steps take the mouse and the keys: a
+//! click, Return or Space goes to it (Stepper::goTo, through the veto), and
+//! Left/Right (Up/Down in a vertical stepper) move the focus between the
+//! enabled steps. A linear stepper's steps take no input at all.
 class GWENI_EXPORT StepperStep: public Button
 {
 public:
@@ -87,6 +90,17 @@ public:
 
     //! The title colour for the look.
     void updateColors() override;
+
+    //! A non-linear stepper's: goTo() this step.
+    void onPress(event::Info info) override;
+    bool onKeySpace(bool down) override;
+    bool onKeyReturn(bool down) override;
+    bool onKeyLeft(bool down) override;
+    bool onKeyRight(bool down) override;
+    bool onKeyUp(bool down) override;
+    bool onKeyDown(bool down) override;
+    //! The stepper's one Tab stop alone (Stepper::getTabStop()).
+    bool isTabable() override;
 
     void calculateSize(skin::Base *skin, Dim dim) override;
 
@@ -155,6 +169,31 @@ protected:
 //! header. Vertical (MUI's vertical stepper): the steps in a column, the
 //! current step's page under its header, indented to its title, with the
 //! connector running down beside it; the steps after it move with the page.
+//!
+//! Navigation: next(), back() and goTo() ask first. onStepChanging fires with
+//! info.point (from, to) and info.integer the step it would go to (also
+//! getChangingFrom()/getChangingTo() while it runs); a handler that calls
+//! vetoStepChange() (a page whose form does not validate) leaves everything as
+//! it was, and may set the step's state to Error. Otherwise the step changes
+//! (setCurrentStep's work) and onStepChanged fires with the same info. next()
+//! and back() go to the nearest step that is not Disabled; on a step with
+//! none after it, next() is Finish: onStepChanging asks with to =
+//! getStepCount(), and unless vetoed onFinish fires, the step unchanged.
+//!
+//! The body holds the page area and, under it, the navigation bar: Back at
+//! its left, Next at its right, reading "Finish" when next() would finish
+//! (backButton(), nextButton(); setShowNavigation(false) hides the bar).
+//! Back stays enabled on the first step, where back() does nothing, so a step
+//! change repaints no button but Next's text when it turns to or from
+//! "Finish".
+//!
+//! Linear (the default): the steps take no input; only next(), back() and
+//! the app's goTo() move. Non-linear (MUI's non-linear stepper): each enabled
+//! step is clickable and goes to its step through the same veto, and the
+//! steps are one Tab stop (getTabStop()) in which Left/Right, or Up/Down when
+//! vertical, move the focus and Return or Space go to the focused step.
+//! Escape does nothing. A Disabled step is never clicked, focused or gone to
+//! by next()/back(); goTo() refuses it.
 //!
 //! The steps, connectors and the body (the page area) are owner-placed by the
 //! stepper, which draws nothing itself.
@@ -227,6 +266,48 @@ public:
     //! or the current step (vertical).
     Base *getBody() const { return m_body; }
 
+    //! To the next step that is not Disabled, or Finish when there is none
+    //! (see the class comment); false if vetoed or nothing happened.
+    bool next();
+    //! To the previous step that is not Disabled; false if there is none or
+    //! the change was vetoed.
+    bool back();
+    //! To step \p index through the veto; false if vetoed, out of range,
+    //! Disabled or already current. The app's to call in either mode.
+    bool goTo(int index);
+    //! Whether next() would finish: no step after the current one that is
+    //! not Disabled.
+    bool isAtLastStep() const;
+
+    //! From an onStepChanging handler: the change does not happen.
+    void vetoStepChange() { m_changeVetoed=true; }
+    //! The change being asked about, while onStepChanging runs (-1 else).
+    int getChangingFrom() const { return m_changingFrom; }
+    int getChangingTo() const { return m_changingTo; }
+
+    //! Non-linear makes the steps clickable and focusable.
+    void setLinear(bool linear);
+    bool isLinear() const { return m_linear; }
+
+    void setShowNavigation(bool show);
+    bool showsNavigation() const;
+    Button *nextButton() const { return m_next; }
+    Button *backButton() const { return m_back; }
+    Base *navigation() const { return m_navigation; }
+
+    //! The step Tab enters a non-linear stepper at: the focused step, else
+    //! the current one, else the first enabled one; null when linear or none
+    //! is enabled.
+    StepperStep *getTabStop() const;
+    //! Focuses the enabled step \p steps from the Tab stop, stopping at the
+    //! ends; false when linear or there is none to go to.
+    bool moveFocus(int steps);
+
+    //! Fired with info.point (from, to); see the class comment.
+    event::Caller onStepChanging;
+    event::Caller onStepChanged;
+    event::Caller onFinish;
+
     void setOrientation(Orientation orientation);
     Orientation getOrientation() const { return m_orientation; }
     bool isVertical() const { return m_orientation == Orientation::Vertical; }
@@ -238,8 +319,18 @@ protected:
     void arrange(skin::Base *skin, Dim dim) override;
 
     //! Every step's look and every connector's colour from the states and
-    //! the current step; only what changed is marked.
+    //! the current step, and Next's text; only what changed is marked.
     void updateLooks();
+    //! Each step's input for the mode and its state.
+    void updateStepInput(StepperStep *step);
+    //! The nearest step from the current one in \p direction that is not
+    //! Disabled, -1 for none.
+    int nearestEnabled(int direction) const;
+    //! onStepChanging for (from, to): whether it was let through and the
+    //! current step is still from.
+    bool askChange(int from, int to);
+    void onNextPressed(event::Info info);
+    void onBackPressed(event::Info info);
 
     struct Step
     {
@@ -252,8 +343,15 @@ protected:
     std::vector<StepperConnector *> m_connectors;
     Base *m_body=nullptr;
     Base *m_pageArea=nullptr;
+    Base *m_navigation=nullptr;
+    Button *m_back=nullptr;
+    Button *m_next=nullptr;
     int m_current=0;
     Orientation m_orientation=Orientation::Horizontal;
+    bool m_linear=true;
+    bool m_changeVetoed=false;
+    int m_changingFrom=-1;
+    int m_changingTo=-1;
 };
 
 }//namespace controls
