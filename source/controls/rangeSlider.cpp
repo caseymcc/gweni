@@ -342,7 +342,7 @@ int RangeSlider::positionOf(double value) const
 
 Rect RangeSlider::getTrackBounds() const
 {
-    Rect r(0, 0, getWidth(), getHeight());
+    Rect r=getRenderBounds();
 
     if(m_valueTexts[0] && !m_horizontal)
         r.w=std::max(0, r.w-ValueTextGap-m_valueColumn);
@@ -352,8 +352,14 @@ Rect RangeSlider::getTrackBounds() const
 Rect RangeSlider::getFillBounds() const
 {
     const Rect track=getTrackBounds();
-    const Rect low=m_thumbs[0]->getBounds();
-    const Rect high=m_thumbs[1]->getBounds();
+    Rect low=getThumbRect(0);
+    Rect high=getThumbRect(1);
+
+    // the thumbs' rects are in this control's units, the track in its parent's
+    low.x+=track.x;
+    low.y+=track.y;
+    high.x+=track.x;
+    high.y+=track.y;
 
     if(m_horizontal)
     {
@@ -367,20 +373,49 @@ Rect RangeSlider::getFillBounds() const
     return Rect(track.x, from, track.w, std::max(0, low.y+low.h/2-from));
 }
 
-void RangeSlider::placeThumb(int thumb)
+Rect RangeSlider::getThumbRect(int thumb) const
 {
-    const int position=positionOf(m_values[thumb]);
+    const int position=positionOf(m_values[thumb?1:0]);
 
     if(m_horizontal)
-        placeChild(m_thumbs[thumb], position, 0, ThumbLength, getHeight());
-    else
-        placeChild(m_thumbs[thumb], 0, position, getTrackBounds().w, ThumbLength);
+        return Rect(position, 0, ThumbLength, getHeight());
+    return Rect(0, position, getTrackBounds().w, ThumbLength);
+}
+
+// A thumb's own bounds are the track's column, fixed: it draws, and is hit,
+// at getThumbRect(), so a value change marks it and moves no control (a move
+// would lay the way down to it out again).
+void RangeSlider::placeThumb(int thumb)
+{
+    placeChild(m_thumbs[thumb], 0, 0, getTrackBounds().w, getHeight());
+    m_thumbs[thumb]->redraw();
 }
 
 void RangeSlider::placeThumbs()
 {
     placeThumb(0);
     placeThumb(1);
+}
+
+// The thumbs by their rects, the front one first; anywhere else this control.
+Base *RangeSlider::getControlAt(int x, int y, bool onlyIfMouseEnabled)
+{
+    countHitTestVisit();
+
+    if(hidden() || x < 0 || y < 0 || x >= getWidth() || y >= getHeight())
+        return nullptr;
+
+    for(int thumb:{m_front, 1-m_front})
+    {
+        const Rect r=getThumbRect(thumb);
+
+        if(x >= r.x && y >= r.y && x < r.x+r.w && y < r.y+r.h && !m_thumbs[thumb]->hidden())
+            return m_thumbs[thumb];
+    }
+
+    if(onlyIfMouseEnabled && !getMouseInputEnabled())
+        return nullptr;
+    return this;
 }
 
 void RangeSlider::layout(skin::Base * /*skin*/)
@@ -511,6 +546,8 @@ void RangeSlider::syncValueTextControls()
             // after the thumbs, so they are numbered, and drawn, over them
             m_valueTexts[i]=newChild<internal::Text>();
             m_valueTexts[i]->setPlacement(Placement::Owner);
+            // a value of the same width redraws the glyphs and lays nothing out
+            m_valueTexts[i]->setSameSizeKeepsLayout(true);
         }
         else if((i >= needed) && m_valueTexts[i])
         {
@@ -643,7 +680,9 @@ void RangeSlider::thumbPressed(int thumb, Point local, bool down)
     // two thumbs at one value: the drag's first move picks
     m_pending=(m_values[0] == m_values[1]);
     m_pressAt=along(local);
-    startDrag(thumb, along(local)-(m_horizontal?m_thumbs[thumb]->getX():m_thumbs[thumb]->getY()));
+    const Rect rect=getThumbRect(thumb);
+
+    startDrag(thumb, along(local)-(m_horizontal?rect.x:rect.y));
 }
 
 void RangeSlider::thumbMoved(int thumb, Point local)

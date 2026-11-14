@@ -1608,6 +1608,17 @@ public:
     //! Thumb size across the slider's axis (it is never drawn thicker than its bounds).
     static constexpr int ThumbThickness=20;
     static constexpr int TrackThickness=4;
+    static constexpr int TickLength=4;
+
+    //! The track rect in a track column `r` with a thumb `bar` (a field the
+    //! thumb's height with `field`); RangeSlider's renderer draws its track
+    //! with it too.
+    static gweni::Rect trackRect(const gweni::Rect &r, const gweni::Rect &bar, bool horizontal, bool field,
+        size_t ticks);
+    //! The `ticks` notch ticks in `ids`, for `notches` notches.
+    static void paintTicks(renderer::Base *renderer, const size_t *ids, controls::Base *baseControl,
+        const gweni::Rect &r, const gweni::Rect &track, const gweni::Rect &bar, bool horizontal, bool field,
+        int notches, size_t ticks);
 
 private:
     void resizePrimitives(renderer::Base *renderer, size_t count);
@@ -1625,6 +1636,42 @@ public:
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
     inline static const std::string_view name="SliderBar";
+};
+
+// controls::RangeSlider: a Slider's track (a field with a value text, as a
+// Slider's), the range between its thumbs' centres filled over it at z+1
+// (RangeSliderFill, RangeSliderFillDisabled), and a tick per notch position
+// while clamped to them, the slot list grown or shrunk to 2+ticks in
+// update(). The two thumbs are their own controls (RangeSliderThumb below)
+// but draw in this control's z+2 and z+3, the front thumb
+// (controls::RangeSlider::getFrontThumb(), the one dragged or focused last) at
+// z+3, so it is over the other where they overlap; depthLayers() is 4.
+class RangeSlider:public textured::ControlRegister<RangeSlider>
+{
+public:
+    static void staticInit(TexturedSkin *skin) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    size_t depthLayers() override { return 4; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="RangeSlider";
+};
+
+// A RangeSlider's thumb: the SliderBar's surfaces by state, a focused thumb's
+// border in RangeSliderThumbFocus's colour and width, drawn at its slider's
+// z+2, or z+3 while it is the front thumb.
+class RangeSliderThumb:public textured::ControlRegister<RangeSliderThumb>
+{
+public:
+    static void staticInit(TexturedSkin *skin) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 1; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="RangeSliderThumb";
 };
 
 // controls::ColorLerpBox, the saturation/value box: one bilinear fill (white

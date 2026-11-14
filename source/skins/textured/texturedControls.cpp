@@ -15,6 +15,7 @@
 #include "gweni/controls/collapsibleCategory.h"
 #include "gweni/controls/listBox.h"
 #include "gweni/controls/slider.h"
+#include "gweni/controls/rangeSlider.h"
 #include "gweni/controls/spinner.h"
 #include "gweni/controls/plotHistogram.h"
 #include "gweni/controls/plotLines.h"
@@ -1723,23 +1724,13 @@ void Slider::resizePrimitives(renderer::Base *renderer, size_t count)
     }
 }
 
-void Slider::update(renderer::Base *renderer, controls::Base *baseControl)
+// The track of a slider whose track bounds are `r` and whose thumb is `bar`:
+// between the thumb's centre at either end of its travel, or with a value
+// text a horizontal field the thumb's height (shared with RangeSlider).
+gweni::Rect Slider::trackRect(const gweni::Rect &r, const gweni::Rect &bar, bool horizontal, bool field,
+    size_t ticks)
 {
-    controls::Slider *slider=static_cast<controls::Slider *>(baseControl);
-    const int notches=slider->getClampToNotches()?slider->getNotchCount():0;
-    const size_t ticks=(notches > 0)?size_t(notches)+1:0;
-
-    resizePrimitives(renderer, 1+ticks);
-
-    // The track runs between the thumb's centre at either end of its travel,
-    // in the slider's track column (all of it but a vertical value text's).
-    const gweni::Rect r=slider->getTrackBounds();
-    const gweni::Rect bar=slider->getSliderBar()->getBounds();
-    const bool horizontal=slider->isHorizontal();
-    // With a value text a horizontal track is a field the thumb's height and
-    // the slider's length, the text centred in it (imgui's SliderFloat).
-    const bool field=horizontal && slider->getValueTextControl();
-    const int tickLength=4;
+    const int tickLength=TickLength;
     gweni::Rect track;
 
     if(field)
@@ -1764,10 +1755,17 @@ void Slider::update(renderer::Base *renderer, controls::Base *baseControl)
         track.h=std::max(track.h, 0);
     }
 
-    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::SliderTrack, track);
+    return track;
+}
 
-    // Ticks beside the thumb (below it, or right of it), clear of the track so
-    // they never share its depth, and pulled in to stay inside a thin slider.
+// Ticks beside the thumb (below it, or right of it), clear of the track so
+// they never share its depth, and pulled in to stay inside a thin slider:
+// `ticks` of them in `ids`, at the control's z (shared with RangeSlider).
+void Slider::paintTicks(renderer::Base *renderer, const size_t *ids, controls::Base *baseControl,
+    const gweni::Rect &r, const gweni::Rect &track, const gweni::Rect &bar, bool horizontal, bool field,
+    int notches, size_t ticks)
+{
+    const int tickLength=TickLength;
     const bool visible=baseControl->visible();
     const tokyonight::Surface &notch=tokyonight::SliderNotch;
     const int crossSize=horizontal?r.h:r.w;
@@ -1781,7 +1779,7 @@ void Slider::update(renderer::Base *renderer, controls::Base *baseControl)
 
     for(size_t i=0; i<ticks; ++i)
     {
-        const size_t id=m_primitives[1+i];
+        const size_t id=ids[i];
 
         if(!visible)
         {
@@ -1807,6 +1805,135 @@ void Slider::update(renderer::Base *renderer, controls::Base *baseControl)
         renderer->drawRoundedRect(id, tick, notch.radius, notch.borderWidth,
             notch.top, notch.bottom, notch.border, baseControl->getZIndex());
     }
+}
+
+
+void Slider::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    controls::Slider *slider=static_cast<controls::Slider *>(baseControl);
+    const int notches=slider->getClampToNotches()?slider->getNotchCount():0;
+    const size_t ticks=(notches > 0)?size_t(notches)+1:0;
+
+    resizePrimitives(renderer, 1+ticks);
+
+    // The track runs between the thumb's centre at either end of its travel,
+    // in the slider's track column (all of it but a vertical value text's).
+    const gweni::Rect r=slider->getTrackBounds();
+    const gweni::Rect bar=slider->getSliderBar()->getBounds();
+    const bool horizontal=slider->isHorizontal();
+    // With a value text a horizontal track is a field the thumb's height and
+    // the slider's length, the text centred in it (imgui's SliderFloat).
+    const bool field=horizontal && slider->getValueTextControl();
+    const gweni::Rect track=trackRect(r, bar, horizontal, field, ticks);
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::SliderTrack, track);
+
+    paintTicks(renderer, m_primitives.data()+1, baseControl, r, track, bar, horizontal, field, notches, ticks);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//RangeSlider
+static void resizePlotPrimitives(renderer::Base *renderer, std::vector<size_t> &primitives, size_t count);
+
+// A surface at `z` in `id`, shown or hidden on the control's visibility, as
+// tokyonight::paintSurface does at the control's own z.
+static void paintSurfaceAt(renderer::Base *renderer, size_t id, controls::Base *control,
+    const tokyonight::Surface &surface, const gweni::Rect &rect, int z)
+{
+    const bool visible=control->visible();
+
+    if(visible)
+        renderer->drawRoundedRect(id, rect, surface.radius, surface.borderWidth,
+            surface.top, surface.bottom, surface.border, z);
+
+    const unsigned int sc=control->getStateChange();
+
+    if((sc&controls::StateChange_Visibility) || (sc&controls::StateChange_Created))
+        renderer->showPrimitive(visible?4:0, id);
+}
+
+void RangeSlider::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    controls::RangeSlider *slider=static_cast<controls::RangeSlider *>(baseControl);
+    const int notches=slider->getClampToNotches()?slider->getNotchCount():0;
+    const size_t ticks=(notches > 0)?size_t(notches)+1:0;
+
+    resizePlotPrimitives(renderer, m_primitives, 2+ticks);
+
+    const gweni::Rect r=slider->getTrackBounds();
+    // only its length along the track is read
+    const gweni::Rect bar=slider->getThumbRect(0);
+    const bool horizontal=slider->isHorizontal();
+    const bool field=horizontal && slider->getValueTextControl(0);
+    const gweni::Rect track=Slider::trackRect(r, bar, horizontal, field, ticks);
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::SliderTrack, track);
+
+    // The fill between the thumbs' centres, across the track (inside a
+    // field's border).
+    const gweni::Rect between=slider->getFillBounds();
+    const int inset=field?int(tokyonight::SliderTrack.borderWidth):0;
+    gweni::Rect fill;
+
+    if(horizontal)
+        fill=gweni::Rect(between.x, track.y+inset, between.w, std::max(0, track.h-2*inset));
+    else
+        fill=gweni::Rect(track.x, between.y, track.w, between.h);
+
+    paintSurfaceAt(renderer, m_primitives[1], baseControl,
+        slider->isDisabled()?tokyonight::RangeSliderFillDisabled:tokyonight::RangeSliderFill, fill,
+        baseControl->getZIndex()+1);
+
+    Slider::paintTicks(renderer, m_primitives.data()+2, baseControl, r, track, bar, horizontal, field, notches,
+        ticks);
+}
+
+
+///////////////////////////////////////////////////////////////////////////
+//RangeSliderThumb
+void RangeSliderThumb::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    controls::internal::RangeSliderThumb *bar=static_cast<controls::internal::RangeSliderThumb *>(baseControl);
+    controls::RangeSlider *slider=bar->getRangeSlider();
+    tokyonight::Surface surface;
+
+    if(bar->isDisabled())
+        surface=tokyonight::SliderThumbDisabled;
+    else if(bar->isDepressed())
+        surface=tokyonight::SliderThumbDown;
+    else if(bar->isHovered())
+        surface=tokyonight::SliderThumbHover;
+    else
+        surface=tokyonight::SliderThumb;
+
+    if(!bar->isDisabled() && bar->isFocussed())
+    {
+        surface.border=tokyonight::RangeSliderThumbFocus.border;
+        surface.borderWidth=tokyonight::RangeSliderThumbFocus.borderWidth;
+    }
+
+    // At its rect in its slider (the thumb control is the track's column, at
+    // the slider's origin), as a SliderBar at most Slider::ThumbThickness
+    // thick, centred.
+    gweni::Rect thumb=slider?slider->getThumbRect(bar->getIndex()):baseControl->getRenderBounds();
+
+    if(bar->isHorizontal())
+    {
+        const int h=std::min(thumb.h, Slider::ThumbThickness);
+        thumb.y+=(thumb.h-h)/2;
+        thumb.h=h;
+    }
+    else
+    {
+        const int w=std::min(thumb.w, Slider::ThumbThickness);
+        thumb.x+=(thumb.w-w)/2;
+        thumb.w=w;
+    }
+
+    const int z=slider?slider->getZIndex()+2+(slider->getFrontThumb() == bar->getIndex()?1:0)
+        :baseControl->getZIndex();
+
+    paintSurfaceAt(renderer, m_primitives[0], baseControl, surface, thumb, z);
 }
 
 
@@ -5013,6 +5140,8 @@ template class ControlRegister<BaseScrollBar>;
 template class ControlRegister<Shadow>;
 template class ControlRegister<Slider>;
 template class ControlRegister<SliderBar>;
+template class ControlRegister<RangeSlider>;
+template class ControlRegister<RangeSliderThumb>;
 template class ControlRegister<PlotHistogram>;
 template class ControlRegister<PlotLines>;
 template class ControlRegister<Chart>;

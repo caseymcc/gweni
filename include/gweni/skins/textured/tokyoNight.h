@@ -180,6 +180,12 @@ inline Surface SliderThumb        { SurfHi,                Surf,                
 inline Surface SliderThumbHover   { SurfHover,             SurfHi,                Cyan,  RadiusSm, BorderW };
 inline Surface SliderThumbDown    { Blue,                  DarkBlue,              Cyan,  RadiusSm, BorderW };
 inline Surface SliderThumbDisabled{ BgStorm,               Color(0x1f,0x22,0x33), BgHighlight, RadiusSm, BorderW };
+// RangeSlider: the Slider's track, ticks and thumbs, the range between the
+// thumbs filled over the track, and a focused thumb drawn with
+// RangeSliderThumbFocus's border colour and width (only those are read).
+inline Surface RangeSliderFill        { Color(0x3d,0x59,0xa1), Color(0x34,0x4d,0x8c), Blue, 2.0f, 0.0f };
+inline Surface RangeSliderFillDisabled{ Color(0x26,0x2f,0x4d), Color(0x22,0x2a,0x45), Color(0x31,0x3d,0x63), 2.0f, 0.0f };
+inline Surface RangeSliderThumbFocus  { SurfHi,                Surf,                  Cyan,  RadiusSm, 2.0f };
 
 // Splitter bars: a flat bar a few units thick, so a small radius and no border
 inline Surface SplitterBar        { Line,                  Line,                  Line,    2.0f,     0.0f };
@@ -474,6 +480,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"ProgressBack",&ProgressBack},{"ProgressFront",&ProgressFront},
         {"SliderTrack",&SliderTrack},{"SliderNotch",&SliderNotch},{"SliderThumb",&SliderThumb},
         {"SliderThumbHover",&SliderThumbHover},{"SliderThumbDown",&SliderThumbDown},{"SliderThumbDisabled",&SliderThumbDisabled},
+        {"RangeSliderFill",&RangeSliderFill},{"RangeSliderFillDisabled",&RangeSliderFillDisabled},{"RangeSliderThumbFocus",&RangeSliderThumbFocus},
         {"SplitterBar",&SplitterBar},{"SplitterBarHover",&SplitterBarHover},{"SplitterBarDown",&SplitterBarDown},
         {"SplitterBarDisabled",&SplitterBarDisabled},
         {"CheckOff",&CheckOff},{"CheckOn",&CheckOn},{"CheckHover",&CheckHover},{"CheckDisabled",&CheckDisabled},

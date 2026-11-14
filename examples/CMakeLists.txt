@@ -94,6 +94,8 @@ set(GWENI_DEMO_SOURCES
     demo/showcaseWindows.h
     demo/slider.cpp
     demo/slider.h
+    demo/rangeSlider.cpp
+    demo/rangeSlider.h
     demo/sliderText.cpp
     demo/sliderText.h
     demo/dragNumber.cpp

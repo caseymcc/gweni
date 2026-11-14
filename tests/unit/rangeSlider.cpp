@@ -124,8 +124,8 @@ struct Scene
     //! The thumb's position along the axis, in the slider's coordinates.
     int thumb(int i) const
     {
-        Base *bar=slider->getThumb(i);
-        return horizontal?bar->getX():bar->getY();
+        const Rect rect=slider->getThumbRect(i);
+        return horizontal?rect.x:rect.y;
     }
 
     //! The canvas point `along` units down the slider's axis, mid-way across.
@@ -483,9 +483,9 @@ TEST_CASE("RangeSlider: the geometry, horizontal and vertical")
         r->setValues(20, 60);
         s.frame();
         CHECK(r->getTravel() == 100);
-        CHECK(str(r->getThumb(0)->getBounds()) == str(Rect(20, 0, Thumb, 20)));
-        CHECK(str(r->getThumb(1)->getBounds()) == str(Rect(60, 0, Thumb, 20)));
-        CHECK(str(r->getFillBounds()) == str(Rect(20+Thumb/2, 0, 40, 20)));
+        CHECK(str(r->getThumbRect(0)) == str(Rect(20, 0, Thumb, 20)));
+        CHECK(str(r->getThumbRect(1)) == str(Rect(60, 0, Thumb, 20)));
+        CHECK(str(r->getFillBounds()) == str(Rect(Origin+20+Thumb/2, Origin, 40, 20)));
     }
     {
         Scene s(false, 100);
@@ -493,9 +493,9 @@ TEST_CASE("RangeSlider: the geometry, horizontal and vertical")
 
         r->setValues(20, 60);
         s.frame();
-        CHECK(str(r->getThumb(0)->getBounds()) == str(Rect(0, 80, 20, Thumb)));
-        CHECK(str(r->getThumb(1)->getBounds()) == str(Rect(0, 40, 20, Thumb)));
-        CHECK(str(r->getFillBounds()) == str(Rect(0, 40+Thumb/2, 20, 40)));
+        CHECK(str(r->getThumbRect(0)) == str(Rect(0, 80, 20, Thumb)));
+        CHECK(str(r->getThumbRect(1)) == str(Rect(0, 40, 20, Thumb)));
+        CHECK(str(r->getFillBounds()) == str(Rect(Origin, Origin+40+Thumb/2, 20, 40)));
         // a text column right of the track
         r->setValueFormat("%.0f");
         s.frame();
