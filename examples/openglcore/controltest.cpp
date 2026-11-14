@@ -170,7 +170,7 @@
  *                       stats-overlay | depth-view | zoom-panel |
  *                       node-graph | code-editor | log-view |
  *                       chip-badge | navigation-rail | flow | board |
- *                       switch | image-grid (see below)
+ *                       switch | image-grid | segmented (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -1020,6 +1020,30 @@
  *                 pixels back, settled frames write nothing, and the demo
  *                 gives its ids and images back. Exits non-zero if any check
  *                 is no.
+ *    segmented    SegmentedButtonsDemo, the clock frozen (segmented.png): the
+ *                 view row's joints measured on the settled frame, then with
+ *                 the demo's selection label not updating: the mouse onto
+ *                 Month and off, a click on it (Week selected before), Right
+ *                 and Left, then the Format row's Underline focused, toggled
+ *                 by Space twice and by two clicks; last the label updating
+ *                 again and a click on Day. One line
+ *                   segmented joints=yes|no ... ids_back=yes|no border_px=N
+ *                     outer=N 0|1=N ...
+ *                 reports the checks: every inner joint of the view row,
+ *                 scanned just under the top border from one segment's
+ *                 middle to the next one's, is one run of the border colour
+ *                 as wide as the outer border (max(1, snap(1)) device px);
+ *                 the hover writes the segment's one slot, no glyph and no
+ *                 pixel outside it, marks no control outside it, and moving
+ *                 off gives the frame back; the click and each key write the
+ *                 two segments' slots and glyphs alone, mark no control
+ *                 outside them, lay nothing out and change no pixel outside
+ *                 them, and
+ *                 Left gives the frame before Right back; each toggle writes
+ *                 the one segment, lays nothing out, and the second gives the
+ *                 first frame back; the label names the view chosen; settled
+ *                 frames write nothing; the demo gives every id back. Exits
+ *                 non-zero if any check is no.
  *    virtual-list VirtualListDemo with its list at 1 000 and then 100 000
  *                 items, the clock frozen: a settled frame, a one-row scroll
  *                 from the top (scrollByRows) and a wheel notch over the list
@@ -1213,6 +1237,7 @@
 #include <gweni/controls/label.h>
 #include <gweni/controls/menu.h>
 #include <gweni/controls/button.h>
+#include <gweni/controls/segmentedButtons.h>
 #include <gweni/controls/selectable.h>
 #include <gweni/controls/toolTip.h>
 #include <gweni/controls/popup.h>
@@ -1273,6 +1298,7 @@
 #include <gweni/controls/switch.h>
 #include <demo/navigationRail.h>
 #include <gweni/controls/navigationRail.h>
+#include <demo/segmentedButtons.h>
 #include <gweni/controls/badge.h>
 #include <gweni/controls/chip.h>
 #include <demo/dialog.h>
@@ -1436,7 +1462,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(ChartAreasDemo) X(TimelineDemo) X(ComboBoxDemo) \
-    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(NavigationRailDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
+    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(NavigationRailDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(SegmentedButtonsDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(SwitchDemo) X(FieldValidationDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
@@ -1536,7 +1562,7 @@ static void printUsage(std::ostream &out)
          "                     | stats-overlay | depth-view | zoom-panel\n"
          "                     | node-graph | code-editor | log-view | chip-badge\n"
          "                     | navigation-rail | flow | board | switch\n"
-         "                     | image-grid;\n"
+         "                     | image-grid | segmented;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -2587,7 +2613,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
-    ChipBadge, NavigationRail, Flow, Board, Switch, FieldValidation, ImageGrid };
+    ChipBadge, NavigationRail, Flow, Board, Switch, FieldValidation, ImageGrid, Segmented };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2629,6 +2655,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "switch") scenario=Scenario::Switch;
     else if(name == "field-validation") scenario=Scenario::FieldValidation;
     else if(name == "image-grid") scenario=Scenario::ImageGrid;
+    else if(name == "segmented") scenario=Scenario::Segmented;
     else return false;
     return true;
 }
@@ -12338,6 +12365,301 @@ static bool runSwitchScenario(Session &s, const std::string &shotDir, bool &pass
 }
 
 //-----------------------------------------------------------------------------
+// --scenario segmented: SegmentedButtonsDemo's rows, the clock frozen
+//
+// A segment's state is drawn by its own slot alone: a joint between two
+// segments is its left one's border column (the right one is drawn from a
+// Joint in, no border on its left), so a hover writes the hovered segment's
+// slot, an exclusive selection the two segments it leaves and reaches (their
+// fills and their glyphs' colours), a multi toggle its one segment, and none
+// of them lays anything out (the check's room is kept in every segment of a
+// row that shows checks). The demo's selection label is the app's reply to
+// onSelectionChange: its new text is laid out, so the cost checks are made
+// with its updates off and the label is checked on its own at the end. The
+// mouse moves off the canvas between the inputs, so no press leaves the page
+// behind the rows hovered (its own repaint).
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+// The device-pixel runs of the segment border's colour (each channel within
+// 2) on device row `y` from x0 up to x1: their starts and lengths.
+std::vector<std::pair<int, int>> borderRuns(const Session &s, const std::vector<uint8_t> &pixels, int y,
+    int x0, int x1)
+{
+    const gweni::Color &border=gweni::skin::textured::tokyonight::Segment.border;
+    std::vector<std::pair<int, int>> runs;
+
+    if(y < 0 || y >= s.pixels.y)
+        return runs;
+    for(int x=std::max(x0, 0); x < std::min(x1, s.pixels.x); ++x)
+    {
+        const size_t at=(static_cast<size_t>(y)*s.pixels.x+x)*4;
+        const bool match=std::abs(int(pixels[at])-int(border.r)) <= 2 && std::abs(int(pixels[at+1])-int(border.g)) <= 2
+            && std::abs(int(pixels[at+2])-int(border.b)) <= 2;
+
+        if(!match)
+            continue;
+        if(!runs.empty() && runs.back().first+runs.back().second == x)
+            ++runs.back().second;
+        else
+            runs.push_back({x, 1});
+    }
+    return runs;
+}
+
+}//namespace
+
+static bool runSegmentedScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    checks.scenario="segmented";
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    gweni::controls::Base *control=addControl(s, "SegmentedButtonsDemo");
+    auto *demo=gweni::gweni_cast<gweni::SegmentedButtonsDemo>(control);
+
+    if(!demo)
+    {
+        std::cerr<<"ControlTest: segmented: SegmentedButtonsDemo was not built\n";
+        return false;
+    }
+
+    s.label="segmented";
+    renderFrames(s, s.frames);
+
+    bool ok=shoot(s, shotDir+"/segmented.png");
+    std::vector<uint8_t> pixels;
+    size_t idleWork=settleCodeEditor(s, pixels);
+    gweni::controls::SegmentedButtons *row=demo->textRow();
+    auto idsOf=[](std::initializer_list<gweni::controls::Base *> controls, std::set<size_t> &primitives,
+        std::set<size_t> &texts) {
+        for(gweni::controls::Base *part : controls)
+            subtreeIds(part, primitives, texts);
+    };
+
+    // (1) every inner joint of the view row is one border column, as wide as
+    // the row's outer left border: the joints just under the top border
+    // (above the text), the outer one at mid-height (clear of its corner)
+    const int borderPx=std::max(1, gweni::renderer::Base::snap(gweni::skin::textured::tokyonight::Segment.borderWidth,
+        s.scale));
+    bool jointsOk=true;
+    std::string joints;
+
+    {
+        const gweni::Rect first=row->getSegment(0)->getCanvasBounds();
+        const int y=devicePixels(gweni::Point(0, first.y), s.scale).y+borderPx+1;
+        const int left=devicePixels(gweni::Point(first.x, 0), s.scale).x;
+        // the outer border at mid-height, clear of the rounded corner
+        const auto outer=borderRuns(s, pixels, devicePixels(gweni::Point(0, first.y+first.h/2), s.scale).y,
+            left-2, left+4*borderPx);
+
+        jointsOk=(outer.size() == 1) && (outer[0].second == borderPx);
+        joints="outer="+std::to_string(outer.empty()?0:outer[0].second);
+        for(int i=0; i+1 < row->segmentCount(); ++i)
+        {
+            const gweni::Rect a=row->getSegment(i)->getCanvasBounds();
+            const gweni::Rect b=row->getSegment(i+1)->getCanvasBounds();
+            const auto runs=borderRuns(s, pixels, y, devicePixels(gweni::Point(a.x+a.w/2, 0), s.scale).x,
+                devicePixels(gweni::Point(b.x+b.w/2, 0), s.scale).x);
+
+            joints+=" "+std::to_string(i)+"|"+std::to_string(i+1)+"=";
+            for(size_t r=0; r < runs.size(); ++r)
+                joints+=(r?",":"")+std::to_string(runs[r].second);
+            if(runs.size() != 1 || runs[0].second != borderPx)
+                jointsOk=false;
+        }
+    }
+    checks.check("joints", jointsOk, "an inner joint is not one border column of "+std::to_string(borderPx)
+        +" device px: "+joints);
+
+    demo->setLabelUpdates(false);
+
+    // (2) a hover on an unselected segment: its slot alone, no glyph, no pixel
+    // outside it, and moving off gives the frame back
+    gweni::controls::SegmentedButton *hovered=row->getSegment(2);
+    std::set<size_t> hoverPrims, hoverTexts;
+
+    idsOf({hovered}, hoverPrims, hoverTexts);
+
+    const gweni::Rect hoverRect=hovered->getCanvasBounds();
+
+    moveMouse(s, hoverRect.x+hoverRect.w/2, hoverRect.y+hoverRect.h/2);
+
+    const CodeEditorFrame hover=codeEditorFrame(s);
+    const size_t hoverOutside=differencesOutsideRects(s, pixels, hover.pixels, {hoverRect});
+
+    forgetMouse(s);
+
+    const CodeEditorFrame off=codeEditorFrame(s);
+
+    checks.check("hover",
+        hover.primitives.size() == 1 && idsWithin(hover.primitives, hoverPrims) && hover.texts.empty()
+            && hover.changed <= subtreeControls(hovered) && hover.passes == 0 && hoverOutside == 0 && off.pixels == pixels,
+        "a hover wrote "+std::to_string(hover.primitives.size())+" primitive ids (the segment's one allowed) and "
+        +std::to_string(hover.texts.size())+" text ids, changed "+std::to_string(hover.changed)
+        +" controls (its "+std::to_string(subtreeControls(hovered))+" allowed), ran "+std::to_string(hover.passes)+" layout passes, changed "
+        +std::to_string(hoverOutside)+" pixels outside it, or moving off did not give the frame back");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (3) an exclusive click from Week to Month: the two segments' slots and
+    // glyphs alone, no layout, no pixel outside them
+    const int selectedBefore=row->getSelectedIndex();
+    gweni::controls::SegmentedButton *from=row->getSegment(selectedBefore);
+    std::set<size_t> pairPrims, pairTexts;
+
+    idsOf({from, hovered}, pairPrims, pairTexts);
+    // the focus on the selection, as Tab leaves it: the press moves it along
+    from->focus();
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+    clickMouse(s, hoverRect.x+hoverRect.w/2, hoverRect.y+hoverRect.h/2);
+
+    const CodeEditorFrame click=codeEditorFrame(s);
+    const size_t clickOutside=differencesOutsideRects(s, pixels, click.pixels,
+        {from->getCanvasBounds(), hoverRect});
+
+    checks.check("exclusive_click",
+        selectedBefore == 1 && row->getSelectedIndex() == 2 && !click.primitives.empty()
+            && idsWithin(click.primitives, pairPrims) && idsWithin(click.texts, pairTexts) && click.passes == 0
+            && click.changed <= subtreeControls(from)+subtreeControls(hovered)
+            && clickOutside == 0,
+        "the click selected "+std::to_string(row->getSelectedIndex())+" (2 expected), wrote "
+        +std::to_string(click.primitives.size())+" primitive and "+std::to_string(click.texts.size())
+        +" text ids (the two segments' allowed), changed "+std::to_string(click.changed)+" controls, ran "+std::to_string(click.passes)+" layout passes and changed "
+        +std::to_string(clickOutside)+" pixels outside them");
+    forgetMouse(s);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (4) Right then Left: the focus and the selection to Year and back, the
+    // two segments alone each time, and Left gives the frame before Right back
+    gweni::controls::SegmentedButton *next=row->getSegment(3);
+    std::set<size_t> keyPrims, keyTexts;
+
+    idsOf({hovered, next}, keyPrims, keyTexts);
+
+    const std::vector<gweni::Rect> keyRects={hoverRect, next->getCanvasBounds()};
+
+    sendKey(s, "right");
+
+    const CodeEditorFrame right=codeEditorFrame(s);
+    const size_t rightOutside=differencesOutsideRects(s, pixels, right.pixels, keyRects);
+    const int afterRight=row->getSelectedIndex();
+
+    sendKey(s, "left");
+
+    const CodeEditorFrame left=codeEditorFrame(s);
+
+    checks.check("keys",
+        afterRight == 3 && row->getSelectedIndex() == 2 && !right.primitives.empty()
+            && idsWithin(right.primitives, keyPrims) && idsWithin(right.texts, keyTexts)
+            && idsWithin(left.primitives, keyPrims) && idsWithin(left.texts, keyTexts)
+            && right.passes == 0 && left.passes == 0 && rightOutside == 0 && left.pixels == pixels
+            && right.changed <= subtreeControls(hovered)+subtreeControls(next)
+            && left.changed <= subtreeControls(hovered)+subtreeControls(next),
+        "Right selected "+std::to_string(afterRight)+" and Left "+std::to_string(row->getSelectedIndex())
+        +" (3 and 2 expected), wrote "+std::to_string(right.primitives.size())+"+"+std::to_string(left.primitives.size())
+        +" primitive ids (the two segments' allowed), changed "+std::to_string(right.changed)+"+"
+        +std::to_string(left.changed)+" controls, ran "+std::to_string(right.passes+left.passes)
+        +" layout passes, changed "+std::to_string(rightOutside)
+        +" pixels outside the two, or Left did not give the frame before Right back");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (5) a multi toggle by Space and by a click: the one segment, and a
+    // second toggle gives the first frame back
+    gweni::controls::SegmentedButtons *multi=demo->multiRow();
+    gweni::controls::SegmentedButton *toggled=multi->getSegment(2);
+    std::set<size_t> togglePrims, toggleTexts;
+
+    idsOf({toggled}, togglePrims, toggleTexts);
+    toggled->focus();
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    const gweni::Rect toggleRect=toggled->getCanvasBounds();
+    const std::vector<int> selectedMulti=multi->getSelectedIndices();
+
+    sendKey(s, "space");
+
+    const CodeEditorFrame on=codeEditorFrame(s);
+    const size_t onOutside=differencesOutsideRects(s, pixels, on.pixels, {toggleRect});
+    const bool isOn=multi->isSelected(2);
+
+    sendKey(s, "space");
+
+    const CodeEditorFrame back=codeEditorFrame(s);
+
+    clickMouse(s, toggleRect.x+toggleRect.w/2, toggleRect.y+toggleRect.h/2);
+
+    const CodeEditorFrame clicked=codeEditorFrame(s);
+    const bool clickedOn=multi->isSelected(2);
+
+    clickMouse(s, toggleRect.x+toggleRect.w/2, toggleRect.y+toggleRect.h/2);
+
+    const CodeEditorFrame clickedBack=codeEditorFrame(s);
+
+    forgetMouse(s);
+
+    const CodeEditorFrame offAgain=codeEditorFrame(s);
+
+    checks.check("multi_toggle",
+        isOn && clickedOn && multi->getSelectedIndices() == selectedMulti && !on.primitives.empty()
+            && idsWithin(on.primitives, togglePrims) && idsWithin(on.texts, toggleTexts)
+            && idsWithin(back.primitives, togglePrims) && idsWithin(back.texts, toggleTexts)
+            && idsWithin(clicked.primitives, togglePrims) && idsWithin(clicked.texts, toggleTexts)
+            && idsWithin(clickedBack.primitives, togglePrims) && idsWithin(clickedBack.texts, toggleTexts)
+            && on.passes+back.passes+clicked.passes+clickedBack.passes == 0 && onOutside == 0
+            && std::max({on.changed, back.changed, clicked.changed, clickedBack.changed}) <= subtreeControls(toggled)
+            && back.pixels == pixels && offAgain.pixels == pixels,
+        "a toggle did not turn Underline on and off, wrote outside its segment's ids or changed controls outside it, ran "
+        +std::to_string(on.passes+back.passes+clicked.passes+clickedBack.passes)+" layout passes, changed "
+        +std::to_string(onOutside)+" pixels outside it, or a second toggle did not give the first frame back");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (6) the label names the selection once it follows it again
+    demo->setLabelUpdates(true);
+    renderFrames(s, 1);
+
+    const gweni::Rect day=row->getSegment(0)->getCanvasBounds();
+
+    clickMouse(s, day.x+day.w/2, day.y+day.h/2);
+    renderFrames(s, 1);
+
+    const std::string label=demo->selectionLabel()->getText();
+
+    checks.check("label", label.find("View: Day") != std::string::npos,
+        "the selection label says \""+label+"\"");
+
+    forgetMouse(s);
+    if(gweni::KeyboardFocus)
+        gweni::KeyboardFocus->unfocus();
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+    checks.check("settled", idleWork == 0, "settled frames wrote or changed "+std::to_string(idleWork));
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()+liveTextIds()-idsBefore;
+
+    checks.check("ids_back", idsLeft == 0, std::to_string(idsLeft)+" ids not given back");
+
+    passed=checks.allPassed();
+    std::cout<<"segmented";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<" border_px="<<borderPx<<" "<<joints<<" hover_prims="<<hover.primitives.size()
+             <<" hover_changed="<<hover.changed<<" click_changed="<<click.changed
+             <<" click_prims="<<click.primitives.size()<<" click_texts="<<click.texts.size()
+             <<" toggle_prims="<<on.primitives.size()<<"\n";
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // NavigationRailDemo: app callbacks first, then the rail alone. Updating a
 // page is the app's work, so detach its callback before bounding selection to
 // two rows and their glyphs. Counts are frozen; only tooltip waits step time.
@@ -17450,6 +17772,15 @@ int main(int argc, char *argv[])
             ok=runZoomPanelScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a zoomed panel did not draw as a scaled canvas
+            break;
+        }
+
+        case Scenario::Segmented:
+        {
+            bool passed=false;
+            ok=runSegmentedScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a hover, a click, a key or a toggle did more than its segments, or a joint doubled
             break;
         }
 

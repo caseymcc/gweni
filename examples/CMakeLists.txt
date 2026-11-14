@@ -108,6 +108,8 @@ set(GWENI_DEMO_SOURCES
     demo/chipBadge.h
     demo/navigationRail.cpp
     demo/navigationRail.h
+    demo/segmentedButtons.cpp
+    demo/segmentedButtons.h
     demo/nodeGraph.cpp
     demo/nodeGraph.h
     demo/flow.cpp

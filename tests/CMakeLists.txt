@@ -228,10 +228,11 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # variable-height VirtualList, the code editor, the log view, the
     # badges' counts and anchor moves, the dialogs, the toasts, a Flow's
     # resizes and rebuilds, the switches' toggles, the navigation rail's
-    # collapse/selection, the board's wheels and edits and the fields' messages
+    # collapse/selection, the board's wheels and edits, the fields' messages
+    # and the segmented buttons' selections
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
-            dialog toast flow switch navigation-rail board field-validation)
+            dialog toast flow switch navigation-rail board field-validation segmented)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail")
@@ -600,6 +601,20 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_image_grid 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario image-grid --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/image_grid@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # SegmentedButtonsDemo: every inner joint of a row is one border column,
+    # a hover writes its segment's slot alone, an exclusive click and Right
+    # and Left the two segments' slots and glyphs alone with no layout, a
+    # multi toggle its one segment, and a second toggle gives the first frame
+    # back; at scale 1 and at 1.5, where a joint is 2 device px
+    gweni_whole_app_test(controltest_segmented 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario segmented --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/segmented@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    gweni_whole_app_test(controltest_segmented_scale150 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario segmented --require-one-pass --scale 1.5
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/segmented_scale150@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # gweni::tools::Inspector over the settled Demo, opened and closed by F12:
