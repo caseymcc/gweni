@@ -20,7 +20,9 @@
  *  the pressed row, which shows other items as it scrolls). A drop reports the item's key and indexes. Inserts and
  *  removals during the drag keep the gap before its item, a refresh() after
  *  the app reordered its items looks the dragged one up again, and the item
- *  removed cancels the drag.
+ *  removed cancels the drag. An insert or removal that moves the gap asks
+ *  canDrop again: onto a refused index the bar goes, the cursor is No and a
+ *  release reports nothing; off one it comes back and the drop is reported.
  */
 #include "headlessFixture.h"
 
@@ -358,5 +360,55 @@ TEST_CASE("VirtualListReorder: edits during the drag keep it, and the item remov
         CHECK_FALSE(draganddrop::isDragging());
         scene.release();
         CHECK(scene.drops.empty());
+    }
+}
+
+TEST_CASE("VirtualListReorder: an insert or removal that moves the gap asks canDrop again")
+{
+    SUBCASE("a removal above moves the gap onto a refused index")
+    {
+        Scene scene;
+        int asked=0;
+        // nothing above the pinned first item
+        scene.reorder->setCanDrop([&asked](Reorderable *, uint64_t, Reorderable *, size_t index) {
+            ++asked;
+            return index > 0;
+        });
+        scene.startDrag(3);
+        scene.move(scene.at(scene.top(1)+3));
+        REQUIRE(scene.reorder->gap() == 1);
+        REQUIRE(scene.reorder->showsGap());
+        const int askedBefore=asked;
+
+        scene.keys.erase(scene.keys.begin());
+        scene.list->removeItems(0, 1);
+        scene.frame();
+        CHECK(scene.reorder->gap() == 0);
+        CHECK(asked > askedBefore);
+        CHECK_FALSE(scene.reorder->showsGap());
+        CHECK_FALSE(scene.reorder->indicatorShown());
+        CHECK(draganddrop::currentCursor() == cursor::No);
+        scene.release();
+        CHECK(scene.drops.empty());
+    }
+
+    SUBCASE("an insert above moves the gap off a refused index")
+    {
+        Scene scene;
+        scene.reorder->setCanDrop([](Reorderable *, uint64_t, Reorderable *, size_t index) { return index > 0; });
+        scene.startDrag(3);
+        scene.move(scene.at(scene.top(0)+3));
+        REQUIRE(scene.reorder->gap() == 0);
+        REQUIRE_FALSE(scene.reorder->showsGap());
+
+        scene.keys.insert(scene.keys.begin(), 1);
+        scene.list->insertItems(0, 1);
+        scene.frame();
+        CHECK(scene.reorder->gap() == 1);
+        CHECK(scene.reorder->showsGap());
+        CHECK(draganddrop::currentCursor() == cursor::Normal);
+        scene.release();
+        REQUIRE(scene.drops.size() == 1);
+        CHECK(scene.drops[0].targetIndex == 1);
     }
 }

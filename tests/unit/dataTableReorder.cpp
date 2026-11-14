@@ -15,7 +15,8 @@
  *  (setItemsReorderable): a pooled row drags its item by the app's key, a
  *  drop reports the indexes, a rebind() after the app reordered its records
  *  during the drag looks the item up again, and a sorted table refuses its own
- *  items likewise. With reordering on, a header click goes ascending,
+ *  items likewise, and one the app sorts during a drag within it shows no
+ *  bar, the No cursor, and reports no drop. With reordering on, a header click goes ascending,
  *  descending, then no sort; without, it alternates as before.
  */
 #include "headlessFixture.h"
@@ -310,4 +311,28 @@ TEST_CASE("DataTable reorder: with reordering on a header click goes ascending, 
     scene.click(Scene::centre(other));
     CHECK(scene.right->getSortColumn() == 0);
     CHECK(scene.right->getSortDirection() == controls::SortDirection::Ascending);
+}
+
+TEST_CASE("DataTable reorder: a table the app sorts during a drag within it takes the drop no more")
+{
+    Scene scene(true);
+    Reorderable *reorder=scene.left->getReorderable();
+
+    scene.startDrag(scene.left->rowForItem(2));
+    scene.move(Scene::centre(scene.left->rowForItem(6), 2));
+    REQUIRE(reorder->showsGap());
+    REQUIRE(reorder->indicatorShown());
+
+    // the app sorts its records (as a header click would) and says so
+    scene.left->setSortColumn(0, controls::SortDirection::Descending, false);
+    std::reverse(scene.keys.begin(), scene.keys.end());
+    scene.left->rebind();
+    scene.frame();
+    CHECK(draganddrop::isDragging());
+    CHECK_FALSE(reorder->showsGap());
+    CHECK_FALSE(reorder->indicatorShown());
+    CHECK(draganddrop::currentCursor() == cursor::No);
+
+    scene.release();
+    CHECK(scene.leftDrops.empty());
 }
