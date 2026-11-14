@@ -15,8 +15,12 @@
  *  is drawn 1:1 with the texels, so a pixel centre is a texel centre and the
  *  linear filter returns that texel unblended.
  *
- *  Also: a UV sub-rect in the same frame as the two textures, and a ninth
- *  texture, past the 8 image units.
+ *  Also: a UV sub-rect in the same frame as the two textures; 50 distinct
+ *  textures in one frame, each its own layer of the smallest class's image page,
+ *  which grows (copying its layers) as they load and gives a freed layer to the
+ *  next load; a translucent image over another in the same draw; and an image of
+ *  each size class, one larger than the largest page loaded at the first level
+ *  of its mip chain that fits.
  */
 #include <doctest/doctest.h>
 
@@ -27,9 +31,17 @@
 #include <gweni/controls/imagePanel.h>
 #include <gweni/skins/textured/texturedSkin.h>
 
+#include <gweni/utils/filesystem.h>
+
+#include <imglib/png.h>
+#include <imglib/simpleImage.h>
+
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <memory>
+#include <string>
+#include <system_error>
 #include <vector>
 
 namespace
@@ -108,7 +120,7 @@ struct Primitives
     std::vector<size_t> ids;
 };
 
-//! A texture loaded from resources/, freed when the case ends (which frees its image unit).
+//! A texture loaded from resources/, freed when the case ends (which frees its layer).
 struct LoadedTexture
 {
     explicit LoadedTexture(const char *name)
@@ -292,48 +304,214 @@ TEST_CASE("Image (style 2): a texture that did not load draws the missing-image 
     CHECK(blockMismatches(frame, 16, 16, 16, 16, [](int, int) { return missingColor; }) == 0);
 }
 
-TEST_CASE("Image (style 2): past the image units in use, a new texture draws the placeholder until one is freed")
+namespace
 {
-    // one more texture than there are units; each load is its own GL texture
-    std::vector<std::unique_ptr<LoadedTexture>> textures;
 
-    for(int i=0; i<9; ++i)
+//! Names this process's files apart from another run's (unittests and
+//! unittests_vulkan run side by side)
+const std::string &runToken()
+{
+    static const std::string token=std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+
+    return token;
+}
+
+//! A size x size RGBA image of its own, written as a PNG under the temp dir and
+//! loaded from there by its absolute path (CurrentPath appends it to nothing),
+//! freed and removed when the case ends. Texel (x, y) is (seed, 16x, 16y, alpha),
+//! so no two seeds draw the same pixels.
+struct GeneratedTexture
+{
+    GeneratedTexture(int seed, int size, uint8_t alpha=255)
+        : seed(seed)
+        , alpha(alpha)
     {
-        textures.emplace_back(new LoadedTexture("test16.png"));
+        imglib::SimpleImage image(imglib::Format::RGBA, imglib::Depth::Bit8, size, size);
+
+        for(int y=0; y<size; ++y)
+        {
+            for(int x=0; x<size; ++x)
+            {
+                uint8_t *texel=image.data+((size_t)y*size+x)*4;
+
+                texel[0]=(uint8_t)seed;
+                texel[1]=(uint8_t)(x*16);
+                texel[2]=(uint8_t)(y*16);
+                texel[3]=alpha;
+            }
+        }
+        path=(fs::temp_directory_path()/("gweni-imageRects-"+runToken()+"-"+std::to_string(seed)+".png")).string();
+        REQUIRE(imglib::savePng(image, path.c_str()));
+        texture.name=path;
+        status=gweni::test::gpuRenderer().loadTexture(texture);
+    }
+
+    ~GeneratedTexture()
+    {
+        gweni::test::gpuRenderer().freeTexture(texture);
+        std::error_code error;
+        fs::remove(path, error);
+    }
+
+    Color texel(int x, int y) const { return Color((uint8_t)seed, (uint8_t)(x*16), (uint8_t)(y*16), alpha); }
+    bool loaded() const { return status == Texture::Status::Loaded; }
+
+    int seed;
+    uint8_t alpha;
+    std::string path;
+    Texture texture;
+    Texture::Status status;
+};
+
+size_t textureLayer(const Texture &texture)
+{
+    size_t imageClass=0;
+    size_t layer=gweni::renderer::NoImageLayer;
+
+    gweni::test::gpuRenderer().getTextureLayer(texture, imageClass, layer);
+    return layer;
+}
+
+}//namespace
+
+TEST_CASE("Image (style 2): 50 distinct textures in one frame each draw their own texels, the full page growing")
+{
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
+    // 16x16 images: the smallest class, whose page starts at 8 layers, so 50 of
+    // them grow it (each growth copying the layers in use) at least twice
+    const size_t layersBefore=renderer.imagePageLayers(0);
+    constexpr int count=50;
+    std::vector<std::unique_ptr<GeneratedTexture>> textures;
+
+    for(int i=0; i<count; ++i)
+    {
+        textures.emplace_back(new GeneratedTexture(i*5, 16));
         REQUIRE(textures.back()->loaded());
     }
+    CHECK(renderer.imagePageLayers(0) >= (size_t)count);
+    CHECK(renderer.imagePageLayers(0) >= std::max<size_t>(layersBefore, 8)*4);
 
-    Primitives prims(9);
+    Primitives prims(count);
+    const auto rectOf=[](int i) { return Rect(8+(i%10)*20, 8+(i/10)*20, 16, 16); };
+    size_t regrows=0;
 
-    const auto draw=[&](SlotRenderer &renderer)
-    {
-        renderer.setDrawColor(white);
-        for(size_t i=0; i<9; ++i)
-            renderer.drawTexturedRect(textures[i]->texture, prims.ids[i], Rect(16+(int)i*20, 16, 16, 16), 1);
-    };
-
-    const Frame full=drawFrame(draw);
-
-    for(int i=0; i<8; ++i)
-    {
-        INFO("rect ", i);
-        CHECK(blockMismatches(full, 16+i*20, 16, 16, 16,
-            [&](int x, int y) { return over(textures[i]->texel(x, y)); }) == 0);
-    }
-    CHECK(blockMismatches(full, 16+8*20, 16, 16, 16, [](int, int) { return missingColor; }) == 0);
-
-    // freeing the first gives its unit to the ninth
-    textures[0].reset();
-    gweni::test::gpuRenderer().hidePrimitive(prims.ids[0]);
-
-    const Frame freed=drawFrame([&](SlotRenderer &renderer)
+    const Frame frame=drawFrame([&](SlotRenderer &r)
         {
-            renderer.setDrawColor(white);
-            renderer.drawTexturedRect(textures[8]->texture, prims.ids[8], Rect(16+8*20, 16, 16, 16), 1);
+            r.setDrawColor(white);
+            for(int i=0; i<count; ++i)
+                r.drawTexturedRect(textures[i]->texture, prims.ids[i], rectOf(i), 1);
+        });
+    // the growths were counted by the frame's flush
+    regrows=renderer.getFrameStats().imagePageRegrows;
+    CHECK(regrows >= 2);
+
+    for(int i=0; i<count; ++i)
+    {
+        INFO("image ", i);
+        const Rect rect=rectOf(i);
+
+        CHECK(blockMismatches(frame, rect.x, rect.y, 16, 16,
+            [&](int x, int y) { return over(textures[i]->texel(x, y)); }) == 0);
+        // what pixelColor reads back from its layer is what was loaded
+        CHECK((textures[i]->texel(5, 9) == gweni::test::gpuRenderer().pixelColor(textures[i]->texture, 5, 9, Color())));
+    }
+
+    // a freed layer is the next load's, and the page does not grow for it
+    const size_t freedLayer=textureLayer(textures[7]->texture);
+    const size_t layers=renderer.imagePageLayers(0);
+
+    textures[7].reset();
+    textures[7].reset(new GeneratedTexture(251, 16));
+    REQUIRE(textures[7]->loaded());
+    CHECK(textureLayer(textures[7]->texture) == freedLayer);
+    CHECK(renderer.imagePageLayers(0) == layers);
+
+    const Frame reused=drawFrame([&](SlotRenderer &r)
+        {
+            r.setDrawColor(white);
+            r.drawTexturedRect(textures[7]->texture, prims.ids[7], rectOf(7), 1);
         });
 
-    CHECK(blockMismatches(freed, 16+8*20, 16, 16, 16,
+    CHECK(renderer.getFrameStats().imagePageRegrows == 0);
+    CHECK(blockMismatches(reused, rectOf(7).x, rectOf(7).y, 16, 16,
+        [&](int x, int y) { return over(textures[7]->texel(x, y)); }) == 0);
+    CHECK(blockMismatches(reused, rectOf(8).x, rectOf(8).y, 16, 16,
         [&](int x, int y) { return over(textures[8]->texel(x, y)); }) == 0);
+}
+
+TEST_CASE("Image (style 2): a translucent image over another in one draw blends over it, in slot order")
+{
+    GeneratedTexture under(10, 16);
+    GeneratedTexture top(200, 16, 128);
+    REQUIRE(under.loaded());
+    REQUIRE(top.loaded());
+
+    Primitives prims(2);
+
+    const Frame frame=drawFrame([&](SlotRenderer &renderer)
+        {
+            renderer.setDrawColor(white);
+            renderer.drawTexturedRect(under.texture, prims.ids[0], Rect(16, 16, 16, 16), 1);
+            renderer.drawTexturedRect(top.texture, prims.ids[1], Rect(16, 16, 16, 16), 2);
+        });
+
+    CHECK(blockMismatches(frame, 16, 16, 16, 16, [&](int x, int y)
+        {
+            const Color below=under.texel(x, y);
+            const Color above=top.texel(x, y);
+            const float a=above.a/255.0f;
+            auto channel=[a](int c, int b) { return (unsigned char)std::lround(c*a+b*(1.0f-a)); };
+
+            return Color(channel(above.r, below.r), channel(above.g, below.g), channel(above.b, below.b), 255);
+        }) == 0);
+}
+
+TEST_CASE("Image (style 2): an image of each class draws its own texels, the largest reduced to the largest page")
+{
+    // one image per page, 1:1 in a 64x64 block of each, and one larger than the
+    // largest page, loaded as the first level of its mip chain that fits
+    struct Sized
+    {
+        int size;
+        size_t imageClass;
+    };
+    const Sized sizes[]={ { 100, 0 }, { 200, 1 }, { 300, 2 }, { 700, 3 }, { 1500, 4 }, { 4000, 4 } };
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
+
+    for(const Sized &sized:sizes)
+    {
+        INFO("size ", sized.size);
+        GeneratedTexture image(sized.size & 0xff, sized.size);
+        REQUIRE(image.loaded());
+
+        size_t imageClass=0;
+        size_t layer=0;
+
+        REQUIRE(renderer.getTextureLayer(image.texture, imageClass, layer));
+        CHECK(imageClass == sized.imageClass);
+
+        const gweni::TextureData data=renderer.getTextureData(image.texture);
+
+        if(sized.size > SlotRenderer::kMaxImageSide)
+            CHECK(data.width == (float)(sized.size >> 1));
+        else
+            CHECK(data.width == (float)sized.size);
+
+        Primitives prims(1);
+        const float w=data.width;
+
+        // the block at texel (8, 8) of level 0, past the image's first 16
+        const Frame frame=drawFrame([&](SlotRenderer &r)
+            {
+                r.setDrawColor(white);
+                r.drawTexturedRect(image.texture, prims.ids[0], Rect(16, 16, 8, 8), 1, 8/w, 8/w, 16/w, 16/w);
+            });
+
+        CHECK(blockMismatches(frame, 16, 16, 8, 8, [&](int x, int y)
+            {
+                return over(renderer.pixelColor(image.texture, 8+x, 8+y, Color()));
+            }) == 0);
+    }
 }
 
 TEST_CASE("ImagePanel: a Button's setImage icon draws at its bounds in front of the button, once")

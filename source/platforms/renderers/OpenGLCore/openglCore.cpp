@@ -239,65 +239,134 @@ void OpenGLCore::destroyAtlasTexture(TextureHandle texture)
     glDeleteTextures(1, &texture);
 }
 
-TextureHandle OpenGLCore::createImageTexture(const SlotTextureData &image, bool rgba)
+size_t OpenGLCore::maxImageLayers() const
 {
+    GLint layers=0;
+
+    glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &layers);
+    return (size_t)std::max(layers, 1);
+}
+
+bool OpenGLCore::allocateImagePage(size_t imageClass, size_t layers, size_t keptLayers)
+{
+    const GLsizei side=(GLsizei)imageClassSide(imageClass);
+    const GLint levels=(GLint)imageClassLevels(imageClass);
     GLuint texture=0;
 
     glGenTextures(1, &texture);
-
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, texture);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, texture);
 
     // mipmapped, because an image is often drawn much smaller than it is. The
     // shader filters it itself, trilinearly (imageTexel), from texels it reads at
-    // their centres from one level at a time, so the unit's filter is nearest:
-    // it returns each texel as it is.
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    // their centres from one level at a time, so the filter is nearest: it
+    // returns each texel as it is.
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAX_LEVEL, levels-1);
+    // every level of every layer, its contents undefined until an image is
+    // uploaded to it (glTexStorage3D is GL 4.2, not in the subset)
+    for(GLint level=0; level<levels; ++level)
+        glTexImage3D(GL_TEXTURE_2D_ARRAY, level, GL_RGBA8, std::max(side >> level, 1), std::max(side >> level, 1),
+            (GLsizei)layers, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 
-    // a sized internal format that matches the data, as GLES requires; an RGB one
-    // samples with alpha 1, as the RGBA texture desktop GL made of RGB data did
-    const GLenum format=rgba?GL_RGBA:GL_RGB;
-    const GLint internalFormat=rgba?GL_RGBA8:GL_RGB8;
+    GLuint &old=m_imagePages[imageClass];
 
-    // every level made on the CPU (imageMipChain), not by glGenerateMipmap, whose
-    // filter is the implementation's
-    const std::vector<ImageMipLevel> levels=imageMipChain(image.m_readData.data(), image.width, image.height,
-        rgba?4:3);
+    // the old layers, every level, by a blit each: GL 3.3, GLES 3.0 and WebGL 2
+    // have no glCopyImageSubData. Nearest at the same size copies the texels.
+    if(old != 0 && keptLayers > 0)
+    {
+        GLint readFramebuffer=0;
+        GLint drawFramebuffer=0;
+        GLuint framebuffers[2]={ 0, 0 };
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, (GLint)levels.size());
-    // RGB rows are not padded to 4 bytes
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, image.width, image.height, 0, format,
-        GL_UNSIGNED_BYTE, (const GLvoid *)image.m_readData.data());
-    for(size_t i=0; i<levels.size(); ++i)
-        glTexImage2D(GL_TEXTURE_2D, (GLint)(i+1), internalFormat, levels[i].width, levels[i].height, 0, format,
-            GL_UNSIGNED_BYTE, (const GLvoid *)levels[i].texels.data());
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readFramebuffer);
+        glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawFramebuffer);
+        glGenFramebuffers(2, framebuffers);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffers[0]);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffers[1]);
+        for(size_t layer=0; layer<keptLayers; ++layer)
+        {
+            for(GLint level=0; level<levels; ++level)
+            {
+                const GLint size=std::max((GLint)side >> level, 1);
 
-    if(texture >= m_textureSizes.size())
-        m_textureSizes.resize(texture+1);
-
-    m_textureSizes[texture].x=image.width;
-    m_textureSizes[texture].y=image.height;
-
-    setTexture(texture);
-    return texture;
+                glFramebufferTextureLayer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, old, level, (GLint)layer);
+                glFramebufferTextureLayer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, texture, level, (GLint)layer);
+                glBlitFramebuffer(0, 0, size, size, 0, 0, size, size, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+            }
+        }
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)readFramebuffer);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)drawFramebuffer);
+        glDeleteFramebuffers(2, framebuffers);
+    }
+    if(old != 0)
+        glDeleteTextures(1, &old);
+    old=texture;
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+    return true;
 }
 
-void OpenGLCore::destroyImageTexture(TextureHandle texture)
+void OpenGLCore::uploadImageLayer(size_t imageClass, size_t layer, int width, int height, const uint8_t *rgba,
+    const ImageMipLevel *levels, size_t levelCount)
 {
-    // setTexture() is skipped while m_currentTexture matches, and a later
-    // glGenTextures may hand the deleted name out again
-    if(texture == m_currentTexture)
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, m_imagePages[imageClass]);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, (GLint)layer, width, height, 1, GL_RGBA,
+        GL_UNSIGNED_BYTE, (const GLvoid *)rgba);
+    for(size_t i=0; i<levelCount; ++i)
+        glTexSubImage3D(GL_TEXTURE_2D_ARRAY, (GLint)(i+1), 0, 0, (GLint)layer, levels[i].width, levels[i].height, 1,
+            GL_RGBA, GL_UNSIGNED_BYTE, (const GLvoid *)levels[i].texels.data());
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+}
+
+bool OpenGLCore::readImageLayer(size_t imageClass, size_t layer, int width, int height,
+    std::vector<uint8_t> &rgba)
+{
+    GLint readFramebuffer=0;
+    GLint packAlignment=4;
+    GLuint framebuffer=0;
+
+    rgba.clear();
+    if(m_imagePages[imageClass] == 0)
+        return false;
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readFramebuffer);
+    glGetIntegerv(GL_PACK_ALIGNMENT, &packAlignment);
+    glGenFramebuffers(1, &framebuffer);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);
+    glFramebufferTextureLayer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, m_imagePages[imageClass], 0, (GLint)layer);
+
+    const bool complete=(glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+
+    if(complete)
     {
-        m_currentTexture=0;
-        m_currentTextureSize=glm::uvec2(0, 0);
+        rgba.resize(static_cast<size_t>(width)*height*4);
+        glPixelStorei(GL_PACK_ALIGNMENT, 4);
+        glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+        glPixelStorei(GL_PACK_ALIGNMENT, packAlignment);
     }
-    glBindTexture(GL_TEXTURE_2D, 0);
-    glDeleteTextures(1, &texture);
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)readFramebuffer);
+    glDeleteFramebuffers(1, &framebuffer);
+    return complete;
+}
+
+TextureHandle OpenGLCore::imagePageHandle(size_t imageClass) const
+{
+    return m_imagePages[imageClass];
+}
+
+void OpenGLCore::destroyImagePages()
+{
+    for(GLuint &page:m_imagePages)
+    {
+        if(page != 0)
+            glDeleteTextures(1, &page);
+        page=0;
+    }
 }
 
 bool OpenGLCore::readTextureRgba(TextureHandle texture, int width, int height, std::vector<uint8_t> &rgba)
@@ -318,10 +387,10 @@ void OpenGLCore::beginPrimitiveDraws()
 
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, m_clipTexture);
-    for(size_t i=0; i<ImageUnits; ++i)
+    for(size_t i=0; i<ImageClasses; ++i)
     {
         glActiveTexture(GL_TEXTURE0+FirstImageUnit+(GLenum)i);
-        glBindTexture(GL_TEXTURE_2D, m_imageUnits[i]);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, m_imagePages[i]);
     }
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, m_currentTexture);
@@ -624,7 +693,7 @@ void OpenGLCore::init()
     m_program=loadShaders(shaderSource(GLShaderSource::PrimitiveVertex, dialect, dualSource).c_str(),
         shaderSource(GLShaderSource::PrimitiveFragment, dialect, dualSource).c_str());
     m_projectionUniform=glGetUniformLocation(m_program, "projection");
-    m_imagesUniform=glGetUniformLocation(m_program, "images");
+    m_imagesUniform=glGetUniformLocation(m_program, "imagePages");
     m_clipBoxesUniform=glGetUniformLocation(m_program, "clipBoxes");
     m_slotBaseUniform=glGetUniformLocation(m_program, "slotBase");
 
@@ -637,15 +706,15 @@ void OpenGLCore::init()
     m_textSlotBaseUniform=glGetUniformLocation(m_textProgram, "slotBase");
 
     // texture1 stays on unit 0; the clip boxes are on unit 1 for both programs, and
-    // the primitive program's images on FirstImageUnit on. A uniform is set in the
-    // program in use; flush() binds its own every frame.
-    GLint imageUnits[ImageUnits];
+    // the primitive program's image pages on FirstImageUnit on. A uniform is set
+    // in the program in use; flush() binds its own every frame.
+    GLint imageUnits[ImageClasses];
 
-    for(size_t i=0; i<ImageUnits; ++i)
+    for(size_t i=0; i<ImageClasses; ++i)
         imageUnits[i]=FirstImageUnit+(GLint)i;
     glUseProgram(m_program);
     glUniform1i(m_clipBoxesUniform, 1);
-    glUniform1iv(m_imagesUniform, (GLsizei)ImageUnits, imageUnits);
+    glUniform1iv(m_imagesUniform, (GLsizei)ImageClasses, imageUnits);
     glUseProgram(m_textProgram);
     glUniform1i(m_textClipBoxesUniform, 1);
     glUseProgram(0);
@@ -677,7 +746,7 @@ const char *primitiveVertexPrologue=
     "uniform mat4 projection;\n"
     "uniform int slotBase;\n";
 const char *primitiveFragmentPrologue=
-    "uniform sampler2D images[8];\n"
+    "uniform sampler2DArray imagePages[5];\n"
     "uniform usampler2D clipBoxes;\n";
 const char *textVertexPrologue=
     "#define VERTEX_ID gl_VertexID\n"
@@ -708,6 +777,7 @@ std::string OpenGLCore::shaderSource(GLShaderSource source, GLSLDialect dialect,
         text+="precision highp float;\n"
             "precision highp int;\n"
             "precision highp sampler2D;\n"
+            "precision highp sampler2DArray;\n"
             "precision highp usampler2D;\n";
     }
     else

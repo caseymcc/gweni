@@ -40,7 +40,11 @@ namespace renderer
 //! OpenGLCore's is the GL texture name. 0 is no texture.
 using TextureHandle=unsigned int;
 
-//! A loaded image: its pixels (kept only while readable) and the backend's texture.
+//! SlotTextureData::m_layer of an image with no layer of an image page
+constexpr size_t NoImageLayer=std::numeric_limits<size_t>::max();
+
+//! A loaded image: its pixels (RGBA8, kept only while readable) and the layer of
+//! the image page it is drawn from.
 struct SlotTextureData: public gweni::TextureData
 {
     SlotTextureData()
@@ -52,13 +56,16 @@ struct SlotTextureData: public gweni::TextureData
         std::swap(width, other.width);
         std::swap(height, other.height);
         std::swap(readable, other.readable);
-        std::swap(m_handle, other.m_handle);
+        std::swap(m_imageClass, other.m_imageClass);
+        std::swap(m_layer, other.m_layer);
 
         m_readData.swap(other.m_readData);
     }
 
-    //! The backend's texture, from SlotRenderer::createImageTexture; 0 if none
-    TextureHandle m_handle{0};
+    //! The image page (SlotRenderer::ImageClasses) and the layer of it the image
+    //! is in, NoImageLayer while it has none
+    size_t m_imageClass{0};
+    size_t m_layer{NoImageLayer};
     size_t m_index{std::numeric_limits<size_t>::max()};
     std::vector<unsigned char> m_readData;
 };
@@ -455,8 +462,34 @@ public:
     bool ensureTexture(const gweni::Texture &texture) override;
     SlotTextureData *getFreeTextureData();
 
-    //! The backend's texture of a loaded texture, 0 if it is not loaded
+    //! The backend's texture of the image page a loaded texture is in (its
+    //! layer is the texture's), 0 if it is not loaded. A page that grows is
+    //! made again, so the handle can change with a later load.
     TextureHandle getTextureHandle(const gweni::Texture &texture) const;
+    //! The image page a loaded texture is in (0..ImageClasses-1) and its layer;
+    //! false if it is not loaded
+    bool getTextureLayer(const gweni::Texture &texture, size_t &imageClass, size_t &layer) const;
+    //! The layers an image page has, in use or free (0 until an image needs it)
+    size_t imagePageLayers(size_t imageClass) const { return m_imagePages[imageClass].layers; }
+
+    //! Style-2 slots sample their image from one of ImageClasses image pages,
+    //! all bound for the one primitive draw: a 2D texture array per size class,
+    //! each layer imageClassSide(c) square, RGBA8, with every mip level. An
+    //! image takes one layer of the smallest class that holds it, at the layer's
+    //! origin, with its own mip chain (imageMipChain), and keeps it until
+    //! freeTexture, which puts it back on its page's free list. A page with no
+    //! layer free grows: made again with twice the layers, the old ones copied
+    //! (FrameStats::imagePageRegrows). An image larger than kMaxImageSide is
+    //! loaded as the first level of its mip chain that fits.
+    static constexpr size_t ImageClasses=5;
+    static constexpr int kMinImageSide=128;
+    static constexpr int imageClassSide(size_t imageClass) { return kMinImageSide << imageClass; }
+    //! A class's mip levels, its side's log2 + 1 (to 1x1)
+    static constexpr int imageClassLevels(size_t imageClass) { return 8+(int)imageClass; }
+    static constexpr int kMaxImageSide=kMinImageSide << (ImageClasses-1);
+    //! The smallest class whose side holds a width x height image (both at most
+    //! kMaxImageSide)
+    static size_t imageClassFor(int width, int height);
     //! The backend's texture of a loaded font's glyph atlas, 0 if the font is not loaded
     TextureHandle getFontAtlasHandle(const gweni::Font &font) const;
     //! Bytes per texel of a loaded font's glyph atlas (1: coverage or distance,
@@ -584,6 +617,10 @@ public:
         //! mirror outgrew them, each sending its whole mirror once; capacity grows
         //! geometrically, so over K slots added that is O(log K) frames
         size_t bufferRegrows=0;
+        //! image pages made again since the last flush because an image found no
+        //! layer free (SlotRenderer::ImageClasses), each copying its layers once;
+        //! a page doubles, so over K images that is O(log K) loads
+        size_t imagePageRegrows=0;
         //! how long this flush took, from its start to the end of submitFrame(), on
         //! platform::profileTimeMicros(): two reads of that clock per frame
         uint64_t flushMicros=0;
@@ -733,12 +770,18 @@ protected:
     static constexpr unsigned int kClipColumnsLog2=11;
     static constexpr size_t kClipColumns=size_t(1) << kClipColumnsLog2;
 
-    //! Style-2 slots sample their texture from one of ImageUnits image units, all
-    //! bound for the one primitive draw. A slot keeps its unit in its vertexes
-    //! across frames, so a texture keeps its unit until freeTexture.
-    static constexpr size_t ImageUnits=8;
-    //! The texture each image unit holds, 0 free (imageUnit())
-    TextureHandle m_imageUnits[ImageUnits]={};
+    //! An image page's layers: `layers` on the device, [0, used) handed out at
+    //! some time, the free ones of those in `freeLayers`
+    struct ImagePage
+    {
+        size_t layers=0;
+        size_t used=0;
+        std::vector<size_t> freeLayers;
+    };
+
+    ImagePage m_imagePages[ImageClasses];
+    //! pages made again since the last flush, for FrameStats::imagePageRegrows
+    size_t m_imagePageRegrows=0;
 
     //! The two sets of slots flush() uploads and draws: the primitives' (Vertex)
     //! and the glyphs' (ftgl::glyph_vertex_t), each a vertex buffer and a clip-box
@@ -779,11 +822,28 @@ protected:
     //! full-width rows of atlas.depth bytes a texel) to its texture.
     virtual void uploadAtlasRows(TextureHandle texture, const texture_atlas_t &atlas, size_t firstRow, size_t rows)=0;
     virtual void destroyAtlasTexture(TextureHandle texture)=0;
-    //! A mipmapped, edge-clamped texture of a loaded image (rgba: 4 bytes a pixel,
-    //! else 3, RGB sampled with alpha 1); 0 if it cannot be made.
-    virtual TextureHandle createImageTexture(const SlotTextureData &image, bool rgba)=0;
-    //! Called for every image's data as it is deleted, handle 0 included
-    virtual void destroyImageTexture(TextureHandle texture)=0;
+    //! The most layers an image page may have (the device's largest array texture)
+    virtual size_t maxImageLayers() const=0;
+    //! Class imageClass's page is (re)made with `layers` layers, each
+    //! imageClassSide() square, RGBA8, every one of imageClassLevels() mip
+    //! levels, sampled nearest and edge-clamped; every level of layers [0,
+    //! keptLayers) copied from the page it replaces, which is destroyed once
+    //! nothing sampling it is in flight. False if it cannot be made: the old
+    //! page is kept as it was.
+    virtual bool allocateImagePage(size_t imageClass, size_t layers, size_t keptLayers)=0;
+    //! Copies an image to the origin of a layer of a page, level by level: its
+    //! width x height RGBA8 texels (rows of width, row 0 first) to level 0 and
+    //! levels[i] to level i+1, each at the origin of its level
+    virtual void uploadImageLayer(size_t imageClass, size_t layer, int width, int height, const uint8_t *rgba,
+        const ImageMipLevel *levels, size_t levelCount)=0;
+    //! Reads the width x height texels at the origin of level 0 of a layer back,
+    //! as RGBA8 rows, row 0 first; false (rgba empty) if it cannot be read
+    virtual bool readImageLayer(size_t imageClass, size_t layer, int width, int height,
+        std::vector<uint8_t> &rgba)=0;
+    //! The backend's texture of a class's page, 0 while it has none
+    virtual TextureHandle imagePageHandle(size_t imageClass) const=0;
+    //! Destroys every image page (releaseResources)
+    virtual void destroyImagePages()=0;
     //! Reads a texture's level 0 back as RGBA8 rows, row 0 first; false (rgba
     //! empty) if it cannot be read.
     virtual bool readTextureRgba(TextureHandle texture, int width, int height, std::vector<uint8_t> &rgba)=0;
@@ -1079,11 +1139,14 @@ private:
         float radius, float border, gweni::Color color0Left, gweni::Color color0Right,
         gweni::Color color1, gweni::Color color3Left, gweni::Color color3Right,
         gweni::Color borderColor, uint8_t edges=0, float reach=0.0f);
-    //! The image unit (0..ImageUnits-1) a style-2 slot samples \a texture from,
-    //! taking a free one the first time; ImageUnits when all are taken.
-    size_t imageUnit(TextureHandle texture);
-
-    bool m_imageUnitsFullLogged=false;
+    //! A layer of class imageClass's page for a new image: a free one, else the
+    //! next one never used, else the page grown; NoImageLayer if it cannot grow
+    size_t allocateImageLayer(size_t imageClass);
+    //! Puts a loaded image (m_readData RGBA8, width x height) in a layer of its
+    //! class's page with its mip chain, reduced first to the first level of the
+    //! chain that fits kMaxImageSide (m_readData and the size then that level's);
+    //! false if no layer can be had
+    bool placeImage(SlotTextureData &texData);
 
     Rect m_viewRect;
     //! setViewTransform's matrix, column-major, the identity when there is none
@@ -1348,7 +1411,7 @@ template<>
 inline size_t stride<gweni::renderer::SlotTextureData>(const gweni::renderer::SlotTextureData &image) { return image.width; }
 
 template<>
-inline size_t nativeId<gweni::renderer::SlotTextureData>(const gweni::renderer::SlotTextureData &image) { return (size_t)image.m_handle; }
+inline size_t nativeId<gweni::renderer::SlotTextureData>(const gweni::renderer::SlotTextureData &image) { return 0; }
 template<>
 inline uint8_t *data<gweni::renderer::SlotTextureData>(gweni::renderer::SlotTextureData &image) { return image.m_readData.data(); }
 template<>

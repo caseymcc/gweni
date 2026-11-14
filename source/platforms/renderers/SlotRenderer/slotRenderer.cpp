@@ -779,12 +779,35 @@ Texture::Status SlotRenderer::loadTexture(Texture &texture)
         return Texture::Status::ErrorBadData;
     }
 
-    texData.m_handle=createImageTexture(texData, imgFormat == imglib::Format::RGBA);
+    // RGBA8, an RGB image with alpha 1, as GL sampled an RGB8 texture
+    if(imgFormat == imglib::Format::RGB)
+    {
+        const size_t pixels=(size_t)texData.width*(size_t)texData.height;
+        std::vector<unsigned char> rgba(pixels*4);
+
+        for(size_t i=0; i<pixels; ++i)
+        {
+            rgba[i*4+0]=texData.m_readData[i*3+0];
+            rgba[i*4+1]=texData.m_readData[i*3+1];
+            rgba[i*4+2]=texData.m_readData[i*3+2];
+            rgba[i*4+3]=255;
+        }
+        texData.m_readData.swap(rgba);
+    }
+
+    if(!placeImage(texData))
+    {
+        texData.m_readData.clear();
+        m_freeTextureData.push_back(texData.m_index);
+        gweni::log::write(log::Level::Error, "Texture has no image layer left: %s", filename.c_str());
+        return Texture::Status::ErrorBadData;
+    }
 
     texData.readable=texture.readable;
     if(!texture.readable)
     {
         texData.m_readData.clear();
+        texData.m_readData.shrink_to_fit();
     }
 
     m_lastTexture=texData.m_index;
@@ -801,12 +824,7 @@ void SlotRenderer::freeTexture(const gweni::Texture &texture)
 
     if((texture.dataIndex < m_textureData.size()) && (m_textureData[texture.dataIndex]))
     {
-        // the handle may be handed out again; slots still on its unit sample nothing
-        for(TextureHandle &handle:m_imageUnits)
-        {
-            if(handle == m_textureData[texture.dataIndex]->m_handle)
-                handle=0;
-        }
+        // the layer may be handed out again; a slot still drawing it draws that image
         m_freeTextureData.push_back(texture.dataIndex);
         deleteTextureData(m_textureData[texture.dataIndex]);
         m_textureData[texture.dataIndex]=nullptr;
@@ -816,8 +834,92 @@ void SlotRenderer::freeTexture(const gweni::Texture &texture)
 
 void SlotRenderer::deleteTextureData(SlotTextureData *textureData)
 {
-    destroyImageTexture(textureData->m_handle);
+    if(textureData->m_layer != NoImageLayer)
+        m_imagePages[textureData->m_imageClass].freeLayers.push_back(textureData->m_layer);
     delete textureData;
+}
+
+size_t SlotRenderer::imageClassFor(int width, int height)
+{
+    const int longer=std::max(width, height);
+    size_t imageClass=0;
+
+    while((imageClass+1 < ImageClasses) && (imageClassSide(imageClass) < longer))
+        ++imageClass;
+    return imageClass;
+}
+
+size_t SlotRenderer::allocateImageLayer(size_t imageClass)
+{
+    ImagePage &page=m_imagePages[imageClass];
+
+    if(!page.freeLayers.empty())
+    {
+        const size_t layer=page.freeLayers.back();
+
+        page.freeLayers.pop_back();
+        return layer;
+    }
+    if(page.used < page.layers)
+        return page.used++;
+
+    // a page holds 8 of the smallest images at first, one of the largest, and
+    // doubles from there
+    const size_t limit=maxImageLayers();
+    const size_t layers=std::min(page.layers?page.layers*2:std::max<size_t>(1, size_t(8) >> imageClass), limit);
+
+    if(layers <= page.layers)
+    {
+        gweni::log::write(log::Level::Error, "image page %dx%d is full: %zu layers",
+            imageClassSide(imageClass), imageClassSide(imageClass), page.layers);
+        return NoImageLayer;
+    }
+    if(!allocateImagePage(imageClass, layers, page.used))
+        return NoImageLayer;
+    if(page.layers > 0)
+        ++m_imagePageRegrows;
+    page.layers=layers;
+    return page.used++;
+}
+
+bool SlotRenderer::placeImage(SlotTextureData &texData)
+{
+    int width=(int)texData.width;
+    int height=(int)texData.height;
+
+    if(width <= 0 || height <= 0)
+        return false;
+
+    std::vector<ImageMipLevel> levels=imageMipChain(texData.m_readData.data(), width, height, 4);
+    // the first level that fits the largest page: level 0 itself, or one of the
+    // chain, which is then the image (the chain below it is that level's own)
+    size_t first=0;
+
+    while(std::max(width, height) > kMaxImageSide)
+    {
+        width=levels[first].width;
+        height=levels[first].height;
+        ++first;
+    }
+
+    const size_t imageClass=imageClassFor(width, height);
+    const size_t layer=allocateImageLayer(imageClass);
+
+    if(layer == NoImageLayer)
+        return false;
+
+    if(first > 0)
+    {
+        texData.m_readData.swap(levels[first-1].texels);
+        texData.width=(float)width;
+        texData.height=(float)height;
+    }
+    uploadImageLayer(imageClass, layer, width, height, texData.m_readData.data(), levels.data()+first,
+        levels.size()-first);
+
+    texData.m_imageClass=imageClass;
+    texData.m_layer=layer;
+    return true;
 }
 
 SlotTextureData *SlotRenderer::getFreeTextureData()
@@ -850,9 +952,22 @@ SlotTextureData *SlotRenderer::getFreeTextureData()
 
 TextureHandle SlotRenderer::getTextureHandle(const Texture &texture) const
 {
-    if((texture.dataIndex < m_textureData.size()) && (m_textureData[texture.dataIndex]))
-        return m_textureData[texture.dataIndex]->m_handle;
-    return 0;
+    size_t imageClass=0;
+    size_t layer=0;
+
+    if(!getTextureLayer(texture, imageClass, layer))
+        return 0;
+    return imagePageHandle(imageClass);
+}
+
+bool SlotRenderer::getTextureLayer(const Texture &texture, size_t &imageClass, size_t &layer) const
+{
+    if((texture.dataIndex >= m_textureData.size()) || !m_textureData[texture.dataIndex] ||
+        (m_textureData[texture.dataIndex]->m_layer == NoImageLayer))
+        return false;
+    imageClass=m_textureData[texture.dataIndex]->m_imageClass;
+    layer=m_textureData[texture.dataIndex]->m_layer;
+    return true;
 }
 
 TextureHandle SlotRenderer::getFontAtlasHandle(const Font &requested) const
@@ -1064,7 +1179,10 @@ void SlotRenderer::releaseResources()
     m_textureData.clear();
     m_freeTextureData.clear();
     m_textures.clear();
-    std::fill(std::begin(m_imageUnits), std::end(m_imageUnits), 0u);
+    destroyImagePages();
+    for(ImagePage &page:m_imagePages)
+        page=ImagePage();
+    m_imagePageRegrows=0;
 }
 
 void SlotRenderer::init()
@@ -1659,6 +1777,8 @@ void SlotRenderer::flush()
     m_frameStats.atlasUploadCalls=0;
     m_frameStats.atlasUploadBytes=0;
     m_frameStats.bufferRegrows=0;
+    m_frameStats.imagePageRegrows=m_imagePageRegrows;
+    m_imagePageRegrows=0;
     //the slots this frame uploads: every draw, hide, show and release since the last
     //flush, each slot once however many of them touched it
     m_frameStats.primitiveSlotsWritten=m_dirtyVertexSlots.count();
@@ -1819,7 +1939,8 @@ void SlotRenderer::setVertex(Vertex &vertex, uint8_t type, int x, int y, int z, 
         vertex.ty=v;
     }
 
-    // SDF fields are only used by styles 3-9 (drawLine, writeRoundedQuad, drawIcon, drawGrid, drawTrapezoid); keep them 0 otherwise.
+    // SDF fields are only used by styles 3-9 (drawLine, writeRoundedQuad, drawIcon, drawGrid, drawTrapezoid)
+    // and style 2's page, layer and size (drawTexturedRect); keep them 0 otherwise.
     vertex.lx=0;
     vertex.ly=0;
     vertex.radius=0;
@@ -2462,19 +2583,7 @@ void SlotRenderer::drawTexturedRect(const gweni::Texture &texture, size_t primit
     if(!ensureTexture(texture))
         return drawMissingImage(primitiveId, rect, zIndex);
 
-    SlotTextureData &texData=*m_textureData[m_lastTexture];
-    const size_t unit=imageUnit(texData.m_handle);
-
-    if(unit == ImageUnits)
-    {
-        if(!m_imageUnitsFullLogged)
-        {
-            gweni::log::write(log::Level::Error, "drawTexturedRect: more than %zu textures in use, "
-                "drawing the missing image", ImageUnits);
-            m_imageUnitsFullLogged=true;
-        }
-        return drawMissingImage(primitiveId, rect, zIndex);
-    }
+    const SlotTextureData &texData=*m_textureData[m_lastTexture];
 
     translate(rect);
 
@@ -2492,7 +2601,9 @@ void SlotRenderer::drawTexturedRect(const gweni::Texture &texture, size_t primit
     std::cout<<"Rendering: "<<primitiveId<<"("<<rect.x<<", "<<rect.y<<", "<<rect.w<<", "<<rect.h<<" : "<<zIndex<<")\n";
 #endif//DEBUG_RENDER
 
-    // UVs as 0..65535 for 0..1, the image unit and the tint (the draw colour)
+    // UVs as 0..65535 for 0..1, the tint (the draw colour), and the image's
+    // page (radius), layer (border) and size (bx, by: the shader clamps each
+    // level's taps to the image's part of the layer)
     auto uv=[](float t)
     {
         return (float)std::lround(std::min(std::max(t, 0.0f), 1.0f)*65535.0f);
@@ -2502,9 +2613,12 @@ void SlotRenderer::drawTexturedRect(const gweni::Texture &texture, size_t primit
         Vertex &vertex=m_vertexes[vi];
 
         setVertex(vertex, 2, x, y, zIndex, uv(u), uv(v));
-        vertex.radius=(uint16_t)unit;
+        vertex.radius=(uint16_t)texData.m_imageClass;
+        vertex.border=(uint16_t)texData.m_layer;
         vertex.cx=m_color.rg();
         vertex.cy=m_color.ba();
+        vertex.bx=(uint16_t)texData.width;
+        vertex.by=(uint16_t)texData.height;
     };
 
     setImageVertex(vertexIndex++, rect.x, rect.y, u1, v1);
@@ -2521,23 +2635,6 @@ void SlotRenderer::drawTexturedRect(const gweni::Texture &texture, size_t primit
 //    addVert(rect.x + rect.w, rect.y, u2, v1);
 //    addVert(rect.x + rect.w, rect.y + rect.h, u2, v2);
 //    addVert(rect.x, rect.y + rect.h, u1, v2);
-}
-
-size_t SlotRenderer::imageUnit(TextureHandle texture)
-{
-    size_t freeUnit=ImageUnits;
-
-    for(size_t i=0; i<ImageUnits; ++i)
-    {
-        if(m_imageUnits[i] == texture)
-            return i;
-        if((m_imageUnits[i] == 0) && (freeUnit == ImageUnits))
-            freeUnit=i;
-    }
-
-    if(freeUnit != ImageUnits)
-        m_imageUnits[freeUnit]=texture;
-    return freeUnit;
 }
 
 void SlotRenderer::showPrimitive(int style, size_t primitiveId)
@@ -2607,7 +2704,8 @@ gweni::Color SlotRenderer::pixelColor(const gweni::Texture &texture, unsigned in
     }
 
     // read back once from the device, then kept
-    if(!readTextureRgba(texData.m_handle, (int)texData.width, (int)texData.height, texData.m_readData))
+    if(!readImageLayer(texData.m_imageClass, texData.m_layer, (int)texData.width, (int)texData.height,
+        texData.m_readData))
         return col_default;
     texData.readable=true;
 

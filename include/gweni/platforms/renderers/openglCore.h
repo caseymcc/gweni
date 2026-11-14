@@ -144,8 +144,14 @@ protected:
     TextureHandle createAtlasTexture(const texture_atlas_t &atlas) override;
     void uploadAtlasRows(TextureHandle texture, const texture_atlas_t &atlas, size_t firstRow, size_t rows) override;
     void destroyAtlasTexture(TextureHandle texture) override;
-    TextureHandle createImageTexture(const SlotTextureData &image, bool rgba) override;
-    void destroyImageTexture(TextureHandle texture) override;
+    size_t maxImageLayers() const override;
+    bool allocateImagePage(size_t imageClass, size_t layers, size_t keptLayers) override;
+    void uploadImageLayer(size_t imageClass, size_t layer, int width, int height, const uint8_t *rgba,
+        const ImageMipLevel *levels, size_t levelCount) override;
+    bool readImageLayer(size_t imageClass, size_t layer, int width, int height,
+        std::vector<uint8_t> &rgba) override;
+    TextureHandle imagePageHandle(size_t imageClass) const override;
+    void destroyImagePages() override;
     bool readTextureRgba(TextureHandle texture, int width, int height, std::vector<uint8_t> &rgba) override;
     void beginPrimitiveDraws() override;
     void drawPrimitiveChunk(const ChunkDraw &draw) override;
@@ -177,8 +183,10 @@ private:
     void setTexture(unsigned int texture);
 
     //! Unit 0 is setTexture's and the text's atlas, 1 the clip boxes, the image
-    //! units (SlotRenderer::ImageUnits) from this one on
+    //! pages (SlotRenderer::ImageClasses) from this one on
     static constexpr int FirstImageUnit=2;
+    //! Each class's GL_TEXTURE_2D_ARRAY, 0 until an image needs it
+    unsigned int m_imagePages[ImageClasses]={};
 
     unsigned int m_currentTexture;
     glm::uvec2 m_currentTextureSize;

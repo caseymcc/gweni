@@ -27,7 +27,7 @@ TEST_CASE("SlotTextureData and TextureData start zeroed")
     gweni::renderer::SlotTextureData slotData;
     gweni::TextureData data;
 
-    CHECK(slotData.m_handle == 0);
+    CHECK(slotData.m_layer == gweni::renderer::NoImageLayer);
     CHECK(slotData.m_index == unloaded);
     CHECK(slotData.readable == false);
     CHECK(data.readable == false);

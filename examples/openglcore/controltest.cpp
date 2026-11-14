@@ -73,7 +73,9 @@
  *                       buffer_regrows= the vertex buffers and clip-box
  *                       textures the frame re-allocated and sent whole,
  *                       because the mirror outgrew them (geometrically, so
- *                       rarely);
+ *                       rarely); image_regrows= the image pages made
+ *                       again (twice the layers) since the last frame, an
+ *                       image having found no layer free;
  *                       prim_ids= counts the live primitive ids (handed out
  *                       and not released) after the frame; the id bank is
  *                       process-wide, so it covers every canvas;
@@ -1627,7 +1629,7 @@ static void printFrameStats(int frame, const std::string &control,
     std::printf("frame=%d control=%s controls_changed=%zu created=%zu visibility=%zu"
         " geometry=%zu background=%zu text=%zu prim_slots_written=%zu text_slots_written=%zu"
         " upload_calls=%zu upload_bytes=%zu mirror_bytes=%zu draw_calls=%zu"
-        " atlas_upload_calls=%zu atlas_upload_bytes=%zu buffer_regrows=%zu"
+        " atlas_upload_calls=%zu atlas_upload_bytes=%zu buffer_regrows=%zu image_regrows=%zu"
         " layout_passes=%d redirtied_by=%s render_layout=%d layout_requests=%d requested_by=%s"
         " layout_visited=%zu layout_children_scanned=%zu measure_calls=%zu invalidations=%zu"
         " visited=%zu render_carried=%zu z_visited=%zu anims_run=%zu prim_ids=%zu excluded_changed=%zu\n",
@@ -1636,7 +1638,7 @@ static void printFrameStats(int frame, const std::string &control,
         changes.geometry, changes.background, changes.text,
         gpu.primitiveSlotsWritten, gpu.textSlotsWritten,
         gpu.uploadCalls, gpu.uploadBytes, gpu.mirrorBytes, gpu.drawCalls,
-        gpu.atlasUploadCalls, gpu.atlasUploadBytes, gpu.bufferRegrows,
+        gpu.atlasUploadCalls, gpu.atlasUploadBytes, gpu.bufferRegrows, gpu.imagePageRegrows,
         layout.passes, redirtiedBy(layout).c_str(), layout.renderLayout ? 1 : 0,
         layout.requests, requestedBy(layout).c_str(),
         layout.visited, layout.childrenScanned, measures, invalidations,

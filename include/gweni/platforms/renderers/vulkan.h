@@ -181,8 +181,14 @@ protected:
     TextureHandle createAtlasTexture(const texture_atlas_t &atlas) override;
     void uploadAtlasRows(TextureHandle texture, const texture_atlas_t &atlas, size_t firstRow, size_t rows) override;
     void destroyAtlasTexture(TextureHandle texture) override;
-    TextureHandle createImageTexture(const SlotTextureData &image, bool rgba) override;
-    void destroyImageTexture(TextureHandle texture) override;
+    size_t maxImageLayers() const override;
+    bool allocateImagePage(size_t imageClass, size_t layers, size_t keptLayers) override;
+    void uploadImageLayer(size_t imageClass, size_t layer, int width, int height, const uint8_t *rgba,
+        const ImageMipLevel *levels, size_t levelCount) override;
+    bool readImageLayer(size_t imageClass, size_t layer, int width, int height,
+        std::vector<uint8_t> &rgba) override;
+    TextureHandle imagePageHandle(size_t imageClass) const override;
+    void destroyImagePages() override;
     bool readTextureRgba(TextureHandle texture, int width, int height, std::vector<uint8_t> &rgba) override;
     void beginPrimitiveDraws() override;
     void drawPrimitiveChunk(const ChunkDraw &draw) override;
@@ -215,6 +221,7 @@ private:
         uint32_t width=0;
         uint32_t height=0;
         uint32_t mipLevels=1;
+        uint32_t layers=1;
         //! bytes an upload's texel takes in the mirror (an atlas's depth) and on the device
         uint32_t sourceDepth=4;
         uint32_t deviceDepth=4;
@@ -272,8 +279,9 @@ private:
     uint32_t memoryType(uint32_t typeBits, VkMemoryPropertyFlags properties) const;
     bool createBuffer(Buffer &buffer, VkDeviceSize size, VkBufferUsageFlags usage, bool hostVisible);
     void destroyBuffer(Buffer &buffer);
+    //! A 2D image and its view; with `layers` (an array view, even of 1) a 2D array
     bool createTexture(Texture &texture, uint32_t width, uint32_t height, VkFormat format,
-        uint32_t mipLevels, VkImageUsageFlags usage);
+        uint32_t mipLevels, VkImageUsageFlags usage, uint32_t layers=0);
     void destroyTexture(Texture &texture);
     VkShaderModule createShader(const uint32_t *code, size_t bytes);
 
@@ -351,9 +359,12 @@ private:
     //! the clip-box tables, handles into m_textures
     TextureHandle m_clipTexture=0;
     TextureHandle m_textClipTexture=0;
-    //! what an image unit with no texture samples: one opaque black texel, as GL
-    //! samples texture 0
+    //! what an image page's binding holds while its class has no page: a 1x1
+    //! array of one opaque black texel, as GL samples texture 0
     TextureHandle m_blackTexture=0;
+    //! each class's page (SlotRenderer::ImageClasses), handles into m_textures, 0
+    //! until an image needs it
+    TextureHandle m_imagePages[ImageClasses]={};
 
     //! every Texture by handle; 0 is none
     std::unordered_map<TextureHandle, Texture> m_textures;

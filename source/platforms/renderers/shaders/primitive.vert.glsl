@@ -44,6 +44,7 @@ flat out vec4 vSegment;   // style 3: the line's endpoints (xy, zw), px from the
                           // style 8: its phases (xy), spacing (z) and reciprocal (w), px;
                           // style 9: its top edge (trapezoidEdge's line)
 flat out vec4 vJoints;    // style 3: its previous (xy) and next (zw) neighbour points, as vSegment;
+                          // style 2: its image's size in texels (xy);
                           // style 8: its major count (x) and stroke px (y);
                           // style 9: its bottom edge (trapezoidEdge's line)
 flat out float vBehindDepth; // style 3: the depth half a layer behind this slot's z
@@ -96,7 +97,7 @@ void main()
     vLocal = vec2(inLocal)*0.5;
     vHalf = abs(vLocal);
     // the rounded styles keep their radius in the low byte and the edge mask in
-    // the high one; the others (an image unit, an icon kind, a line's neighbour
+    // the high one; the others (an image page, an icon kind, a line's neighbour
     // bits) the whole field
     bool rounded = style == 4u || style == 6u || style == 7u;
     vRadius = float(rounded ? (inRadiusBorder.x & 0xffu) : inRadiusBorder.x);
@@ -113,6 +114,10 @@ void main()
     // and the neighbour points drawLine was given, in border colour (previous) and
     // color3 (next), which radius's bits say it holds (vRadius)
     vJoints = vec4((ivec4(uvec4(inBorderColor, inColor3)) << 16) >> 16)*0.5;
+    // style 2 (drawTexturedRect) keeps its image's size in texels in the border
+    // colour's fields (its page in radius, its layer in border)
+    if(style == 2u)
+        vJoints = vec4(vec2(inBorderColor), 0.0, 0.0);
     // style 8 (drawGrid) keeps neither: its two phases (1/16 px in the border
     // colour's two fields), its spacing (a float's bits in tx/ty) and its
     // reciprocal, its major count and its stroke, worked out here once a vertex

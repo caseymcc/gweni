@@ -51,8 +51,17 @@ protected:
     TextureHandle createAtlasTexture(const texture_atlas_t &) override { return 0; }
     void uploadAtlasRows(TextureHandle, const texture_atlas_t &, size_t, size_t) override {}
     void destroyAtlasTexture(TextureHandle) override {}
-    TextureHandle createImageTexture(const SlotTextureData &, bool) override { return 0; }
-    void destroyImageTexture(TextureHandle) override {}
+    size_t maxImageLayers() const override { return 256; }
+    bool allocateImagePage(size_t, size_t, size_t) override { return true; }
+    void uploadImageLayer(size_t, size_t, int, int, const uint8_t *, const gweni::renderer::ImageMipLevel *,
+        size_t) override {}
+    bool readImageLayer(size_t, size_t, int, int, std::vector<uint8_t> &rgba) override
+    {
+        rgba.clear();
+        return false;
+    }
+    TextureHandle imagePageHandle(size_t) const override { return 0; }
+    void destroyImagePages() override {}
     bool readTextureRgba(TextureHandle, int, int, std::vector<uint8_t> &rgba) override
     {
         rgba.clear();

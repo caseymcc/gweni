@@ -1060,8 +1060,10 @@ own:
   a slot whose bytes changed (`markPrimitiveChanges`, the `DirtySlots` sets,
   `snapshotMirror`);
 - the vertex packing of every style: `setVertex`, `writeRoundedQuad`, `drawIcon`,
-  `drawLine`'s stroke placement, `drawTexturedRect`'s image units (`imageUnit`) and
+  `drawLine`'s stroke placement, `drawTexturedRect`'s page, layer and size and
   `cullOutOfRangeQuad`;
+- the image pages' layers: which class an image takes, its layer from the page's
+  free list, a full page doubled (`allocateImageLayer`, `placeImage`);
 - the text runs and their slot allocator (`allocateTextRun`), and each atlas's draw list
   (`buildTextDrawList`, `setTextRunFont`), as `ChunkDraw`s of index ranges;
 - font resolution and layout: `resolveFont` (coverage, LCD or SDF by size and
@@ -1135,7 +1137,7 @@ run ("renderer::Vulkan" below).
 `source/platforms/renderers/Vulkan/`) is the Vulkan 1.3 backend of `SlotRenderer`,
 built with `GWENI_RENDER_VULKAN` (which, for now, needs `GWENI_RENDER_OPENGL_CORE`:
 the core, freetype-gl and the shader bodies are built with it). It draws every
-primitive style, with the clip boxes and the image units, and text in every mode
+primitive style, with the clip boxes and the image pages, and text in every mode
 (coverage, LCD with dual-source blending, SDF) from the core's atlases and glyph
 slots, so `unittests_vulkan` runs every GPU unit case but the `gl_only` ones.
 
@@ -1173,9 +1175,10 @@ How each GL feature maps:
 | per-chunk vertex array, `glMultiDrawElements` of the chunk's ranges | `vkCmdBindVertexBuffers` at the chunk's first slot, `slotBase` pushed, one `vkCmdDrawIndexed` per range (`offsets/2` the first index); `draw_calls` counts the chunk once, as on GL |
 | the static 16-bit quad index buffers | the same patterns, device-local, uploaded once by `init()` |
 | clip boxes: 2D `GL_RGBA16UI` texture, `glTexSubImage2D` per row piece | 2D `R16G16B16A16_UINT` image, `kClipColumns` texels a row, one `vkCmdCopyBufferToImage` per row piece, sampled `NEAREST` |
-| 8 image units, `uniform sampler2D images[8]` | one array of 8 combined image samplers in set 0 (an empty unit samples a 1x1 opaque black image, as GL samples texture 0) |
+| 5 image pages, `uniform sampler2DArray imagePages[5]` | one array of 5 combined image samplers in set 0, each a `2D_ARRAY` view (a class with no page samples a 1x1 one-layer array of opaque black, as GL samples texture 0) |
 | `projection`, `slotBase` uniforms | push constants (`PrimitivePush`) |
-| image: `GL_RGBA8`/`GL_RGB8`, every level a `glTexImage2D` of `imageMipChain`'s bytes, filtered nearest | `R8G8B8A8_UNORM` (RGB with alpha 255), the same levels in one staging buffer, one `vkCmdCopyBufferToImage` of a region per level, sampled `NEAREST` |
+| image page: a `GL_TEXTURE_2D_ARRAY` of `GL_RGBA8` layers, every level a `glTexImage3D`; an image's levels (`imageMipChain`'s bytes, RGB with alpha 255) one `glTexSubImage3D` each at its layer's origin, filtered nearest | `R8G8B8A8_UNORM` array image, the image's levels in one staging buffer, one `vkCmdCopyBufferToImage` of a region per level into its layer, sampled `NEAREST` |
+| a full page grown: a new array of twice the layers, each kept layer's every level copied by a `glBlitFramebuffer` (`glFramebufferTextureLayer`, `NEAREST` at the same size: no `glCopyImageSubData` in the subset), the old one deleted | the same new image, one `vkCmdCopyImage` of a region per level over the kept layers, the old image retired until the frames in flight that may sample it are done |
 | atlas: `GL_R8`, `GL_RGB8` for LCD, `GL_LINEAR`, clamped | `R8_UNORM` for coverage and SDF; `R8G8B8A8_UNORM` for LCD (no RGB8 format is guaranteed to be sampled), each texel expanded with alpha 255 on upload (the shader reads `.rgb`), `textureChannelSizes` still 8,8,8,0; sampled `LINEAR`, clamped |
 | an atlas's dirty row band: one `glTexSubImage2D` | the band's rows staged (expanded for LCD), one `vkCmdCopyBufferToImage` into them, the image `TRANSFER_DST_OPTIMAL` for the frame's uploads; `atlas_upload_*` count the same, being the core's |
 | text: per-chunk vertex array, `glMultiDrawElements` of an atlas's ranges | `vkCmdBindVertexBuffers` at the chunk's first glyph slot, one `vkCmdDrawIndexed` per range (`offsets/2` the first index) through the glyph quad order (`0, 1, 2, 0, 2, 3`); `text_draws` counts the chunk once, as on GL |
@@ -1971,12 +1974,23 @@ two programs and the draws. What follows describes both together:
 - **Images (style 2) in the one draw.** `drawTexturedRect` takes a texture loaded on its
   own (`loadTexture`, e.g. an `ImagePanel`'s `gwen.png`), not a region of the skin atlas.
   Its UVs are 0..1 and stored in `tx/ty` as 0..65535; the draw colour is its tint (color1,
-  alpha included), and `radius` holds the slot's **image unit**: one of 8 texture units
-  (`GL_TEXTURE2` on, `SlotRenderer::ImageUnits`), all bound for the primitive draw, which
-  the fragment shader picks with a constant-indexed switch over `images[8]`. A texture
-  takes a unit on its first draw and keeps it until `freeTexture`, because a slot keeps
-  its unit across frames. With all 8 in use, a further texture draws the missing image
-  (`drawMissingImage`, a magenta `colors::Missing` fill) and logs once. A fully transparent texel is discarded,
+  alpha included). The image is in a layer of an **image page**: one 2D texture array per
+  size class, `SlotRenderer::ImageClasses` (5) of them, 128, 256, 512, 1024 and 2048
+  texels square (`imageClassSide`), RGBA8 with every mip level, all bound for the
+  primitive draw (`GL_TEXTURE2` on), which the fragment shader picks with a
+  constant-indexed switch over `imagePages[5]`. `radius` holds the class, `border` the
+  layer and `bx/by` the image's size in texels. An image takes, as it is loaded, a layer
+  of the smallest class that holds it, at the layer's origin with its own mip chain, and
+  keeps it until `freeTexture`, which puts it on its page's free list for the next load.
+  A page is made when its class is first needed, with 8 layers for the smallest class
+  down to 1 for the two largest, and a page with no layer free is made again with twice
+  as many, its layers copied (`FrameStats::imagePageRegrows`, `image_regrows=` in
+  `ControlTest --stats` and `gweni_bench`), up to the device's most array layers (256 at
+  least on GLES 3.0 and WebGL 2), past which a load fails. So any number of images draw in
+  the one draw, in slot order (the 8 image units it replaced drew the missing image for a
+  ninth). An image larger than the largest page is loaded as the first level of its mip
+  chain that fits (a 4000 px side as 2000). The 5 pages and the clip boxes take 6 of the
+  program's 16 texture units. A fully transparent texel is discarded,
   so it writes no depth; a partly transparent one still depends on slot order, which is
   why `ImagePanel` takes its primitive id on its first render, after its parent's skin
   took its own.
@@ -1988,8 +2002,11 @@ two programs and the draws. What follows describes both together:
   as `glGenerateMipmap` averaged the stored texels and as the image is blended
   (`SRC_ALPHA, ONE_MINUS_SRC_ALPHA`). Where the level above is 1 texel wide (high) the
   box takes that column (row) twice, and an odd side's last column (row) is in no box.
-  `OpenGLCore` uploads each level with `glTexImage2D` (`GL_TEXTURE_MAX_LEVEL` the
-  last), `renderer::Vulkan` copies them all from one staging buffer.
+  `OpenGLCore` uploads each level with a `glTexSubImage3D` into the image's layer of its
+  page, `renderer::Vulkan` copies them all from one staging buffer. The image is at the
+  origin of each level of its layer, the rest of the layer unused, and the taps are
+  clamped to the image's own size at that level (`bx/by` shifted down by the level), so
+  nothing of the layer outside it is read.
   The primitive shader's `imageTexel` (`shaders/primitive.frag.glsl`) filters them as
   `GL_LINEAR_MIPMAP_LINEAR` with `GL_CLAMP_TO_EDGE` would, with the GL spec's LOD
   and weights computed in float, so that llvmpipe and the browser's SwiftShader draw
@@ -2007,10 +2024,13 @@ two programs and the draws. What follows describes both together:
   Each tap reads one texel exactly, a `textureLod` at its centre and its level's whole
   LOD with the image's filter nearest. Not a `texelFetch`, which reads the same texel:
   llvmpipe runs every branch of a shader for every pixel, masked, and skips a sample
-  whose pixels are all masked off but not a `texelFetch`. The 8 image units need a
+  whose pixels are all masked off but not a `texelFetch`. The 5 image pages need a
   switch around each sample (GLSL 3.30 and ES 3.00 index a sampler array only with a
   constant), so the taps are one loop whose count (4 or 8) is not a constant, around
-  one switch of 8 samples, which no compiler unrolls into 8 switches.
+  one switch of 5 samples, which no compiler unrolls into 8 switches. A tap's centre
+  is in the page's level, a power of two texels square, so it is exact, and it reads
+  the texel it read in a texture of the image's own size: the pages draw the 8 units'
+  pixels byte for byte.
 
   **What it costs.** Per image pixel, the shader went from one `textureGrad` to one
   `textureSize` and 8 `textureLod`s minified (4 magnified), about 375 SPIR-V

@@ -142,7 +142,8 @@ void imageBarrier(VkCommandBuffer commands, VkImage image, VkImageAspectFlags as
     VkImageLayout from, VkImageLayout to,
     VkPipelineStageFlags srcStages, VkAccessFlags srcAccess,
     VkPipelineStageFlags dstStages, VkAccessFlags dstAccess,
-    uint32_t firstLevel=0, uint32_t levels=VK_REMAINING_MIP_LEVELS)
+    uint32_t firstLevel=0, uint32_t levels=VK_REMAINING_MIP_LEVELS,
+    uint32_t firstLayer=0, uint32_t layers=VK_REMAINING_ARRAY_LAYERS)
 {
     VkImageMemoryBarrier barrier{};
 
@@ -157,7 +158,8 @@ void imageBarrier(VkCommandBuffer commands, VkImage image, VkImageAspectFlags as
     barrier.subresourceRange.aspectMask=aspect;
     barrier.subresourceRange.baseMipLevel=firstLevel;
     barrier.subresourceRange.levelCount=levels;
-    barrier.subresourceRange.layerCount=1;
+    barrier.subresourceRange.baseArrayLayer=firstLayer;
+    barrier.subresourceRange.layerCount=layers;
     vkCmdPipelineBarrier(commands, srcStages, dstStages, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 }
 
@@ -658,12 +660,13 @@ void Vulkan::destroyBuffer(Buffer &buffer)
 }
 
 bool Vulkan::createTexture(Texture &texture, uint32_t width, uint32_t height, VkFormat format,
-    uint32_t mipLevels, VkImageUsageFlags usage)
+    uint32_t mipLevels, VkImageUsageFlags usage, uint32_t layers)
 {
     texture.format=format;
     texture.width=width;
     texture.height=height;
     texture.mipLevels=mipLevels;
+    texture.layers=std::max(layers, 1u);
     texture.layout=VK_IMAGE_LAYOUT_UNDEFINED;
 
     VkImageCreateInfo info{};
@@ -672,7 +675,7 @@ bool Vulkan::createTexture(Texture &texture, uint32_t width, uint32_t height, Vk
     info.format=format;
     info.extent={ std::max(width, 1u), std::max(height, 1u), 1 };
     info.mipLevels=mipLevels;
-    info.arrayLayers=1;
+    info.arrayLayers=texture.layers;
     info.samples=VK_SAMPLE_COUNT_1_BIT;
     info.tiling=VK_IMAGE_TILING_OPTIMAL;
     info.usage=usage|VK_IMAGE_USAGE_SAMPLED_BIT|VK_IMAGE_USAGE_TRANSFER_DST_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
@@ -698,11 +701,11 @@ bool Vulkan::createTexture(Texture &texture, uint32_t width, uint32_t height, Vk
     VkImageViewCreateInfo view{};
     view.sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     view.image=texture.image;
-    view.viewType=VK_IMAGE_VIEW_TYPE_2D;
+    view.viewType=(layers > 0)?VK_IMAGE_VIEW_TYPE_2D_ARRAY:VK_IMAGE_VIEW_TYPE_2D;
     view.format=format;
     view.subresourceRange.aspectMask=VK_IMAGE_ASPECT_COLOR_BIT;
     view.subresourceRange.levelCount=mipLevels;
-    view.subresourceRange.layerCount=1;
+    view.subresourceRange.layerCount=texture.layers;
     if(!check(vkCreateImageView(device(), &view, nullptr, &texture.view), "vkCreateImageView"))
     {
         destroyTexture(texture);
@@ -883,7 +886,7 @@ void Vulkan::init()
     poolInfo.queueFamilyIndex=m_device.queueFamily;
     check(vkCreateCommandPool(device(), &poolInfo, nullptr, &m_commandPool), "vkCreateCommandPool");
 
-    // set 0: the clip boxes and the 8 image units
+    // set 0: the clip boxes and the image pages
     VkDescriptorSetLayoutBinding bindings[2]{};
     bindings[0].binding=0;
     bindings[0].descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -891,7 +894,7 @@ void Vulkan::init()
     bindings[0].stageFlags=VK_SHADER_STAGE_FRAGMENT_BIT;
     bindings[1].binding=1;
     bindings[1].descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    bindings[1].descriptorCount=(uint32_t)ImageUnits;
+    bindings[1].descriptorCount=(uint32_t)ImageClasses;
     bindings[1].stageFlags=VK_SHADER_STAGE_FRAGMENT_BIT;
 
     VkDescriptorSetLayoutCreateInfo setLayout{};
@@ -908,7 +911,7 @@ void Vulkan::init()
 
     VkDescriptorPoolSize poolSize{};
     poolSize.type=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount=(uint32_t)((1+ImageUnits)*FramesInFlight);
+    poolSize.descriptorCount=(uint32_t)((1+ImageClasses)*FramesInFlight);
 
     VkDescriptorPoolCreateInfo descriptorPool{};
     descriptorPool.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -1006,13 +1009,40 @@ void Vulkan::init()
         }
     }
 
-    // what an empty image unit samples: GL's texture 0, (0, 0, 0, 1)
+    // what a class with no page binds: GL's texture 0, (0, 0, 0, 1)
     {
-        SlotTextureData black;
-        black.width=1;
-        black.height=1;
-        black.m_readData={ 0, 0, 0, 255 };
-        m_blackTexture=createImageTexture(black, true);
+        Texture black;
+
+        if(createTexture(black, 1, 1, VK_FORMAT_R8G8B8A8_UNORM, 1, 0, 1))
+        {
+            Buffer staging;
+
+            if(createBuffer(staging, 4, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true))
+            {
+                const uint8_t texel[4]={ 0, 0, 0, 255 };
+
+                memcpy(staging.mapped, texel, 4);
+                immediate([&](VkCommandBuffer commands)
+                {
+                    VkBufferImageCopy copy{};
+                    copy.imageSubresource={ VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+                    copy.imageExtent={ 1, 1, 1 };
+                    imageBarrier(commands, black.image, VK_IMAGE_ASPECT_COLOR_BIT,
+                        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        VK_ACCESS_TRANSFER_WRITE_BIT);
+                    vkCmdCopyBufferToImage(commands, staging.buffer, black.image,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+                    imageBarrier(commands, black.image, VK_IMAGE_ASPECT_COLOR_BIT,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+                        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+                });
+                destroyBuffer(staging);
+            }
+            black.layout=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            m_blackTexture=addTexture(std::move(black));
+        }
     }
 
     createPipelines();
@@ -1768,101 +1798,185 @@ void Vulkan::destroyAtlasTexture(TextureHandle handle)
     retireHandle(handle);
 }
 
-TextureHandle Vulkan::createImageTexture(const SlotTextureData &image, bool rgba)
+size_t Vulkan::maxImageLayers() const
 {
-    if(image.width <= 0 || image.height <= 0)
-        return 0;
+    return std::max<size_t>(m_properties.limits.maxImageArrayLayers, 1);
+}
 
-    const uint32_t width=(uint32_t)image.width;
-    const uint32_t height=(uint32_t)image.height;
-    uint32_t levels=1;
+bool Vulkan::allocateImagePage(size_t imageClass, size_t layers, size_t keptLayers)
+{
+    const uint32_t side=(uint32_t)imageClassSide(imageClass);
+    const uint32_t levels=(uint32_t)imageClassLevels(imageClass);
+    Texture page;
 
-    while((std::max(width, height) >> levels) != 0)
-        ++levels;
+    // RGBA8, every level, sampled nearest and clamped (m_imageSampler), as
+    // OpenGLCore's pages: the shader filters it itself (imageTexel)
+    if(!createTexture(page, side, side, VK_FORMAT_R8G8B8A8_UNORM, levels, 0, (uint32_t)layers))
+        return false;
 
-    // mipmapped, because an image is often drawn much smaller than it is; RGB as
-    // RGBA with alpha 1, as GL samples an RGB8 texture
-    Texture texture;
-
-    if(!createTexture(texture, width, height, VK_FORMAT_R8G8B8A8_UNORM, levels, 0))
-        return 0;
-
-    // every level made on the CPU (imageMipChain), OpenGLCore's bytes, which the
-    // shader filters itself (imageTexel)
-    const size_t pixels=(size_t)width*height;
-    std::vector<uint8_t> level0;
-    const uint8_t *texels=image.m_readData.data();
-
-    if(!rgba)
-    {
-        level0.resize(pixels*4);
-        for(size_t i=0; i<pixels; ++i)
-        {
-            level0[i*4+0]=image.m_readData[i*3+0];
-            level0[i*4+1]=image.m_readData[i*3+1];
-            level0[i*4+2]=image.m_readData[i*3+2];
-            level0[i*4+3]=255;
-        }
-        texels=level0.data();
-    }
-
-    const std::vector<ImageMipLevel> mips=imageMipChain(texels, image.width, image.height, 4);
-
-    assert(mips.size()+1 == levels);
-    size_t stagingBytes=pixels*4;
-
-    for(const ImageMipLevel &mip:mips)
-        stagingBytes+=mip.texels.size();
-
-    Buffer staging;
-
-    if(!createBuffer(staging, stagingBytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true))
-    {
-        destroyTexture(texture);
-        return 0;
-    }
-
-    uint8_t *mapped=static_cast<uint8_t *>(staging.mapped);
-    std::vector<VkBufferImageCopy> copies(levels);
-
-    memcpy(mapped, texels, pixels*4);
-    copies[0].imageSubresource={ VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
-    copies[0].imageExtent={ width, height, 1 };
-
-    size_t offset=pixels*4;
-
-    for(size_t i=0; i<mips.size(); ++i)
-    {
-        memcpy(mapped+offset, mips[i].texels.data(), mips[i].texels.size());
-        copies[i+1].bufferOffset=offset;
-        copies[i+1].imageSubresource={ VK_IMAGE_ASPECT_COLOR_BIT, (uint32_t)(i+1), 0, 1 };
-        copies[i+1].imageExtent={ (uint32_t)mips[i].width, (uint32_t)mips[i].height, 1 };
-        offset+=mips[i].texels.size();
-    }
+    Texture *old=texture(m_imagePages[imageClass]);
+    const uint32_t kept=old?(uint32_t)std::min<size_t>(keptLayers, old->layers):0;
 
     immediate([&](VkCommandBuffer commands)
     {
-        imageBarrier(commands, texture.image, VK_IMAGE_ASPECT_COLOR_BIT,
+        imageBarrier(commands, page.image, VK_IMAGE_ASPECT_COLOR_BIT,
             VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
-        vkCmdCopyBufferToImage(commands, staging.buffer, texture.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-            (uint32_t)copies.size(), copies.data());
-        imageBarrier(commands, texture.image, VK_IMAGE_ASPECT_COLOR_BIT,
+        if(kept > 0)
+        {
+            imageBarrier(commands, old->image, VK_IMAGE_ASPECT_COLOR_BIT,
+                old->layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT|VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+
+            // every level of the kept layers, as GL's blits
+            std::vector<VkImageCopy> copies(levels);
+
+            for(uint32_t level=0; level<levels; ++level)
+            {
+                const uint32_t size=std::max(side >> level, 1u);
+
+                copies[level].srcSubresource={ VK_IMAGE_ASPECT_COLOR_BIT, level, 0, kept };
+                copies[level].dstSubresource={ VK_IMAGE_ASPECT_COLOR_BIT, level, 0, kept };
+                copies[level].extent={ size, size, 1 };
+            }
+            vkCmdCopyImage(commands, old->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                page.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, (uint32_t)copies.size(), copies.data());
+            imageBarrier(commands, old->image, VK_IMAGE_ASPECT_COLOR_BIT,
+                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, old->layout,
+                VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+        }
+        imageBarrier(commands, page.image, VK_IMAGE_ASPECT_COLOR_BIT,
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
     });
-    destroyBuffer(staging);
 
-    texture.layout=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    texture.sourceDepth=rgba?4:3;
-    texture.deviceDepth=4;
-    return addTexture(std::move(texture));
+    page.layout=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    page.sourceDepth=4;
+    page.deviceDepth=4;
+    // a frame in flight may still sample the old page
+    retireHandle(m_imagePages[imageClass]);
+    m_imagePages[imageClass]=addTexture(std::move(page));
+    return true;
 }
 
-void Vulkan::destroyImageTexture(TextureHandle handle)
+void Vulkan::uploadImageLayer(size_t imageClass, size_t layer, int width, int height, const uint8_t *rgba,
+    const ImageMipLevel *levels, size_t levelCount)
 {
-    retireHandle(handle);
+    Texture *page=texture(m_imagePages[imageClass]);
+
+    if(!page || width <= 0 || height <= 0)
+        return;
+
+    size_t stagingBytes=(size_t)width*height*4;
+
+    for(size_t i=0; i<levelCount; ++i)
+        stagingBytes+=levels[i].texels.size();
+
+    Buffer staging;
+
+    if(!createBuffer(staging, stagingBytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true))
+        return;
+
+    uint8_t *mapped=static_cast<uint8_t *>(staging.mapped);
+    std::vector<VkBufferImageCopy> copies(levelCount+1);
+    size_t offset=(size_t)width*height*4;
+
+    memcpy(mapped, rgba, offset);
+    copies[0].imageSubresource={ VK_IMAGE_ASPECT_COLOR_BIT, 0, (uint32_t)layer, 1 };
+    copies[0].imageExtent={ (uint32_t)width, (uint32_t)height, 1 };
+    for(size_t i=0; i<levelCount; ++i)
+    {
+        memcpy(mapped+offset, levels[i].texels.data(), levels[i].texels.size());
+        copies[i+1].bufferOffset=offset;
+        copies[i+1].imageSubresource={ VK_IMAGE_ASPECT_COLOR_BIT, (uint32_t)(i+1), (uint32_t)layer, 1 };
+        copies[i+1].imageExtent={ (uint32_t)levels[i].width, (uint32_t)levels[i].height, 1 };
+        offset+=levels[i].texels.size();
+    }
+
+    immediate([&](VkCommandBuffer commands)
+    {
+        imageBarrier(commands, page->image, VK_IMAGE_ASPECT_COLOR_BIT,
+            page->layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+            0, VK_REMAINING_MIP_LEVELS, (uint32_t)layer, 1);
+        vkCmdCopyBufferToImage(commands, staging.buffer, page->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            (uint32_t)copies.size(), copies.data());
+        imageBarrier(commands, page->image, VK_IMAGE_ASPECT_COLOR_BIT,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, page->layout,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT,
+            0, VK_REMAINING_MIP_LEVELS, (uint32_t)layer, 1);
+    });
+    destroyBuffer(staging);
+}
+
+bool Vulkan::readImageLayer(size_t imageClass, size_t layer, int width, int height, std::vector<uint8_t> &rgba)
+{
+    rgba.clear();
+
+    Texture *page=texture(m_imagePages[imageClass]);
+
+    if(!page || width <= 0 || height <= 0 || (uint32_t)width > page->width || (uint32_t)height > page->height ||
+        layer >= page->layers)
+        return false;
+    if(m_recording)
+        submit();
+
+    const size_t bytes=(size_t)width*height*4;
+    Buffer readback;
+
+    if(!createBuffer(readback, bytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, true))
+        return false;
+
+    immediate([&](VkCommandBuffer commands)
+    {
+        imageBarrier(commands, page->image, VK_IMAGE_ASPECT_COLOR_BIT,
+            page->layout, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT|VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT, 0, 1, (uint32_t)layer, 1);
+
+        VkBufferImageCopy copy{};
+        copy.imageSubresource={ VK_IMAGE_ASPECT_COLOR_BIT, 0, (uint32_t)layer, 1 };
+        copy.imageExtent={ (uint32_t)width, (uint32_t)height, 1 };
+        vkCmdCopyImageToBuffer(commands, page->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            readback.buffer, 1, &copy);
+
+        imageBarrier(commands, page->image, VK_IMAGE_ASPECT_COLOR_BIT,
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, page->layout,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT|VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_TRANSFER_WRITE_BIT, 0, 1, (uint32_t)layer, 1);
+
+        VkMemoryBarrier host{};
+        host.sType=VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        host.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
+        host.dstAccessMask=VK_ACCESS_HOST_READ_BIT;
+        vkCmdPipelineBarrier(commands, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+            0, 1, &host, 0, nullptr, 0, nullptr);
+    });
+
+    rgba.resize(bytes);
+    memcpy(rgba.data(), readback.mapped, bytes);
+    destroyBuffer(readback);
+    return true;
+}
+
+TextureHandle Vulkan::imagePageHandle(size_t imageClass) const
+{
+    return m_imagePages[imageClass];
+}
+
+void Vulkan::destroyImagePages()
+{
+    // a frame in flight may still sample them
+    for(TextureHandle &page:m_imagePages)
+    {
+        retireHandle(page);
+        page=0;
+    }
 }
 
 bool Vulkan::readTextureRgba(TextureHandle handle, int width, int height, std::vector<uint8_t> &rgba)
@@ -1935,20 +2049,20 @@ void Vulkan::beginPrimitiveDraws()
     Frame &current=frame();
 
     // this frame's set (the frame that last used it is done): the clip-box table
-    // and each image unit's texture, GL's texture 0 for an empty unit
+    // and each class's image page, GL's texture 0 for a class with none
     const Texture *clip=texture(m_clipTexture);
     const Texture *black=texture(m_blackTexture);
     VkDescriptorImageInfo clipInfo{ m_clipSampler, clip?clip->view:VK_NULL_HANDLE,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
-    VkDescriptorImageInfo imageInfo[ImageUnits];
+    VkDescriptorImageInfo imageInfo[ImageClasses];
 
-    for(size_t i=0; i<ImageUnits; ++i)
+    for(size_t i=0; i<ImageClasses; ++i)
     {
-        const Texture *unit=texture(m_imageUnits[i]);
+        const Texture *page=texture(m_imagePages[i]);
 
-        if(!unit)
-            unit=black;
-        imageInfo[i]={ m_imageSampler, unit->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+        if(!page)
+            page=black;
+        imageInfo[i]={ m_imageSampler, page->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
     }
 
     VkWriteDescriptorSet writes[2]{};
@@ -1960,7 +2074,7 @@ void Vulkan::beginPrimitiveDraws()
     writes[0].pImageInfo=&clipInfo;
     writes[1]=writes[0];
     writes[1].dstBinding=1;
-    writes[1].descriptorCount=(uint32_t)ImageUnits;
+    writes[1].descriptorCount=(uint32_t)ImageClasses;
     writes[1].pImageInfo=imageInfo;
     vkUpdateDescriptorSets(device(), 2, writes, 0, nullptr);
 

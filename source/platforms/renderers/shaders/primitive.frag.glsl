@@ -7,7 +7,7 @@
 //  backend's prologue (OpenGLCore::shaderSource, Vulkan/primitive.frag), which
 //  defines CLIP_COLUMNS and CLIP_COLUMNS_LOG2 and declares the samplers:
 //
-//    uniform sampler2D images[8];   style 2's image units
+//    uniform sampler2DArray imagePages[5];  style 2's image pages
 //    uniform usampler2D clipBoxes;  the slots' clip boxes
 //
 out vec4 FragColor;
@@ -39,8 +39,10 @@ vec2 lerp(vec2 a, vec2 b, vec2 t) { return a + (b - a)*t; }
 vec3 lerp(vec3 a, vec3 b, float t) { return a + (b - a)*t; }
 vec4 lerp(vec4 a, vec4 b, float t) { return a + (b - a)*t; }
 
-// images[8]: style 2's textures, one per image unit (vRadius picks it). GLSL 3.30
-// and ES 3.00 index a sampler array only with a constant, hence the switch.
+// imagePages[5]: style 2's images, a 2D texture array per size class, 128 << c
+// texels square (SlotRenderer::ImageClasses; vRadius picks the class, vBorder the
+// layer). GLSL 3.30 and ES 3.00 index a sampler array only with a constant, hence
+// the switches.
 // clipBoxes: one Box (x0, y0, x1, y1) per primitive slot, slot s at texel
 // (s % CLIP_COLUMNS, s / CLIP_COLUMNS); the vertex shader gives the slot.
 flat in uint vSlot;
@@ -242,12 +244,15 @@ float lineOffsetCoverage(vec2 v, vec2 ba, float radius, out vec2 n)
     return clamp(pixelArea(radius - d, n) + pixelArea(radius + d, n) - 1.0, 0.0, 1.0);
 }
 
-// Image unit `unit` at uv as GL_LINEAR_MIPMAP_LINEAR with GL_CLAMP_TO_EDGE samples
-// it, with uv's screen gradients dx and dy (taken in uniform control flow),
-// computed so that every GL gives the same value, which textureGrad did not
-// (llvmpipe against the browser's SwiftShader, by up to 4/255 in ImagePanelDemo):
-// the levels are made on the CPU (imageMipChain), and the LOD and the weights are
-// the GL spec's, computed in float here:
+// An image at uv as GL_LINEAR_MIPMAP_LINEAR with GL_CLAMP_TO_EDGE samples it, with
+// uv's screen gradients dx and dy (taken in uniform control flow), computed so
+// that every GL gives the same value, which textureGrad did not (llvmpipe against
+// the browser's SwiftShader, by up to 4/255 in ImagePanelDemo). The image is
+// size0 texels at the origin of layer `layer` of class `page`'s page, each of its
+// levels at the origin of that level of the layer, so its own edges are clamped
+// to here, not the layer's, and nothing of the rest of the layer is read. The
+// levels are made on the CPU (imageMipChain), and the LOD and the weights are the
+// GL spec's, computed in float here:
 // - the LOD is log2 of the longer of the two gradients in level 0's texels,
 //   rounded to 1/256: uv is linear over the image's quad, so its gradients are
 //   the same anywhere and on any GL up to a float error the rounding removes;
@@ -255,30 +260,18 @@ float lineOffsetCoverage(vec2 v, vec2 ba, float radius, out vec2 n)
 //   uv, clamped to the level's edge, weighted by uv's place between their
 //   centres to 1/256; above, the 4 of each of the 2 levels around it, the levels
 //   mixed by its fraction; past the last level (1x1) that level's 4.
-// Each tap reads one texel exactly: textureLod at its centre and its level's
-// whole LOD, the image's filter nearest (OpenGLCore::createImageTexture). Not
-// texelFetch, which reads the same texel: llvmpipe runs every branch of a shader
-// for every pixel, masked, and skips a sample whose pixels are all masked off but
-// not a texelFetch, so with 8 of them here a page without an image took 5.7 %
-// more instructions a frame than with textureGrad (ButtonDemo), and 2.4 % now.
-// GLSL 3.30 and ES 3.00 index a sampler array only with a constant, hence the
-// switches; the taps are one loop whose count is not a constant, so that no
-// compiler unrolls it into 8 switches.
-vec4 imageTexel(int unit, vec2 uv, vec2 dx, vec2 dy)
+// Each tap reads one texel exactly: textureLod at its centre in the page's level
+// (a power of two texels square, so the centre is exact) and the level's whole
+// LOD, the page's filter nearest (OpenGLCore::allocateImagePage). Not texelFetch,
+// which reads the same texel: llvmpipe runs every branch of a shader for every
+// pixel, masked, and skips a sample whose pixels are all masked off but not a
+// texelFetch, so with 8 of them here a page without an image took 5.7 % more
+// instructions a frame than with textureGrad (ButtonDemo), and 2.4 % now. The taps
+// are one loop whose count is not a constant, so that no compiler unrolls it into
+// 8 switches.
+vec4 imageTexel(int page, float layer, ivec2 size0, vec2 uv, vec2 dx, vec2 dy)
 {
-    ivec2 size0 = ivec2(1);
-
-    switch(unit)
-    {
-    case 0: size0 = textureSize(images[0], 0); break;
-    case 1: size0 = textureSize(images[1], 0); break;
-    case 2: size0 = textureSize(images[2], 0); break;
-    case 3: size0 = textureSize(images[3], 0); break;
-    case 4: size0 = textureSize(images[4], 0); break;
-    case 5: size0 = textureSize(images[5], 0); break;
-    case 6: size0 = textureSize(images[6], 0); break;
-    case 7: size0 = textureSize(images[7], 0); break;
-    }
+    size0 = max(size0, ivec2(1));
 
     vec2 texels = vec2(size0);
     float rho = max(length(dx*texels), length(dy*texels));
@@ -297,6 +290,7 @@ vec4 imageTexel(int unit, vec2 uv, vec2 dx, vec2 dy)
     int level1 = min(level0 + 1, last);
     float levelWeight = lod - float(level0);
     int taps = levelWeight > 0.0 ? 8 : 4;
+    int side = 128 << page;
     vec4 sum = vec4(0.0);
 
     for(int tap = 0; tap < taps; ++tap)
@@ -313,20 +307,17 @@ vec4 imageTexel(int unit, vec2 uv, vec2 dx, vec2 dy)
         ivec2 corner = ivec2(tap & 1, (tap >> 1) & 1);
         ivec2 p = clamp(ivec2(floor(t)) + corner, ivec2(0), size - 1);
         vec2 w = lerp(vec2(1.0) - f, f, vec2(corner));
-        vec2 centre = (vec2(p) + 0.5)/vec2(size);
+        vec3 centre = vec3((vec2(p) + 0.5)/float(side >> level), layer);
         float texelLod = float(level);
         vec4 texel = vec4(0.0);
 
-        switch(unit)
+        switch(page)
         {
-        case 0: texel = textureLod(images[0], centre, texelLod); break;
-        case 1: texel = textureLod(images[1], centre, texelLod); break;
-        case 2: texel = textureLod(images[2], centre, texelLod); break;
-        case 3: texel = textureLod(images[3], centre, texelLod); break;
-        case 4: texel = textureLod(images[4], centre, texelLod); break;
-        case 5: texel = textureLod(images[5], centre, texelLod); break;
-        case 6: texel = textureLod(images[6], centre, texelLod); break;
-        case 7: texel = textureLod(images[7], centre, texelLod); break;
+        case 0: texel = textureLod(imagePages[0], centre, texelLod); break;
+        case 1: texel = textureLod(imagePages[1], centre, texelLod); break;
+        case 2: texel = textureLod(imagePages[2], centre, texelLod); break;
+        case 3: texel = textureLod(imagePages[3], centre, texelLod); break;
+        case 4: texel = textureLod(imagePages[4], centre, texelLod); break;
         }
         sum += texel*(w.x*w.y*(first ? 1.0 - levelWeight : levelWeight));
     }
@@ -351,8 +342,10 @@ void main()
         FragColor = VertexColor;
     else if (ShaderType == 2u)
     {
-        // Image: its texture's unit is in vRadius, the draw colour (tint) in vColor1.
-        FragColor = imageTexel(int(vRadius + 0.5), TexCoords, uvDx, uvDy) * vColor1;
+        // Image: its page is in vRadius, its layer in vBorder, its size in
+        // vJoints.xy, the draw colour (tint) in vColor1.
+        FragColor = imageTexel(int(vRadius + 0.5), vBorder, ivec2(vJoints.xy + 0.5), TexCoords, uvDx, uvDy)
+            * vColor1;
     }
     else if (ShaderType == 3u)
     {
