@@ -41,7 +41,7 @@
 #    prim_slots_written,               yes      any increase
 #      text_slots_written
 #    upload_calls, upload_bytes        yes      any increase
-#    buffer_regrows                    yes      any increase
+#    buffer_regrows, image_regrows     yes      any increase
 #    atlas_upload_calls,               yes      any increase
 #      atlas_upload_bytes
 #    layout_passes, layout_capped,     yes      any increase
