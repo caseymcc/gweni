@@ -4046,6 +4046,83 @@ two programs and the draws. What follows describes both together:
     `tests/unit/segmentedButtons.cpp` pins the selection, the events, the widths and
     joints, the removal and the keyboard, `tests/unit/segmentedLook.cpp` the
     renderer; SegmentedButtonsDemo shows each kind of row.
+- **The stepper.** `controls::Stepper` (`include/gweni/controls/stepper.h`) is a
+  multi-step flow (Material's and MUI's Stepper, Qt's QWizard): numbered steps in a
+  header and a page per step, one shown at a time. `addStep(title, subtitle)` returns
+  the step's page, a plain `Base` the app fills.
+  - *Its relation to PageControl.* `PageControl` is the older, plainer form: pages and
+    Next/Back/Finish buttons, with no indicators, no states and no veto. The Stepper
+    keeps its approach, one container (the page area, in the stepper's body) holding
+    every page with only the current one shown, so a hidden page is never laid out
+    (`Base`'s layout passes over hidden children), and leaves `PageControl` as it is.
+  - *The states.* `setStepState(i, Auto|Done|Error|Disabled)`; `getStepLook(i)` is
+    what shows (`StepLook`: Pending, Current, Done, Error, Disabled). Auto, the
+    default, follows the current step: before it Done, at it Current, after it
+    Pending. Done, Error and Disabled show whatever the current step is.
+    `setStepOptional(i)` adds an "Optional" caption under the title. `setCurrentStep(i)`
+    is the app's direct move and fires nothing.
+  - *The header.* Each step is a `StepperStep`, a Button whose text is its title, with
+    the subtitle and the caption as Owner Texts under it. Its indicator is a circle of
+    `IndicatorSize` (24) at its top left, the title `LabelGap` to its right in both
+    orientations (MUI's vertical stepper keeps it beside the circle too), so the
+    connectors meet every indicator's centre whatever lines a title block holds. The
+    textured `StepperStep` renderer draws the circle in `StepperIndicator`,
+    `StepperIndicatorCurrent`, `StepperIndicatorDone`, `StepperIndicatorError` or
+    `StepperIndicatorDisabled` (each but Disabled's with a `-Hover` while a clickable
+    step is hovered; `StepperIndicatorFocus`'s border while it has the focus), the
+    check (icon kind 0) at `getZIndex()+1` when done, and the number or "!" as a text
+    run of its own at `getZIndex()+1` (`depthLayers()` 2), Badge's way: the two
+    strings are measured in the step's X measure, so a new look writes the step's
+    slots and glyphs and lays nothing out. The title is `StepperTitle`,
+    `StepperTitleCurrent`, `StepperErrorText` or `StepperTitleDisabled`, the captions
+    `StepperSubtitle`, the indicator's text and check `StepperNumber`
+    (`Colors.Stepper`). Between two steps a `StepperConnector` draws a 1-unit rule
+    (icon kind 6) through its middle, in `StepperConnector`'s or, when the step after
+    it shows as done, `StepperConnectorDone`'s top colour.
+  - *The orientations.* The stepper owner-places its steps, connectors and body in its
+    `arrange()`, before `Base::arrange` (SegmentedButtons' reason). Horizontal (the
+    default): the steps in a row, each its own width, the connectors sharing what is
+    left (at least `ConnectorMinLength`, `ConnectorGap` from each step), the body under
+    the whole header `HeaderGap` down, filling the rest of the stepper's height.
+    Vertical (`setOrientation`): the steps in a column `StepSpacing` apart, the body
+    under the current step, indented to its title, each connector from under its
+    indicator to above the next one, so the one beside the page runs down past it.
+  - *Navigation and the veto.* The body's navigation bar has Back at its left and Next
+    at its right (`backButton()`, `nextButton()`, focusable dialog-style Buttons;
+    `setShowNavigation(false)` hides the bar). `next()`, `back()` and `goTo(i)` ask
+    `onStepChanging` first, with (from, to) in `info.point`, to in `info.integer`
+    (and `getChangingFrom()`/`getChangingTo()` while it runs); a handler that calls
+    `vetoStepChange()` leaves the current step, the shown page and every look as they
+    were, and may set the step's state to Error (a form that does not validate).
+    Otherwise the step changes as `setCurrentStep` does and `onStepChanged` fires.
+    A handler may move the stepper itself: the ask nests (its veto flag saved and
+    given back, TabControl's `requestClose` way), and a change made meanwhile wins.
+    `next()` and `back()` pass over Disabled steps and `goTo` refuses one. With no
+    enabled step after the current one Next reads "Finish" and `next()` is the
+    Finish: it asks `onStepChanging` with to = `getStepCount()`, so the last page can
+    veto it too, then fires `onFinish`, the step unchanged. Back stays enabled on the
+    first step, where `back()` does nothing, so a step change repaints no button but
+    Next's text when it turns to or from "Finish".
+  - *Linear and non-linear.* Linear (`setLinear(true)`, the default): the steps take
+    no mouse and no keys, and only Next, Back and the app's `goTo()` move.
+    Non-linear (MUI's non-linear stepper): every enabled step is clickable (the
+    finger cursor, the hover looks) and a click goes to it through the same veto; the
+    steps are one Tab stop (`getTabStop()`: the focused step, else the current one,
+    else the first enabled one), in which Left/Right, or Up/Down when vertical, move
+    the focus over the enabled steps (`moveFocus`, no wrapping) and Return or Space
+    go to the focused one. Escape is not taken. A Disabled step is never clicked,
+    focused or gone to.
+  - *The cost.* A step change marks the steps whose looks change (their circles,
+    checks, numbers and titles' colours), the connectors whose colour changes, the
+    old page's hide and the new one's show and Next's text when it changes; it lays
+    out the page area (and, vertical, the header, whose steps after the page move).
+    A horizontal stepper's height follows the shown page's, so a flow whose pages
+    differ in height gives the stepper a height of its own (StepperDemo's linear
+    one) to move nothing below it. A hover on a clickable step writes its circle's
+    slot alone. `tests/unit/stepper.cpp` pins the looks, the events, the veto, both
+    modes, the keys and the hidden pages, and `--scenario stepper` the costs and
+    pixels on StepperDemo (a linear stepper with a name field that vetoes Next while
+    empty, a vertical non-linear one and one with a disabled step).
 - **Scale and the device-pixel grid.** Controls lay out in logical units (integers);
   `renderer::Base::translate()` turns them into device pixels at `scale()` (set by
   `Canvas::setScale`). It snaps **edges**, not origin and size apart: a point is
@@ -4990,12 +5067,12 @@ set by its bare name and one with some of them as `Name.field` per missing field
 the shipped theme with `"strict": true` added):
 
 ```
-theme strict: 190 of 194 surfaces not set: Badge, ButtonDisabled, ButtonDown, ...
-theme strict: 68 of 70 text colors not set: AxisTagText, BadgeText, ButtonDisabled, ...
+theme strict: 202 of 206 surfaces not set: Badge, ButtonDisabled, ButtonDown, ...
+theme strict: 74 of 76 text colors not set: AxisTagText, BadgeText, ButtonDisabled, ...
 ```
 
-(`theme strict: all 194 surfaces set` for a kind with no gaps, and a single
-`theme strict: all 194 surfaces and 70 text colors set` when there are none at all). A
+(`theme strict: all 206 surfaces set` for a kind with no gaps, and a single
+`theme strict: all 206 surfaces and 76 text colors set` when there are none at all). A
 rejected value counts as not set. A surface that is transparent at rest on purpose
 (`WindowButton`, `SelectableHover`: a transparent fill hides the slot) is magenta too
 until the theme sets it to `[0,0,0,0]`; the theme has not said what it looks like. The
