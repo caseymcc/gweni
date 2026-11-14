@@ -4335,7 +4335,8 @@ applying the drop is a plain edit. The adapters:
   from the anchor).
 - `DataTable::setRowsReorderable` (row mode: a CardReorder over the body, each row
   keyed by its control) and `setItemsReorderable(keyOf, indexOf)` (source mode: a
-  VirtualListReorder over `DataTableVirtualBody`). While the table has a sort
+  VirtualListReorder over `DataTableVirtualBody`); `setRowsReorderable(false)`
+  turns either off. While the table has a sort
   column it takes none of its own rows (`reorderWithinNow()` is false: no gap, the
   `No` cursor), while a row dragged out of it drops on another list; and a header
   click goes ascending, descending and back to no sort, a table without reordering

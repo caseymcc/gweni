@@ -313,6 +313,35 @@ TEST_CASE("DataTable reorder: with reordering on a header click goes ascending, 
     CHECK(scene.right->getSortDirection() == controls::SortDirection::Ascending);
 }
 
+TEST_CASE("DataTable reorder: setRowsReorderable(false) turns a source-mode table's reordering off")
+{
+    Scene scene(true);
+    REQUIRE(scene.right->isReorderable());
+
+    CHECK(scene.right->setRowsReorderable(false) == nullptr);
+    CHECK_FALSE(scene.right->isReorderable());
+    CHECK(scene.right->getBody()->getReorderable() == nullptr);
+
+    // its rows start no drag
+    controls::Base *row=scene.right->rowForItem(0);
+    REQUIRE(row != nullptr);
+    scene.startDrag(row);
+    CHECK_FALSE(draganddrop::isDragging());
+    scene.release();
+
+    // and its header alternates again
+    controls::Base *name=scene.headerCell(scene.right, 0);
+    scene.click(Scene::centre(name));
+    scene.click(Scene::centre(name));
+    scene.click(Scene::centre(name));
+    CHECK(scene.right->getSortColumn() == 0);
+    CHECK(scene.right->getSortDirection() == controls::SortDirection::Ascending);
+
+    // true cannot key a source-mode table's items by control: it stays off
+    CHECK(scene.right->setRowsReorderable(true) == nullptr);
+    CHECK_FALSE(scene.right->isReorderable());
+}
+
 TEST_CASE("DataTable reorder: a table the app sorts during a drag within it takes the drop no more")
 {
     Scene scene(true);

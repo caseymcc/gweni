@@ -700,14 +700,16 @@ private:
 
 Reorderable *DataTable::setRowsReorderable(bool reorderable)
 {
-    if(isSourceMode() || !m_rowBody)
-        return nullptr;
-
+    // off in either mode: the body in use drops its Reorderable
     if(!reorderable)
     {
-        m_rowBody->setReorderable(nullptr);
+        if(m_body)
+            m_body->setReorderable(nullptr);
         return nullptr;
     }
+
+    if(isSourceMode() || !m_rowBody)
+        return nullptr;
 
     if(!m_rowBody->getReorderable())
         m_rowBody->setReorderable(std::make_unique<DataTableRowReorder>(m_rowBody, this));

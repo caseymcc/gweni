@@ -404,6 +404,9 @@ public:
     //! gives it. setRowsReorderable(true) keeps one it made before, while
     //! setItemsReorderable() makes a new one on every call (the key functions
     //! are its), so its rules, group and handler are set again after it.
+    //! setRowsReorderable(false) turns reordering off in either mode (the way
+    //! off for setItemsReorderable too); setRowsReorderable(true) in source
+    //! mode does nothing and returns null.
     Reorderable *setRowsReorderable(bool reorderable);
     Reorderable *setItemsReorderable(VirtualListReorder::KeyOf keyOf, VirtualListReorder::IndexOf indexOf);
     Reorderable *getReorderable() const;
