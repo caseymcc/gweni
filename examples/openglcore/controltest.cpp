@@ -197,7 +197,9 @@
  *                       goes through gweni::input::GLFW3's mouse-button
  *                       callback, as a window's does, and a press (a click's
  *                       included) steps the clock by 1 s, as --press does.
- *    --scroll DX,DY     mouse wheel (DX is ignored; gweni only takes the Y axis)
+ *    --scroll DX,DY     mouse wheel, in wheel units (60 a notch): DY through
+ *                       Canvas::inputMouseWheel, then DX, if not 0, through
+ *                       inputMouseWheelH (the horizontal wheel)
  *    --key <name>       a key: return, kp-enter, tab, space, escape, up, down,
  *                       left, right, home, end, pageup, pagedown, backspace,
  *                       delete, shift, control, alt, command, f9, f10, f11
@@ -2422,6 +2424,13 @@ static bool scrollWheel(Session &s, int delta)
     return used;
 }
 
+static bool scrollWheelH(Session &s, int delta)
+{
+    const bool used=s.canvas->inputMouseWheelH(delta);
+    trace(s, std::string("wheel-h ")+std::to_string(delta)+(used?" consumed":" ignored"));
+    return used;
+}
+
 // Forgetting the hover between controls, so one capture entry cannot leave a
 // control hovered for the next one.
 static void forgetMouse(Session &s)
@@ -2503,7 +2512,12 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
         case StepKind::DownRight: mouseDown(s, step.x, step.y, true, GLFW_MOUSE_BUTTON_RIGHT); break;
         case StepKind::UpRight: mouseUp(s, step.x, step.y, GLFW_MOUSE_BUTTON_RIGHT); break;
         case StepKind::ClickRight: clickMouse(s, step.x, step.y, GLFW_MOUSE_BUTTON_RIGHT); break;
-        case StepKind::Scroll: (void)scrollWheel(s, step.y); break;
+        case StepKind::Scroll:
+            if(step.y)
+                (void)scrollWheel(s, step.y);
+            if(step.x)
+                (void)scrollWheelH(s, step.x);
+            break;
         case StepKind::Key: if(!sendKey(s, step.text)) return false; break;
         case StepKind::Type: typeText(s, step.text); break;
         case StepKind::ExpectText: (void)expectText(s, step.text); break;

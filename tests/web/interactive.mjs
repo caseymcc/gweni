@@ -38,6 +38,10 @@
 //               gweni_web_focused_text, a CodeEditor's caret line)
 //    wheel      ScrollControlDemo: a wheel notch over the first ScrollControl
 //               moves its inner panel up
+//    board      BoardDemo: a horizontal wheel (mouse.wheel(100, 0), the
+//               browser's deltaX, which emscripten-glfw gives as GLFW's x
+//               offset) over the first column's body moves the Board's inner
+//               panel left, and not in y
 //    cursor     CheckBoxDemo: the pointer over a LabelClickable makes the
 //               canvas's CSS cursor "pointer", and off it "default"
 //               (platform::setCursor on the web)
@@ -404,6 +408,39 @@ async function checkWheel(s)
         fail('wheel', `the inner panel stayed at y=${before.inner.y}${after && after.inner ? ` (now ${after.inner.y})` : ''}`);
     else
         pass('wheel', `inner panel y ${before.inner.y} -> ${after.inner.y}`);
+    await context.close();
+}
+
+// A horizontal wheel (the browser's deltaX, GLFW's x offset) over a column's
+// body: the body's own wheel is vertical, so the board takes it.
+async function checkBoard(s)
+{
+    const opened = await s.open('board', 'ControlTest.html?control=BoardDemo', { width: 640, height: 480 + outputPanel });
+    if(!opened)
+        return;
+    const { page, context } = opened;
+    const parts = controls =>
+    {
+        const i = controls.findIndex(c => c.type === 'Board' && c.visible);
+        const body = controls.find(c => c.type === 'BoardColumnBody' && c.visible);
+        return i < 0 ? null : { board: controls[i], body,
+            inner: controls.slice(i + 1).find(c => c.inner && c.depth === controls[i].depth + 1) };
+    };
+    const before = parts(parseListing(await listingOf(page)));
+    if(!before || !before.inner || !before.body)
+        return fail('board', 'BoardDemo lists no visible Board with an inner panel and a column body');
+    const at = centre(cssRect(before.body));
+    await page.mouse.move(at.x, at.y);
+    await s.frames(page);
+    await page.mouse.wheel(100, 0);
+    await s.frames(page);
+    const after = parts(parseListing(await listingOf(page)));
+    if(!(after && after.inner && after.inner.x < before.inner.x))
+        fail('board', `the board's inner panel stayed at x=${before.inner.x}${after && after.inner ? ` (now ${after.inner.x})` : ''}`);
+    else if(after.inner.y !== before.inner.y)
+        fail('board', `the board's inner panel moved in y, ${before.inner.y} -> ${after.inner.y}`);
+    else
+        pass('board', `inner panel x ${before.inner.x} -> ${after.inner.x}`);
     await context.close();
 }
 
@@ -828,6 +865,7 @@ async function main()
         await checkClipboard(s);
         await checkCodeEditor(s);
         await checkWheel(s);
+        await checkBoard(s);
         await checkCursor(s);
         await checkHiDpi(s, controlPage);
         await checkScale(s, controlPage);

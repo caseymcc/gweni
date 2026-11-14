@@ -2299,6 +2299,49 @@ two programs and the draws. What follows describes both together:
   (`layout::Flow::calculateSize`), so a card's wrapped text is never measured at the
   width it had before the Flow placed it. `tests/unit/scrollWidthDependent.cpp`,
   `tests/unit/flow.cpp` and `ControlTest --scenario flow` pin it.
+- **The horizontal wheel.** The wheel has two axes from the input translator to the
+  control. `IInputEvent::inputMouseWheelH(int)` is a non-pure hook beside
+  `inputMouseWheel` (60 a notch, the same sign convention: a negative delta scrolls the
+  content towards its end), returning `false` by default, so a translator or a test
+  implementer written before it still compiles and reports the event unused.
+  `input::GLFW3::processScroll` passes GLFW's x offset to it (times 60, rounded, as the y
+  offset), each non-zero axis on its own call; in a page emscripten-glfw gives the wheel
+  event's `deltaX` as that offset (`web_input`'s `board` check). `Canvas` routes both to
+  the hovered control, `Base::onMouseWheeledH` for the horizontal one, which bubbles to
+  `m_actualParent` as `onMouseWheeled` does, and turns a vertical wheel with Shift held
+  into a horizontal one, there and not in GLFW3, so every translator gets Shift+wheel.
+  `ScrollControl::onMouseWheeledH` moves its horizontal bar when it scrolls horizontally,
+  the bar is shown and enabled and the notch moves it (not at an end), else bubbles: the
+  nearest ScrollControl that can move sideways takes it. An `InputCapture` gets the axis
+  as `captureMouseWheel(delta, Dim)`, as it arrived, before the Shift mapping (the
+  DepthView, ZoomPanel and NodeGraph captures take it as their one wheel)
+  (`tests/unit/horizontalWheel.cpp`, `inputCapture.cpp`).
+- **The board: columns that scroll on their own.** `controls::Board` is a ScrollControl
+  scrolling horizontally only, whose inner panel is the viewport's height through
+  `setVirtualContentHeight(0)` (the path a VirtualList keeps its panel's height with), so
+  no column's content asks the board for height. Its `BoardColumn`s are Owner-placed
+  (`addChild` sets it, `removeChild` gives `Placement::Parent` back): `contentSize()` is
+  the shown columns' `getColumnWidth()` (240) each with `getGap()` (12) between them, and
+  `contentsPlaced()` puts each at its x, `columnWidth` wide and the viewport's height,
+  whatever its cards. A `BoardColumn` is a header Label docked Top (`setHeaderHeight`, 36)
+  and a body, a vertical ScrollControl docked Center that its `newChild()` children go
+  into (dock cards Top, or put a `layout::Flow` there), with a requested height of 0 so
+  it never asks the column for its cards' height. The body's bar is a **stable gutter**
+  (`setScroll(false, true)`, `setAutoHideBars(false)`): shown, disabled while the cards
+  fit, so a card added to a fitting column changes no card's width and the wrapped cards
+  lay out in one pass ("Width-dependent content in a ScrollControl"). The wheel, as
+  decided for master-mind's board: the body's `onMouseWheeled` tries its bar and returns
+  `true` whatever happened, scrolled, at an end or fitting, so a vertical wheel over a
+  column never moves the board; the header, the gaps (the board's inner panel) and the
+  board's inset are outside every body, so a vertical wheel there bubbles to the Board,
+  which as a horizontal-only ScrollControl scrolls sideways; and the body does not take
+  the horizontal wheel, so a horizontal wheel or Shift+wheel anywhere on the board, over
+  a body too, scrolls the board. Each keeps the offsets of the others: content that
+  grows keeps every offset ("The scroll position"), so a card added or a card's text
+  grown moves no scroll position. Both draw nothing themselves (`GWENI_DRAWS_NOTHING`:
+  the header, the cards and the bars draw). BoardDemo has five columns of wrapped cards,
+  an overflowing Backlog and a fitting Ready; `tests/unit/board.cpp` and
+  `ControlTest --scenario board` pin it (`docs/layout.md` -> "Board").
 - **The virtual list: a pool of the rows on screen.** `controls::VirtualList`
   (`include/gweni/controls/virtualList.h`) shows `setItemCount(n)` fixed-height rows
   (`setRowHeight`, 20 by default) through a pool of row controls: `ceil(viewport/rowHeight)+1`,

@@ -855,3 +855,35 @@ in a later one lay out an emptier content in between, which clamps the offset (t
 0 for none), and the new cards start from there. Rebuilding the ScrollControl
 itself loses it: a new one starts at 0. `ControlTest --scenario flow` pins all
 three.
+
+## Board
+
+`controls::Board` (`include/gweni/controls/board.h`) lays fixed-width
+`BoardColumn`s side by side and scrolls them horizontally only; each column
+scrolls its cards vertically on its own.
+
+* **The board's height is its viewport's.** A Board is a ScrollControl with no
+  vertical scrolling whose inner panel is held at the viewport's height
+  (`setVirtualContentHeight(0)`), so nothing in a column asks it to grow. Its
+  columns are Owner (set as they are added, given back as `Parent` when removed):
+  its content is the shown columns' `getColumnWidth()` each and `getGap()` between
+  them, and it places each one in `contentsPlaced()` at its x, the column width
+  wide and the viewport's height high, whatever its cards. A column taller or
+  shorter in content than the viewport moves no other one.
+* **A column's body asks for nothing.** A `BoardColumn` is a header docked Top
+  and a body, a vertical ScrollControl docked Center holding the column's
+  `newChild()` children, with a requested height of 0, so its cards' height is
+  never the column's (a ScrollControl with no request asks for its content's
+  height). Its bar is a stable gutter (`setScroll(false, true)`,
+  `setAutoHideBars(false)`, disabled while the cards fit), so a `layout::Flow` of
+  wrapped cards lays out in one pass and a card added to a fitting column changes
+  no card's width ("layout::Flow", "In a scroll view").
+* **Scroll positions stay.** Each body and the board keep their offsets while
+  their content still reaches that far, so a card added to any column, or a
+  card's text growing, moves neither its column's offset nor any other one.
+* **The wheel.** A vertical wheel over a body is the body's, at an end and in a
+  column that fits too; over a header, a gap or the board's inset it reaches the
+  Board, which scrolls sideways; a horizontal wheel or Shift+wheel scrolls the
+  board anywhere on it (`docs/architecture.md` -> "The board: columns that
+  scroll on their own"). `tests/unit/board.cpp` and `ControlTest --scenario
+  board` pin all of it.
