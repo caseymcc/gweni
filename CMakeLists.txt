@@ -223,6 +223,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/crossSplitter.cpp
     include/gweni/controls/dataTable.h
     source/controls/dataTable.cpp
+    include/gweni/controls/treeTable.h
+    source/controls/treeTable.cpp
     include/gweni/controls/dockBase.h
     source/controls/dockBase.cpp
     include/gweni/controls/dockedTabControl.h

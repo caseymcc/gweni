@@ -102,6 +102,7 @@
 #include <gweni/controls/toast.h>
 #include <gweni/controls/toolTip.h>
 #include <gweni/controls/treeControl.h>
+#include <gweni/controls/treeTable.h>
 #include <gweni/controls/treeNode.h>
 #include <gweni/controls/vectorField.h>
 #include <gweni/controls/verticalScrollBar.h>
