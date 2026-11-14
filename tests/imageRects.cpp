@@ -18,7 +18,8 @@
  *  Also: a UV sub-rect in the same frame as the two textures; 50 distinct
  *  textures in one frame, each its own layer of the smallest class's image page,
  *  which grows (copying its layers) as they load and gives a freed layer to the
- *  next load; a translucent image over another in the same draw; and an image of
+ *  next load, also while frames drawing from the old page are in flight; a
+ *  translucent image over another in the same draw; and an image of
  *  each size class, one larger than the largest page loaded at the first level
  *  of its mip chain that fits.
  */
@@ -437,6 +438,55 @@ TEST_CASE("Image (style 2): 50 distinct textures in one frame each draw their ow
         [&](int x, int y) { return over(textures[7]->texel(x, y)); }) == 0);
     CHECK(blockMismatches(reused, rectOf(8).x, rectOf(8).y, 16, 16,
         [&](int x, int y) { return over(textures[8]->texel(x, y)); }) == 0);
+}
+
+TEST_CASE("Image (style 2): a page that grows between frames still in flight draws every image")
+{
+    // each load is followed by a frame that draws every image so far and is not
+    // read back, so on Vulkan the frames before a growth may still be sampling
+    // the old page when it is replaced (it must be retired, not destroyed; the
+    // validation layer fails the run on a destroyed image in use)
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
+    // more images than the page has layers now (an earlier case may have grown
+    // it and freed them), so it grows at least once whatever ran before
+    const int count=std::max(40, (int)renderer.imagePageLayers(0)+8);
+    std::vector<std::unique_ptr<GeneratedTexture>> textures;
+    Primitives prims((size_t)count);
+    // 20 a row: up to 140 in the 448x160 view
+    const auto rectOf=[](int i) { return Rect(8+(i%20)*20, 8+(i/20)*20, 16, 16); };
+
+    REQUIRE(count <= 140);
+    size_t regrows=0;
+
+    for(int i=0; i<count; ++i)
+    {
+        textures.emplace_back(new GeneratedTexture((1+i*3) & 0xff, 16));
+        REQUIRE(textures.back()->loaded());
+
+        renderer.begin();
+        renderer.setDrawColor(white);
+        for(int j=0; j<=i; ++j)
+            renderer.drawTexturedRect(textures[j]->texture, prims.ids[j], rectOf(j), 1);
+        renderer.end();
+        regrows+=renderer.getFrameStats().imagePageRegrows;
+    }
+    CHECK(regrows >= 1);
+
+    const Frame frame=drawFrame([&](SlotRenderer &r)
+        {
+            r.setDrawColor(white);
+            for(int i=0; i<count; ++i)
+                r.drawTexturedRect(textures[i]->texture, prims.ids[i], rectOf(i), 1);
+        });
+
+    for(int i=0; i<count; ++i)
+    {
+        INFO("image ", i);
+        const Rect rect=rectOf(i);
+
+        CHECK(blockMismatches(frame, rect.x, rect.y, 16, 16,
+            [&](int x, int y) { return over(textures[i]->texel(x, y)); }) == 0);
+    }
 }
 
 TEST_CASE("Image (style 2): a translucent image over another in one draw blends over it, in slot order")
