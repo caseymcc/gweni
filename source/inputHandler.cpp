@@ -306,6 +306,15 @@ bool onMouseClicked(controls::Base *canvas, int iMouseButton, bool down)
         return true;
     }
 
+    // The release of the button that held a drag Escape (or the source list
+    // hidden, the item gone) cancelled goes nowhere either: the drag had taken
+    // the press, so nothing under the mouse holds it.
+    if((iMouseButton == 0) && draganddrop::takeCancelledRelease(canvas->getCanvas(), down))
+    {
+        g_keyData.LeftMouseDown=false;
+        return true;
+    }
+
     // If we click on a control that isn't a menu we want to close
     // all the open menus. Menus are children of the canvas.
     if(down && (!HoveredControl || !HoveredControl->isMenuComponent()))

@@ -21,7 +21,10 @@
  *  before the card it was before, the bar following it, in one layout pass,
  *  and the drop reports the indexes as they are then. The dragged card
  *  deleted cancels the drag with nothing reported. Escape cancels, hiding the
- *  looks. A drop handler on the other column that takes reordering off the
+ *  looks. The release of the button after a cancel it did not make (Escape,
+ *  the dragged card deleted, the source column hidden) reaches no control:
+ *  not the column's scroll bar track, not another card's Button; the next
+ *  press and release are a click, also when that release was lost. A drop handler on the other column that takes reordering off the
  *  source column (setReorderable(nullptr)) or deletes it ends the drag, the
  *  drop reported once, with nothing read of the freed Reorderable (a real
  *  check in the ASAN tree).
@@ -486,6 +489,152 @@ TEST_CASE("CardReorder: the dragged card deleted cancels the drag, and Escape hi
         scene.release();
         CHECK(scene.todo.drops.empty());
         CHECK_FALSE(scene.todo.cards[1]->getToggleState());
+    }
+}
+
+namespace
+{
+
+// Counts a Button's presses and releases
+struct ClickCounts: public event::Handler
+{
+    int ups=0;
+    int presses=0;
+
+    void up(event::Info) { ++ups; }
+    void pressed(event::Info) { ++presses; }
+
+    void watch(controls::Button *button)
+    {
+        button->onUpCaller.add(this, &ClickCounts::up);
+        button->onPressCaller.add(this, &ClickCounts::pressed);
+    }
+};
+
+void escape(Scene &scene)
+{
+    input::onKeyEvent(scene.canvas, keys::Escape, true);
+    input::onKeyEvent(scene.canvas, keys::Escape, false);
+    scene.frame();
+}
+
+}//namespace
+
+TEST_CASE("CardReorder: the release after a cancel with the button down goes nowhere")
+{
+    SUBCASE("Escape, released over the column's scroll bar track")
+    {
+        Scene scene(20);
+        controls::ScrollControl *list=scene.todo.list;
+        REQUIRE(list->getMaxVerticalScrollOffset() > 0);
+        REQUIRE(list->getVerticalScrollOffset() == 0);
+
+        scene.startDrag(scene.todo.cards[1]);
+        REQUIRE(draganddrop::isDragging());
+        scene.move(list->localPosToCanvas(Point(list->getWidth()-4, list->getHeight()/2)));
+        escape(scene);
+        REQUIRE_FALSE(draganddrop::isDragging());
+
+        scene.release();
+        scene.frame();
+        CHECK(list->getVerticalScrollOffset() == 0);
+        CHECK(scene.todo.drops.empty());
+    }
+
+    SUBCASE("Escape, released over another card")
+    {
+        Scene scene;
+        controls::Button *other=scene.todo.cards[3];
+        ClickCounts counts;
+
+        counts.watch(other);
+        scene.startDrag(scene.todo.cards[0]);
+        REQUIRE(draganddrop::isDragging());
+        scene.move(Scene::on(other, CardHeight/2));
+        escape(scene);
+        REQUIRE_FALSE(draganddrop::isDragging());
+
+        scene.release();
+        CHECK(counts.ups == 0);
+        CHECK(counts.presses == 0);
+        CHECK_FALSE(other->getToggleState());
+    }
+
+    SUBCASE("the dragged card deleted, released over another card")
+    {
+        Scene scene;
+        controls::Button *other=scene.running.cards[0];
+        ClickCounts counts;
+
+        counts.watch(other);
+        scene.startDrag(scene.todo.cards[1]);
+        scene.move(Scene::on(other, CardHeight/2));
+        REQUIRE(draganddrop::isDragging());
+        delete scene.todo.cards[1];
+        scene.frame();
+        REQUIRE_FALSE(draganddrop::isDragging());
+
+        scene.release();
+        CHECK(counts.ups == 0);
+        CHECK(counts.presses == 0);
+        CHECK_FALSE(other->getToggleState());
+    }
+
+    SUBCASE("the source column hidden, released over a card of the other one")
+    {
+        Scene scene;
+        controls::Button *other=scene.running.cards[0];
+        ClickCounts counts;
+
+        counts.watch(other);
+        scene.startDrag(scene.todo.cards[1]);
+        scene.move(Scene::on(other, CardHeight/2));
+        REQUIRE(draganddrop::isDragging());
+        scene.todo.list->hide();
+        scene.frame();
+        REQUIRE_FALSE(draganddrop::isDragging());
+
+        scene.release();
+        CHECK(counts.ups == 0);
+        CHECK(counts.presses == 0);
+        CHECK_FALSE(other->getToggleState());
+    }
+
+    SUBCASE("the next press and release after it are a click again")
+    {
+        Scene scene;
+        controls::Button *other=scene.todo.cards[3];
+        ClickCounts counts;
+
+        counts.watch(other);
+        scene.startDrag(scene.todo.cards[0]);
+        scene.move(Scene::on(other, CardHeight/2));
+        escape(scene);
+        scene.release();
+        REQUIRE(counts.ups == 0);
+
+        scene.press(Scene::on(other, CardHeight/2));
+        scene.release();
+        CHECK(counts.presses == 1);
+        CHECK(other->getToggleState());
+    }
+
+    SUBCASE("a release lost off the window: the next press is a click")
+    {
+        Scene scene;
+        controls::Button *other=scene.todo.cards[3];
+        ClickCounts counts;
+
+        counts.watch(other);
+        scene.startDrag(scene.todo.cards[0]);
+        scene.move(Scene::on(other, CardHeight/2));
+        escape(scene);
+
+        // no release came: the next press and release are a click
+        scene.press(Scene::on(other, CardHeight/2));
+        scene.release();
+        CHECK(counts.presses == 1);
+        CHECK(other->getToggleState());
     }
 }
 
