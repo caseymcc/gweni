@@ -3025,6 +3025,59 @@ two programs and the draws. What follows describes both together:
   and re-measures the column. With no format every path is as before: the same track,
   thumb and ticks, byte for byte. SliderTextDemo shows `%.0f`, `%.2f`, a percentage, a
   notched and a disabled slider and a vertical one; ShowcaseInputDemo has one.
+- **The range slider.** `controls::RangeSlider` (`include/gweni/controls/rangeSlider.h`)
+  picks a range (MUI's range Slider, imgui's DragFloatRange2): `getLow()` to `getHigh()`
+  in `getMin()` to `getMax()`, doubles, never closer than `setMinimumGap()`, on the grid
+  of `setStep()` or of the notches while clamped to them (`setNotchCount`,
+  `setClampToNotches`, as a Slider's). `setValues` clamps, orders, snaps and spreads the
+  two to the gap (the high one up, the low one down at the maximum) and fires and marks
+  nothing for the values it has; a drag, a track press or a key fires `onValueChanged`
+  once per real change with the thumb in `integer` (0 low, 1 high), then `onLowChanged`
+  or `onHighChanged`. **The thumbs are not moved as controls.** Its two
+  `internal::RangeSliderThumb`s (SliderBars, so their hover, press and focus are a
+  control's) are owner-placed over the whole track column once per layout and draw, and
+  are hit, at `getThumbRect(i)`: `RangeSlider::getControlAt` returns the front thumb where
+  its rect is, else the other's, else the slider. Any `setBounds` of a child marks the
+  way down to it for the next layout pass (a Slider's thumb drag costs a pass of 16
+  entries a frame), so a value change here only `redraw()`s the thumb and the slider,
+  and a drag frame lays nothing out. A thumb's position is `Slider::thumbOffset(travel,
+  fraction)`, the rounded rule a Slider's has had since #466, shared with
+  Horizontal/VerticalSlider: the drag reads the value from the position the mouse gives
+  the thumb (the mouse less the hold into it) and places it from that value, so a
+  continuous drag moves it by exactly the mouse's step, and a dragged thumb stops at the
+  other's value less (plus) the gap or the range's end without pushing it. A press on the
+  track moves the nearer thumb there, centred on the mouse, and drags it on (on a tie the
+  one on that side, halfway between them the low one if it can get there); two thumbs at
+  one value wait for the drag's first move, toward the minimum the low one, and the
+  capture (`MouseFocus`) moves to the one picked. Each thumb takes the focus, Tab low then
+  high; Left/Down and Right/Up step it by the grid (a hundredth of the range on a
+  continuous slider), PageUp/PageDown by ten, Home/End to its limits
+  (`getLowerLimit`/`getUpperLimit`); disabled, the thumbs take no mouse, keys or focus.
+  **Value text:** `setValueFormat` takes `Slider::validValueFormat`'s formats and makes a
+  `controls::internal::Text` per thumb (`PerThumb`, horizontal: centred in the field's left
+  and right halves; vertical: the high value at the top of a column right of the track and
+  the low one at its bottom) or one `"lo – hi"` (`Joined`), set only when its string
+  changes and with `setSameSizeKeepsLayout`, so a frame keeping the string writes no glyph
+  and a new string of the same width lays nothing out; one of another width ("-10" to
+  "-9") lays out the way down to the slider in one pass. The vertical column is measured
+  from the range (the wider of the formatted min and max, or the joined string of the
+  wider one twice), so it never changes in a drag. **Renderer:** the textured
+  `RangeSlider` draws a Slider's track and ticks (`Slider::trackRect`, `paintTicks`,
+  shared with the Slider's renderer, which draws the same bytes) in `SliderTrack` and
+  `SliderNotch`, the fill between the thumbs' centres at z+1 (`RangeSliderFill`,
+  `RangeSliderFillDisabled`), and reserves z+2 and z+3 for the thumbs (`depthLayers()`
+  4): `RangeSliderThumb` draws in its slider's z+2, or z+3 while it is the front thumb
+  (`getFrontThumb()`, the one dragged or focused last), in the SliderThumb surfaces, the
+  focused one with `RangeSliderThumbFocus`'s border colour and width; the texts, children
+  after the thumbs, draw over them. So a hover writes the hovered thumb's slot, a drag
+  frame that thumb's slot, the fill's and its text's glyphs, and a change of the front
+  thumb both thumbs' slots. **Dragging the range itself** (both thumbs at once, by a press
+  on the fill) is not done: it would be a third drag target picked in
+  `RangeSlider::onMouseClickLeft` for a press between the thumbs, moving both values by
+  the drag in `thumbMoved` within `[min, max]`. RangeSliderDemo shows a price band with a
+  gap, a notched one, a joined one, a disabled one and a vertical one;
+  `controltest_range_slider` (`--scenario range-slider`) holds the drags and keys to these
+  counts (`tests/unit/rangeSlider.cpp` the behaviour).
 - **Notebook tabs.** In the textured skin a TabControl's tabs show which page is open by
   their shape (#540). The page frame is the `TabControlInner` panel, the `TabControl`
   surface in one flat fill; the `TabControl` itself has no primitive and draws nothing, so
