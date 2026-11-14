@@ -5,6 +5,7 @@
  */
 
 #include <gweni/controls/treeTable.h>
+#include <gweni/controls/canvas.h>
 
 #include <algorithm>
 #include <utility>
@@ -111,7 +112,7 @@ void TreeTableRow::onMouseDoubleClickLeft(int x, int y)
 
 const Rect *TreeTableRow::getChildClipRect(const Base *child) const
 {
-    return child == m_expander?&m_expanderClip:nullptr;
+    return child == m_expander?&m_expanderClip:ParentClass::getChildClipRect(child);
 }
 
 // The expander after the tree cell's padding and the indent, clipped to the
@@ -349,6 +350,8 @@ void TreeTable::appendVisible(std::vector<VisibleNode> &into,
 // The item count takes care of rows newly shown or hidden by a changed range.
 // Pooled rows still showing an index in the suffix now show another node:
 // refresh those alone. Rows before the insertion/removal keep their content.
+// A row bound again in place may show or hide its expander under a resting
+// mouse, so the hover is hit-tested again after the layout.
 // The selection's item is set on both sides of the count, so the count never
 // finds it past its end (which would drop it, with an event): while the old
 // count holds it, and again after (the item past the old count, or none).
@@ -359,12 +362,23 @@ void TreeTable::visibleChanged(size_t firstChanged, size_t selected)
     DataTable::setItemCount(m_visible.size());
     DataTable::setSelectedItem(selected, false);
 
+    bool rebound=false;
+
     for(Base *control : getVirtualBody()->getRows())
     {
         const size_t item=getVirtualBody()->itemForRow(control);
 
         if(item != NoItem && item >= firstChanged && item < m_visible.size())
+        {
             rebindItem(item);
+            rebound=true;
+        }
+    }
+
+    if(rebound)
+    {
+        if(Canvas *canvas=getCanvas())
+            canvas->hoverMayHaveMoved();
     }
 }
 
@@ -600,11 +614,13 @@ void TreeTable::selectionEvent()
     onSelectionChange.call(this, info);
 }
 
+// The tree keys are the table's own: from a focused control in a cell (a
+// TextBox) they go on to its parents, as a Selectable row's Return does.
 bool TreeTable::onKeyRight(bool down)
 {
     const Node *node=getNode(m_selectedNode);
 
-    if(!node)
+    if(!node || KeyboardFocus != this)
         return false;
     if(!down)
         return true;
@@ -621,7 +637,7 @@ bool TreeTable::onKeyLeft(bool down)
 {
     const Node *node=getNode(m_selectedNode);
 
-    if(!node)
+    if(!node || KeyboardFocus != this)
         return false;
     if(!down)
         return true;
@@ -641,7 +657,7 @@ bool TreeTable::onKeyLeft(bool down)
 
 bool TreeTable::onKeyReturn(bool down)
 {
-    if(m_selectedNode == NoNode)
+    if(m_selectedNode == NoNode || KeyboardFocus != this)
         return false;
     if(down)
         activateNode(m_selectedNode);
@@ -650,7 +666,7 @@ bool TreeTable::onKeyReturn(bool down)
 
 bool TreeTable::onChar(UnicodeChar c)
 {
-    if(c != '*' || m_selectedNode == NoNode)
+    if(c != '*' || m_selectedNode == NoNode || KeyboardFocus != this)
         return ParentClass::onChar(c);
 
     expandSubtree(m_selectedNode);

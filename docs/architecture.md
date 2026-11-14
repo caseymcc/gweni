@@ -3260,7 +3260,10 @@ two programs and the draws. What follows describes both together:
   (the rows the viewport shows whole), clamped at the ends; each fires
   `onSelectionChange` and scrolls the item fully into view (`moveSelectionTo`, through
   `scrollToItem`), and with nothing selected every one selects the first item, End the
-  last. A row-mode or empty table leaves them to its parents. Nothing draws the focus,
+  last. A row-mode or empty table leaves them to its parents, and so does the table while
+  another control has the focus: a key from a TextBox in a cell (`setCellContents`)
+  bubbles up through the table and goes on past it, as a `Selectable` row passes on a
+  Return that is not its own, so a dialog's default button gets it. Nothing draws the focus,
   so a table at rest looks as it did. The selection's change goes through a protected
   hook, `selectedItemChanged(row, item, doEvents)`, which fires the event by default.
   DataTableDemo has the first 40 elements, sortable by any column, and
@@ -3310,7 +3313,12 @@ two programs and the draws. What follows describes both together:
   **The tree column** (`setTreeColumn`, 0 by default): every pooled row is a
   `TreeTableRow` (`DataTable::newSourceRow`, a protected factory hook), made with its
   `internal::TreeTableExpander`, a Button owner-placed in the tree cell and clipped to it
-  (`getChildClipRect`), so binding a parent to a row later makes nothing. The cell's left
+  (`getChildClipRect`; the other children keep Label's rects, and the row marks the
+  expander itself when its rect changes rather than reporting `hasChildClipRects()`, so
+  a new row width, an overflowing column drag's, marks no cell left of the column), so
+  binding a parent to a row later makes nothing. A row bound again in place by an
+  expand or collapse can show or hide its expander under a resting mouse, so the table
+  then calls `Canvas::hoverMayHaveMoved()`, as `TreeNode` does. The cell's left
   padding is `CellPaddingX + depth*Indent + Indent` (Indent 16, the expander 15 square),
   a leaf's too, so siblings line up and a child's expander sits under its parent's text;
   a row bound to a node at another depth changes that padding and moves the expander,
@@ -3325,8 +3333,8 @@ two programs and the draws. What follows describes both together:
   keys** add the tree's to DataTable's row keys: Right expands a collapsed parent or else
   moves to its first child, Left collapses an expanded node or else moves to its parent
   (the nearest row above at a lesser depth), `*` (a character) expands the selected
-  node's whole subtree, Return activates it; with nothing selected none of them is
-  taken. TreeTableDemo has a generated file-system-like tree of 100 000 nodes, 8 folders
+  node's whole subtree, Return activates it; with nothing selected, or while a control
+  in a cell has the focus, none of them is taken. TreeTableDemo has a generated file-system-like tree of 100 000 nodes, 8 folders
   with 10 files and folders each, numbered breadth first so the rows near the top are
   the same at any node count, Name, Size and Modified columns, and a label following the
   selection; `controltest_tree_table` holds its counts to the same at 1 000 and 100 000

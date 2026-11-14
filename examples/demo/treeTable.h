@@ -1,3 +1,10 @@
+/*
+ *  Gweni
+ *  Copyright (c) 2010 Facepunch Studios
+ *  MIT License, see LICENSE
+ *
+ *  TreeTableDemo: a generated file-system-like tree of 100 000 nodes.
+ */
 #ifndef _gweni_treeTable_example_h_
 #define _gweni_treeTable_example_h_
 

@@ -1055,12 +1055,13 @@ void DataTable::moveSelectionTo(size_t item)
 // PageDown the rows the viewport shows whole, the selection kept in view. With
 // nothing selected every one of them selects the first item but End, which
 // selects the last. A release of one of them is taken too, so it does not go
-// on to an ancestor; in row mode and on an empty table they go on.
+// on to an ancestor; in row mode, on an empty table and from a focused control
+// in a cell (a TextBox, whose keys bubble up through the table) they go on.
 bool DataTable::rowKey(int key, bool down)
 {
     const size_t count=getItemCount();
 
-    if(!m_virtualBody || count == 0)
+    if(!m_virtualBody || count == 0 || KeyboardFocus != this)
         return false;
     if(!down)
         return true;

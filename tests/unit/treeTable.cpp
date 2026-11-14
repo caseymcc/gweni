@@ -47,10 +47,18 @@
  *  a collapsed node to its parent, collapses an expanded one and does nothing
  *  at a collapsed root; `*` expands the whole subtree with one onExpanded per
  *  node, once; Return activates the selected node, parent or leaf; with no
- *  selection none of them is taken. No GL context or resources are needed.
+ *  selection none of them is taken. With a TextBox in a cell focused, the row
+ *  and tree keys are not the table's: they go on past it, moving, expanding
+ *  and activating nothing. With the columns wider than the table, a column's
+ *  new width marks no cell left of it (the cells keep Label's clip rects; the
+ *  row does not report child clip rects). A resting mouse on an expander
+ *  whose row a keyboard collapse binds to a leaf no longer hovers it, and a
+ *  click there without a move selects the leaf. No GL context or resources
+ *  are needed.
  */
 #include "headlessFixture.h"
 
+#include <gweni/controls/textBox.h>
 #include <gweni/controls/treeTable.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/platform.h>
@@ -592,7 +600,10 @@ TEST_CASE("TreeTable: the tree cell is indented by depth and a parent's expander
             const Rect *clip=row->getChildClipRect(expander);
             REQUIRE((clip != nullptr));
             CHECK((*clip == Rect(cell.x, 0, cell.w, row->getHeight())));
-            CHECK((row->getChildClipRect(row->getCell(treeColumn)) == nullptr));
+            // the cells keep Label's rects: the row's bounds
+            const Rect *cellClip=row->getChildClipRect(row->getCell(treeColumn));
+            REQUIRE((cellClip != nullptr));
+            CHECK((*cellClip == Rect(0, 0, row->getWidth(), row->getHeight())));
         };
     for(size_t item=0; item < 6; ++item)
         checkRow(item, 0);
@@ -1260,4 +1271,166 @@ TEST_CASE("TreeTable: Right Left star and Return expand collapse move and activa
     // an activation changes nothing else
     checkIndex(table, {1, 2, 3, 4, 5, 6, 7});
     CHECK(table->getSelectedNode() == 4);
+}
+
+TEST_CASE("TreeTable: keys from a focused control in a cell go on past the table")
+{
+    Scene scene;
+    TreeTable *table=scene.table;
+    Events events;
+
+    table->onExpanded.add(&events, &Events::expand);
+    table->onCollapsed.add(&events, &Events::collapse);
+    table->onNodeActivated.add(&events, &Events::activate);
+    table->onSelectionChange.add(&events, &Events::select);
+    table->addNode(Root, 1);
+    table->addNode(1, 2);
+    table->addNode(Root, 3);
+    table->addNode(3, 4);
+    table->addNode(Root, 5);
+    table->addNode(Root, 6);
+    scene.settle();
+    REQUIRE(table->setSelectedNode(3));
+
+    controls::TextBox *box=scene.canvas->newChild<controls::TextBox>();
+    box->setBounds(4, 2, 60, 14);
+    scene.row(3)->setCellContents(1, box);
+    scene.settle();
+    REQUIRE(box->getParent() == scene.row(3)->getCell(1));
+    box->focus();
+    REQUIRE(KeyboardFocus == box);
+
+    // the table's own handlers refuse them while another control has the
+    // focus, so they bubble on (a dialog's default button gets the Return)
+    CHECK_FALSE(table->onKeyReturn(true));
+    CHECK_FALSE(table->onKeyRight(true));
+    CHECK_FALSE(table->onKeyLeft(true));
+    CHECK_FALSE(table->onKeyDown(true));
+    CHECK_FALSE(table->onKeyUp(true));
+    CHECK_FALSE(table->onKeyPageDown(true));
+    CHECK_FALSE(table->onKeyHome(true));
+    CHECK_FALSE(table->onChar('*'));
+
+    // pressed in the box, none of them moves, expands or activates anything;
+    // Return last, since its release is the box's Tab to the next stop
+    for(int key : {keys::Down, keys::Up, keys::PageDown, keys::PageUp})
+        scene.key(key);
+    CHECK(KeyboardFocus == box);
+    scene.key(keys::Return);
+    CHECK(table->getSelectedNode() == 3);
+    CHECK_FALSE(table->isExpanded(3));
+    CHECK(events.activated.empty());
+    CHECK(events.expanded.empty());
+    CHECK(events.selections.empty());
+
+    // focused itself, the table takes them again
+    table->focus();
+    scene.key(keys::Down);
+    CHECK(table->getSelectedNode() == 5);
+    scene.key(keys::Return);
+    CHECK(events.activated == std::vector<NodeId>{5});
+}
+
+TEST_CASE("TreeTable: an overflowing column drag marks nothing left of the column")
+{
+    for(int column : {1, 2})
+    {
+        CAPTURE(column);
+        Scene scene;
+        TreeTable *table=scene.table;
+
+        table->setColumnCount(4);
+        for(int c=0; c < 4; ++c)
+            table->setColumnWidth(c, 150);
+        scene.roots(40);
+        for(size_t i=0; i < 40; ++i)
+            table->addNode(100+i*7, 1000+i);
+        scene.settle();
+        REQUIRE(table->contentWidth() > table->getVirtualBody()->getViewport().w);
+
+        table->setColumnWidth(column, 170);
+        scene.canvas->updateCanvas();
+        CHECK(table->getColumnWidth(column) == 170);
+
+        size_t rows=0;
+        std::vector<std::string> wrong;
+
+        for(controls::Base *control : table->getVirtualBody()->getRows())
+        {
+            auto *row=gweni_cast<controls::TreeTableRow>(control);
+
+            REQUIRE(row != nullptr);
+            if(row->hidden())
+                continue;
+            ++rows;
+            for(int c=0; c < column; ++c)
+            {
+                std::vector<controls::Base *> cells;
+
+                collect(row->getCell(c), cells);
+                for(controls::Base *cell : cells)
+                {
+                    if(cell->getStateChange() & controls::StateChange_Geometry)
+                        wrong.push_back(std::string("marked left of the column: ")+cell->getTypeName()
+                            +" in column "+std::to_string(c));
+                }
+            }
+            if(!(row->getCell(column)->getStateChange() & controls::StateChange_Geometry))
+                wrong.push_back("the resized cell not marked");
+        }
+        CHECK(rows > 0);
+        CHECK(wrong.empty());
+        for(const std::string &line : wrong)
+            MESSAGE(line);
+        scene.canvas->renderCanvas();
+    }
+}
+
+TEST_CASE("TreeTable: a resting mouse is hit-tested again when its row is bound to another node")
+{
+    Scene scene;
+    TreeTable *table=scene.table;
+
+    // a root holding parents, then leaf roots: collapsed, the rows below
+    // the root show the leaves, so the viewport stays full
+    table->addNode(Root, 1);
+    for(NodeId id=2; id < 22; ++id)
+    {
+        table->addNode(1, id);
+        table->addNode(id, id+100);
+    }
+    for(NodeId id=300; id < 320; ++id)
+        table->addNode(Root, id);
+    table->setExpanded(1, true);
+    scene.settle();
+
+    controls::TreeTableRow *row=scene.row(1);
+    REQUIRE(row != nullptr);
+    REQUIRE(table->nodeForItem(1) == 2);
+    controls::internal::TreeTableExpander *expander=row->getExpander();
+    REQUIRE_FALSE(expander->hidden());
+
+    const Point at=Scene::centreOf(expander);
+    scene.canvas->inputMouseMoved(at.x, at.y, 0, 0);
+    scene.frame();
+    REQUIRE(HoveredControl == expander);
+
+    // Left on the selected root collapses it: the row under the mouse now
+    // shows a leaf, bound in place, its expander hidden
+    REQUIRE(table->setSelectedNode(1));
+    table->focus();
+    scene.key(keys::Left);
+    REQUIRE_FALSE(table->isExpanded(1));
+    REQUIRE(scene.row(1) == row);
+    REQUIRE(table->nodeForItem(1) == 300);
+    CHECK(expander->hidden());
+    CHECK(HoveredControl != expander);
+    CHECK(HoveredControl != nullptr);
+
+    // a click there without moving selects the leaf
+    scene.clock+=1.0f;
+    input::onMouseClicked(scene.canvas, 0, true);
+    scene.release();
+    scene.frame();
+    CHECK(table->getSelectedNode() == 300);
 }

@@ -1,3 +1,10 @@
+/*
+ *  Gweni
+ *  Copyright (c) 2010 Facepunch Studios
+ *  MIT License, see LICENSE
+ *
+ *  TreeTableDemo: the tree, its columns and the selection label.
+ */
 #include "demo/treeTable.h"
 #include "gweni/controls/label.h"
 #include "gweni/controls/treeTable.h"

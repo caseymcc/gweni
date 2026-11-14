@@ -68,9 +68,10 @@ public:
     //! A double-click toggles a parent and activates a leaf (onNodeActivated).
     void onMouseDoubleClickLeft(int x, int y) override;
 
-    //! The expander is drawn and hit-tested inside the tree cell only.
+    //! The expander is drawn and hit-tested inside the tree cell only; the
+    //! other children get Label's rects. The row marks the expander itself
+    //! when its rect changes, so a new row size marks no cell.
     const Rect *getChildClipRect(const Base *child) const override;
-    bool hasChildClipRects() const override { return true; }
 
 protected:
     void arrangeHorizontal(skin::Base *skin) override;
