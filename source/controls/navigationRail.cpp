@@ -6,10 +6,12 @@
 
 
 #include <gweni/controls/navigationRail.h>
+#include <gweni/controls/badge.h>
 #include <gweni/controls/imagePanel.h>
 #include <gweni/skin.h>
 
 #include <algorithm>
+#include <limits>
 
 namespace gweni
 {
@@ -17,6 +19,39 @@ namespace controls
 {
 namespace internal
 {
+
+//! A badge may need a visible anchor even when no image was supplied. Keep
+//! ImagePanel's resource loading and slot handling for images, but paint
+//! nothing for that blank anchor rather than a missing-image placeholder.
+class NavigationIcon: public ImagePanel
+{
+public:
+    GWENI_CONTROL_INLINE(NavigationIcon, ImagePanel) {}
+    GWENI_DRAWS_NOTHING
+
+    void setImage(const String &name) override
+    {
+        if(name.empty())
+        {
+            m_texture.name.clear();
+            redraw();
+        }
+        else
+            ParentClass::setImage(name);
+    }
+
+    void render(skin::Base *skin) override
+    {
+        if(!getImageName().empty())
+            ParentClass::render(skin);
+        else if(getStateChange() != StateChange_Nothing)
+        {
+            Base::render(skin);
+            if(m_primitiveId != std::numeric_limits<size_t>::max())
+                skin->getRenderer()->hidePrimitive(m_primitiveId);
+        }
+    }
+};
 
 //! Both item containers enrol their rows as children are added, including a
 //! newChild<NavigationItem>() in the footer. Reparenting takes a row out again.
@@ -32,6 +67,15 @@ public:
     GWENI_DRAWS_NOTHING
 
     SelectableGroup *selection=nullptr;
+    bool collapsed=false;
+
+    void setCollapsed(bool value)
+    {
+        collapsed=value;
+        for(Base *child : getActualChildren())
+            if(auto *item=gweni_cast<NavigationItem>(child))
+                item->setCollapsed(value);
+    }
 
     void onChildAdded(Base *child) override
     {
@@ -39,7 +83,10 @@ public:
         if(selection)
         {
             if(auto *item=gweni_cast<NavigationItem>(child))
+            {
                 selection->add(item);
+                item->setCollapsed(collapsed);
+            }
         }
     }
 
@@ -73,16 +120,21 @@ GWENI_CONTROL_CONSTRUCTOR(NavigationItem)
     m_label->setSizeFlags({SizeFlag::Elastic, SizeFlag::Elastic});
     m_label->setTextAlignment(Alignment::Left|Alignment::CenterV);
 
-    m_image=newChild<ImagePanel>();
+    m_image=newChild<internal::NavigationIcon>();
     m_image->setPlacement(Placement::Owner);
     m_image->setSize(IconSize, IconSize);
     m_image->hide();
+    // Enrollment precedes init(), so a collapsed container may already have
+    // set the flag before these children existed.
+    setCollapsed(m_collapsed);
     updateColors();
 }
 
 void NavigationItem::setText(const String &text, bool doEvents)
 {
     m_label->setText(text, doEvents);
+    if(m_collapsed)
+        setToolTipText(text);
 }
 
 const String &NavigationItem::getText() const
@@ -93,9 +145,42 @@ const String &NavigationItem::getText() const
 void NavigationItem::setImage(const String &name, bool /*center*/)
 {
     // Retain the ImagePanel: it is also the anchor for an item's badge.
-    if(!name.empty() && (name != m_image->getImageName()))
+    if(name != m_image->getImageName())
         m_image->setImage(name);
-    m_image->setHidden(name.empty());
+    m_image->setHidden(name.empty() && !m_badge);
+}
+
+void NavigationItem::setCollapsed(bool collapsed)
+{
+    m_collapsed=collapsed;
+    if(m_label)
+    {
+        m_label->setHidden(collapsed);
+        setToolTipText(collapsed?getText():String());
+    }
+}
+
+Badge *NavigationItem::ensureBadge()
+{
+    if(!m_badge)
+    {
+        m_badge=m_image->newChild<Badge>();
+        m_badge->attach(m_image, Corner::TopRight);
+        m_image->show();
+    }
+    return m_badge;
+}
+
+void NavigationItem::setBadgeCount(int count)
+{
+    Badge *badge=ensureBadge();
+    badge->setDot(false);
+    badge->setCount(count);
+}
+
+void NavigationItem::setBadgeDot(bool dot)
+{
+    ensureBadge()->setDot(dot);
 }
 
 void NavigationItem::setTextColor(const Color &color)
@@ -200,6 +285,50 @@ NavigationItem *NavigationRail::getSelected() const
 void NavigationRail::groupSelectionChanged(event::Info info)
 {
     onSelectionChange.call(this, info);
+}
+
+void NavigationRail::setCollapsed(bool collapsed)
+{
+    if(m_collapsed == collapsed)
+        return;
+    m_collapsed=collapsed;
+    static_cast<internal::NavigationRailItems *>(m_items)->setCollapsed(collapsed);
+    static_cast<internal::NavigationRailItems *>(m_footer)->setCollapsed(collapsed);
+    invalidate();
+    event::Info info(this);
+    info.integer=collapsed?1:0;
+    onCollapsedChanged.call(this, info);
+}
+
+void NavigationRail::setExpandedWidth(int width)
+{
+    width=std::max(0, width);
+    if(m_expandedWidth == width)
+        return;
+    m_expandedWidth=width;
+    if(!m_collapsed)
+        invalidate();
+}
+
+void NavigationRail::calculateSize(skin::Base *skin, Dim dim)
+{
+    ParentClass::calculateSize(skin, dim);
+    if(dim != Dim::X)
+        return;
+
+    int width=NavigationItem::IconSize+2*NavigationItem::PaddingX;
+    if(!m_collapsed)
+    {
+        if(m_expandedWidth)
+            width=m_expandedWidth;
+        else
+            for(Base *container : {m_items, m_footer})
+                for(Base *child : container->getActualChildren())
+                    if(auto *item=gweni_cast<NavigationItem>(child))
+                        if(!item->hidden())
+                            width=std::max(width, item->getPreferredSize().width);
+    }
+    m_preferredSize.width=preferredFromContent(width, dim);
 }
 
 Base *NavigationRail::getHeader() const

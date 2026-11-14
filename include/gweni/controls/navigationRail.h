@@ -15,6 +15,9 @@ namespace gweni
 namespace controls
 {
 
+class Badge;
+namespace internal { class NavigationRailItems; }
+
 //! A navigation row: a Selectable's press and selection handling, with an
 //! ImagePanel and a Label of its own. Clicking a selected row keeps it selected.
 //! The label is a child so a collapsed rail can hide it without hiding the row.
@@ -34,11 +37,18 @@ public:
     void setText(const String &text, bool doEvents=true) override;
     const String &getText() const override;
     //! Loads the named resource as Button::setImage does. An empty name hides
-    //! the image, keeping its icon space and the ImagePanel available.
+    //! the image, keeping its icon space and the ImagePanel available. A
+    //! badge keeps a blank icon anchor visible without painting an image.
     void setImage(const String &name, bool center=false) override;
     ImagePanel *getIcon() const { return m_image; }
     //! The row's visible label; customise its font and text alignment here.
     Label *getLabel() const { return m_label; }
+
+    //! Lazily makes a Badge attached to the icon's top-right corner. A count
+    //! switches out of dot mode; turning the dot off restores the count.
+    void setBadgeCount(int count);
+    void setBadgeDot(bool dot);
+    Badge *getBadge() const { return m_badge; }
 
     void setTextColor(const Color &color) override;
     void calculateSize(skin::Base *skin, Dim dim) override;
@@ -46,7 +56,14 @@ public:
 
 private:
 
+    friend class NavigationRail;
+    friend class internal::NavigationRailItems;
+    void setCollapsed(bool collapsed);
+    Badge *ensureBadge();
+
     Label *m_label=nullptr;
+    Badge *m_badge=nullptr;
+    bool m_collapsed=false;
 };
 
 //! A side rail whose main and footer items share one SelectableGroup.
@@ -76,9 +93,21 @@ public:
     void setHeader(Base *header);
     Base *getHeader() const;
 
+    //! The app decides when to collapse. Labels stay alive, hidden, and their
+    //! text becomes each item's tooltip. Expanded, those tooltips are cleared.
+    void setCollapsed(bool collapsed);
+    bool isCollapsed() const { return m_collapsed; }
+    //! A positive width fixes the expanded width; zero restores the widest
+    //! item's preferred width. The collapsed width is icon plus row padding.
+    void setExpandedWidth(int width);
+    int getExpandedWidth() const { return m_expandedWidth; }
+    void calculateSize(skin::Base *skin, Dim dim) override;
+
     //! Once per real selection change: controlCaller is this rail, control
     //! is the newly selected NavigationItem (or null for none).
     event::Caller onSelectionChange;
+    //! Once per real change, with integer 1 for collapsed and 0 for expanded.
+    event::Caller onCollapsedChanged;
 
 private:
 
@@ -88,6 +117,8 @@ private:
     Base *m_items=nullptr;
     Base *m_footer=nullptr;
     Base *m_headerSlot=nullptr;
+    bool m_collapsed=false;
+    int m_expandedWidth=0;
 };
 
 }//namespace controls
