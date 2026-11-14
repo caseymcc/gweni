@@ -170,7 +170,7 @@
  *                       stats-overlay | depth-view | zoom-panel |
  *                       node-graph | code-editor | log-view |
  *                       chip-badge | navigation-rail | flow | board |
- *                       switch (see below)
+ *                       switch | image-grid (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -1008,6 +1008,18 @@
  *                 eighth) clears it; Tab shows "required"; settled frames
  *                 write nothing; the demo gives every id back. Exits non-zero
  *                 if any check is no.
+ *    image-grid   ImageGridDemo, the clock frozen (image-grid*.png): a click
+ *                 on Replace swaps the first cell's image and a second gives
+ *                 it back, a click on Free clears the second cell's and a
+ *                 second loads it again. One line
+ *                   image-grid images_loaded=yes|no ... ids_back=yes|no
+ *                 reports the checks: each click's frame writes no slot
+ *                 outside the button and the cell and changes no pixel
+ *                 outside them, the renderer's live image count stays (one
+ *                 less while freed), the second clicks give the cells' first
+ *                 pixels back, settled frames write nothing, and the demo
+ *                 gives its ids and images back. Exits non-zero if any check
+ *                 is no.
  *    virtual-list VirtualListDemo with its list at 1 000 and then 100 000
  *                 items, the clock frozen: a settled frame, a one-row scroll
  *                 from the top (scrollByRows) and a wheel notch over the list
@@ -1310,6 +1322,8 @@
 #include <demo/board.h>
 #include <gweni/controls/board.h>
 #include <gweni/controls/boardColumn.h>
+#include <demo/imageGrid.h>
+#include <gweni/controls/imagePanel.h>
 #include <gweni/controls/layout/flow.h>
 #include <demo/nodeGraph.h>
 #include <gweni/controls/vectorField.h>
@@ -1427,7 +1441,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
     X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo) X(InspectorDemo) X(ThemeEditorDemo) \
-    X(StatsOverlayDemo) X(ZoomPanelDemo) X(NodeGraphDemo) X(FlowDemo) X(BoardDemo)
+    X(StatsOverlayDemo) X(ZoomPanelDemo) X(NodeGraphDemo) X(FlowDemo) X(BoardDemo) X(ImageGridDemo)
 
 static const char *const g_controlNames[]=
 {
@@ -1521,7 +1535,8 @@ static void printUsage(std::ostream &out)
          "                     | inspector\n"
          "                     | stats-overlay | depth-view | zoom-panel\n"
          "                     | node-graph | code-editor | log-view | chip-badge\n"
-         "                     | navigation-rail | flow | board | switch;\n"
+         "                     | navigation-rail | flow | board | switch\n"
+         "                     | image-grid;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -2572,7 +2587,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
-    ChipBadge, NavigationRail, Flow, Board, Switch, FieldValidation };
+    ChipBadge, NavigationRail, Flow, Board, Switch, FieldValidation, ImageGrid };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2613,6 +2628,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "board") scenario=Scenario::Board;
     else if(name == "switch") scenario=Scenario::Switch;
     else if(name == "field-validation") scenario=Scenario::FieldValidation;
+    else if(name == "image-grid") scenario=Scenario::ImageGrid;
     else return false;
     return true;
 }
@@ -14052,6 +14068,147 @@ static void collectMirrorByOwner(gweni::controls::Base *control, const std::stri
 static bool mirrorsMatchByOwner(Session &s, const ResizeState &before,
     const std::map<std::string, std::vector<uint8_t>> &beforeSlots, const ResizeState &after);
 
+//-----------------------------------------------------------------------------
+// --scenario image-grid: ImageGridDemo's Replace and Free buttons, the clock
+// frozen
+//
+// A click on Replace swaps the first cell's image for another and back, a
+// click on Free clears the second cell's and loads it again. Each frame writes
+// no slot outside the button and the cell, changes no pixel outside them, and
+// keeps the renderer's live image count (the old image freed as the new one
+// loads, the cleared one given back and taken again); the second Replace and
+// Free give the cell's first pixels back; settled frames write nothing; and
+// the demo gives its images and ids back.
+//-----------------------------------------------------------------------------
+
+static bool runImageGridScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    checks.scenario="image-grid";
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    const size_t imagesBefore=s.renderer->loadedTextureCount();
+    gweni::controls::Base *control=addControl(s, "ImageGridDemo");
+    auto *demo=gweni::gweni_cast<gweni::ImageGridDemo>(control);
+
+    if(!demo)
+    {
+        std::cerr<<"ControlTest: image-grid: ImageGridDemo was not built\n";
+        return false;
+    }
+
+    s.label="image-grid";
+    renderFrames(s, s.frames);
+
+    bool ok=shoot(s, shotDir+"/image-grid.png");
+    std::vector<uint8_t> pixels;
+    size_t idleWork=settleCodeEditor(s, pixels);
+    const size_t imagesLoaded=s.renderer->loadedTextureCount();
+    const size_t cellImages=gweni::ImageGridDemo::EmptyCell;
+
+    checks.check("images_loaded", imagesLoaded == imagesBefore+cellImages,
+        std::to_string(imagesLoaded-imagesBefore)+" images loaded, "+std::to_string(cellImages)+" expected");
+    checks.check("empty_and_bad", demo->panels()[gweni::ImageGridDemo::EmptyCell]->isEmpty()
+            && demo->panels()[gweni::ImageGridDemo::BadDataCell]->failedToLoad(),
+        "the empty cell is not empty or the bad-data cell did not fail");
+
+    // One click on a button, then the mouse off the canvas: what the click's
+    // frame wrote, and the pixels once settled.
+    struct Click
+    {
+        CodeEditorFrame frame;
+        size_t outside=0;
+        bool within=false;
+        size_t images=0;
+    };
+    auto click=[&](gweni::controls::Base *button, size_t cell) -> Click
+    {
+        std::set<size_t> allowedPrims, allowedTexts;
+
+        subtreeIds(button, allowedPrims, allowedTexts);
+        subtreeIds(demo->cells()[cell], allowedPrims, allowedTexts);
+        allowedPrims.insert(demo->panels()[cell]->primitiveId());
+
+        const gweni::Rect buttonRect=button->getCanvasBounds();
+        const gweni::Rect cellRect=demo->cells()[cell]->getCanvasBounds();
+
+        clickMouse(s, buttonRect.x+buttonRect.w/2, buttonRect.y+buttonRect.h/2);
+
+        Click result;
+
+        result.frame=codeEditorFrame(s);
+        forgetMouse(s);
+        renderFrames(s, 1);
+        // a new caption's glyphs can take new text ids: the cell's after the click count too
+        subtreeIds(demo->cells()[cell], allowedPrims, allowedTexts);
+        result.within=idsWithin(result.frame.primitives, allowedPrims) && idsWithin(result.frame.texts, allowedTexts);
+        result.outside=differencesOutsideRects(s, pixels, result.frame.pixels, {buttonRect, cellRect});
+        result.images=s.renderer->loadedTextureCount();
+        idleWork+=settleCodeEditor(s, pixels);
+        return result;
+    };
+
+    const std::vector<uint8_t> first=pixels;
+    const gweni::Rect cell0=demo->cells()[0]->getCanvasBounds();
+    const gweni::Rect cell1=demo->cells()[1]->getCanvasBounds();
+
+    // (1) Replace and back
+    const Click replace=click(demo->replaceButton(), 0);
+    const bool replacedPixels=differencesIn(s, first, pixels, cell0) > 0;
+
+    checks.check("replace", demo->replaced() && replace.within && replace.outside == 0
+            && replace.images == imagesLoaded && replacedPixels,
+        "Replace wrote outside the button and the cell, changed "+std::to_string(replace.outside)
+        +" pixels outside them, left "+std::to_string(replace.images)+" images ("+std::to_string(imagesLoaded)
+        +" before) or did not change the cell");
+
+    const Click replaceBack=click(demo->replaceButton(), 0);
+
+    checks.check("replace_back", !demo->replaced() && replaceBack.within && replaceBack.outside == 0
+            && replaceBack.images == imagesLoaded && differencesIn(s, first, pixels, cell0) == 0,
+        "Replace again did not give the cell's first pixels back, wrote outside the button and the cell, or left "
+        +std::to_string(replaceBack.images)+" images");
+
+    // (2) Free and load again
+    const Click freed=click(demo->freeButton(), 1);
+    const bool freedPixels=differencesIn(s, first, pixels, cell1) > 0;
+
+    checks.check("free", demo->freed() && demo->panels()[1]->isEmpty() && freed.within && freed.outside == 0
+            && freed.images == imagesLoaded-1 && freedPixels,
+        "Free wrote outside the button and the cell, changed "+std::to_string(freed.outside)
+        +" pixels outside them, left "+std::to_string(freed.images)+" images ("+std::to_string(imagesLoaded-1)
+        +" expected) or did not change the cell");
+
+    const Click loaded=click(demo->freeButton(), 1);
+
+    checks.check("free_back", !demo->freed() && loaded.within && loaded.outside == 0
+            && loaded.images == imagesLoaded && differencesIn(s, first, pixels, cell1) == 0,
+        "Free again did not give the cell's first pixels back, wrote outside the button and the cell, or left "
+        +std::to_string(loaded.images)+" images");
+
+    ok=shoot(s, shotDir+"/image-grid-back.png") && ok;
+    checks.check("settled", idleWork == 0, "settled frames wrote or changed "+std::to_string(idleWork));
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()+liveTextIds()-idsBefore;
+    const size_t imagesLeft=s.renderer->loadedTextureCount()-imagesBefore;
+
+    checks.check("ids_back", idsLeft == 0 && imagesLeft == 0,
+        std::to_string(idsLeft)+" ids and "+std::to_string(imagesLeft)+" images not given back");
+
+    passed=checks.allPassed();
+    std::cout<<"image-grid";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<" images="<<imagesLoaded-imagesBefore<<" replace_prims="<<replace.frame.primitives.size()
+             <<" replace_texts="<<replace.frame.texts.size()<<" free_prims="<<freed.frame.primitives.size()<<"\n";
+    return ok;
+}
+
 static bool runFlowScenario(Session &s, const std::string &shotDir, bool &passed)
 {
     s.freezeClock=true;
@@ -17302,6 +17459,15 @@ int main(int argc, char *argv[])
             ok=runBoardScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a wheel reached the wrong ScrollControl, or an edit moved an offset
+            break;
+        }
+
+        case Scenario::ImageGrid:
+        {
+            bool passed=false;
+            ok=runImageGridScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a button's image change did more than its cell, or kept an image
             break;
         }
 

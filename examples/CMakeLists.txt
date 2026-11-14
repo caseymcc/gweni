@@ -112,6 +112,9 @@ set(GWENI_DEMO_SOURCES
     demo/nodeGraph.h
     demo/flow.cpp
     demo/flow.h
+    demo/imageGrid.cpp
+    demo/imageGrid.h
+    demo/imageGridImages.inc
     demo/zoomPanel.cpp
     demo/zoomPanel.h
     demo/statsOverlay.cpp

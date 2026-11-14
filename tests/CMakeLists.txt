@@ -594,6 +594,14 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/field_validation@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
+    # ImageGridDemo: Replace and Free change their cell alone and keep the
+    # renderer's live image count, the second clicks give the cells back, and
+    # the demo gives its images and ids back
+    gweni_whole_app_test(controltest_image_grid 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario image-grid --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/image_grid@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
     # gweni::tools::Inspector over the settled Demo, opened and closed by F12:
     # it settles to 0 and a frame that writes nothing, its own slots included,
     # shows a hover's slots on the next frame, and gives its ids back
