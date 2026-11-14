@@ -12617,7 +12617,9 @@ FieldIds fieldIds(gweni::controls::TextBox *box)
     std::set<size_t> unused;
 
     ids.frame=box->getSkinControl()->getPrimitives().at(0);
-    subtreeIds(const_cast<gweni::controls::internal::Text *>(box->getMessageText()), unused, ids.message);
+    // no line yet: nothing of it may be written
+    if(box->getMessageText())
+        subtreeIds(const_cast<gweni::controls::internal::Text *>(box->getMessageText()), unused, ids.message);
     subtreeIds(box, ids.primitives, ids.texts);
     return ids;
 }
