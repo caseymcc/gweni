@@ -8,8 +8,9 @@
  *  notch, and the zoom stops at the range's ends (the wheel still taken
  *  there); over a ScrollControl that can scroll, the wheel scrolls it and the
  *  zoom stays. The horizontal wheel and Shift+wheel are taken by the panel
- *  and zoom nothing, in a pan or not. A right or middle press, or a left
- *  one with Space held, is a pan once the mouse is PanThreshold units from it: the content follows the
+ *  and zoom nothing, and mid-pan the horizontal wheel zooms nothing either.
+ *  A right or middle press, or a left one with Space held, is a pan once
+ *  the mouse is PanThreshold units from it: the content follows the
  *  mouse unit for unit (in the panel's units), the control under the press
  *  gets no press and no context menu opens; let go sooner, the press and the
  *  release reach that control as a click (a right click opens its context

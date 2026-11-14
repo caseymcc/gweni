@@ -4330,8 +4330,10 @@ and every device px hits the same control (`controltest_zoom_panel`).
   starts a pan closes the open menus and the popup as any press there does
   (`closeMenus`, `popupPressed`). The horizontal wheel, and so Shift+wheel (which the
   canvas makes horizontal), zooms nothing: the panel takes it (`onMouseWheeledH`) so
-  nothing above it scrolls sideways instead, and a pan's capture drops it. A wheel
-  notch during a pan zooms about the cursor
+  nothing above it scrolls sideways instead, and a pan's capture drops the horizontal
+  wheel. A capture gets the wheel's axis before the Shift mapping, so a vertical
+  notch with Shift held zooms mid-pan as one without it does. A wheel notch during
+  a pan zooms about the cursor
   and the drag goes on from there (the gesture takes the mouse and the pan anew),
   so the content point under the cursor stays under it. The release moves the
   canvas to where the mouse is; keys during a pan go to the capture. A disabled
