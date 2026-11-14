@@ -1091,7 +1091,16 @@ size_t VirtualListReorder::gapAt(Point local) const
 
 int VirtualListReorder::gapPosition(size_t gap) const
 {
-    const int64_t y=viewTop(std::min(gap, itemCount()));
+    int64_t y=viewTop(std::min(gap, itemCount()));
+    const int64_t viewport=m_virtualList->getViewportHeight();
+    const int64_t half=IndicatorThickness/2;
+
+    // a boundary at the viewport's top or bottom edge: the bar wholly inside
+    // it, not half cut off over the list's border (as CardReorder's ends)
+    if(y >= 0 && y < half)
+        y=half;
+    else if(y <= viewport && y > viewport-half)
+        y=viewport-half;
 
     // kept inside the 16-bit range a placed control has, far off the panel
     return static_cast<int>(std::clamp<int64_t>(y, -30000, 30000));

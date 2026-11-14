@@ -4362,7 +4362,9 @@ applying the drop is a plain edit. The adapters:
 and kept as its last children (numbered after the rows, the indicator last),
 owner-placed from the adapter's geometry and held by control id, so an app that
 clears the panel leaves nothing dangling: `internal::DropIndicator`, a 2-unit bar
-across the panel at the gap (theme surface `DropIndicator`), and
+across the panel at the gap (theme surface `DropIndicator`; a gap on the panel's
+or the viewport's top or bottom edge has its bar wholly inside, not half cut off
+over the list's border), and
 `internal::DragSourceVeil`, over the dragged item's rect (`DragSource`). The veil
 is placed from the item's index, not applied to the row that shows it, so on a
 pooled list it is over whichever row holds the item, follows it as rows are
