@@ -239,8 +239,8 @@ void Reorderable::listArranged(skin::Base *skin)
         }
     }
 
-    // (the dragged item gone, the drag is over: the looks are parked below,
-    // and the panel arranged again all the same)
+    // (the dragged item gone, the drag is over: the looks' drawing is cleared
+    // below, and the panel arranged again all the same)
 
     // the list scrolled under the resting cursor (the auto-scroll, a wheel):
     // the gap is the one at the cursor now, and the auto-scroll goes on or
@@ -273,9 +273,10 @@ void Reorderable::placeLooks()
 
 // Where a look waits while its list is in the drag but it shows nothing: far
 // above the panel (clipped away), a pure move, which lays nothing out again.
-// A look is hidden only once its list is out of the drag, and a hide that
-// comes during a layout pass (a drag cancelled by a list edit) is posted to
-// the next update, as a visibility change in a pass dirties layout again.
+// A look is hidden only once its list is out of the drag. During a layout pass
+// (a drag cancelled by a list edit), its drawing is cleared without moving it
+// and the hide is posted: the other list may already have been arranged, so
+// either a move or a visibility change would leave layout dirty again.
 static constexpr int ParkedY=-20000;
 
 template<typename Look>
@@ -297,7 +298,9 @@ static void hideLook(Look *look)
         return;
     }
 
-    parkLook(look);
+    if(!look->shouldDrawBackground())
+        return;
+    look->setShouldDrawBackground(false);
 
     const size_t id=look->getControlId();
     const unsigned serial=look->useSerial();
@@ -321,19 +324,22 @@ template<typename Look>
 static void takeIntoUse(Look *look)
 {
     look->takeIntoUse();
+    if(!look->shouldDrawBackground())
+        look->setShouldDrawBackground(true);
     look->setHidden(false);
 }
 
 bool Reorderable::indicatorShown() const
 {
     internal::DropIndicator *indicator=getIndicator();
-    return indicator && indicator->visible() && (indicator->getY() != ParkedY);
+    return indicator && indicator->visible() && indicator->shouldDrawBackground()
+        && (indicator->getY() != ParkedY);
 }
 
 bool Reorderable::veilShown() const
 {
     internal::DragSourceVeil *veil=getSourceVeil();
-    return veil && veil->visible() && (veil->getY() != ParkedY);
+    return veil && veil->visible() && veil->shouldDrawBackground() && (veil->getY() != ParkedY);
 }
 
 void Reorderable::placeIndicator()

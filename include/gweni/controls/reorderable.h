@@ -195,9 +195,10 @@ public:
     //! drag (veil)
     internal::DropIndicator *getIndicator() const;
     internal::DragSourceVeil *getSourceVeil() const;
-    //! Whether the looks show now: visible, and not parked (a look whose list
-    //! is in the drag but shows nothing waits far above the panel, so a layout
-    //! pass that shows or hides it moves it only)
+    //! Whether the looks show now: visible, drawing, and not parked (a look
+    //! whose list is in the drag but shows nothing waits far above the panel,
+    //! so a layout pass that shows or hides it moves it only). Cancellation in
+    //! a pass clears the drawing at once and posts the control's hide.
     bool indicatorShown() const;
     bool veilShown() const;
 

@@ -1793,6 +1793,13 @@ void DropIndicator::update(renderer::Base *renderer, controls::Base *baseControl
     if(m_primitives.empty())
         return;
 
+    // Cancellation during layout clears the drawing before the posted hide.
+    if(!baseControl->shouldDrawBackground())
+    {
+        renderer->hidePrimitive(m_primitives[0]);
+        return;
+    }
+
     tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::DropIndicator);
 }
 
@@ -1812,6 +1819,13 @@ void DragSourceVeil::update(renderer::Base *renderer, controls::Base *baseContro
 {
     if(m_primitives.empty())
         return;
+
+    // Cancellation during layout clears the drawing before the posted hide.
+    if(!baseControl->shouldDrawBackground())
+    {
+        renderer->hidePrimitive(m_primitives[0]);
+        return;
+    }
 
     tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::DragSource);
 }

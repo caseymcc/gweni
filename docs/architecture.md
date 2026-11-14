@@ -5227,8 +5227,12 @@ created or unhidden and parked when the target is entered, even for a refused
 gap, so auto-scroll or a live edit first allowing that gap during layout only
 moves it; the veil likewise when the drag starts, even with the item out of view
 (live inserts or a scroll since the press), so auto-scroll or a wheel bringing it
-into view during layout only moves it. A hide during a pass (a list edit cancelling the drag) is posted to
-the next update
+into view during layout only moves it. A cancellation during a pass clears the
+looks' drawing at once (`setShouldDrawBackground(false)`, the renderers hiding
+their slots) and posts their hide to the next update. It does not park them:
+the target's panel may already have been arranged, and moving its bar then
+would leave layout dirty and cause a second pass. Taking a look into use again
+restores its drawing, and the posted hide's use serial leaves it alone
 (`indicatorShown()`, `veilShown()` say whether one shows). `ScrollControl::arrange`
 ends with `Reorderable::listArranged()`, which resolves the edits, finds the gap
 again under a resting cursor once the list scrolled and places the looks; they

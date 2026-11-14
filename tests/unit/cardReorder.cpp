@@ -50,7 +50,10 @@
  *  re-resolves the dragged index and the gap before its card, re-checks the
  *  drop rule and places the veil on the dragged card in one pass. This
  *  includes a hide/show pair with no change in visible card count. Hiding the
- *  dragged card cancels. A wheel during the drag scrolls the column under the
+ *  dragged card cancels, including when the target column was arranged
+ *  before the source: one pass, neither update nor render leaving layout
+ *  dirty. Its looks stop drawing in that frame and their posted hide runs
+ *  next frame. A wheel during the drag scrolls the column under the
  *  pointer, leaving the source column and hover alone. The gap follows the
  *  scrolled cards and the drop reports the dragged key and that new gap. A
  *  wheel that scrolls the page holding the columns finds the target and gap
@@ -1906,6 +1909,66 @@ HideFrame hideFrame(Scene &scene)
     const controls::LayoutStats &stats=scene.canvas->getLayoutStats();
     return {dirty, stats.renderLayout, stats.passes};
 }
+
+}//namespace
+
+TEST_CASE("CardReorder: cancelling after the target was arranged leaves the frame in one pass")
+{
+    Scene scene;
+    scene.startDrag(scene.running.cards[1]);
+    scene.move(Scene::on(scene.todo.cards[2], 3));
+    REQUIRE(draganddrop::isDragging());
+    REQUIRE(scene.todo.reorder->indicatorShown());
+
+    const auto checkCancelled=[&]() {
+        const HideFrame cancelled=hideFrame(scene);
+        CHECK(cancelled.passes == 1);
+        CHECK_FALSE(cancelled.dirtyAfterUpdate);
+        CHECK_FALSE(cancelled.renderLayout);
+        CHECK_FALSE(draganddrop::isDragging());
+        CHECK_FALSE(scene.todo.reorder->indicatorShown());
+        CHECK_FALSE(scene.running.reorder->veilShown());
+
+        SUBCASE("the posted hides run")
+        {
+            scene.frame();
+            CHECK(scene.todo.reorder->getIndicator()->hidden());
+            CHECK(scene.running.reorder->getSourceVeil()->hidden());
+        }
+        SUBCASE("the next drag takes the looks before the posted hides")
+        {
+            input::onMouseClicked(scene.canvas, 0, false);
+            const Point at=Scene::on(scene.running.cards[0], CardHeight/4);
+            scene.canvas->inputMouseMoved(at.x, at.y, 0, 0);
+            input::onMouseClicked(scene.canvas, 0, true);
+            scene.canvas->inputMouseMoved(at.x+6, at.y, 0, 0);
+            const Point to=Scene::on(scene.todo.cards[2], 3);
+            scene.canvas->inputMouseMoved(to.x, to.y, 0, 0);
+            REQUIRE(draganddrop::isDragging());
+            scene.frame();
+            CHECK(scene.todo.reorder->indicatorShown());
+            CHECK(scene.running.reorder->veilShown());
+            escape(scene);
+        }
+        scene.release();
+        CHECK(scene.todo.drops.empty());
+        CHECK(scene.running.drops.empty());
+    };
+
+    SUBCASE("the dragged card deleted")
+    {
+        delete scene.running.cards[1];
+        checkCancelled();
+    }
+    SUBCASE("the dragged card hidden")
+    {
+        scene.running.cards[1]->hide();
+        checkCancelled();
+    }
+}
+
+namespace
+{
 
 //! Hides \p target in its first postLayout() once armed: a list the layout
 //! hides, after the update phase's own look at the lists
