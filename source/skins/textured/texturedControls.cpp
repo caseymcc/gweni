@@ -4256,11 +4256,12 @@ void TextBox::update(renderer::Base *renderer, controls::Base *baseControl)
 
     if(!blinkOnly)
     {
-        const tokyonight::Surface *surface=&tokyonight::TextBox;
+        const bool error=box->hasError();
+        const tokyonight::Surface *surface=error?&tokyonight::TextBoxError:&tokyonight::TextBox;
         if(box->isDisabled())
-            surface=&tokyonight::TextBoxDisabled;
+            surface=error?&tokyonight::TextBoxErrorDisabled:&tokyonight::TextBoxDisabled;
         else if(box->isFocussed())
-            surface=&tokyonight::TextBoxFocus;
+            surface=error?&tokyonight::TextBoxErrorFocus:&tokyonight::TextBoxFocus;
 
         tokyonight::paintSurface(renderer, m_primitives.data(), box, *surface, bounds);
 

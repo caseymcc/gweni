@@ -24,15 +24,27 @@
  *  and losing the focus, Tab included, does; Return runs it in either mode,
  *  before onReturnPressedCaller; validate() runs it on demand and says whether
  *  the field is valid; a null one removes it and keeps the error.
+ *
+ *  The look, through the textured skin's TextBox renderer on a recording
+ *  StubRenderer: an error frame is TextBoxError (the theme's red border),
+ *  TextBoxErrorFocus while focused and TextBoxErrorDisabled while disabled,
+ *  and the plain surfaces come back with the error cleared; the frame is the
+ *  field part's height, never over the line; the message is in the skin's
+ *  ErrorText colour, the helper text in HelperText, and both follow a theme
+ *  edit (ThemeEditor::applyToCanvas).
  */
 #include "headlessFixture.h"
 
 #include <gweni/controls/textBox.h>
 #include <gweni/controls/numericUpDown.h>
 #include <gweni/inputHandler.h>
+#include <gweni/skins/textured/texturedControls.h>
+#include <gweni/skins/textured/tokyoNight.h>
+#include <gweni/tools/themeEditor.h>
 
 #include <doctest/doctest.h>
 
+#include <memory>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -499,4 +511,165 @@ TEST_CASE("Field validation: a PasswordTextBox shows its message unmasked")
     scene.settle();
     CHECK(box->getMessageText()->getText() == "at least 8 characters");
     CHECK(box->getText() == "secret");
+}
+
+namespace
+{
+
+namespace tn=gweni::skin::textured::tokyonight;
+
+//! Records the frames the TextBox renderer draws (its slot 0 among them).
+class FrameRecorder: public test::StubRenderer
+{
+public:
+    struct Draw
+    {
+        Rect rect;
+        float borderWidth;
+        Color border;
+    };
+
+    void drawRoundedRect(size_t, Rect rect, float, float borderWidth, Color, Color, Color border, int) override
+    {
+        draws.push_back({rect, borderWidth, border});
+    }
+
+    std::vector<Draw> draws;
+};
+
+//! The textured skin's TextBox renderer, a StubControl for the rest.
+class TextBoxSkin: public test::StubSkin
+{
+public:
+    explicit TextBoxSkin(test::StubRenderer *renderer): StubSkin(renderer) {}
+
+    std::unique_ptr<skin::Control> getControlRenderer(std::string typeName) override
+    {
+        // the textured skin has no renderer of their own: they draw as a TextBox
+        if(typeName == "TextBox" || typeName == "PasswordTextBox" || typeName == "TextBoxNumeric"
+            || typeName == "NumericUpDown")
+            return std::make_unique<skin::textured::TextBox>();
+        return StubSkin::getControlRenderer(typeName);
+    }
+};
+
+struct LookScene
+{
+    FrameRecorder renderer;
+    TextBoxSkin skin{&renderer};
+    controls::Canvas *canvas;
+
+    LookScene()
+    {
+        canvas=new controls::Canvas(&skin);
+        canvas->setSize(400, 300);
+    }
+
+    ~LookScene()
+    {
+        KeyboardFocus=nullptr;
+        MouseFocus=nullptr;
+        delete canvas;
+    }
+
+    //! The frame a frame drew at (10, 10), the box's: exactly one.
+    FrameRecorder::Draw frame()
+    {
+        renderer.draws.clear();
+        canvas->updateCanvas();
+        canvas->renderCanvas();
+
+        std::vector<FrameRecorder::Draw> mine;
+
+        for(const FrameRecorder::Draw &draw:renderer.draws)
+        {
+            if(draw.rect.x == 10 && draw.rect.y == 10)
+                mine.push_back(draw);
+        }
+        REQUIRE(mine.size() == 1);
+        return mine.back();
+    }
+};
+
+bool sameColor(const Color &a, const Color &b)
+{
+    return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
+}
+
+template<typename T>
+void checkLook()
+{
+    LookScene scene;
+    T *box=scene.canvas->newChild<T>("box");
+    T *other=scene.canvas->newChild<T>("other");
+    box->setPos(10, 10);
+    other->setPos(10, 80);
+    box->setHelperText("help");
+    scene.canvas->updateCanvas();
+    scene.canvas->renderCanvas();
+
+    box->setError("bad");
+    FrameRecorder::Draw draw=scene.frame();
+    CHECK(sameColor(draw.border, tn::TextBoxError.border));
+    CHECK(sameColor(draw.border, tn::Red));
+    CHECK(draw.borderWidth == tn::TextBoxError.borderWidth);
+    // the field part, above the message line
+    CHECK(draw.rect.h == box->getFieldHeight());
+    CHECK(box->getFieldHeight() < box->getHeight());
+
+    box->focus();
+    draw=scene.frame();
+    CHECK(sameColor(draw.border, tn::TextBoxErrorFocus.border));
+    CHECK(draw.borderWidth == tn::TextBoxErrorFocus.borderWidth);
+    other->focus();
+    draw=scene.frame();
+    CHECK(sameColor(draw.border, tn::TextBoxError.border));
+
+    box->setDisabled(true);
+    draw=scene.frame();
+    CHECK(sameColor(draw.border, tn::TextBoxErrorDisabled.border));
+    box->setDisabled(false);
+    scene.frame();
+
+    box->clearError();
+    draw=scene.frame();
+    CHECK(sameColor(draw.border, tn::TextBox.border));
+    CHECK(draw.rect.h == box->getFieldHeight());
+}
+
+} // namespace
+
+TEST_CASE_TEMPLATE("Field validation: the error surfaces", T,
+    controls::TextBox, controls::PasswordTextBox, controls::TextBoxNumeric, controls::NumericUpDown)
+{
+    checkLook<T>();
+}
+
+TEST_CASE("Field validation: the message follows the ErrorText and HelperText colours")
+{
+    LookScene scene;
+    controls::TextBox *box=scene.canvas->newChild<controls::TextBox>("box");
+    const Color error=scene.skin.Colors.ErrorText;
+    const Color helper=scene.skin.Colors.HelperText;
+
+    box->setHelperText("help");
+    scene.canvas->updateCanvas();
+    scene.canvas->renderCanvas();
+    CHECK(sameColor(box->getMessageText()->TextColor(), helper));
+
+    box->setError("bad");
+    scene.canvas->updateCanvas();
+    CHECK(sameColor(box->getMessageText()->TextColor(), error));
+
+    // a theme edit reaches it
+    scene.skin.Colors.ErrorText=Color(1, 2, 3);
+    tools::ThemeEditor::applyToCanvas(scene.canvas);
+    CHECK(sameColor(box->getMessageText()->TextColor(), Color(1, 2, 3)));
+
+    scene.skin.Colors.HelperText=Color(4, 5, 6);
+    box->clearError();
+    CHECK(sameColor(box->getMessageText()->TextColor(), Color(4, 5, 6)));
+
+    scene.skin.Colors.ErrorText=error;
+    scene.skin.Colors.HelperText=helper;
 }

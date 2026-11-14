@@ -483,6 +483,7 @@ std::unordered_map<std::string, gweni::Color*> TexturedSkin::textColorRegistry()
         {"ButtonDown",&Colors.Button.Down},{"ButtonDisabled",&Colors.Button.Disabled},
         {"TooltipText",&Colors.TooltipText},
         {"PlaceholderText",&Colors.PlaceholderText},
+        {"ErrorText",&Colors.ErrorText},{"HelperText",&Colors.HelperText},
         {"AxisTagText",&Colors.AxisTagText},
         {"BadgeText",&Colors.BadgeText},
         {"ChipNeutralText",&Colors.Chip.Neutral},{"ChipAccentText",&Colors.Chip.Accent},
@@ -1340,6 +1341,10 @@ void TexturedSkin::setThemeColors()
 
     Colors.TooltipText=Fg;
     Colors.PlaceholderText=Muted;
+    // a TextBox's message line: its error in the theme's red, its helper
+    // text dimmer than its typed text
+    Colors.ErrorText=Red;
+    Colors.HelperText=FgDark;
     Colors.AxisTagText=BgDark;
     // a Badge's count, dark on its red bubble as an axis tag's letter
     Colors.BadgeText=BgDark;
