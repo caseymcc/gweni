@@ -4322,9 +4322,12 @@ applying the drop is a plain edit. The adapters:
 - `CardReorder`: the visible children of a ScrollControl's inner panel (cards
   docked Top), each keyed by its control id, the gap from their bounds, the bar
   centred between two cards. Its keys are its own and cheap (`cheapKeys()`), so the
-  gap is held as the card after it, and a card the app adds, removes or reorders
-  during the drag, found in the list's next layout through the canvas's
-  `treeSerial()`, keeps the bar before that card; the dragged card deleted cancels.
+  gap is held as the card after it, and a card the app adds, removes, reorders,
+  hides or shows during the drag, found in the list's next layout through the canvas's
+  `treeSerial()` and changes in visible count or held key indexes, keeps the
+  bar before that card. A hide/show pair keeping the count is detected too;
+  the dragged card deleted or hidden cancels. These checks run only during a
+  drag, in card layouts; VirtualList never calls its app key functions there.
 - `VirtualListReorder`: a VirtualList's items, keyed by the app's `key(index)` and
   `indexOf(key)`, asked only as a drag starts, as it drops and on a list change:
   a move or a scroll frame asks the app nothing. The geometry is

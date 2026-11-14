@@ -192,7 +192,8 @@ public:
     //! The list's layout pass has placed its items (ScrollControl::arrange
     //! calls it last): while this list is in a drag, an edit the list's
     //! cheapKeys() adapter did not describe is resolved (the tree changed,
-    //! Canvas::treeSerial()), and the looks are placed again and the panel
+    //! Canvas::treeSerial(), or visibility changed its item count or held
+    //! indexes), and the looks are placed again and the panel
     //! arranged again in the pass, entering only them, so the pass leaves
     //! nothing dirty. Does nothing otherwise.
     void listArranged(skin::Base *skin);
@@ -386,6 +387,9 @@ private:
     bool m_gapAtEnd=false;
     // the canvas's tree serial the last listArranged() saw
     unsigned m_treeSerial=0;
+    // with cheapKeys(): the visible item count, for hides/shows that do not
+    // move the tree serial
+    size_t m_itemCount=NoItem;
 };
 
 class ScrollControl;
@@ -396,9 +400,9 @@ class ScrollControl;
 //! bounds, the half-height rule on the card under the cursor; its bar is centred
 //! between two cards, in the gap above the first and below the last. A card
 //! pressed anywhere, a part of it included, starts its drag (once the press has
-//! moved 5 units), and the app's cards added, removed or reordered during a drag
-//! are found again in the list's next layout (cheapKeys(): the gap stays before
-//! the card it was before); the dragged card deleted cancels the drag.
+//! moved 5 units), and the app's cards added, removed, reordered, hidden or shown
+//! during a drag are found again in the list's next layout (cheapKeys(): the gap stays before
+//! the card it was before); the dragged card deleted or hidden cancels the drag.
 //!
 //! \code
 //! auto *todo=CardReorder::attach(todoColumn);
