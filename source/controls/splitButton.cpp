@@ -180,14 +180,20 @@ MenuItem *SplitButton::getMainItem() const
     return m_mainItem ? gweni_cast<MenuItem>(getControlById(m_mainItem)) : nullptr;
 }
 
+// Switch's: no keyboard input, Tab stop or focus while disabled, so a click
+// on either part focuses nothing.
 void SplitButton::setDisabled(bool disabled)
 {
+    setKeyboardInputEnabled(!disabled);
+    setTabable(!disabled);
     if(disabled)
         closeMenu();
 
     ParentClass::setDisabled(disabled);
     m_main->setDisabled(disabled);
     m_arrow->setDisabled(disabled);
+    if(disabled && (KeyboardFocus == this))
+        unfocus();
 }
 
 // Both parts draw the control's focus in their borders (Base::focus() and
@@ -217,17 +223,28 @@ void SplitButton::onMainToggled(event::Info)
     onToggle.call(this);
 }
 
+// The main part's action; a menu left open (a press on the arrow let go off
+// it) closes first, as a click on the main part closes it.
+void SplitButton::pressMainFromKey()
+{
+    if(isDisabled())
+        return;
+
+    closeMenu();
+    m_main->doAction();
+}
+
 bool SplitButton::onKeySpace(bool down)
 {
-    if(down && !isDisabled())
-        m_main->doAction();
+    if(down)
+        pressMainFromKey();
     return true;
 }
 
 bool SplitButton::onKeyReturn(bool down)
 {
-    if(down && !isDisabled())
-        m_main->doAction();
+    if(down)
+        pressMainFromKey();
     return true;
 }
 

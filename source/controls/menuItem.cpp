@@ -271,10 +271,19 @@ void MenuItem::openMenu()
     // A strip menu below the item, 1 unit off it, a submenu on its right, top
     // to top: placed from the item in every layout pass, flipped (above it,
     // on its left) and kept inside the canvas.
+    // Under a navigating menu the submenu navigates too, with nothing
+    // highlighted (a mouse open): it takes the focus from its parent menu, so
+    // a press on one of its items keeps the focus in the chain that gives it
+    // back to the opener, and its keys work after a press let go off it.
     if(m_onStrip)
         m_menu->openNextTo(this, PopupPlacement::Below, 1);
     else
-        m_menu->openNextTo(this, PopupPlacement::Right, 0);
+    {
+        Menu *parent=parentMenu();
+        const MenuFocus focus=(parent && parent->isKeyboardNavigating()) ? MenuFocus::Menu : MenuFocus::None;
+
+        m_menu->openNextTo(this, PopupPlacement::Right, 0, focus);
+    }
 }
 
 void MenuItem::closeMenu()

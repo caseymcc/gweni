@@ -61,7 +61,9 @@ public:
     //! Closes the menu, with every submenu open under it.
     void closeMenu();
 
-    //! Disabling it closes its menu.
+    //! Disabling it closes its menu and takes its keyboard input, its Tab
+    //! stop and the focus away (Switch's), so a click on it focuses nothing;
+    //! enabling it gives them back.
     void setDisabled(bool disabled) override;
 
     //! Pressed, or showing its menu.
@@ -106,6 +108,12 @@ protected:
     virtual Base *menuAnchor()
     {
         return this;
+    }
+    //! Whether it takes the keyboard focus and a Tab stop while enabled (a
+    //! SplitButton's arrow part does not: the SplitButton takes them).
+    virtual bool takesKeyboardFocus() const
+    {
+        return true;
     }
 
     //! getMenu()'s control id (0 before it is made): an id, so a menu deleted

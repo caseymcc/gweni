@@ -50,6 +50,10 @@ public:
 protected:
     //! The menu opens below the whole SplitButton, left-aligned with it.
     Base *menuAnchor() override;
+    bool takesKeyboardFocus() const override
+    {
+        return false;
+    }
 };
 
 }//namespace internal
@@ -154,6 +158,8 @@ protected:
     //! Alt+Down and F4: open the menu with its first item highlighted, or
     //! close it if it is open.
     void toggleMenuFromKey();
+    //! Space and Return: close a menu left open, then the main part's action.
+    void pressMainFromKey();
 
     internal::SplitButtonMain *m_main=nullptr;
     internal::SplitButtonArrow *m_arrow=nullptr;

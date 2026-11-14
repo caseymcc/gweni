@@ -16,8 +16,13 @@
  *    1, direction 0) in slot [1] at z+1 in its text colour; opening and
  *    closing write the button's slots and the menu's alone;
  *  - opening it closes another open menu (a second DropDownButton's);
- *  - disabled, neither a click nor a key opens it, and disabling it closes
- *    its open menu;
+ *  - disabled, neither a click nor a key opens it, a click focuses it not and
+ *    Tab skips it, and disabling it closes its open menu and leaves no focus
+ *    on it, at once (the menu's hand-back skips it);
+ *  - a submenu the mouse opens (Recent) under its open menu, its leaf
+ *    clicked, gives the focus back to the button, the menu opened by a click
+ *    or by Space; a press on that leaf let go off it leaves the submenu
+ *    holding the focus, and two Escapes close both menus, the focus back;
  *  - a press on the open button let go off it leaves the focus on the button
  *    and the menu open, and Escape, Space, Return, Alt+Down or F4 closes it;
  *  - an item, chosen by Return or by a click, whose handler opens a dialog:
@@ -37,7 +42,9 @@
  *    plain Down does nothing;
  *  - the toggle variant flips on each main press (onToggle), never on the
  *    arrow part's;
- *  - disabled, neither part nor any key does anything;
+ *  - disabled, neither part nor any key does anything, a click on either part
+ *    focuses it not and Tab skips it; enabled again it takes both, the arrow
+ *    part neither;
  *  - its renderers: the main part square on its right with no border there,
  *    the arrow part square on its left with the chevron at z+1, the divider
  *    the SplitButtonDivider column between them; a hover of one part writes
@@ -46,7 +53,8 @@
  *    control is focused (ButtonFocus's) or disabled (the disabled main part's),
  *    redrawn by those changes, and SplitButtonDivider otherwise;
  *  - a press on the open arrow part let go off it leaves the menu open with
- *    the focus on the control, and Escape, Alt+Down or F4 closes it;
+ *    the focus on the control, and Escape, Alt+Down or F4 closes it, and
+ *    Space or Return closes it and presses the main part once;
  *  - setMainItem makes a menu item the main part's action and text.
  */
 #include "headlessFixture.h"
@@ -903,6 +911,171 @@ TEST_CASE("SplitButton: a press on the open arrow let go off it, then Escape, Al
         else
             scene.key(code);
         CHECK_FALSE(split->isMenuOpen());
+        CHECK(split->isFocussed());
+    }
+}
+
+namespace
+{
+
+//! Adds Recent, a submenu holding Leaf, to \p button's menu.
+struct Submenu
+{
+    controls::MenuItem *recent=nullptr;
+    controls::MenuItem *leaf=nullptr;
+
+    explicit Submenu(controls::DropDownButton *button)
+    {
+        recent=button->getMenu()->addItem("Recent");
+        leaf=recent->getMenu()->addItem("Leaf");
+    }
+};
+
+//! The mouse onto \p item, two frames for its submenu to open and lay out.
+void hover(Scene &scene, controls::Base *item)
+{
+    const Point at=item->localPosToCanvas();
+
+    scene.canvas->inputMouseMoved(at.x+item->getWidth()/2, at.y+item->getHeight()/2, 0, 0);
+    scene.frame();
+    scene.frame();
+}
+
+}//namespace
+
+TEST_CASE("DropDownButton: a submenu the mouse opens, its leaf clicked, gives the focus back to the button")
+{
+    for(bool byKey : {false, true})
+    {
+        CAPTURE(byKey);
+        Scene scene;
+        controls::DropDownButton *button=scene.dropDown(40, 40);
+        Submenu sub(button);
+
+        scene.frame();
+        if(byKey)
+        {
+            button->focus();
+            scene.key(keys::Space);
+        }
+        else
+            scene.click(button);
+        REQUIRE(button->isMenuOpen());
+        scene.frame();
+
+        hover(scene, sub.recent);
+        REQUIRE(sub.recent->isMenuOpen());
+
+        scene.click(sub.leaf);
+        CHECK_FALSE(button->isMenuOpen());
+        CHECK_FALSE(sub.recent->isMenuOpen());
+        CHECK((KeyboardFocus == button));
+    }
+}
+
+TEST_CASE("DropDownButton: a press on a hover-opened submenu's leaf let go off it, then Escape closes both menus")
+{
+    Scene scene;
+    controls::DropDownButton *button=scene.dropDown(40, 40);
+    Submenu sub(button);
+
+    scene.frame();
+    scene.click(button);
+    scene.frame();
+    hover(scene, sub.recent);
+    REQUIRE(sub.recent->isMenuOpen());
+
+    const Point at=sub.leaf->localPosToCanvas();
+    scene.clock+=1.0;
+    scene.canvas->inputMouseMoved(at.x+5, at.y+5, 0, 0);
+    input::onMouseClicked(scene.canvas, 0, true);
+    scene.canvas->inputMouseMoved(600, 400, 0, 0);
+    input::onMouseClicked(scene.canvas, 0, false);
+    scene.frame();
+    REQUIRE(sub.recent->isMenuOpen());
+    CHECK((KeyboardFocus == sub.recent->getMenu()));
+
+    scene.key(keys::Escape);
+    CHECK_FALSE(sub.recent->isMenuOpen());
+    CHECK(button->isMenuOpen());
+    scene.key(keys::Escape);
+    CHECK_FALSE(button->isMenuOpen());
+    CHECK((KeyboardFocus == button));
+}
+
+TEST_CASE("DropDownButton and SplitButton: disabled, a click focuses neither, and one disabled with its menu open keeps no focus")
+{
+    Scene scene;
+    controls::DropDownButton *button=scene.dropDown(40, 40);
+    controls::SplitButton *split=makeSplit(scene, 40, 120);
+    controls::DropDownButton *other=scene.dropDown(300, 40, "Other");
+
+    scene.frame();
+    button->setDisabled(true);
+    split->setDisabled(true);
+    other->focus();
+    scene.frame();
+
+    scene.click(button);
+    CHECK_FALSE(button->isFocussed());
+    CHECK_FALSE(button->isTabable());
+    scene.click(split->getMainPart());
+    CHECK_FALSE(split->isFocussed());
+    scene.click(split->getArrowPart());
+    CHECK_FALSE(split->isFocussed());
+    CHECK_FALSE(split->isTabable());
+
+    // enabled again, they take the focus and Tab, the arrow part neither
+    button->setDisabled(false);
+    split->setDisabled(false);
+    CHECK(button->isTabable());
+    CHECK(split->isTabable());
+    CHECK_FALSE(split->getArrowPart()->isTabable());
+    CHECK_FALSE(split->getArrowPart()->getKeyboardInputEnabled());
+    scene.click(split->getMainPart());
+    CHECK(split->isFocussed());
+
+    // disabled while its menu holds the focus: the hand-back skips it
+    for(controls::Base *control : {static_cast<controls::Base *>(other), static_cast<controls::Base *>(split)})
+    {
+        control->focus();
+        scene.key(keys::F4);
+        REQUIRE((KeyboardFocus != control));
+        // at once, not only once the next frame drops a focus taking no keys
+        control->setDisabled(true);
+        CHECK_FALSE(control->isFocussed());
+        scene.frame();
+        CHECK_FALSE(control->isFocussed());
+    }
+}
+
+TEST_CASE("SplitButton: a press on the open arrow let go off it, then Space or Return closes the menu and presses the main part")
+{
+    for(int code : {int(keys::Space), int(keys::Return)})
+    {
+        CAPTURE(code);
+        Scene scene;
+        controls::SplitButton *split=makeSplit(scene, 40, 40);
+        controls::Button *arrow=split->getArrowPart();
+        Counter pressed;
+
+        split->onPress.add(&pressed, &Counter::count);
+        scene.click(arrow);
+        REQUIRE(split->isMenuOpen());
+
+        const Point at=arrow->localPosToCanvas();
+        scene.clock+=1.0;
+        scene.canvas->inputMouseMoved(at.x+arrow->getWidth()/2, at.y+arrow->getHeight()/2, 0, 0);
+        input::onMouseClicked(scene.canvas, 0, true);
+        scene.canvas->inputMouseMoved(400, 400, 0, 0);
+        input::onMouseClicked(scene.canvas, 0, false);
+        scene.frame();
+        REQUIRE(split->isMenuOpen());
+        REQUIRE(split->isFocussed());
+
+        scene.key(code);
+        CHECK_FALSE(split->isMenuOpen());
+        CHECK(pressed.calls == 1);
         CHECK(split->isFocussed());
     }
 }

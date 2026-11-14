@@ -516,7 +516,11 @@ navigating in turn (`MenuFocus::FirstItem`), the item staying highlighted in its
 first menu; Escape closes one level; Tab is taken, so the focus stays in the menu. A
 key's release goes where its press went, so the Space that opened a menu from a button
 does not choose in it. A move closes a submenu the mouse had opened on the item it
-leaves.
+leaves. A submenu the mouse (or a click on its item) opens under a navigating menu
+navigates too, with nothing highlighted (`MenuItem::openMenu` passes `MenuFocus::Menu`),
+so it takes the focus from its parent menu: a press on one of its items keeps the focus
+in the chain that gives it back, and after a press let go off its item its keys still
+work, Escape closing one level at a time.
 
 **One highlight.** The keyboard highlight is the hover's look (`MenuHover`, no new
 surface). `MenuItem::isHighlighted()` is what the textured `MenuItem` renderer reads:
@@ -555,7 +559,10 @@ on the button while its menu is open closes it: the button is a menu component
 (`isMenuComponent()`, as a `MenuStrip` item is), so `input::onMouseClicked` does not
 close every menu before the press, and its own press decides (`openMenu` closes the
 other open menus first). While the menu is open the button is pressed (`isDepressed()`),
-redrawn from the menu's `onVisibilityChanged`. Disabling it closes the menu. A press on
+redrawn from the menu's `onVisibilityChanged`. Disabling it closes the menu and, as
+`Switch::setDisabled` does, turns its keyboard input and Tab stop off and drops the
+focus, so a click on a disabled one focuses nothing and the menu's hand-back skips it
+(enabling it gives them back; the arrow part of a SplitButton never takes either). A press on
 the open button let go off it presses nothing, so the menu stays open with the focus
 on the button; there Escape, Space, Return, Alt+Down and F4 close it. Its textured
 renderer draws
@@ -574,8 +581,10 @@ closes the menu, and neither fires the other's. The arrow's menu opens below the
 control, left-aligned with it (`SplitButtonArrow::menuAnchor()`). `setMainItem(item)`
 makes a menu item the main action (the "last used" pattern): the main part shows its
 text and a press fires its `onMenuItemSelected` after `onPress`. `setDisabled` disables
-both parts and closes the menu; with the menu open and the focus on the control (a press
-on the open arrow let go off it), Escape, Alt+Down and F4 close it.
+both parts, closes the menu and takes the control's keyboard input, Tab stop and focus
+away; with the menu open and the focus on the control (a press on the open arrow let go
+off it), Escape, Alt+Down and F4 close it, and Space and Return close it before pressing
+the main part, as a click on the main part does.
 
 Each part has its own renderer and slots, so a hover or press of one writes its slots
 alone: the main part draws its `buttonSurface()` square on its right with no border there

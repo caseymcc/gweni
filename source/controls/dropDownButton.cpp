@@ -104,10 +104,17 @@ void DropDownButton::closeMenu()
 
 void DropDownButton::setDisabled(bool disabled)
 {
+    const bool focusable=!disabled && takesKeyboardFocus();
+
+    // off before the menu closes, whose hand-back would focus it again
+    setKeyboardInputEnabled(focusable);
+    setTabable(focusable);
     if(disabled)
         closeMenu();
 
     ParentClass::setDisabled(disabled);
+    if(disabled && (KeyboardFocus == this))
+        unfocus();
 }
 
 bool DropDownButton::isDepressed() const
