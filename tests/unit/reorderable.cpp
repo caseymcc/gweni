@@ -24,6 +24,18 @@
  *  own removal of the item from the source is a plain edit, not a cancel.
  *  ReorderGroup and Reorderable may be destroyed in either order, and a
  *  Reorderable deleted as the drag's source ends it.
+ *
+ *  The looks: the drop indicator is a IndicatorThickness bar across the panel
+ *  centred on the shown gap's position, hidden over a list that refuses the
+ *  item and once the drag ends, and the veil covers the dragged item's rect;
+ *  both are the panel's last children (the indicator last), made once and
+ *  used again, put last again when the app adds a control during the drag,
+ *  made again when the app cleared the panel, and deleted with their
+ *  Reorderable. A move that keeps the gap changes no control and lays nothing
+ *  out; a gap change changes the indicator alone, in one pass entering only
+ *  the way down to it. The veil follows the item's index through inserts,
+ *  removals and an edit the list cannot describe, and is hidden while the
+ *  item has no rect (out of a pooled list's view).
  */
 #include "headlessFixture.h"
 
@@ -62,6 +74,7 @@ public:
     int gapChanges=0;
     int dragChanges=0;
     bool withinNow=true;
+    size_t shownItems=Reorderable::NoItem;
 
     size_t itemCount() const override { return keys.size(); }
     uint64_t keyAt(size_t index) const override
@@ -79,6 +92,14 @@ public:
     {
         const int gap=(local.y+ItemHeight/2)/ItemHeight;
         return static_cast<size_t>(std::clamp(gap, 0, static_cast<int>(keys.size())));
+    }
+    int gapPosition(size_t gap) const override { return static_cast<int>(gap)*ItemHeight; }
+    //! Item rects across the list, empty for an index past `shownItems`
+    Rect itemRect(size_t index) const override
+    {
+        if(index >= shownItems)
+            return Rect();
+        return Rect(0, static_cast<int>(index)*ItemHeight, getList()->getWidth(), ItemHeight);
     }
     bool reorderWithinNow() const override { return withinNow; }
     void gapChanged() override { ++gapChanges; }
@@ -226,12 +247,33 @@ struct Scene
         move(Point(at.x+6, at.y));
     }
 
+    //! Runs a frame for the input given since the last one and returns what it
+    //! did: previousFrameStats() is taken as the next frame starts, so this
+    //! runs one more (with nothing to do)
+    controls::CanvasFrameStats inputFrame()
+    {
+        frame();
+        frame();
+        return canvas->previousFrameStats();
+    }
+
     void release()
     {
         input::onMouseClicked(canvas, 0, false);
         frame();
     }
 };
+
+}//namespace
+
+namespace
+{
+
+//! A rect as "x,y wxh", compared as strings so a failure shows both
+std::string str(const gweni::Rect &r)
+{
+    return std::to_string(r.x)+","+std::to_string(r.y)+" "+std::to_string(r.w)+"x"+std::to_string(r.h);
+}
 
 }//namespace
 
@@ -677,4 +719,178 @@ TEST_CASE("Reorderable: group and member may go in either order, and a source de
     CHECK_FALSE(draganddrop::isDragging());
     CHECK(Reorderable::dragSource() == nullptr);
     CHECK(group.getMembers().empty());
+}
+
+TEST_CASE("Reorderable: the drop indicator is a bar at the shown gap and the veil covers the dragged item")
+{
+    Scene scene;
+    KeyReorder *a=scene.a->reorder.get();
+    CHECK(a->getIndicator() == nullptr);
+    CHECK(a->getSourceVeil() == nullptr);
+
+    scene.press(scene.a, 1);
+    controls::internal::DropIndicator *indicator=a->getIndicator();
+    controls::internal::DragSourceVeil *veil=a->getSourceVeil();
+    REQUIRE(indicator != nullptr);
+    REQUIRE(veil != nullptr);
+    CHECK(indicator->getParent() == scene.a);
+    CHECK(veil->getParent() == scene.a);
+
+    // the gap before item 1: a 2-unit bar centred on y 20, across the list
+    CHECK(indicator->visible());
+    CHECK(str(indicator->getBounds()) == str(Rect(0, ItemHeight-1, 100, Reorderable::IndicatorThickness)));
+    CHECK(veil->visible());
+    CHECK(str(veil->getBounds()) == str(Rect(0, ItemHeight, 100, ItemHeight)));
+    // the panel's last children, the indicator last; neither takes the mouse
+    CHECK(scene.a->getChildren().back() == indicator);
+    CHECK(*std::prev(scene.a->getChildren().end(), 2) == veil);
+    CHECK_FALSE(indicator->getMouseInputEnabled());
+    CHECK_FALSE(veil->getMouseInputEnabled());
+
+    scene.move(scene.on(scene.a, 3*ItemHeight+2));
+    CHECK(str(indicator->getBounds()) == str(Rect(0, 3*ItemHeight-1, 100, Reorderable::IndicatorThickness)));
+    CHECK(str(veil->getBounds()) == str(Rect(0, ItemHeight, 100, ItemHeight)));
+
+    // over a list that refuses the item: no bar anywhere; the veil stays
+    scene.move(scene.on(scene.b, 30));
+    CHECK_FALSE(indicator->visible());
+    CHECK(scene.b->reorder->getIndicator() == nullptr);
+    CHECK(veil->visible());
+
+    // back, and released: both hidden, still the same controls
+    scene.move(scene.on(scene.a, 3*ItemHeight+2));
+    CHECK(indicator->visible());
+    scene.release();
+    CHECK(a->getIndicator() == indicator);
+    CHECK(a->getSourceVeil() == veil);
+    CHECK_FALSE(indicator->visible());
+    CHECK_FALSE(veil->visible());
+
+    // a second drag uses them again
+    scene.press(scene.a, 2);
+    CHECK(a->getIndicator() == indicator);
+    CHECK(a->getSourceVeil() == veil);
+    CHECK(str(veil->getBounds()) == str(Rect(0, 2*ItemHeight, 100, ItemHeight)));
+    CHECK(veil->visible());
+}
+
+TEST_CASE("Reorderable: a move that keeps the gap changes no control, and a gap change only the indicator")
+{
+    Scene scene;
+
+    // rows for the layout to enter, if it entered them (they take no mouse:
+    // the list is pressed)
+    for(int i=0; i < 4; ++i)
+    {
+        controls::Base *row=scene.a->newChild<controls::Base>();
+        row->setDock(DockPosition::Top);
+        row->setSizeFlags({SizeFlag::Expand, SizeFlag::Fixed});
+        row->setHeight(ItemHeight);
+        row->setMouseInputEnabled(false);
+    }
+    scene.frame();
+
+    scene.press(scene.a, 1);
+    scene.move(scene.on(scene.a, 41));
+    scene.frame();
+    REQUIRE(scene.a->reorder->gap() == 2);
+
+    // inside item 2's upper half: the same gap
+    scene.canvas->inputMouseMoved(scene.on(scene.a, 47).x, scene.on(scene.a, 47).y, 0, 0);
+    const controls::CanvasFrameStats kept=scene.inputFrame();
+    CHECK(kept.render.controls == 0);
+    CHECK(kept.render.visited == 0);
+    CHECK(kept.layout.passes == 0);
+
+    // into its lower half: gap 3, the indicator alone
+    scene.canvas->inputMouseMoved(scene.on(scene.a, 52).x, scene.on(scene.a, 52).y, 0, 0);
+    REQUIRE(scene.a->reorder->gap() == 3);
+    const controls::CanvasFrameStats moved=scene.inputFrame();
+    CHECK(moved.render.controls == 1);
+    CHECK(moved.render.visited == 1);
+    CHECK(moved.render.geometry == 1);
+    // one pass, entering only the way down to the indicator (canvas, list,
+    // indicator; a calculateSize and an arrange in each axis): no item
+    CHECK(moved.layout.passes <= 1);
+    CHECK(moved.layout.visited <= 3*4);
+    CHECK(moved.update.zVisited == 0);
+}
+
+TEST_CASE("Reorderable: the veil follows the dragged item's index and hides while it is not shown")
+{
+    Scene scene;
+    ReorderGroup group;
+    KeyReorder *a=scene.a->reorder.get();
+    group.add(a);
+    group.add(scene.b->reorder.get());
+
+    scene.press(scene.a, 1);
+    controls::internal::DragSourceVeil *veil=a->getSourceVeil();
+    REQUIRE(veil != nullptr);
+    scene.move(scene.on(scene.b, 30));
+
+    // two inserted above it: it is item 3 now
+    a->keys.insert(a->keys.begin(), {100, 101});
+    a->itemsInserted(0, 2);
+    CHECK(str(veil->getBounds()) == str(Rect(0, 3*ItemHeight, 100, ItemHeight)));
+    // one removed above it: item 2
+    a->keys.erase(a->keys.begin());
+    a->itemsRemoved(0, 1);
+    CHECK(str(veil->getBounds()) == str(Rect(0, 2*ItemHeight, 100, ItemHeight)));
+
+    // the list shows only its first two items (a pooled list scrolled): the
+    // item is out of view and the veil hidden, back in view and shown
+    a->shownItems=2;
+    a->placeLooks();
+    CHECK_FALSE(veil->visible());
+    a->shownItems=Reorderable::NoItem;
+    a->placeLooks();
+    CHECK(veil->visible());
+
+    // an edit the list cannot describe: found again by key
+    a->keys={2, 100, 101, 1, 3, 4};
+    a->itemsChanged();
+    CHECK(str(veil->getBounds()) == str(Rect(0, 0, 100, ItemHeight)));
+}
+
+TEST_CASE("Reorderable: controls added to the panel during a drag leave the looks numbered last")
+{
+    Scene scene;
+    KeyReorder *a=scene.a->reorder.get();
+    scene.press(scene.a, 0);
+    controls::internal::DropIndicator *indicator=a->getIndicator();
+    controls::internal::DragSourceVeil *veil=a->getSourceVeil();
+    REQUIRE(indicator != nullptr);
+    REQUIRE(veil != nullptr);
+
+    // the app adds a row while the drag lasts, and the list places its looks
+    controls::Base *added=scene.a->newChild<controls::Base>();
+    REQUIRE(scene.a->getChildren().back() == added);
+    a->placeLooks();
+    CHECK(scene.a->getChildren().back() == indicator);
+    CHECK(*std::prev(scene.a->getChildren().end(), 2) == veil);
+    scene.frame();
+    CHECK(indicator->getZIndex() > added->getZIndex());
+    CHECK(veil->getZIndex() > added->getZIndex());
+
+    // the app clears the panel: the looks are made again where they show
+    scene.release();
+    while(!scene.a->getChildren().empty())
+        delete scene.a->getChildren().front();
+    CHECK(a->getIndicator() == nullptr);
+    scene.press(scene.a, 0);
+    REQUIRE(a->getIndicator() != nullptr);
+    CHECK(a->getIndicator()->getParent() == scene.a);
+    CHECK(a->getIndicator()->visible());
+}
+
+TEST_CASE("Reorderable: the looks go with their Reorderable")
+{
+    Scene scene;
+    scene.press(scene.a, 0);
+    scene.release();
+    const size_t children=scene.a->getChildren().size();
+    REQUIRE(scene.a->reorder->getIndicator() != nullptr);
+    scene.a->reorder.reset();
+    CHECK(scene.a->getChildren().size() == children-2);
 }

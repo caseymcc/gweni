@@ -442,6 +442,9 @@ TEST_CASE("dragAndDrop: a drag move that keeps the marker where it is changes no
 
     const Point inside=at(two, 0.8f);
     scene.move(Point(inside.x+1, inside.y));
+    // previousFrameStats() is taken as the next frame starts: one more frame,
+    // with nothing to do, for the move's
+    scene.frame();
 
     const controls::CanvasFrameStats &stats=scene.canvas->previousFrameStats();
     CHECK(stats.render.controls == 0);
