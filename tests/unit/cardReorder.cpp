@@ -35,7 +35,11 @@
  *  control had set, and the canvas deleted mid-drag sets it back to Normal
  *  from No. A target column hidden during the drag stops being the
  *  target at the next update (the No cursor; a release drops nothing into
- *  it). A card the app adds in the same input phase as a move that changes
+ *  it). A source or target column hidden mid-drag (itself, or the target's
+ *  page) is dropped before that frame's layout, in its one pass: the source
+ *  cancels the drag, the target is the target no more. One the layout itself
+ *  hides is dropped in the next update phase, the canvas having work until
+ *  then, and a release before it drops nothing. A card the app adds in the same input phase as a move that changes
  *  the gap is seen: the dragged index and the veil follow it.
  *  Hiding or showing a card during the drag re-resolves the dragged index
  *  and the gap before its card, re-checks the drop rule and places the veil
@@ -1860,5 +1864,45 @@ TEST_CASE("CardReorder: a list the layout hides mid-drag is dropped in the next 
 
     scene.release();
     CHECK_FALSE(draganddrop::isDragging());
+    CHECK(scene.running.drops.empty());
+}
+
+TEST_CASE("CardReorder: a source list the layout hides mid-drag cancels in the next update phase")
+{
+    Scene scene;
+    LayoutHider *hider=scene.canvas->newChild<LayoutHider>();
+    hider->setDock(DockPosition::Top);
+    hider->setHeight(1);
+    scene.frame();
+    scene.startDrag(scene.todo.cards[1]);
+    scene.move(Scene::on(scene.running.cards[0], 3));
+    REQUIRE(Reorderable::dropTarget() == scene.running.reorder);
+    scene.frame();
+
+    hider->target=scene.todo.list;
+    hider->invalidate();
+    scene.frame();
+    REQUIRE_FALSE(scene.todo.list->visible());
+    // found after the layout: the drag lasts to the next update phase
+    CHECK(draganddrop::isDragging());
+    CHECK(scene.canvas->nextWorkTime() == controls::Canvas::WorkNow);
+
+    SUBCASE("the next frame cancels it")
+    {
+        const HideFrame next=hideFrame(scene);
+        CHECK_FALSE(next.dirtyAfterUpdate);
+        CHECK_FALSE(next.renderLayout);
+        CHECK(next.passes <= 1);
+        CHECK_FALSE(draganddrop::isDragging());
+        CHECK_FALSE(scene.todo.reorder->veilShown());
+        CHECK_FALSE(scene.running.reorder->indicatorShown());
+    }
+    SUBCASE("a release before it drops nothing")
+    {
+    }
+
+    scene.release();
+    CHECK_FALSE(draganddrop::isDragging());
+    CHECK(scene.todo.drops.empty());
     CHECK(scene.running.drops.empty());
 }

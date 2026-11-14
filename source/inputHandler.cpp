@@ -166,8 +166,9 @@ bool dropLostKeyboardFocus()
 
 void onCanvasThink(controls::Base *control)
 {
-    // an item drag whose list went away is cancelled; the hover, left where it
-    // was while it lasted, is taken again below
+    // a list of the live drag this frame's layout hid is left for the next
+    // update phase (draganddrop::beforeLayout drops it); the hover a drag left
+    // where it was while it lasted is taken again below once it has ended
     if(controls::Canvas *dragged=control->getCanvas())
         draganddrop::onCanvasThink(dragged);
 
