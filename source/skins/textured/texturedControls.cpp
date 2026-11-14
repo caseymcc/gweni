@@ -1031,17 +1031,27 @@ void SegmentedButton::update(renderer::Base *renderer, controls::Base *baseContr
     gweni::Rect rect=baseControl->getRenderBounds();
     uint8_t edges=0;
 
-    // the left neighbour draws the shared column
+    // a disabled segment keeps the focus it had, without its look
+    const bool focused=segment->isFocussed() && !disabled;
+    tokyonight::Surface look=*surface;
+
+    if(focused)
+        look.border=tokyonight::SegmentFocus.border;
+
+    // the left neighbour draws the shared column, unless this one has the
+    // focus: then it draws its whole outline, in front of the neighbour
     if(index > 0)
+        edges|=renderer::SquareTopLeft|renderer::SquareBottomLeft;
+    if((index > 0) && !focused)
     {
-        edges|=renderer::SquareTopLeft|renderer::SquareBottomLeft|renderer::NoBorderLeft;
+        edges|=renderer::NoBorderLeft;
         rect.x+=controls::SegmentedButtons::Joint;
         rect.w-=controls::SegmentedButtons::Joint;
     }
     if(index < last)
         edges|=renderer::SquareTopRight|renderer::SquareBottomRight;
 
-    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, *surface, rect, edges);
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, look, rect, edges);
 
     if(baseControl->visible() && selected && segment->hasCheckRoom())
     {

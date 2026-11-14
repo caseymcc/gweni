@@ -16,7 +16,9 @@
  *  SegmentDisabled, SegmentOnDisabled) and its text in the skin's
  *  SegmentedButton colours. The check icon is drawn at the segment's z+1 in
  *  getCheckRect() while it is selected in a row that shows checks, and hidden
- *  otherwise. A hover writes the hovered segment's fill slot alone, an
+ *  otherwise. The segment holding the keyboard focus is drawn over its whole
+ *  bounds, covering its left joint, its border SegmentFocus's on every side,
+ *  its fill its state's. A hover writes the hovered segment's fill slot alone, an
  *  exclusive click only the two segments' slots, a multi toggle one
  *  segment's, and a settled frame nothing.
  */
@@ -316,12 +318,18 @@ TEST_CASE("Segmented look: each state draws its surface and its text colour")
     checkSurface(scene.fillOf(0), tn::SegmentOnHover);
     checkSurface(scene.fillOf(1), tn::Segment);
 
+    // the press focuses it: its state's fill, the focus border
     scene.canvas->inputMouseButton(0, true);
     scene.frame();
-    checkSurface(scene.fillOf(0), tn::SegmentDown);
+    CHECK(sameColor(scene.fillOf(0).top, tn::SegmentDown.top));
+    CHECK(sameColor(scene.fillOf(0).bottom, tn::SegmentDown.bottom));
+    CHECK(sameColor(scene.fillOf(0).border, tn::SegmentFocus.border));
     scene.canvas->inputMouseButton(0, false);
     scene.moveOff();
-    checkSurface(scene.fillOf(0), tn::SegmentOn);
+    CHECK(sameColor(scene.fillOf(0).top, tn::SegmentOn.top));
+    CHECK(sameColor(scene.fillOf(0).border, tn::SegmentFocus.border));
+
+    // disabled, it keeps the focus but not the focused look
 
     row->setDisabled(true);
     scene.frame();
@@ -404,4 +412,45 @@ TEST_CASE("Segmented look: a hover, a click and a toggle write only the segments
     row->setSelected(3, true);
     scene.frame();
     CHECK(scene.segmentsTouched() == std::set<int>{3});
+}
+
+TEST_CASE("Segmented look: the focused segment draws its whole outline in the focus colour")
+{
+    Scene scene({"A", "B", "C"});
+    SegmentedButtons *row=scene.row;
+
+    row->setSelected(1, true);
+    row->getSegment(1)->focus();
+    scene.frame();
+
+    const SegmentedButton *segment=row->getSegment(1);
+    const Recorder::Draw &fill=scene.fillOf(1);
+    const Rect bounds=segment->getRenderBounds();
+
+    CHECK(fill.rect.x == bounds.x);
+    CHECK(fill.rect.w == bounds.w);
+    CHECK(fill.edges == (renderer::SquareTopLeft|renderer::SquareBottomLeft|kRightJoined));
+    CHECK(sameColor(fill.border, tn::SegmentFocus.border));
+    CHECK(sameColor(fill.top, tn::SegmentOn.top));
+    // the others as they were
+    CHECK(sameColor(scene.fillOf(2).border, tn::Segment.border));
+    CHECK(scene.fillOf(2).edges == kLeftJoined);
+
+    // moved by a key with the selection: only the two segments are written,
+    // and the one it left is joined again
+    scene.renderer.touched.clear();
+    input::onKeyEvent(scene.canvas, keys::Right, true);
+    input::onKeyEvent(scene.canvas, keys::Right, false);
+    scene.frame();
+    CHECK(scene.segmentsTouched() == std::set<int>({1, 2}));
+    CHECK(sameColor(scene.fillOf(2).border, tn::SegmentFocus.border));
+    CHECK(scene.fillOf(2).rect.x == row->getSegment(2)->getRenderBounds().x);
+    CHECK(scene.fillOf(1).edges == (kLeftJoined|kRightJoined));
+    CHECK(scene.fillOf(1).rect.x == row->getSegment(1)->getRenderBounds().x+SegmentedButtons::Joint);
+    CHECK(sameColor(scene.fillOf(1).border, tn::Segment.border));
+
+    KeyboardFocus->unfocus();
+    scene.frame();
+    CHECK(sameColor(scene.fillOf(2).border, tn::SegmentOn.border));
+    CHECK(scene.fillOf(2).edges == kLeftJoined);
 }

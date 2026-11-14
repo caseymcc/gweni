@@ -7,9 +7,11 @@
 
 #include <gweni/controls/segmentedButtons.h>
 #include <gweni/controls/imagePanel.h>
+#include <gweni/gweni.h>
 #include <gweni/skin.h>
 
 #include <algorithm>
+#include <cstdlib>
 
 namespace gweni
 {
@@ -85,6 +87,13 @@ void SegmentedButton::updateColors()
         setTextColor(colors.Hover);
     else
         setTextColor(colors.Normal);
+}
+
+bool SegmentedButton::isTabable()
+{
+    if(!m_row)
+        return ParentClass::isTabable();
+    return m_row->getTabStop() == this;
 }
 
 bool SegmentedButton::textShows() const
@@ -456,6 +465,115 @@ void SegmentedButtons::restyleSegments()
 {
     for(SegmentedButton *segment : m_segments)
         segment->redraw();
+}
+
+bool SegmentedButtons::canFocus(SegmentedButton *segment)
+{
+    return segment && !segment->isDisabled() && !segment->hidden();
+}
+
+SegmentedButton *SegmentedButtons::getTabStop() const
+{
+    const int focused=indexOf(KeyboardFocus);
+
+    if((focused >= 0) && canFocus(m_segments[static_cast<size_t>(focused)]))
+        return m_segments[static_cast<size_t>(focused)];
+
+    if(m_mode == Mode::Exclusive)
+    {
+        const int selected=getSelectedIndex();
+
+        if((selected >= 0) && canFocus(m_segments[static_cast<size_t>(selected)]))
+            return m_segments[static_cast<size_t>(selected)];
+    }
+    for(SegmentedButton *segment : m_segments)
+    {
+        if(canFocus(segment))
+            return segment;
+    }
+    return nullptr;
+}
+
+bool SegmentedButtons::focusSegment(SegmentedButton *segment)
+{
+    if(!segment)
+        return false;
+
+    segment->focus();
+    if(m_mode == Mode::Exclusive)
+        segment->setSelected(true);
+    return true;
+}
+
+bool SegmentedButtons::moveFocus(int steps)
+{
+    SegmentedButton *from=getTabStop();
+
+    if(isDisabled() || !from)
+        return false;
+
+    const int direction=(steps < 0)?-1:1;
+    int index=indexOf(from);
+    SegmentedButton *target=from;
+
+    for(int left=std::abs(steps); left > 0; --left)
+    {
+        int next=index+direction;
+
+        while((next >= 0) && (next < segmentCount()) && !canFocus(m_segments[static_cast<size_t>(next)]))
+            next+=direction;
+        if((next < 0) || (next >= segmentCount()))
+            break;
+        index=next;
+        target=m_segments[static_cast<size_t>(index)];
+    }
+    return focusSegment(target);
+}
+
+bool SegmentedButtons::moveFocusToEnd(bool last)
+{
+    if(isDisabled())
+        return false;
+
+    for(int i=0; i < segmentCount(); ++i)
+    {
+        SegmentedButton *segment=m_segments[static_cast<size_t>(last?segmentCount()-1-i:i)];
+
+        if(canFocus(segment))
+            return focusSegment(segment);
+    }
+    return false;
+}
+
+// Each key on its press; a key the row does not take goes on up.
+bool SegmentedButtons::onKeyLeft(bool down)
+{
+    return down?moveFocus(-1):!isDisabled();
+}
+
+bool SegmentedButtons::onKeyRight(bool down)
+{
+    return down?moveFocus(1):!isDisabled();
+}
+
+bool SegmentedButtons::onKeyUp(bool down)
+{
+    return onKeyLeft(down);
+}
+
+bool SegmentedButtons::onKeyDown(bool down)
+{
+    return onKeyRight(down);
+}
+
+bool SegmentedButtons::onKeyHome(bool down)
+{
+    return down?moveFocusToEnd(false):!isDisabled();
+}
+
+bool SegmentedButtons::onKeyend(bool down)
+{
+    return down?moveFocusToEnd(true):!isDisabled();
 }
 
 int SegmentedButtons::segmentPositions(const std::vector<int> &widths, std::vector<int> &x)

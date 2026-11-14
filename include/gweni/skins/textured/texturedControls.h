@@ -1291,7 +1291,11 @@ public:
 // disabled). A segment after the first starts on its left neighbour's right
 // border column, which the neighbour draws: it is drawn from a Joint further
 // right, with no border on its left side, so every joint is one border column
-// at any scale and a segment's state never repaints its neighbours.
+// at any scale and a segment's state never repaints its neighbours. The
+// segment holding the keyboard focus is drawn over its whole bounds instead,
+// its border SegmentFocus's on every side, so it covers its left joint: it is
+// in front of its left neighbour, and its right neighbour does not draw on
+// their joint.
 class SegmentedButton:public textured::ControlRegister<SegmentedButton>
 {
 public:

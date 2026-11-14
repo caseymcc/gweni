@@ -75,6 +75,10 @@ public:
     //! The skin's SegmentedButton text colour for its state.
     void updateColors() override;
 
+    //! The row's one Tab stop (SegmentedButtons::getTabStop()) alone is
+    //! tabable; a segment outside a row as a Selectable.
+    bool isTabable() override;
+
     void calculateSize(skin::Base *skin, Dim dim) override;
 
 protected:
@@ -119,6 +123,15 @@ protected:
 //! them the tallest one's height; each one after the first starts Joint units
 //! left of the previous one's right edge, so neighbours share their border
 //! column. The row's preferred size is theirs and its padding.
+//!
+//! The keyboard: the row is one Tab stop, getTabStop(), the segment holding
+//! the focus while one does, else the exclusive selection, else the first
+//! enabled segment. Left and Up move to the previous enabled segment, Right
+//! and Down to the next, Home and End to the first and last, without
+//! wrapping; in an Exclusive row the selection moves with the focus (radio
+//! groups', WinUI RadioButtons' keys), in a Multi row only the focus does, and
+//! Space or Return toggles the focused segment (Selectable's keys). Disabled
+//! segments are passed over, and a disabled row takes no key.
 class GWENI_EXPORT SegmentedButtons: public Base
 {
 public:
@@ -195,6 +208,24 @@ public:
     void setShowCheck(bool show);
     bool showsCheck() const { return m_showCheck; }
 
+    //! The segment Tab enters the row at (see the class comment), null when
+    //! no segment is enabled.
+    SegmentedButton *getTabStop() const;
+
+    //! Focuses the enabled segment \p steps from the focused one (or from
+    //! the Tab stop), stopping at the row's ends, and in an Exclusive row
+    //! selects it; false if no segment is enabled or the row is disabled.
+    bool moveFocus(int steps);
+    //! The same to the first (\p last false) or last enabled segment.
+    bool moveFocusToEnd(bool last);
+
+    bool onKeyLeft(bool down) override;
+    bool onKeyRight(bool down) override;
+    bool onKeyUp(bool down) override;
+    bool onKeyDown(bool down) override;
+    bool onKeyHome(bool down) override;
+    bool onKeyend(bool down) override;
+
     //! The row and, through SegmentedButton::isDisabled(), every segment.
     void setDisabled(bool active) override;
 
@@ -223,6 +254,10 @@ protected:
     void ensureSelection(int from=0);
     //! Repaints every segment: which of them are the row's ends changed.
     void restyleSegments();
+    //! Focuses \p segment and, in an Exclusive row, selects it.
+    bool focusSegment(SegmentedButton *segment);
+    //! Whether the segment takes focus: enabled and shown.
+    static bool canFocus(SegmentedButton *segment);
     //! Each segment's width, as placed.
     void segmentWidths(std::vector<int> &widths) const;
 

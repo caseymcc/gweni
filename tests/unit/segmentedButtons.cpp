@@ -23,10 +23,20 @@
  *  Removing a segment gives its ids back and moves the exclusive selection to
  *  the next enabled segment, else the previous one, as does a segment the app
  *  deletes itself.
+ *
+ *  The keyboard, through input::onKeyEvent: the row is one Tab stop, entered
+ *  at the exclusive selection (else the first enabled segment) and left from
+ *  whichever segment holds the focus, both ways. Left/Up and Right/Down step
+ *  to the previous and next enabled segment and Home/End to the first and
+ *  last, never wrapping; in an exclusive row the selection moves with the
+ *  focus, firing once per move, and in a multi row only the focus moves while
+ *  Space and Return toggle the focused segment. A disabled row takes no key
+ *  and is no Tab stop.
  */
 #include "headlessFixture.h"
 
 #include <gweni/controls/segmentedButtons.h>
+#include <gweni/controls/textBox.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/skins/textured/texturedSkin.h>
@@ -82,6 +92,8 @@ struct Scene
     ~Scene()
     {
         input::onMouseClicked(canvas, 0, false);
+        for(int key : {keys::Shift, keys::Tab})
+            input::onKeyEvent(canvas, key, false);
         HoveredControl=nullptr;
         KeyboardFocus=nullptr;
         MouseFocus=nullptr;
@@ -115,6 +127,26 @@ struct Scene
         input::onMouseClicked(canvas, 0, true);
         input::onMouseClicked(canvas, 0, false);
         frame();
+    }
+
+    void key(int key)
+    {
+        input::onKeyEvent(canvas, key, true);
+        input::onKeyEvent(canvas, key, false);
+        frame();
+    }
+
+    void shiftTab()
+    {
+        input::onKeyEvent(canvas, keys::Shift, true);
+        key(keys::Tab);
+        input::onKeyEvent(canvas, keys::Shift, false);
+    }
+
+    //! The index of the row's segment holding the focus, -1 for none.
+    static int focused(const SegmentedButtons *row)
+    {
+        return row->indexOf(KeyboardFocus);
     }
 };
 
@@ -433,4 +465,174 @@ TEST_CASE("SegmentedButtons: removing a segment gives its ids back and moves the
     scene.frame();
     CHECK(livePrimitives() == primitives);
     CHECK(liveTexts() == texts);
+}
+
+TEST_CASE("SegmentedButtons: in an exclusive row the arrows, Home and End move the selection with the focus")
+{
+    Scene scene;
+    SegmentedButtons *row=scene.row({"A", "B", "C", "D", "E"});
+    Changes changes;
+
+    row->getSegment(2)->setDisabled(true);
+    row->onSelectionChange.add(&changes, &Changes::changed);
+    row->getSegment(0)->focus();
+    scene.frame();
+
+    struct Step
+    {
+        int key;
+        int index;
+    };
+    // C is passed over, the ends stop the arrows, and a key that moves
+    // nothing fires nothing
+    const Step steps[]={
+        {keys::Right, 1}, {keys::Right, 3}, {keys::Down, 4}, {keys::Right, 4}, {keys::Left, 3},
+        {keys::Up, 1}, {keys::Left, 0}, {keys::Left, 0}, {keys::End, 4}, {keys::Home, 0}, {keys::Home, 0}};
+    int moves=0;
+
+    for(const Step &step : steps)
+    {
+        const int before=row->getSelectedIndex();
+
+        CAPTURE(step.key);
+        scene.key(step.key);
+        CHECK(Scene::focused(row) == step.index);
+        CHECK(row->getSelectedIndex() == step.index);
+        CHECK(row->getSelectedIndices().size() == 1);
+        if(step.index != before)
+            ++moves;
+        REQUIRE(changes.segments.size() == static_cast<size_t>(moves));
+        CHECK(changes.segments.back() == row->getSegment(step.index));
+    }
+
+    // Space and Return keep it
+    scene.key(keys::Space);
+    scene.key(keys::Return);
+    CHECK(row->getSelectedIndex() == 0);
+    CHECK(changes.segments.size() == static_cast<size_t>(moves));
+
+    // the first and last enabled: Home and End stop short of disabled ends
+    row->getSegment(0)->setDisabled(true);
+    row->getSegment(4)->setDisabled(true);
+    scene.key(keys::End);
+    CHECK(Scene::focused(row) == 3);
+    scene.key(keys::Home);
+    CHECK(Scene::focused(row) == 1);
+    CHECK(row->getSelectedIndex() == 1);
+}
+
+TEST_CASE("SegmentedButtons: in a multi row the arrows move the focus alone and Space and Return toggle")
+{
+    Scene scene;
+    SegmentedButtons *row=scene.row({"A", "B", "C", "D"});
+    Changes changes;
+
+    row->setMode(SegmentedButtons::Mode::Multi);
+    row->getSegment(1)->setDisabled(true);
+    row->onSelectionChange.add(&changes, &Changes::changed);
+    row->getSegment(0)->focus();
+    scene.frame();
+
+    scene.key(keys::Right);
+    CHECK(Scene::focused(row) == 2);
+    CHECK(row->getSelectedIndices() == std::vector<int>{0});
+    CHECK(changes.segments.empty());
+
+    scene.key(keys::Space);
+    CHECK(row->getSelectedIndices() == std::vector<int>({0, 2}));
+    scene.key(keys::End);
+    CHECK(Scene::focused(row) == 3);
+    scene.key(keys::Return);
+    CHECK(row->getSelectedIndices() == std::vector<int>({0, 2, 3}));
+    scene.key(keys::Home);
+    CHECK(Scene::focused(row) == 0);
+    scene.key(keys::Space);
+    CHECK(row->getSelectedIndices() == std::vector<int>({2, 3}));
+    scene.key(keys::Up);
+    CHECK(Scene::focused(row) == 0);
+    scene.key(keys::Down);
+    CHECK(Scene::focused(row) == 2);
+    scene.key(keys::Return);
+    CHECK(row->getSelectedIndices() == std::vector<int>{3});
+
+    REQUIRE(changes.segments.size() == 4);
+    CHECK(changes.segments[0] == row->getSegment(2));
+    CHECK(changes.segments[1] == row->getSegment(3));
+    CHECK(changes.segments[2] == row->getSegment(0));
+    CHECK(changes.segments[3] == row->getSegment(2));
+}
+
+TEST_CASE("SegmentedButtons: the row is one Tab stop, entered at the selected segment")
+{
+    Scene scene;
+    controls::TextBox *before=scene.canvas->newChild<controls::TextBox>();
+    SegmentedButtons *row=scene.row({"A", "B", "C", "D"});
+    controls::TextBox *after=scene.canvas->newChild<controls::TextBox>();
+
+    before->setPos(20, 100);
+    after->setPos(20, 140);
+    row->setSelected(2, true);
+    before->focus();
+    scene.frame();
+
+    // in at the selection, out past the rest of the row, back to it
+    scene.key(keys::Tab);
+    CHECK(Scene::focused(row) == 2);
+    CHECK(row->getTabStop() == row->getSegment(2));
+    scene.key(keys::Tab);
+    CHECK(KeyboardFocus == after);
+    scene.shiftTab();
+    CHECK(Scene::focused(row) == 2);
+    scene.shiftTab();
+    CHECK(KeyboardFocus == before);
+
+    // a disabled selection: the first enabled segment
+    row->getSegment(0)->setDisabled(true);
+    row->getSegment(2)->setDisabled(true);
+    scene.key(keys::Tab);
+    CHECK(Scene::focused(row) == 1);
+
+    // multi: in at the first enabled, and out from wherever the focus moved
+    row->getSegment(2)->setDisabled(false);
+    row->setMode(SegmentedButtons::Mode::Multi);
+    before->focus();
+    scene.frame();
+    scene.key(keys::Tab);
+    CHECK(Scene::focused(row) == 1);
+    scene.key(keys::End);
+    CHECK(Scene::focused(row) == 3);
+    scene.shiftTab();
+    CHECK(KeyboardFocus == before);
+    scene.key(keys::Tab);
+    scene.key(keys::Right);
+    scene.key(keys::Tab);
+    CHECK(KeyboardFocus == after);
+}
+
+TEST_CASE("SegmentedButtons: a disabled row takes no key and no Tab")
+{
+    Scene scene;
+    controls::TextBox *before=scene.canvas->newChild<controls::TextBox>();
+    SegmentedButtons *row=scene.row({"A", "B", "C"});
+    controls::TextBox *after=scene.canvas->newChild<controls::TextBox>();
+    Changes changes;
+
+    before->setPos(20, 100);
+    after->setPos(20, 140);
+    row->onSelectionChange.add(&changes, &Changes::changed);
+    row->getSegment(0)->focus();
+    row->setDisabled(true);
+    scene.frame();
+
+    for(int key : {keys::Right, keys::End, keys::Down, keys::Space, keys::Return})
+        scene.key(key);
+    CHECK(row->getSelectedIndex() == 0);
+    CHECK(changes.segments.empty());
+    CHECK(row->getTabStop() == nullptr);
+    CHECK_FALSE(row->moveFocus(1));
+
+    before->focus();
+    scene.frame();
+    scene.key(keys::Tab);
+    CHECK(KeyboardFocus == after);
 }
