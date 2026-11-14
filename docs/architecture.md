@@ -2042,7 +2042,11 @@ two programs and the draws. What follows describes both together:
   5.7 %, and with the taps unrolled, 52 %). The primitive program compiles in fewer
   instructions than with the 8 `textureGrad`s (ButtonDemo's whole run 2.74 G against
   3.06 G). `gweni_bench`'s counters are unchanged in every scene; no scene draws an
-  image.
+  image. The image pages (#606) took the `textureSize` out (the image's size is in the
+  vertex) and the switches down to 5 cases: `gweni_bench`'s flush, which every pixel's
+  masked image branch is part of, went down 2.0 % in `idle` (4,702.2 M to 4,607.1 M
+  instructions), 2.4 % in `hover-sweep` and 2.0 % in `build` at N=1000, `set-text`
+  unchanged, and no other counter moved but the new `image_regrows`, 0 in every scene.
 - Because the CPU mirror is persistent, a control that didn't change leaves its slot
   untouched between frames; its geometry is still in the buffer.
 - A single shader pair (vertex + fragment) draws all non-text primitives; an ortho
@@ -5362,6 +5366,87 @@ capture, a test and the bench do not, so what they paste never depends on the ho
   Ctrl+letter accelerator ran twice (a paste pasted twice, Ctrl+Z undid two steps).
   `input::GLFW3::processCharEvent` drops a char that follows a Ctrl+letter press
   (`tests/unit/clipboardBackend.cpp`).
+
+## Images from memory: the loaders, ImagePanel's modes, the image grid
+
+An app whose images come over the network (the dashboard's attachments and
+galleries, fetched as full-size bytes) has no file for them, so `IResourceLoader`
+loads them from memory too (#606). `SlotRenderer` is the loader that implements it;
+the base class fails these loads (`ErrorBadData`), so another loader still builds.
+
+- `loadTexture(texture, bytes, size, maxSize)`: a PNG or JPEG, the format found from
+  its first bytes (`imglib::detectFormat`: the PNG signature, or `FF D8 FF`), never
+  from a name. `loadTexturePixels(texture, width, height, stride, rgba, maxSize)`:
+  rows of RGBA8 texels `stride` bytes apart (the padding not copied). A file load
+  (`loadTexture(texture)`, by name) reads the file and takes the bytes path with no
+  max size, so a file and its bytes load the same.
+- **The limits, from the header.** `imglib::probeImage` reads the width and height
+  from a PNG's IHDR or a JPEG's first frame header, decoding and allocating nothing.
+  An image over `SlotRenderer::kMaxImagePixels` (64 megapixels), or with no max size
+  and a side over `kMaxImageSide` (2048, the largest image page), fails before any
+  pixel buffer is allocated. The decoders also take the limit (`maxPixels`) against
+  the image as they would decode it, so a header the probe misread cannot allocate
+  past it either.
+- **Kept at a max size.** `maxSize` is the longest side kept, in image px (0: as it
+  is). The image is reduced through its own mip chain (`imageMipLevel`, the level
+  `imageMipChain` makes) to the largest level that fits, each level freeing the one
+  above it, and only that level and the ones below it are uploaded: 4000x3000 at
+  512 keeps 500x375. A JPEG decodes straight at 1/2, 1/4 or 1/8 (libjpeg's
+  `scale_denom`) while that still holds the side kept, so its full size is never
+  allocated (4000x3000 at 512 decodes at 1000x750, `lastDecodedSize()`); a PNG
+  decodes whole and its full buffer is gone before the load returns. The full bytes
+  are not kept, so a new canvas scale does not decode again. Grey and grey-with-alpha
+  images become RGBA.
+- **Failures.** Bad, truncated or unknown bytes, a corrupt header and bad pixels are
+  `ErrorBadData` with one log line (`Texture <what>: <source>`), the texture unloaded,
+  so it draws the missing image. imglib's buffer loaders print nothing of their own
+  (libpng's errors and warnings and libjpeg's messages are dropped) and fail on
+  libjpeg's premature-end warning rather than decoding grey rows;
+  `tests/unit/imageBuffer.cpp` changes every byte of a PNG and a JPEG in turn, and
+  every prefix of them, and none aborts or reads past its buffer (the ASAN tree).
+- `loadedTextureCount()` is the loads not freed yet, the leak check of every image
+  test; a texture is its `dataIndex` (the old name-keyed map is gone, since an image
+  from memory has no name).
+
+**ImagePanel** draws one image from a file (`setImage`), bytes (`setImageData`) or
+pixels (`setImagePixels`), each with the loaders' `maxSize`; `clearImage()` frees it.
+Every set frees the image before it, and setting the same name, bytes or pixels and
+max size again (an FNV-1a hash of them) marks nothing. A panel with no image (nothing
+set, or cleared, `isEmpty()`) hides its slot and draws nothing; only an image that
+failed to load (`failedToLoad()`) draws the missing image over its bounds. A new image
+on a shown panel writes its one slot at most: the image takes the layer the old one
+gave back, so a same-size replacement's slot can keep its bytes, only the page's
+texels changing. It still takes its primitive id on its first render, empty or not,
+so an image set later keeps its slot after its parent's.
+
+`setScaleMode` places the image in the render bounds (`ImagePanel::placeImage`, a
+rect in whole units and the UVs): `Stretch` fills them, `Fit` is the largest rect of
+the image's aspect ratio inside them, centred, `Fill` covers them, centred, and `None`
+is the image at one image px a logical unit (it grows with the canvas scale), centred.
+`Fill` and `None` are cut to the bounds through the UVs, not through a clip, so the
+slot never draws outside its control. `translate()` snaps the rect's edges as any
+rect's, so a mode looks the same at scale 1, 1.5 and 2 (`tests/imagePanel.cpp`).
+`setStretch(true)` is `Stretch` and `false` is `None` (which used to draw from the
+top-left at the natural size, past small bounds).
+
+**layout::Tile** sizes itself now: its preferred height is the shown children's rows
+at the width its X arrange gave it (`columns()`, the wrap `arrange` does) times the
+tile height, and its padding, so a `ScrollControl` around it (docked Top, a stable
+gutter, as for `layout::Flow`) scrolls to its last row, and a cell added or a resize
+lays out in one pass (`tests/unit/tileLayout.cpp`).
+
+**ImageGridDemo** (ControlTest's `--list`, not the shell: its bad-data cell logs a
+line, and the shell must not) is 12 images from PNG and JPEG bytes in the binary
+(`examples/demo/imageGridImages.inc`, drawn by `tools/gen_image_grid_images.py`),
+fitted in captioned cells of a Tile in a ScrollControl and kept at twice the cell's
+width, an empty cell and one given bytes that are no image; Replace swaps the first
+cell's image and back, Free clears the second's and loads it again.
+`controltest_image_grid` (`--scenario image-grid`) holds each click to its button and
+cell (slots and pixels) and the live image count to what it should be. On the web,
+ControlTest exports `gweni_web_set_image(cell, ptr, len)`, which gives a cell of the
+window's grid the bytes a page `fetch()`ed and copied into a `Module._malloc` buffer
+(the pages export `_malloc`, `_free` and `HEAPU8`); `web_input`'s image check fetches
+a PNG served beside the page that way and finds it in the cell.
 
 ## Missing resources: degraded, not fatal
 
