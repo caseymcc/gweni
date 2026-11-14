@@ -750,3 +750,165 @@ TEST_CASE("dragAndDrop: a ScrollControl with no Reorderable keeps Base's drag an
     draganddrop::cancel();
     input::onMouseClicked(scene.canvas, 0, false);
 }
+
+namespace
+{
+// A docked tab's title bar in a drag moved past the threshold: the package is
+// the bar's, the drag's source its TabControl (TabTitleBar::dragAndDrop_startDragging).
+struct TitleBarDrag
+{
+    Scene scene;
+    controls::DockBase *root=nullptr;
+    controls::TabControl *tabs=nullptr;
+    controls::TabTitleBar *bar=nullptr;
+
+    TitleBarDrag()
+    {
+        root=scene.canvas->newChild<controls::DockBase>();
+        root->setDock(DockPosition::Center);
+
+        controls::DockBase *left=root->getLeft();
+        left->setSizeFlags({SizeFlag::Fixed, SizeFlag::Expand});
+        left->setWidth(150);
+
+        tabs=left->getTabControl();
+        tabs->addPage("A");
+        scene.frame();
+
+        bar=titleBar(tabs);
+        REQUIRE(bar != nullptr);
+
+        const Point from=at(bar);
+        scene.clock+=1.0f;
+        scene.move(from);
+        input::onMouseClicked(scene.canvas, 0, true);
+        scene.frame();
+        scene.move(Point(from.x+6, from.y));
+        REQUIRE(draganddrop::isDragging());
+        REQUIRE(draganddrop::CurrentPackage == bar->dragAndDrop_getPackage(0, 0));
+        REQUIRE(draganddrop::SourceControl == tabs);
+    }
+};
+}
+
+// In the ASAN tree these were heap-use-after-free in controlDeleted: the bar's
+// package went with the bar, before its TabControl (the source) or the canvas
+// was told, and they read it.
+TEST_CASE("dragAndDrop: a dock deleted mid title-bar drag ends the drag before the package goes")
+{
+    TitleBarDrag drag;
+
+    delete drag.root;
+    CHECK_FALSE(draganddrop::isDragging());
+    CHECK(draganddrop::CurrentPackage == nullptr);
+    CHECK(draganddrop::SourceControl == nullptr);
+    drag.scene.frame();
+    input::onMouseClicked(drag.scene.canvas, 0, false);
+    drag.scene.frame();
+}
+
+namespace
+{
+// A handle whose package drags its parent, as a TabTitleBar's drags its
+// TabControl: the package is the handle's, the drag's source the parent.
+class DragHandle : public controls::Base
+{
+public:
+    GWENI_CONTROL_INLINE(DragHandle, controls::Base)
+    {
+        setMouseInputEnabled(true);
+        dragAndDrop_setPackage(true, "handle");
+    }
+
+    void dragAndDrop_startDragging(draganddrop::Package *package, int x, int y) override
+    {
+        draganddrop::SourceControl=getParent();
+        draganddrop::SourceControl->dragAndDrop_startDragging(package, x, y);
+    }
+};
+
+class EndRecorder : public controls::Base
+{
+public:
+    GWENI_CONTROL_INLINE(EndRecorder, controls::Base)
+    {
+    }
+
+    void dragAndDrop_endDragging(bool success, int, int) override
+    {
+        ++ends;
+        endSuccess=success;
+    }
+
+    int ends=0;
+    bool endSuccess=true;
+};
+}
+
+TEST_CASE("dragAndDrop: a handle deleted mid drag ends the drag its package was")
+{
+    Scene scene;
+    EndRecorder *source=scene.canvas->newChild<EndRecorder>();
+    source->setBounds(0, 0, 200, 200);
+    DragHandle *handle=source->newChild<DragHandle>();
+    handle->setBounds(10, 10, 50, 20);
+    scene.frame();
+
+    const Point from(20, 20);
+    scene.clock+=1.0f;
+    scene.move(from);
+    input::onMouseClicked(scene.canvas, 0, true);
+    scene.frame();
+    scene.move(Point(from.x+6, from.y));
+    REQUIRE(draganddrop::isDragging());
+    REQUIRE(draganddrop::SourceControl == source);
+
+    delete handle;
+    CHECK_FALSE(draganddrop::isDragging());
+    CHECK(draganddrop::CurrentPackage == nullptr);
+    // the source, still there, hears the cancel
+    CHECK(source->ends == 1);
+    CHECK_FALSE(source->endSuccess);
+    scene.move(Point(150, 150));
+    scene.frame();
+    input::onMouseClicked(scene.canvas, 0, false);
+    scene.frame();
+    CHECK(source->ends == 1);
+}
+
+namespace
+{
+// Records, as it is deleted, whether a drag was still live.
+class DragRecorder : public controls::Base
+{
+public:
+    GWENI_CONTROL_INLINE(DragRecorder, controls::Base)
+    {
+    }
+
+    ~DragRecorder() override
+    {
+        if(draggingWhenDeleted)
+            *draggingWhenDeleted=draganddrop::isDragging();
+    }
+
+    bool *draggingWhenDeleted=nullptr;
+};
+}
+
+TEST_CASE("dragAndDrop: the canvas deleted mid title-bar drag ends it before its children go")
+{
+    TitleBarDrag drag;
+    // the canvas's first child goes first: the drag is over by then, so the
+    // teardown calls nothing of it (no endDragging showing the dock again)
+    bool draggingWhenDeleted=true;
+    DragRecorder *recorder=drag.scene.canvas->newChild<DragRecorder>();
+
+    recorder->sendToBack();
+    recorder->draggingWhenDeleted=&draggingWhenDeleted;
+    delete drag.scene.canvas;
+    drag.scene.canvas=new controls::Canvas(&drag.scene.skin);
+    drag.scene.canvas->setSize(400, 300);
+    CHECK_FALSE(draganddrop::isDragging());
+    CHECK_FALSE(draggingWhenDeleted);
+}

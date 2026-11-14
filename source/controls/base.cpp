@@ -330,6 +330,10 @@ Base::~Base()
             shownOn->toolTipControlDeleted(this);
     }
 
+    // before its children go: a drag from this control ends while the package
+    // it carries, which may be a child's (a TabTitleBar's), is still there
+    draganddrop::controlDeleted(this);
+
     Base::List::iterator iter=m_children.begin();
 
     while(iter != m_children.end())
@@ -363,7 +367,6 @@ Base::~Base()
     if(MouseFocus == this)
         MouseFocus=nullptr;
 
-    draganddrop::controlDeleted(this);
 #if GWENI_ANIMATE
     anim::cancel(this);
 #endif
@@ -372,6 +375,7 @@ Base::~Base()
 
     if(m_dragAndDrop_Package)
     {
+        draganddrop::packageDeleted(m_dragAndDrop_Package);
         delete m_dragAndDrop_Package;
         m_dragAndDrop_Package=nullptr;
     }
