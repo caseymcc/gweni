@@ -86,6 +86,7 @@
 #include <gweni/controls/slider.h>
 #include <gweni/controls/splitterBar.h>
 #include <gweni/controls/statusBar.h>
+#include <gweni/controls/switch.h>
 #include <gweni/controls/tabButton.h>
 #include <gweni/controls/tabControl.h>
 #include <gweni/controls/tabStrip.h>

@@ -174,6 +174,23 @@ inline Surface CheckHover     { Surf,                  BgStorm,               Bl
 // sunk into the background, with a faint frame; the tick or dot is Muted
 inline Surface CheckDisabled  { Bg,                    Bg,                    BgHighlight, RadiusSm, BorderW };
 
+// A Switch: its pill track, by state (off, on, each hovered, each disabled),
+// and its round thumb (off, on, disabled). The radius is its most: the
+// renderer clamps it to half the track's height and the thumb's diameter. A
+// focused switch's track takes SwitchFocus's border colour and width (only
+// those are read), as a focused TextBox shows TextBoxFocus's border.
+inline constexpr float SwitchRadius=32.0f;
+inline Surface SwitchTrackOff        { BgDark,                BgDark,                Line,  SwitchRadius, BorderW };
+inline Surface SwitchTrackOffHover   { Surf,                  BgStorm,               Muted, SwitchRadius, BorderW };
+inline Surface SwitchTrackOn         { Color(0x3d,0x59,0xa1), Color(0x34,0x4d,0x8c), Blue,  SwitchRadius, BorderW };
+inline Surface SwitchTrackOnHover    { Color(0x4a,0x6a,0xbd), Color(0x3f,0x5c,0xa6), Blue,  SwitchRadius, BorderW };
+inline Surface SwitchTrackDisabled   { Bg,                    Bg,                    BgHighlight, SwitchRadius, BorderW };
+inline Surface SwitchTrackOnDisabled { Color(0x26,0x2f,0x4d), Color(0x22,0x2a,0x45), Color(0x31,0x3d,0x63), SwitchRadius, BorderW };
+inline Surface SwitchFocus           { BgDark,                BgDark,                Cyan,  SwitchRadius, BorderW };
+inline Surface SwitchThumbOff        { FgDark,                Color(0x8f,0x97,0xbd), Color(0x8f,0x97,0xbd), SwitchRadius, 0.0f };
+inline Surface SwitchThumbOn         { Fg,                    Color(0xe4,0xe9,0xff), Color(0xe4,0xe9,0xff), SwitchRadius, 0.0f };
+inline Surface SwitchThumbDisabled   { Muted,                 Color(0x4a,0x51,0x75), Color(0x4a,0x51,0x75), SwitchRadius, 0.0f };
+
 // Colour picker: the SV box's frame (its fill is the bilinear hue blend, so
 // only border/radius are read) and the opaque cursor/selection markers
 inline Surface ColorField     { Bg,                    Bg,                    Line,  RadiusSm, BorderW };
@@ -411,6 +428,11 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"SplitterBar",&SplitterBar},{"SplitterBarHover",&SplitterBarHover},{"SplitterBarDown",&SplitterBarDown},
         {"SplitterBarDisabled",&SplitterBarDisabled},
         {"CheckOff",&CheckOff},{"CheckOn",&CheckOn},{"CheckHover",&CheckHover},{"CheckDisabled",&CheckDisabled},
+        {"SwitchTrackOff",&SwitchTrackOff},{"SwitchTrackOffHover",&SwitchTrackOffHover},
+        {"SwitchTrackOn",&SwitchTrackOn},{"SwitchTrackOnHover",&SwitchTrackOnHover},
+        {"SwitchTrackDisabled",&SwitchTrackDisabled},{"SwitchTrackOnDisabled",&SwitchTrackOnDisabled},
+        {"SwitchFocus",&SwitchFocus},
+        {"SwitchThumbOff",&SwitchThumbOff},{"SwitchThumbOn",&SwitchThumbOn},{"SwitchThumbDisabled",&SwitchThumbDisabled},
         {"ColorField",&ColorField},{"ColorMarker",&ColorMarker},{"ColorSwatch",&ColorSwatch},{"ColorChecker",&ColorChecker},
         {"ColorButtonHover",&ColorButtonHover},{"ColorButtonDown",&ColorButtonDown},{"ColorButtonDisabled",&ColorButtonDisabled},
         {"Separator",&Separator},

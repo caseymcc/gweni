@@ -36,6 +36,7 @@
 #include "demo/vectorField.h"
 #include "demo/popup.h"
 #include "demo/chipBadge.h"
+#include "demo/switch.h"
 #include "demo/dialog.h"
 #include "demo/toast.h"
 #include "demo/crossSplitter.h"
@@ -241,6 +242,7 @@ void Demo::init(const String &name)
         addDemo<CrossSplitterDemo>(cat, "CrossSplitterDemo", "Cross splitter");
         addDemo<RadioButtonDemo>(cat, "RadioButtonDemo", "Radio button");
         addDemo<CheckBoxDemo>(cat, "CheckBoxDemo", "Check box");
+        addDemo<SwitchDemo>(cat, "SwitchDemo", "Switch");
         addDemo<NumericDemo>(cat, "NumericDemo", "Numeric");
         addDemo<SliderDemo>(cat, "SliderDemo", "Slider");
         addDemo<SliderTextDemo>(cat, "SliderTextDemo", "Slider text");

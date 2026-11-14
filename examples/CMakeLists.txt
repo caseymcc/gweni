@@ -99,6 +99,8 @@ set(GWENI_DEMO_SOURCES
     demo/vectorField.cpp
     demo/vectorField.h
     demo/chipBadge.cpp
+    demo/switch.cpp
+    demo/switch.h
     demo/chipBadge.h
     demo/nodeGraph.cpp
     demo/nodeGraph.h

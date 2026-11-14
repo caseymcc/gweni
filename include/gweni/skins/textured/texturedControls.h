@@ -1708,6 +1708,25 @@ public:
     inline static const std::string_view name="Chip";
 };
 
+// controls::Switch: its track (the SwitchTrack* surfaces by state, its border
+// SwitchFocus's while focused) and its thumb (SwitchThumbOff/On/Disabled, a
+// circle at getZIndex()+1, over the track), each as round as its height
+// allows. The thumb's look follows the state alone, so a hover writes the
+// track's slot. Its Label's Text draws the label.
+class Switch:public textured::ControlRegister<Switch>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    // the thumb is drawn at getZIndex()+1, over the track
+    size_t depthLayers() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="Switch";
+};
+
 class Badge:public textured::ControlRegister<Badge>
 {
 public:

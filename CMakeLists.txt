@@ -307,6 +307,8 @@ set(GWENI_CONTROL_SOURCES
     include/gweni/controls/splitterBar.h
     source/controls/splitterBar.cpp
     include/gweni/controls/statusBar.h
+    include/gweni/controls/switch.h
+    source/controls/switch.cpp
     include/gweni/controls/tabButton.h
     source/controls/tabButton.cpp
     include/gweni/controls/tabControl.h

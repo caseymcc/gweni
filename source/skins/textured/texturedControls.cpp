@@ -26,6 +26,7 @@
 #include "gweni/controls/vectorField.h"
 #include "gweni/controls/badge.h"
 #include "gweni/controls/chip.h"
+#include "gweni/controls/switch.h"
 #include "gweni/controls/textBox.h"
 #include "gweni/controls/separator.h"
 #include "gweni/controls/selectable.h"
@@ -3774,6 +3775,63 @@ void Chip::update(renderer::Base *renderer, controls::Base *baseControl)
 
 
 ///////////////////////////////////////////////////////////////////////////
+//Switch
+void Switch::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.size() < 2)
+        return;
+
+    controls::Switch *control=static_cast<controls::Switch *>(baseControl);
+    const bool on=control->isOn();
+    const tokyonight::Surface *track;
+    const tokyonight::Surface *thumb;
+
+    if(control->isDisabled())
+    {
+        track=on?&tokyonight::SwitchTrackOnDisabled:&tokyonight::SwitchTrackDisabled;
+        thumb=&tokyonight::SwitchThumbDisabled;
+    }
+    else
+    {
+        if(control->isHovered() || control->isDepressed())
+            track=on?&tokyonight::SwitchTrackOnHover:&tokyonight::SwitchTrackOffHover;
+        else
+            track=on?&tokyonight::SwitchTrackOn:&tokyonight::SwitchTrackOff;
+        thumb=on?&tokyonight::SwitchThumbOn:&tokyonight::SwitchThumbOff;
+    }
+
+    const Rect &bounds=control->getRenderBounds();
+    Rect trackRect=control->getTrackRect();
+    Rect thumbRect=control->getThumbRect();
+
+    trackRect.x+=bounds.x;
+    trackRect.y+=bounds.y;
+    thumbRect.x+=bounds.x;
+    thumbRect.y+=bounds.y;
+
+    tokyonight::Surface trackSurface=*track;
+
+    if(!control->isDisabled() && control->isFocussed())
+    {
+        trackSurface.border=tokyonight::SwitchFocus.border;
+        trackSurface.borderWidth=tokyonight::SwitchFocus.borderWidth;
+    }
+    trackSurface.radius=std::min(trackSurface.radius, 0.5f*float(std::min(trackRect.w, trackRect.h)));
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, trackSurface, trackRect);
+
+    if(baseControl->visible())
+    {
+        const float radius=std::min(thumb->radius, 0.5f*float(std::min(thumbRect.w, thumbRect.h)));
+
+        renderer->drawRoundedRect(m_primitives[1], thumbRect, radius, thumb->borderWidth,
+            thumb->top, thumb->bottom, thumb->border, baseControl->getZIndex()+1);
+    }
+    else
+        renderer->hidePrimitive(m_primitives[1]);
+}
+
+
+///////////////////////////////////////////////////////////////////////////
 //Badge
 void Badge::generate(renderer::Base *renderer, controls::Base *baseControl)
 {
@@ -4797,6 +4855,7 @@ template class ControlRegister<DragNumber>;
 template class ControlRegister<VectorFieldTag>;
 template class ControlRegister<Badge>;
 template class ControlRegister<Chip>;
+template class ControlRegister<Switch>;
 template class ControlRegister<StatusBar>;
 // NOTE: TabItem<_Type> is itself a class template (TabItem<TabTop>, <TabBottom>,
 // <TabLeft>, <TabRight>); register those specializations here if/when their
