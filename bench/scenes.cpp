@@ -23,6 +23,7 @@
 #include <gweni/controls/textBox.h>
 #include <gweni/controls/timeline.h>
 #include <gweni/controls/treeControl.h>
+#include <gweni/controls/treeTable.h>
 #include <gweni/controls/verticalScrollBar.h>
 #include <gweni/controls/virtualList.h>
 #include <gweni/controls/windowControl.h>
@@ -662,6 +663,70 @@ public:
 private:
     controls::TreeControl *m_tree=nullptr;
     controls::TreeNode *m_toggle=nullptr;
+};
+
+//-----------------------------------------------------------------------------
+// tree-table-toggle: a TreeTable filling the canvas's height, three columns,
+// with N nodes: an expanded first root holding 3 leaves, the second root, the
+// toggle, holding 50 leaves and expanded, and the rest roots of their own, all
+// shown, so the visible rows are about N. Measured frames alternate collapsing
+// and expanding the toggle: its 50 rows leave or come back in the flattened
+// index (the entries after them moved, about N of them) and the rows on screen
+// below it are bound again, the same rows at any N.
+//-----------------------------------------------------------------------------
+class TreeTableToggleScene: public Scene
+{
+public:
+    void build(SceneContext &ctx) override
+    {
+        using controls::TreeTable;
+
+        m_table=ctx.canvas->newChild<TreeTable>();
+        place(m_table, 10, 10, 600, ctx.size.y-20);
+        m_table->setColumnCount(3);
+        m_table->setColumnCaption(0, "Name");
+        m_table->setColumnCaption(1, "Size");
+        m_table->setColumnCaption(2, "Modified");
+        m_table->setColumnWidth(0, 300);
+
+        size_t made=0;
+        const size_t n=static_cast<size_t>(std::max(ctx.n, 0));
+
+        if(made < n)
+            m_table->addNode(TreeTable::Root, made++);
+        for(int i=0; i < 3 && made < n; ++i)
+            m_table->addNode(0, made++);
+        if(made < n)
+        {
+            m_toggle=made;
+            m_table->addNode(TreeTable::Root, made++);
+            for(int i=0; i < 50 && made < n; ++i)
+                m_table->addNode(m_toggle, made++);
+        }
+        while(made < n)
+            m_table->addNode(TreeTable::Root, made++);
+
+        m_table->setNodeBinder([](controls::DataTableRow *row, size_t id, size_t depth)
+            {
+                row->setCellText(0, format("Node %06d", static_cast<int>(id)));
+                row->setCellText(1, format("%d", static_cast<int>(depth)));
+                row->setCellText(2, "2026-11-14 12:00");
+            });
+        m_table->setExpanded(0, true);
+        m_table->setExpanded(m_toggle, true);
+    }
+
+    void step(SceneContext &/*ctx*/, int frame) override
+    {
+        if(frame < 0 || m_toggle == controls::TreeTable::NoNode)
+            return;
+
+        m_table->setExpanded(m_toggle, frame%2 != 0);
+    }
+
+private:
+    controls::TreeTable *m_table=nullptr;
+    size_t m_toggle=controls::TreeTable::NoNode;
 };
 
 //-----------------------------------------------------------------------------
@@ -1616,6 +1681,9 @@ const std::vector<SceneInfo> &scenes()
         {"tree-toggle", "collapse and expand a 50-leaf node near the top of an N-node TreeControl",
             true, 1000, 3, 20, Scaling::Linear,
             []{ return std::unique_ptr<Scene>(new TreeToggleScene()); }},
+        {"tree-table-toggle", "collapse and expand a 50-row node near the top of an N-node TreeTable",
+            true, 1000, 3, 20, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new TreeTableToggleScene()); }},
         {"tree-relabel", "relabel a closed TreeControl node holding N rows per frame",
             true, 1000, 3, 20, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new TreeRelabelScene()); }},

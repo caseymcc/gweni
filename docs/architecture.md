@@ -3252,11 +3252,85 @@ two programs and the draws. What follows describes both together:
   pooled row (`bodyRows()`) and moves only the changed column's cells and the following
   columns'; a new item count keeps the rows still showing their item, the view inside
   the count, and drops a selection past its end. The row API (`addRow`, `removeRow`,
-  `setRowOrder`) does nothing in source mode.
+  `setRowOrder`) does nothing in source mode. **Row keys** (source mode only): the table
+  takes the keyboard focus and is one Tab stop, and its pooled rows take neither (a
+  pooled row gives the focus up when it is bound to another item), so a press on a row
+  focuses the table, its first ancestor taking keys. Up and Down move the selection a
+  row, Home and End to the first and the last item, PageUp and PageDown by `pageRows()`
+  (the rows the viewport shows whole), clamped at the ends; each fires
+  `onSelectionChange` and scrolls the item fully into view (`moveSelectionTo`, through
+  `scrollToItem`), and with nothing selected every one selects the first item, End the
+  last. A row-mode or empty table leaves them to its parents. Nothing draws the focus,
+  so a table at rest looks as it did. The selection's change goes through a protected
+  hook, `selectedItemChanged(row, item, doEvents)`, which fires the event by default.
   DataTableDemo has the first 40 elements, sortable by any column, and
   DataTableVirtualDemo 100 000 generated records in source mode, made into text only as
   a row binds them, sorted by any column on a vector of record numbers;
   ShowcaseContainersDemo has a two-column file table.
+- **The tree table: a tree over DataTable's source mode.** `controls::TreeTable`
+  (`include/gweni/controls/treeTable.h`; QTreeView with columns, GTK's TreeView) derives
+  from `DataTable` and is always in source mode, so its columns, header, grips, sort
+  chevrons and `onSortChanged`, stripes and borders are DataTable's, unchanged. **The
+  hierarchy is data:** a node store of `Node`s (the app's id, which is also the handle,
+  its parent or `Root`, its children in order, its depth, whether it is expanded and
+  whether it has children, which `addNode(parent, id, hasChildren)` may say before any is
+  given, for lazy loading), a `std::vector<Node>` with a hash map from id to index.
+  `addNode` builds it; `setExpanded`, `isExpanded`, `expandAll`, `collapseAll` and
+  `expandSubtree` change it, firing `onExpanded`/`onCollapsed` once per node that
+  changed (`integer` the id, a hidden node's too); changing the hierarchy once shown,
+  and sorting across it, are the next task's (#638). **The visible rows** are a
+  flattened index, `std::vector<VisibleNode>` of (id, depth) in display order, the
+  expanded tree in preorder (built iteratively, so any depth works): it is the
+  source-mode item index, `setItemCount(visible.size())` and the row binder mapping a
+  pooled row's item to its node and calling the app's node binder `(row, id, depth)`.
+  Expanding a shown node inserts its visible subtree (its descendants under expanded
+  nodes) after it and collapsing erases them, so each is a `memmove` of the entries
+  after it; the bulk operations build the index once and compare it with the old one for
+  the first entry that changed. Either way the pooled rows still showing an index at or
+  past the first changed one are bound again (`rebindItem`), and only those: rows above
+  keep their content, and no control or id is made or freed. Finding a node's index
+  (`itemForNode`) is a scan of the index. **What that costs at 100 000:**
+  `gweni_bench --scene tree-table-toggle` (a 50-row node collapsed and expanded under
+  about N shown roots) counts under callgrind, over 20 frames, 0.62 M instructions in
+  its input phase (the toggle: the scan and the memmove) at N=1000 and 3.45 M at
+  100 000, about 0.17 M a frame, against 10.6 M in update and 32.6 M in render at both
+  (the rows bound again and drawn). Timed (the profile tree, one run each under `render`
+  and `quiet`), the input phase's median frame is 4.9 µs at 1000 and 54.7 µs at 100 000
+  (about 1.6 MB moved and scanned), in a frame of about 2.5 ms, most of it llvmpipe's
+  flush and finish. So the vector is not the cost and stays; at a million shown nodes an
+  index that inserts in O(log N) (and finds a node's row without the scan) would be. **The
+  selection is a node:** `getSelectedNode`, `setSelectedNode` (no event; a hidden or
+  unknown node is refused), kept on DataTable's selected item through its
+  `selectedItemChanged` hook. An expand or collapse shifts that item by the rows it
+  added or removed above it, in O(1), with no event; a collapse that hides the selected
+  node moves the selection to the collapsed node (`collapseAll`: to the topmost collapsed
+  ancestor) and fires `onSelectionChange` once, its `integer` the id. The index's new
+  count and the selection's new item are set in an order that never lets
+  `setItemCount` find the item past the end (which would drop it with an event).
+  **The tree column** (`setTreeColumn`, 0 by default): every pooled row is a
+  `TreeTableRow` (`DataTable::newSourceRow`, a protected factory hook), made with its
+  `internal::TreeTableExpander`, a Button owner-placed in the tree cell and clipped to it
+  (`getChildClipRect`), so binding a parent to a row later makes nothing. The cell's left
+  padding is `CellPaddingX + depth*Indent + Indent` (Indent 16, the expander 15 square),
+  a leaf's too, so siblings line up and a child's expander sits under its parent's text;
+  a row bound to a node at another depth changes that padding and moves the expander,
+  laying out that row alone. The expander is hidden for a node with no children and
+  shows the node's expansion: a change marks the expander alone (`StateChange_Background`;
+  the toggled row is above the changed rows and is not bound again, `syncExpanders`). A
+  click on it toggles the node without selecting the row or taking the focus; a
+  double-click on a row toggles a parent and activates a leaf (`onNodeActivated`,
+  `integer` the id). Its renderer draws `TreeTableExpanderHover`/`Down` while hovered or
+  pressed (a hidden slot at rest) and a kind-1 chevron at z+1, right collapsed and down
+  expanded, in the `TreeTableExpander`, `-Hover` and `-Disabled` text colours. **The
+  keys** add the tree's to DataTable's row keys: Right expands a collapsed parent or else
+  moves to its first child, Left collapses an expanded node or else moves to its parent
+  (the nearest row above at a lesser depth), `*` (a character) expands the selected
+  node's whole subtree, Return activates it; with nothing selected none of them is
+  taken. TreeTableDemo has a generated file-system-like tree of 100 000 nodes, 8 folders
+  with 10 files and folders each, numbered breadth first so the rows near the top are
+  the same at any node count, Name, Size and Modified columns, and a label following the
+  selection; `controltest_tree_table` holds its counts to the same at 1 000 and 100 000
+  nodes.
 - **The plot histogram: one slot per bar, redrawn where a bar changed.**
   `controls::PlotHistogram` (`include/gweni/controls/plotHistogram.h`, imgui's
   PlotHistogram) draws a series (`setValues`, `setValue(i, v)`) as bars from the bottom of
