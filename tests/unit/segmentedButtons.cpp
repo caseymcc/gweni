@@ -32,6 +32,8 @@
  *  segments keeps them at the tallest one's height; a segment moved to
  *  another parent leaves the row (the selection moving on, its changes firing
  *  nothing there), from an onSelectionChange handler of its own click too.
+ *  A handler adding or removing a segment while setMode(Exclusive) deselects
+ *  the others leaves exactly the first selected one selected.
  *
  *  The keyboard, through input::onKeyEvent: the row is one Tab stop, entered
  *  at the exclusive selection (else the first enabled segment) and left from
@@ -902,5 +904,67 @@ TEST_CASE("SegmentedButtons: a segment moved from its own click's onSelectionCha
     mover.moved->setSelected(true);
     CHECK(mover.calls == 2);
     CHECK(row->getSelectedIndex() == 1);
+    scene.frame();
+}
+
+// Adds a segment on the first change, as an app's handler may.
+struct AddOnChange: public event::Handler
+{
+    SegmentedButtons *row=nullptr;
+    int calls=0;
+
+    void changed(event::Info)
+    {
+        ++calls;
+        if(calls == 1)
+            row->addSegment("E");
+    }
+};
+
+// setMode(Exclusive) deselects all but the first selected segment, each a
+// change the app's handler sees: one that adds or removes a segment then
+// must not leave the mode change walking a stale list (an ASAN tree reports
+// a heap-use-after-free for the add otherwise).
+TEST_CASE("SegmentedButtons: a handler adding or removing a segment during setMode(Exclusive) leaves one selected")
+{
+    Scene scene;
+
+    SUBCASE("added")
+    {
+        SegmentedButtons *row=scene.row({"A", "B", "C", "D"});
+        AddOnChange adder;
+
+        row->setMode(SegmentedButtons::Mode::Multi);
+        row->setSelected(1, true);
+        adder.row=row;
+        row->onSelectionChange.add(&adder, &AddOnChange::changed);
+
+        row->setMode(SegmentedButtons::Mode::Exclusive);
+        CHECK(adder.calls >= 1);
+        CHECK(row->segmentCount() == 5);
+        CHECK(row->getSelectedIndices() == std::vector<int>{0});
+        CHECK(row->getSelectedIndex() == 0);
+        scene.frame();
+        delete row;
+    }
+    SUBCASE("removed")
+    {
+        SegmentedButtons *row=scene.row({"A", "B", "C", "D"});
+        RemoveOnChange remover;
+
+        row->setMode(SegmentedButtons::Mode::Multi);
+        row->setSelected(1, true);
+        row->setSelected(2, true);
+        remover.row=row;
+        row->onSelectionChange.add(&remover, &RemoveOnChange::changed);
+
+        row->setMode(SegmentedButtons::Mode::Exclusive);
+        CHECK(remover.calls == 2);
+        CHECK(row->segmentCount() == 3);
+        CHECK(row->getSegment(1)->getText() == "C");
+        CHECK(row->getSelectedIndices() == std::vector<int>{0});
+        scene.frame();
+        delete row;
+    }
     scene.frame();
 }

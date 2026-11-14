@@ -346,19 +346,24 @@ void SegmentedButtons::setMode(Mode mode)
         return;
     }
 
-    // the first selected one stays, before the group sees any of them
+    // the first selected one stays, before the group sees any of them.
+    // A deselect calls the app's onSelectionChange, which may add or remove
+    // segments, so both loops go over a copy and skip what left the row.
+    const std::vector<SegmentedButton *> segments=m_segments;
     bool kept=false;
 
-    for(SegmentedButton *segment : m_segments)
+    for(SegmentedButton *segment : segments)
     {
-        if(!segment->isSelected())
+        if(!isOwnSegment(segment) || !segment->isSelected())
             continue;
         if(kept)
             segment->setSelected(false);
         kept=true;
     }
-    for(SegmentedButton *segment : m_segments)
+    for(SegmentedButton *segment : segments)
     {
+        if(!isOwnSegment(segment))
+            continue;
         m_group.add(segment);
         segment->setToggleable(m_allowNone);
     }
