@@ -6,6 +6,7 @@
 
 
 #include <gweni/controls/calendar.h>
+#include <gweni/controls/canvas.h>
 #include <gweni/controls/label.h>
 #include <gweni/controls/scrollBarButton.h>
 #include <gweni/gweni.h>
@@ -418,6 +419,10 @@ void Calendar::viewChanged()
         m_cells[static_cast<size_t>(i)]->setHidden(!month);
     invalidate();
     rebind();
+    // the cells move under a resting mouse: the hover is hit-tested again
+    // once the layout has placed them
+    if(Canvas *canvas=getCanvas())
+        canvas->hoverMayHaveMoved();
 }
 
 void Calendar::zoomOut()

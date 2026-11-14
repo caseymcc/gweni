@@ -58,7 +58,9 @@
  *  does nothing; it drops the focus at once and leaves the Tab order, and
  *  enabled again it takes them back. A cell or header button a rebind
  *  disables while it holds the press (a page past the limits) lets it go, so
- *  the next click is the calendar's.
+ *  the next click is the calendar's. A view change (a month or a year
+ *  clicked) hit-tests the hover again, so the cell under the resting mouse,
+ *  not the one pressed, is hovered.
  */
 #include "headlessFixture.h"
 
@@ -1120,4 +1122,34 @@ TEST_CASE("Calendar: a part a rebind disables while it is held gives up the pres
     CHECK(MouseFocus == nullptr);
     scene.click(cellOf(calendar, Date(2026, 12, 10)));
     CHECK(calendar->getSelectedDate().value_or(Date()).toIso() == "2026-12-10");
+}
+
+TEST_CASE("Calendar: a view change hit-tests the hover again under a resting mouse")
+{
+    Scene scene;
+    Calendar *calendar=scene.calendar(2026, 11);
+
+    // the mouse stays where each click was: the cells move under it
+    const auto underMouse=[&scene]()
+    {
+        return scene.canvas->getControlAt(input::getMousePosition().x, input::getMousePosition().y);
+    };
+
+    scene.click(calendar->getTitle());
+    REQUIRE(calendar->getView() == Calendar::View::Year);
+    CHECK(HoveredControl == underMouse());
+
+    scene.click(calendar->getCell(3));
+    REQUIRE(calendar->getView() == Calendar::View::Month);
+    REQUIRE(calendar->getDisplayedMonth() == 4);
+    CHECK(HoveredControl == underMouse());
+    CHECK(HoveredControl != calendar->getCell(3));
+
+    // zooming out from the month: the title stays where it is
+    scene.click(calendar->getTitle());
+    scene.click(calendar->getTitle());
+    REQUIRE(calendar->getView() == Calendar::View::Decade);
+    scene.click(calendar->getCell(2));
+    REQUIRE(calendar->getView() == Calendar::View::Year);
+    CHECK(HoveredControl == underMouse());
 }
