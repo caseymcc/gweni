@@ -419,7 +419,12 @@ draganddrop::Package *Reorderable::beginDrag(size_t index)
     if(index >= itemCount())
         return nullptr;
 
-    m_package.key=keyAt(index);
+    const uint64_t key=keyAt(index);
+
+    if(m_canDrag && !m_canDrag(key))
+        return nullptr;
+
+    m_package.key=key;
     m_pendingIndex=index;
     return &m_package;
 }

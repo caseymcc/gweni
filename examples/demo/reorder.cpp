@@ -120,6 +120,10 @@ GWENI_CONTROL_CONSTRUCTOR(ReorderDemo)
     for(const char *title : DoneCards)
         addCard(Done, title);
     m_pinned=cards(Todo).front();
+    // and the pinned card itself stays where it is
+    m_reorders[Todo]->setCanDrag([pinned=controls::CardReorder::keyOf(m_pinned)](uint64_t key) {
+        return key != pinned;
+    });
 
     // the list page: 10 000 tasks, each keyed by its id
     m_listsTab=m_pages->addPage("Lists");

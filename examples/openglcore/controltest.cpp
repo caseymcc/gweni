@@ -952,6 +952,7 @@
  *                 shows the order it applied, a cancel gives no callback and,
  *                 the mouse back at the press, the frame before it byte for
  *                 byte, a refusing list shows no indicator with the No cursor,
+ *                 a press on Todo's pinned card starts no drag,
  *                 an insert above keeps the gap before its card and the drop
  *                 gives the shifted index, the dragged card deleted cancels,
  *                 the auto-scroll moves every frame with the veil over the
@@ -14708,6 +14709,24 @@ static bool runReorderScenario(Session &s, const std::string &shotDir, bool &pas
                 && titlesOf(demo->cards(ReorderDemo::Running)) == runningOrder,
             std::string(refused?"refused":"taken (a target, an indicator or a cursor)")+", "
             +std::to_string(demo->drops().size()-drops)+" drops");
+    }
+
+    // --- the pinned card: a press on it moved 6 units starts no drag, so
+    // nothing ever goes above it and it stays first in Todo
+    {
+        cards=demo->cards(ReorderDemo::Todo);
+        const size_t drops=demo->drops().size();
+        const std::string todoOrder=titlesOf(cards);
+        const bool pinnedFirst=!cards.empty() && cards.front() == demo->pinned();
+
+        startDrag(reorderPoint(demo->pinned(), 0.3f));
+        const bool noDrag=!gweni::draganddrop::isDragging() && Reorderable::dragSource() == nullptr;
+        moveTo(reorderPoint(cards.back(), 0.8f));
+        release(reorderPoint(cards.back(), 0.8f));
+        checks.check("pinned_fixed", pinnedFirst && noDrag && demo->drops().size() == drops
+                && titlesOf(demo->cards(ReorderDemo::Todo)) == todoOrder,
+            std::string(pinnedFirst?"":"the pinned card not first, ")+(noDrag?"no drag":"a drag of the pinned card")
+            +", "+std::to_string(demo->drops().size()-drops)+" drops, Todo "+titlesOf(demo->cards(ReorderDemo::Todo)));
     }
 
     // --- live data: an insert above the dragged card, then its removal

@@ -157,6 +157,8 @@ public:
     using CanDrop=std::function<bool(Reorderable *source, uint64_t key, Reorderable *target,
         size_t index)>;
     using DropHandler=std::function<void(const ItemDrop &)>;
+    //! May the item `key` of this list be dragged at all?
+    using CanDrag=std::function<bool(uint64_t key)>;
 
     //! The package name of a reorder drag
     static const char *const PackageName;
@@ -228,6 +230,11 @@ public:
 
     //! Checked when the gap changes; none takes every gap
     void setCanDrop(CanDrop canDrop) { m_canDrop=std::move(canDrop); }
+
+    //! Checked as a drag of one of this list's items would start (SortableJS's
+    //! filter): an item it refuses starts no drag, so its press stays a click
+    //! and it never moves (a pinned item). None drags every item.
+    void setCanDrag(CanDrag canDrag) { m_canDrag=std::move(canDrag); }
 
     //! Called once per drop on this list (the target's handler), not for a
     //! drop that leaves the item where it was
@@ -359,6 +366,7 @@ private:
     bool m_reorderWithin=true;
     bool m_acceptsFromGroup=true;
     CanDrop m_canDrop;
+    CanDrag m_canDrag;
     DropHandler m_onItemDropped;
 
     // as the source

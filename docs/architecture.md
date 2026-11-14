@@ -4306,9 +4306,13 @@ gap and the cursor is `No`. `setCanDrop(source, key, target, index)` is asked
 when the gap changes, an insert or removal moving its index included, and a
 refused gap shows nothing, the cursor `No`, a release there cancelling. Every
 such check asks the list's rules again too, so a table the app sorts during a
-drag within it shows no gap from then on. The demo's three rules are all three: Todo reorders and takes
+drag within it shows no gap from then on. `setCanDrag(key)` (SortableJS's
+`filter`) is asked as a drag of one of the list's own items would start: an
+item it refuses starts no drag, so its press stays a click. The demo's three
+rules are all three: Todo reorders and takes
 nothing else, Running and Done take any column's cards and do not reorder, and
-nothing goes above Todo's pinned card.
+nothing goes above Todo's pinned card (`setCanDrop`), which does not move itself
+(`setCanDrag`).
 
 **Keys and live data.** A drag follows its item by key, and the indexes it holds
 (the dragged item's, the gap) are kept by arithmetic as the list reports inserts
