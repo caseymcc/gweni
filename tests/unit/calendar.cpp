@@ -23,6 +23,30 @@
  *  day of the next month selects it and shows that month, and
  *  setSelectedDate() and every other set*() fire nothing. None mode takes no
  *  selection. Today is ringed (the look's today flag) where the app says.
+ *
+ *  The keyboard, through input::onKeyEvent, once a click has given the
+ *  calendar the focus: the cursor (ringed only while the calendar has the
+ *  focus) moves a day with Left/Right and a week with Up/Down, to the month's
+ *  first and last day with Home/End, a month with PageUp/PageDown and a year
+ *  with Shift, crossing month and year ends (showing the month it lands in,
+ *  the day clamped to a shorter month); Space and Return select at it. With
+ *  limits and a weekend filter it passes over the disabled dates in its
+ *  direction and a move that would leave the limits does nothing (PageDown at
+ *  the limit included).
+ *
+ *  Range: the first click sets the start (drawn as both ends), the hover then
+ *  previews the range to the hovered date, the second click sets the end,
+ *  swapped when earlier, and a third click starts a new range; each click
+ *  fires onSelectionChanged once, setRange() nothing (swapping its ends too).
+ *  Space selects at the cursor, which the preview follows.
+ *
+ *  The views: a click on the title shows the year's 12 months (the weekday
+ *  row and the other 30 cells hidden, the calendar's size kept), a second the
+ *  decade's 12 years (the years either side dimmed, the title "2020 – 2029");
+ *  a click on a year shows its months, one on a month its days, the cells
+ *  back where they were. In those views the arrows move over months and
+ *  years, PageDown a year, Space zooms in, and months and years outside the
+ *  limits are disabled.
  */
 #include "headlessFixture.h"
 
@@ -107,6 +131,7 @@ struct Scene
     ~Scene()
     {
         input::onMouseClicked(canvas, 0, false);
+        input::onKeyEvent(canvas, keys::Shift, false);
         HoveredControl=nullptr;
         KeyboardFocus=nullptr;
         MouseFocus=nullptr;
@@ -140,7 +165,45 @@ struct Scene
         input::onMouseClicked(canvas, 0, false);
         frame();
     }
+
+    void hover(controls::Base *control)
+    {
+        const Point at=control->localPosToCanvas();
+
+        canvas->inputMouseMoved(at.x+control->getWidth()/2, at.y+control->getHeight()/2, 0, 0);
+        frame();
+    }
+
+    void key(int key)
+    {
+        input::onKeyEvent(canvas, key, true);
+        input::onKeyEvent(canvas, key, false);
+        frame();
+    }
+
+    void shiftKey(int key)
+    {
+        input::onKeyEvent(canvas, keys::Shift, true);
+        this->key(key);
+        input::onKeyEvent(canvas, keys::Shift, false);
+    }
 };
+
+//! The cell showing \p date in the month view.
+CalendarCell *cellOf(Calendar *calendar, const Date &date)
+{
+    return calendar->getCell(calendar->cellIndex(date));
+}
+
+//! The cells whose look has the cursor's ring.
+int cursorCells(Calendar *calendar)
+{
+    int count=0;
+
+    for(int i=0; i < Calendar::CellCount; ++i)
+        count+=calendar->getCell(i)->getLook().cursor?1:0;
+    return count;
+}
 
 //! Counts onSelectionChanged and onDisplayedMonthChanged.
 struct Events: public event::Handler
@@ -392,22 +455,22 @@ TEST_CASE("Calendar: the limits and the filter refuse clicks, and the header sto
     CHECK(events.selections == 1);
 
     // the header's buttons go as far as the limits' months
-    CHECK(calendar->showNextMonth());
-    CHECK_FALSE(calendar->canShowNextMonth());
+    CHECK(calendar->showNext());
+    CHECK_FALSE(calendar->canShowNext());
     scene.frame();
     CHECK(calendar->getNextButton()->isDisabled());
     scene.click(calendar->getNextButton());
     CHECK(calendar->getDisplayedMonth() == 12);
-    CHECK_FALSE(calendar->showNextMonth());
+    CHECK_FALSE(calendar->showNext());
 
-    CHECK(calendar->showPreviousMonth());
-    CHECK(calendar->showPreviousMonth());
+    CHECK(calendar->showPrevious());
+    CHECK(calendar->showPrevious());
     CHECK(calendar->getDisplayedMonth() == 10);
-    CHECK_FALSE(calendar->canShowPreviousMonth());
+    CHECK_FALSE(calendar->canShowPrevious());
     scene.frame();
     CHECK(calendar->getPreviousButton()->isDisabled());
     CHECK_FALSE(calendar->getNextButton()->isDisabled());
-    CHECK_FALSE(calendar->showPreviousMonth());
+    CHECK_FALSE(calendar->showPrevious());
     CHECK(calendar->getDisplayedMonth() == 10);
 }
 
@@ -423,4 +486,362 @@ TEST_CASE("Calendar: today is the app's")
     scene.frame();
     for(int i=0; i < Calendar::CellCount; ++i)
         REQUIRE((calendar->getCell(i)->getLook().today == (calendar->getCell(i)->getDate() == Date(2026, 11, 14))));
+}
+
+TEST_CASE("Calendar: the keys move the cursor across month and year ends")
+{
+    Scene scene;
+    Calendar *calendar=scene.calendar(2026, 11);
+    Events events;
+
+    events.attach(calendar);
+    CHECK(cursorCells(calendar) == 0);
+
+    scene.click(cellOf(calendar, Date(2026, 11, 11)));
+    REQUIRE(calendar->isFocussed());
+    CHECK((calendar->getCursor() == Date(2026, 11, 11)));
+    CHECK(cursorCells(calendar) == 1);
+    CHECK(cellOf(calendar, Date(2026, 11, 11))->getLook().cursor);
+    CHECK(events.selections == 1);
+
+    struct Step
+    {
+        int key;
+        bool shift;
+        Date cursor;
+        int month;
+    };
+    const Step steps[]={
+        {keys::Left, false, Date(2026, 11, 10), 11},
+        {keys::Right, false, Date(2026, 11, 11), 11},
+        {keys::Up, false, Date(2026, 11, 4), 11},
+        {keys::Down, false, Date(2026, 11, 11), 11},
+        {keys::Home, false, Date(2026, 11, 1), 11},
+        {keys::End, false, Date(2026, 11, 30), 11},
+        {keys::Right, false, Date(2026, 12, 1), 12},
+        {keys::Left, false, Date(2026, 11, 30), 11},
+        {keys::Up, false, Date(2026, 11, 23), 11},
+        {keys::PageDown, false, Date(2026, 12, 23), 12},
+        {keys::PageUp, false, Date(2026, 11, 23), 11},
+        {keys::PageDown, true, Date(2027, 11, 23), 11},
+        {keys::PageUp, true, Date(2026, 11, 23), 11},
+        {keys::Down, false, Date(2026, 11, 30), 11},
+        {keys::Down, false, Date(2026, 12, 7), 12},
+        {keys::End, false, Date(2026, 12, 31), 12},
+        {keys::Right, false, Date(2027, 1, 1), 1},
+        {keys::Up, false, Date(2026, 12, 25), 12},
+        {keys::Down, false, Date(2027, 1, 1), 1},
+        {keys::End, false, Date(2027, 1, 31), 1},
+        {keys::PageDown, false, Date(2027, 2, 28), 2},
+        {keys::PageUp, false, Date(2027, 1, 28), 1},
+        {keys::Home, false, Date(2027, 1, 1), 1},
+        {keys::Left, false, Date(2026, 12, 31), 12},
+    };
+
+    for(const Step &step : steps)
+    {
+        CAPTURE(step.key);
+        CAPTURE(step.cursor.toIso());
+        if(step.shift)
+            scene.shiftKey(step.key);
+        else
+            scene.key(step.key);
+        REQUIRE(calendar->getCursor().toIso() == step.cursor.toIso());
+        REQUIRE(calendar->getDisplayedMonth() == step.month);
+        REQUIRE(calendar->getDisplayedYear() == step.cursor.year);
+        REQUIRE(cursorCells(calendar) == 1);
+        REQUIRE(cellOf(calendar, step.cursor)->getLook().cursor);
+    }
+    // moving selects nothing
+    CHECK(events.selections == 1);
+    CHECK((calendar->getSelectedDate() == Date(2026, 11, 11)));
+
+    scene.key(keys::Space);
+    CHECK((calendar->getSelectedDate() == Date(2026, 12, 31)));
+    CHECK(events.selections == 2);
+    scene.key(keys::Return);
+    CHECK(events.selections == 2);
+    scene.key(keys::Left);
+    scene.key(keys::Return);
+    CHECK((calendar->getSelectedDate() == Date(2026, 12, 30)));
+    CHECK(events.selections == 3);
+
+    // the ring goes with the focus
+    controls::Base *other=scene.canvas->newChild<controls::Label>();
+
+    other->setKeyboardInputEnabled(true);
+    other->focus();
+    scene.frame();
+    CHECK(cursorCells(calendar) == 0);
+    calendar->focus();
+    scene.frame();
+    CHECK(cursorCells(calendar) == 1);
+}
+
+TEST_CASE("Calendar: the keys pass over disabled dates and stop at the limits")
+{
+    Scene scene;
+    Calendar *calendar=scene.calendar(2026, 11);
+
+    calendar->setDateLimits(Date(2026, 11, 5), Date(2026, 11, 25));
+    calendar->setDateFilter([](const Date &date) { return (date.weekday() != 0) && (date.weekday() != 6); });
+    scene.click(cellOf(calendar, Date(2026, 11, 13)));
+    REQUIRE((calendar->getCursor() == Date(2026, 11, 13)));
+
+    struct Step
+    {
+        int key;
+        Date cursor;
+    };
+    const Step steps[]={
+        {keys::Right, Date(2026, 11, 16)},    // Friday to Monday, over the weekend
+        {keys::Left, Date(2026, 11, 13)},     // and back
+        {keys::Down, Date(2026, 11, 20)},
+        {keys::Down, Date(2026, 11, 20)},     // the 27th is past the maximum
+        {keys::PageDown, Date(2026, 11, 20)}, // so is December
+        {keys::End, Date(2026, 11, 25)},      // the last enabled day
+        {keys::Right, Date(2026, 11, 25)},    // the 26th is past the maximum
+        {keys::Home, Date(2026, 11, 5)},      // the first enabled day
+        {keys::Left, Date(2026, 11, 5)},      // the 4th is before the minimum
+        {keys::Up, Date(2026, 11, 5)},
+        {keys::PageUp, Date(2026, 11, 5)},
+        {keys::Right, Date(2026, 11, 6)},
+        {keys::Right, Date(2026, 11, 9)},
+    };
+
+    for(const Step &step : steps)
+    {
+        CAPTURE(step.key);
+        CAPTURE(step.cursor.toIso());
+        scene.key(step.key);
+        REQUIRE(calendar->getCursor().toIso() == step.cursor.toIso());
+        REQUIRE(calendar->getDisplayedMonth() == 11);
+    }
+
+    // a Saturday given by the app is moved off by the next key
+    calendar->setCursor(Date(2026, 11, 14));
+    scene.key(keys::Right);
+    CHECK((calendar->getCursor() == Date(2026, 11, 16)));
+
+    // Space on the cursor selects it; nothing a key reaches is disabled
+    scene.key(keys::Space);
+    CHECK((calendar->getSelectedDate() == Date(2026, 11, 16)));
+}
+
+TEST_CASE("Calendar: a range takes a start, a previewed end and swaps an earlier one")
+{
+    Scene scene;
+    Calendar *calendar=scene.calendar(2026, 11);
+    Events events;
+
+    events.attach(calendar);
+    calendar->setSelectionMode(Calendar::SelectionMode::Range);
+    scene.frame();
+
+    scene.click(cellOf(calendar, Date(2026, 11, 20)));
+    CHECK((calendar->getRangeStart() == Date(2026, 11, 20)));
+    CHECK_FALSE(calendar->getRangeEnd().has_value());
+    CHECK(events.selections == 1);
+    {
+        const auto &look=cellOf(calendar, Date(2026, 11, 20))->getLook();
+
+        CHECK(look.rangeStart);
+        CHECK(look.rangeEnd);
+        CHECK_FALSE(look.inRange);
+    }
+
+    // the hover previews the range, either side of the start
+    scene.hover(cellOf(calendar, Date(2026, 11, 25)));
+    for(int day=1; day <= 30; ++day)
+    {
+        CAPTURE(day);
+        REQUIRE(cellOf(calendar, Date(2026, 11, day))->getLook().inRange == ((day >= 20) && (day <= 25)));
+    }
+    CHECK(cellOf(calendar, Date(2026, 11, 25))->getLook().rangeEnd);
+    scene.hover(cellOf(calendar, Date(2026, 11, 17)));
+    CHECK(cellOf(calendar, Date(2026, 11, 17))->getLook().rangeStart);
+    CHECK(cellOf(calendar, Date(2026, 11, 20))->getLook().rangeEnd);
+    CHECK_FALSE(cellOf(calendar, Date(2026, 11, 25))->getLook().inRange);
+    CHECK(events.selections == 1);
+
+    // the second click is the end, swapped when earlier
+    scene.click(cellOf(calendar, Date(2026, 11, 10)));
+    CHECK((calendar->getRangeStart() == Date(2026, 11, 10)));
+    CHECK((calendar->getRangeEnd() == Date(2026, 11, 20)));
+    CHECK(events.selections == 2);
+    for(int day=1; day <= 30; ++day)
+    {
+        CAPTURE(day);
+        const auto &look=cellOf(calendar, Date(2026, 11, day))->getLook();
+
+        REQUIRE(look.inRange == ((day >= 10) && (day <= 20)));
+        REQUIRE(look.rangeStart == (day == 10));
+        REQUIRE(look.rangeEnd == (day == 20));
+        REQUIRE_FALSE(look.selected);
+    }
+    // a whole range: the hover previews nothing
+    scene.hover(cellOf(calendar, Date(2026, 11, 28)));
+    CHECK_FALSE(cellOf(calendar, Date(2026, 11, 25))->getLook().inRange);
+
+    // a third click starts a new range
+    scene.click(cellOf(calendar, Date(2026, 11, 3)));
+    CHECK((calendar->getRangeStart() == Date(2026, 11, 3)));
+    CHECK_FALSE(calendar->getRangeEnd().has_value());
+    CHECK(events.selections == 3);
+    CHECK_FALSE(cellOf(calendar, Date(2026, 11, 15))->getLook().inRange);
+
+    // the keys: the preview follows the cursor, Space sets the end
+    scene.key(keys::Right);
+    scene.key(keys::Right);
+    CHECK(cellOf(calendar, Date(2026, 11, 4))->getLook().inRange);
+    CHECK(cellOf(calendar, Date(2026, 11, 5))->getLook().rangeEnd);
+    scene.key(keys::Space);
+    CHECK((calendar->getRangeEnd() == Date(2026, 11, 5)));
+    CHECK(events.selections == 4);
+
+    // a one-day range
+    scene.click(cellOf(calendar, Date(2026, 11, 12)));
+    scene.click(cellOf(calendar, Date(2026, 11, 12)));
+    CHECK((calendar->getRangeStart() == Date(2026, 11, 12)));
+    CHECK((calendar->getRangeEnd() == Date(2026, 11, 12)));
+    CHECK(events.selections == 6);
+
+    // setRange fires nothing and swaps its ends
+    calendar->setRange(Date(2026, 11, 28), Date(2026, 11, 22));
+    CHECK((calendar->getRangeStart() == Date(2026, 11, 22)));
+    CHECK((calendar->getRangeEnd() == Date(2026, 11, 28)));
+    calendar->setRange(std::nullopt, Date(2026, 11, 28));
+    CHECK_FALSE(calendar->getRangeStart().has_value());
+    CHECK_FALSE(calendar->getRangeEnd().has_value());
+    scene.frame();
+    CHECK(events.selections == 6);
+    CHECK_FALSE(calendar->getSelectedDate().has_value());
+}
+
+TEST_CASE("Calendar: the title zooms out to the year and the decade, a cell zooms back in")
+{
+    Scene scene;
+    Calendar *calendar=scene.calendar(2026, 11);
+    Events events;
+
+    events.attach(calendar);
+
+    const Rect bounds=calendar->getBounds();
+    std::vector<Rect> cellBounds;
+
+    for(int i=0; i < Calendar::CellCount; ++i)
+        cellBounds.push_back(calendar->getCell(i)->getBounds());
+
+    scene.click(calendar->getTitle());
+    CHECK(calendar->getView() == Calendar::View::Year);
+    CHECK(calendar->getTitle()->getText() == "2026");
+    CHECK((calendar->getBounds() == bounds));
+    for(int i=0; i < Calendar::CellCount; ++i)
+    {
+        CAPTURE(i);
+        CalendarCell *cell=calendar->getCell(i);
+
+        REQUIRE(cell->hidden() == (i >= Calendar::ZoomCount));
+        if(i < Calendar::ZoomCount)
+        {
+            REQUIRE(cell->getText() == calendar->getShortMonthName(i+1));
+            REQUIRE((cell->getDate() == Date(2026, i+1, 1)));
+            REQUIRE(cell->getWidth() == Calendar::Columns*Calendar::CellWidth/Calendar::ZoomColumns);
+        }
+    }
+    for(int column=0; column < Calendar::Columns; ++column)
+        REQUIRE(calendar->getWeekdayLabel(column)->hidden());
+    CHECK(calendar->getCell(0)->getText() == "Jan");
+
+    scene.click(calendar->getTitle());
+    CHECK(calendar->getView() == Calendar::View::Decade);
+    CHECK(calendar->getTitle()->getText() == "2020 \xe2\x80\x93 2029");
+    CHECK(calendar->getCell(0)->getText() == "2019");
+    CHECK_FALSE(calendar->getCell(0)->getLook().inMonth);
+    CHECK(calendar->getCell(1)->getLook().inMonth);
+    CHECK(calendar->getCell(11)->getText() == "2030");
+    CHECK_FALSE(calendar->getCell(11)->getLook().inMonth);
+    // a third click does nothing
+    scene.click(calendar->getTitle());
+    CHECK(calendar->getView() == Calendar::View::Decade);
+
+    scene.click(calendar->getCell(5));
+    CHECK(calendar->getView() == Calendar::View::Year);
+    CHECK(calendar->getDisplayedYear() == 2024);
+    scene.click(calendar->getCell(2));
+    CHECK(calendar->getView() == Calendar::View::Month);
+    CHECK(calendar->getDisplayedYear() == 2024);
+    CHECK(calendar->getDisplayedMonth() == 3);
+    CHECK(calendar->getTitle()->getText() == "March 2024");
+    // zooming selects nothing
+    CHECK(events.selections == 0);
+    CHECK((calendar->getBounds() == bounds));
+    for(int i=0; i < Calendar::CellCount; ++i)
+    {
+        CAPTURE(i);
+        REQUIRE_FALSE(calendar->getCell(i)->hidden());
+        REQUIRE((calendar->getCell(i)->getBounds() == cellBounds[static_cast<size_t>(i)]));
+    }
+    for(int column=0; column < Calendar::Columns; ++column)
+        REQUIRE_FALSE(calendar->getWeekdayLabel(column)->hidden());
+}
+
+TEST_CASE("Calendar: the keys and the limits in the year and decade views")
+{
+    Scene scene;
+    Calendar *calendar=scene.calendar(2026, 11);
+
+    calendar->setDateLimits(Date(2025, 3, 15), Date(2027, 8, 1));
+    scene.click(cellOf(calendar, Date(2026, 11, 11)));
+    scene.click(calendar->getTitle());
+    REQUIRE(calendar->getView() == Calendar::View::Year);
+    CHECK(calendar->getCell(10)->getLook().cursor);
+
+    scene.key(keys::Right);
+    CHECK(calendar->getCursor().month == 12);
+    scene.key(keys::Right);
+    CHECK(calendar->getCursor().year == 2027);
+    CHECK(calendar->getDisplayedYear() == 2027);
+    CHECK(calendar->getCell(0)->getLook().cursor);
+    // August is the last month with a date inside the limits
+    CHECK_FALSE(calendar->getCell(7)->getLook().disabled);
+    CHECK(calendar->getCell(8)->getLook().disabled);
+    scene.key(keys::Down);
+    CHECK(calendar->getCursor().month == 5);
+    scene.key(keys::Down);
+    CHECK(calendar->getCursor().month == 5);
+    scene.key(keys::PageDown);
+    CHECK(calendar->getCursor().year == 2027);
+    scene.key(keys::PageUp);
+    CHECK(calendar->getCursor().year == 2026);
+    CHECK(calendar->getDisplayedYear() == 2026);
+    scene.key(keys::PageUp);
+    CHECK(calendar->getCursor().year == 2025);
+    scene.key(keys::PageUp);
+    CHECK(calendar->getCursor().year == 2025);
+    // a disabled month takes no click
+    scene.click(calendar->getCell(0));
+    CHECK(calendar->getView() == Calendar::View::Year);
+
+    // the decade: 2024 before the minimum's year is disabled
+    scene.click(calendar->getTitle());
+    REQUIRE(calendar->getView() == Calendar::View::Decade);
+    CHECK(calendar->getCell(5)->getLook().disabled);
+    CHECK_FALSE(calendar->getCell(6)->getLook().disabled);
+    CHECK(calendar->getCell(6)->getLook().cursor);
+    scene.key(keys::Right);
+    scene.key(keys::Right);
+    CHECK(calendar->getCursor().year == 2027);
+    scene.key(keys::Right);
+    CHECK(calendar->getCursor().year == 2027);
+
+    // Space zooms in at the cursor, to its month
+    scene.key(keys::Space);
+    CHECK(calendar->getView() == Calendar::View::Year);
+    CHECK(calendar->getDisplayedYear() == 2027);
+    scene.key(keys::Space);
+    CHECK(calendar->getView() == Calendar::View::Month);
+    CHECK(calendar->getDisplayedYear() == 2027);
+    CHECK(calendar->getDisplayedMonth() == calendar->getCursor().month);
+    CHECK(calendar->isDateEnabled(calendar->getCursor()));
 }

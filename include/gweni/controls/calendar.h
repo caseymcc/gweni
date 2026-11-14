@@ -15,6 +15,7 @@
 #include <array>
 #include <functional>
 #include <optional>
+#include <utility>
 #include <vector>
 
 namespace gweni
@@ -135,12 +136,37 @@ public:
 //!
 //! "Today" is the app's (setToday): nothing here reads a clock or a time
 //! zone. Dates outside setDateLimits(), or that setDateFilter() refuses, are
-//! disabled: they take no press and cannot be selected.
+//! disabled: they take no press, cannot be selected and the cursor passes
+//! over them.
+//!
+//! The views (WinUI's zoom-out): a press on the title shows the year's 12
+//! months (View::Year), a second one 12 years (View::Decade: the decade and a
+//! year either side, dimmed); a press on a month or a year zooms back in. They
+//! reuse the first 12 cells, 4 to a row over the weekday row's and the grid's
+//! room, the weekday row and the other 30 cells hidden, so the calendar keeps
+//! its size. A month or a year is disabled when no date of it is inside the
+//! limits (the filter is not asked).
 //!
 //! Selection (setSelectionMode): Single, the default, selects the clicked
-//! date; None takes no selection. A click on a day of the month before or
-//! after selects it and shows its month. onSelectionChanged fires once per
-//! real change made by the user, never from a set*() call.
+//! date; Range takes a start on one click and an end on the next (the two
+//! swapped if the end is earlier; a click after a whole range starts a new
+//! one), and while only the start is set the hovered date (or the keyboard
+//! cursor, whichever moved last) previews the range; None takes no selection.
+//! A click on a day of the month before or after selects it and shows its
+//! month. onSelectionChanged fires once per real change made by the user (a
+//! range's start and its end each are one), never from a set*() call.
+//!
+//! The keyboard: the calendar takes the focus (a click on a cell gives it)
+//! and has a cursor date of its own, drawn as a ring while it has the focus.
+//! Left/Right move it a day, Up/Down a week, Home/End to the month's first
+//! and last day, PageUp/PageDown a month, with Shift a year; a move to another
+//! month shows it. A move that lands on a disabled date goes on in its
+//! direction (a day at a time) to the first enabled one, and one that would
+//! leave the limits does nothing. Space and Return select at the cursor (in
+//! Range mode the start, then the end). In the Year view the arrows move a
+//! month (Up/Down four), Home/End to January and December and PageUp/Down a
+//! year; in the Decade view the same over years and decades; Space and Return
+//! zoom in at the cursor.
 class GWENI_EXPORT Calendar: public Base
 {
 public:
@@ -158,10 +184,23 @@ public:
         Range
     };
 
+    //! What the grid shows: the month's days, the year's months, or the
+    //! decade's years.
+    enum class View
+    {
+        Month,
+        Year,
+        Decade
+    };
+
     //! The grid: 7 columns, 6 rows.
     static constexpr int Columns=7;
     static constexpr int Rows=6;
     static constexpr int CellCount=Columns*Rows;
+    //! The Year and Decade views: 12 cells, 4 to a row.
+    static constexpr int ZoomColumns=4;
+    static constexpr int ZoomRows=3;
+    static constexpr int ZoomCount=ZoomColumns*ZoomRows;
 
     //! Units: a cell, the header row, the weekday row and the room around and
     //! between them.
@@ -174,19 +213,29 @@ public:
     //! The previous and next buttons' square.
     static constexpr int ButtonSize=24;
 
-    //! The month shown, \p month 1-12 (an invalid month is ignored). Binds
-    //! the cells; fires nothing.
+    //! The month shown, \p month 1-12 (an invalid month is ignored), in the
+    //! Month view or as the Year view's year. The cursor follows into it if it
+    //! was not in it. Fires onDisplayedMonthChanged, not onSelectionChanged.
     void setDisplayedMonth(int year, int month);
     int getDisplayedYear() const { return m_year; }
     int getDisplayedMonth() const { return m_month; }
-    //! The month before or after the shown one, as the header's buttons do
-    //! (nothing past the limits); true if the shown month changed.
-    bool showPreviousMonth();
-    bool showNextMonth();
-    //! Whether a month before (after) the shown one has a date inside the
-    //! limits: the header's button is disabled when not.
-    bool canShowPreviousMonth() const;
-    bool canShowNextMonth() const;
+    //! The header's buttons: a month (a year in the Year view, a decade in
+    //! the Decade view) back or on, nothing past the limits; true if the
+    //! shown month changed.
+    bool showPrevious();
+    bool showNext();
+    //! Whether showPrevious() (showNext()) has somewhere inside the limits to
+    //! go: the header's button is disabled when not.
+    bool canShowPrevious() const;
+    bool canShowNext() const;
+
+    //! The view; setView fires nothing.
+    void setView(View view);
+    View getView() const { return m_view; }
+    //! The title's press: Month to Year to Decade (nothing in Decade).
+    void zoomOut();
+    //! The first year the Decade view shows (one before the decade).
+    int decadeFirstYear() const;
 
     //! 0 Sunday .. 6 Saturday; Monday (1) by default.
     void setFirstDayOfWeek(int weekday);
@@ -196,8 +245,8 @@ public:
     void setToday(std::optional<Date> today);
     const std::optional<Date> &getToday() const { return m_today; }
 
-    //! The earliest and latest date that can be selected or shown as enabled
-    //! (either open). A selection outside them stays selected.
+    //! The earliest and latest date that can be selected or reached (either
+    //! open). A selection outside them stays selected.
     void setDateLimits(std::optional<Date> min, std::optional<Date> max);
     const std::optional<Date> &getMinDate() const { return m_min; }
     const std::optional<Date> &getMaxDate() const { return m_max; }
@@ -208,7 +257,13 @@ public:
 
     //! Inside the limits and taken by the filter.
     bool isDateEnabled(const Date &date) const;
+    //! Inside the limits, with no regard to the filter.
+    bool isInLimits(const Date &date) const;
+    //! Some date of the month (the year) is inside the limits.
+    bool isMonthEnabled(int year, int month) const;
+    bool isYearEnabled(int year) const;
 
+    //! Switching mode clears the selection of the mode left.
     void setSelectionMode(SelectionMode mode);
     SelectionMode getSelectionMode() const { return m_selectionMode; }
 
@@ -217,15 +272,32 @@ public:
     void setSelectedDate(std::optional<Date> date);
     const std::optional<Date> &getSelectedDate() const { return m_selected; }
 
-    //! The names in the header and the weekday row: 12 months from January,
-    //! 7 weekdays from Sunday (Date::weekday()'s order). A list of another
-    //! length is ignored. English by default.
+    //! The range (Range mode): a start alone is a range being picked, whose
+    //! next click (or Space) sets its end. Ends given the wrong way round are
+    //! swapped; an end with no start is ignored. Fires nothing.
+    void setRange(std::optional<Date> start, std::optional<Date> end);
+    const std::optional<Date> &getRangeStart() const { return m_rangeStart; }
+    const std::optional<Date> &getRangeEnd() const { return m_rangeEnd; }
+    std::pair<std::optional<Date>, std::optional<Date>> getRange() const { return {m_rangeStart, m_rangeEnd}; }
+
+    //! The keyboard cursor. setCursor shows its month (in the Month view);
+    //! it may be put on a disabled date, which the keys then move off.
+    void setCursor(const Date &date);
+    const Date &getCursor() const { return m_cursor; }
+
+    //! The names in the header, the weekday row and the Year view: 12 months
+    //! from January, 7 weekdays from Sunday (Date::weekday()'s order), 12
+    //! short month names. A list of another length is ignored. English by
+    //! default.
     void setMonthNames(const std::vector<String> &names);
+    void setShortMonthNames(const std::vector<String> &names);
     void setWeekdayNames(const std::vector<String> &names);
     const String &getMonthName(int month) const;
+    const String &getShortMonthName(int month) const;
     const String &getWeekdayName(int weekday) const;
 
-    //! The title's text for the shown month: "November 2026".
+    //! The title's text: "November 2026" (Month), "2026" (Year), "2020 –
+    //! 2029" (Decade).
     String titleText() const;
 
     //! The date cell \p index (0..41, row by row) shows in the month view.
@@ -244,33 +316,70 @@ public:
     //! The weekday labels' colour.
     void updateColors() override;
 
+    bool onKeyLeft(bool down) override;
+    bool onKeyRight(bool down) override;
+    bool onKeyUp(bool down) override;
+    bool onKeyDown(bool down) override;
+    bool onKeyHome(bool down) override;
+    bool onKeyend(bool down) override;
+    bool onKeyPageUp(bool down) override;
+    bool onKeyPageDown(bool down) override;
+    bool onKeySpace(bool down) override;
+    bool onKeyReturn(bool down) override;
+
     void calculateSize(skin::Base *skin, Dim dim) override;
 
     //! A user's selection changed: info.control the calendar.
     event::Caller onSelectionChanged;
-    //! The shown month changed (by the user or the app).
+    //! The shown month (or view) changed, by the user or the app.
     event::Caller onDisplayedMonthChanged;
 
 protected:
 
     void arrange(skin::Base *skin, Dim dim) override;
+    void onKeyboardFocus() override;
+    void onLostKeyboardFocus() override;
 
-    //! Every cell's date, text and look, the title and the weekday row: each
-    //! written only where it changed.
+    //! Every shown cell's date, text and look, the title and the weekday row:
+    //! each written only where it changed.
     void rebind();
     //! The look of a day cell showing \p date.
-    internal::CalendarCellLook dayLook(const Date &date) const;
+    internal::CalendarCellLook dayLook(const Date &date);
+    //! The cursor's ring shows: the calendar has the focus.
+    bool showsCursor();
+    //! The range as drawn: the range, or the start and the preview.
+    bool drawnRange(Date &low, Date &high) const;
 
+    void onCellDown(event::Info info);
     void onCellPress(event::Info info);
+    void onCellHoverEnter(event::Info info);
+    void onCellHoverLeave(event::Info info);
     void onPreviousPress(event::Info info);
     void onNextPress(event::Info info);
+    void onTitlePress(event::Info info);
 
-    //! A cell clicked or chosen in the month view: selects it as the mode
-    //! says, showing its month, firing onSelectionChanged if it changed.
+    //! A day clicked or chosen at the cursor: selects it as the mode says,
+    //! showing its month, firing onSelectionChanged if it changed.
     void chooseDate(const Date &date);
+    //! A month (Year view) or year (Decade view) chosen: zooms in on it.
+    void zoomInOn(const Date &date);
+
+    //! The keys: \p step units of the view (days, months, years) from the
+    //! cursor, going on past disabled dates in that direction; nothing if
+    //! that leaves the limits. \p unit: 0 days, 1 months, 2 years.
+    bool moveCursor(int64_t step, int unit);
+    //! The cursor to \p target, or the first enabled date from it going
+    //! \p direction (+1 or -1) a day at a time; nothing past the limits.
+    bool moveCursorTo(const Date &target, int direction);
+    //! The cursor moved: shows its month (year, decade) and rebinds.
+    void cursorMoved();
+    //! A key's press, the view's way; consumes the release.
+    bool cursorKey(bool down, int64_t daySteps, int64_t viewSteps);
 
     //! The shown month changed: binds and fires.
     void displayedMonthChanged();
+    //! Places the cells for the view: invalidated when it changes.
+    void viewChanged();
 
     std::array<internal::CalendarCell *, CellCount> m_cells{};
     std::array<Label *, Columns> m_weekdays{};
@@ -280,6 +389,7 @@ protected:
 
     int m_year=1970;
     int m_month=1;
+    View m_view=View::Month;
     int m_firstDayOfWeek=1;
     std::optional<Date> m_today;
     std::optional<Date> m_min;
@@ -287,7 +397,15 @@ protected:
     std::function<bool(const Date &)> m_filter;
     SelectionMode m_selectionMode=SelectionMode::Single;
     std::optional<Date> m_selected;
+    std::optional<Date> m_rangeStart;
+    std::optional<Date> m_rangeEnd;
+    //! The range's other end while only the start is set: the hovered date
+    //! or the cursor.
+    std::optional<Date> m_preview;
+    Date m_cursor;
+    bool m_losingFocus=false;
     std::vector<String> m_monthNames;
+    std::vector<String> m_shortMonthNames;
     std::vector<String> m_weekdayNames;
 };
 
