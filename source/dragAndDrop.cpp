@@ -8,6 +8,7 @@
 #include <gweni/gweni.h>
 #include <gweni/dragAndDrop.h>
 #include <gweni/utility.h>
+#include <gweni/controls/canvas.h>
 #include <gweni/platforms/platform.h>
 
 namespace gweni
@@ -22,15 +23,92 @@ gweni::controls::Base *SourceControl=nullptr;
 static gweni::controls::Base *LastPressedControl=nullptr;
 static gweni::controls::Base *NewHoveredControl=nullptr;
 static gweni::Point LastPressedPos;
+// the live drag's canvas, and the last point the cursor was at in it
+static gweni::controls::Canvas *DragCanvas=nullptr;
+static gweni::Point LastDragPos;
+static int Cursor=cursor::Normal;
+
+static void setCursor(int type)
+{
+    Cursor=type;
+    platform::setCursor(static_cast<unsigned char>(type));
+}
+
+// Forgets the live drag, calling nothing.
+static void clear()
+{
+    CurrentPackage=nullptr;
+    SourceControl=nullptr;
+    HoveredControl=nullptr;
+    DragCanvas=nullptr;
+    Cursor=cursor::Normal;
+}
+
+bool isDragging()
+{
+    return CurrentPackage != nullptr;
+}
+
+gweni::controls::Canvas *dragCanvas()
+{
+    return CurrentPackage ? DragCanvas : nullptr;
+}
+
+int currentCursor()
+{
+    return Cursor;
+}
+
+// The drag is over (dropped or cancelled): the canvas's hover, left where it
+// was while the drag lasted, is hit-tested again in its next update phase.
+static void ended(gweni::controls::Canvas *canvas)
+{
+    if(canvas)
+        canvas->hoverMayHaveMoved();
+}
+
+bool cancel()
+{
+    LastPressedControl=nullptr;
+
+    if(!CurrentPackage)
+        return false;
+
+    Package *package=CurrentPackage;
+    gweni::controls::Base *source=SourceControl;
+    gweni::controls::Base *target=HoveredControl;
+    gweni::controls::Canvas *canvas=DragCanvas;
+    const gweni::Point pos=LastDragPos;
+
+    // the state is cleared first, so a hook that looks finds no live drag
+    clear();
+
+    if(target)
+        target->dragAndDrop_hoverLeave(package);
+
+    if(source)
+    {
+        source->dragAndDrop_endDragging(false, pos.x, pos.y);
+
+        // a control drag's source is repainted as it was after a refused drop
+        if(!package->sourceList)
+            source->redraw();
+    }
+
+    setCursor(cursor::Normal);
+    ended(canvas);
+    return true;
+}
 
 void controlDeleted(gweni::controls::Base *control)
 {
-    if(SourceControl == control)
+    if(CurrentPackage && (control == DragCanvas))
     {
-        SourceControl=nullptr;
-        CurrentPackage=nullptr;
-        HoveredControl=nullptr;
+        // the canvas goes: nothing it holds may be called
+        clear();
         LastPressedControl=nullptr;
+        NewHoveredControl=nullptr;
+        return;
     }
 
     if(LastPressedControl == control)
@@ -41,6 +119,13 @@ void controlDeleted(gweni::controls::Base *control)
 
     if(NewHoveredControl == control)
         NewHoveredControl=nullptr;
+
+    if(CurrentPackage && ((SourceControl == control) || (CurrentPackage->sourceList == control)))
+    {
+        // nothing of the source is called: it is half destroyed
+        SourceControl=nullptr;
+        cancel();
+    }
 }
 
 bool start(gweni::controls::Base *control, Package *package)
@@ -50,25 +135,39 @@ bool start(gweni::controls::Base *control, Package *package)
 
     CurrentPackage=package;
     SourceControl=control;
+    DragCanvas=control ? control->getCanvas() : nullptr;
     return true;
 }
 
-bool OnDrop(int x, int y)
+static bool OnDrop(int x, int y)
 {
-    bool bSuccess=false;
+    Package *package=CurrentPackage;
+    gweni::controls::Base *target=HoveredControl;
 
-    if(HoveredControl)
-    {
-        HoveredControl->dragAndDrop_hoverLeave(CurrentPackage);
-        bSuccess=HoveredControl->dragAndDrop_handleDrop(CurrentPackage,
-            x, y);
-    }
+    // released over nothing that accepts it: a cancel
+    if(!target)
+        return cancel();
+
+    gweni::controls::Base *source=SourceControl;
+    gweni::controls::Canvas *canvas=DragCanvas;
+
+    target->dragAndDrop_hoverLeave(package);
+
+    const bool success=target->dragAndDrop_handleDrop(package, x, y);
 
     // Report back to the source control, to tell it if we've been successful.
-    SourceControl->dragAndDrop_endDragging(bSuccess, x, y);
-    SourceControl->redraw();
-    CurrentPackage=nullptr;
-    SourceControl=nullptr;
+    // (the drop may have deleted it, which cleared SourceControl)
+    if(source && (SourceControl == source))
+    {
+        source->dragAndDrop_endDragging(success, x, y);
+
+        if(!package->sourceList)
+            source->redraw();
+    }
+
+    clear();
+    setCursor(cursor::Normal);
+    ended(canvas);
     return true;
 }
 
@@ -101,7 +200,7 @@ bool nnMouseButton(gweni::controls::Base *hoveredControl, int x, int y, bool dow
     return false;
 }
 
-bool ShouldStartDraggingControl(int x, int y)
+static bool ShouldStartDraggingControl(int x, int y)
 {
     // We're not holding a control down..
     if(!LastPressedControl)
@@ -125,8 +224,10 @@ bool ShouldStartDraggingControl(int x, int y)
         return false;
     }
 
-    // Now we're dragging something!
-    SourceControl=LastPressedControl;
+    // Now we're dragging something! An item drag is the list's, not the
+    // pressed row's.
+    SourceControl=CurrentPackage->sourceList ? CurrentPackage->sourceList : LastPressedControl;
+    DragCanvas=LastPressedControl->getCanvas();
     gweni::MouseFocus=nullptr;
     LastPressedControl=nullptr;
 
@@ -135,17 +236,16 @@ bool ShouldStartDraggingControl(int x, int y)
     // This function is for them (it defaults to true)
     if(!SourceControl->dragAndDrop_shouldStartDrag())
     {
-        SourceControl=nullptr;
-        CurrentPackage=nullptr;
+        clear();
         return false;
     }
 
     SourceControl->dragAndDrop_startDragging(CurrentPackage,
         LastPressedPos.x, LastPressedPos.y);
-    return true;
+    return CurrentPackage != nullptr;
 }
 
-void UpdateHoveredControl(gweni::controls::Base *ctrl, int x, int y)
+static void UpdateHoveredControl(gweni::controls::Base *ctrl, int x, int y)
 {
     //
     // We use this global variable to represent our hovered control
@@ -155,38 +255,37 @@ void UpdateHoveredControl(gweni::controls::Base *ctrl, int x, int y)
     //
     NewHoveredControl=ctrl;
 
-    // Nothing to change..
-    if(HoveredControl == NewHoveredControl)
-        return;
-
-    // We changed - tell the old hovered control that it's no longer hovered.
-    if(HoveredControl && HoveredControl != NewHoveredControl)
-        HoveredControl->dragAndDrop_hoverLeave(CurrentPackage);
-
-    // If we're hovering where the control came from, just forget it.
-    // By changing it to nullptr here we're not going to show any error cursors
-    // it will just do nothing if you drop it.
-    if(NewHoveredControl == SourceControl)
+    // If we're hovering where the control came from, just forget it: it is
+    // no target. An item drag's source is its list, which may take its own
+    // items back (a reorder within it).
+    if(!CurrentPackage->sourceList && (NewHoveredControl == SourceControl))
         NewHoveredControl=nullptr;
 
     // Check to see if the new potential control can accept this type of
-    // package.
-    // If not, ignore it and show an error cursor.
+    // package. If not, try its parents.
     while(NewHoveredControl &&
         !NewHoveredControl->dragAndDrop_canAcceptPackage(CurrentPackage))
     {
-        // We can't drop on this control, so lets try to drop
-        // onto its parent..
         NewHoveredControl=NewHoveredControl->getParent();
 
-        // Its parents are dead. We can't drop it here.
-        // Show the NO WAY cursor.
-        if(!NewHoveredControl)
-            platform::setCursor(cursor::No);
+        if(!CurrentPackage->sourceList && (NewHoveredControl == SourceControl))
+            NewHoveredControl=nullptr;
     }
 
-    // Become out new hovered control
-    HoveredControl=NewHoveredControl;
+    // Nothing to change..
+    if(HoveredControl == NewHoveredControl)
+    {
+        NewHoveredControl=nullptr;
+        return;
+    }
+
+    // We changed - tell the old hovered control that it's no longer hovered.
+    if(HoveredControl)
+        HoveredControl->dragAndDrop_hoverLeave(CurrentPackage);
+
+    // Become out new hovered control (the leave may have deleted it, or ended
+    // the drag)
+    HoveredControl=CurrentPackage ? NewHoveredControl : nullptr;
 
     // If we exist, tell us that we've started hovering.
     if(HoveredControl)
@@ -195,26 +294,53 @@ void UpdateHoveredControl(gweni::controls::Base *ctrl, int x, int y)
     NewHoveredControl=nullptr;
 }
 
-void onMouseMoved(gweni::controls::Base *hoveredControl, int x, int y)
+void onMouseMoved(gweni::controls::Canvas *canvas, int x, int y)
 {
     // If we're not carrying anything, then check to see if we should
     // pick up from a control that we're holding down. If not, then forget it.
     if(!CurrentPackage && !ShouldStartDraggingControl(x, y))
         return;
 
-    // Swap to this new hovered control and notify them of the change.
-    UpdateHoveredControl(hoveredControl, x, y);
-
-    if(!HoveredControl)
+    if(DragCanvas != canvas)
         return;
 
-    // Update the hovered control every mouse move, so it can show where
-    // the dropped control will land etc..
+    LastDragPos=gweni::Point(x, y);
+
+    // The target is found here, not from the input handler's hover, which
+    // stays where it was while the drag lasts.
+    UpdateHoveredControl(canvas->getControlAt(x, y), x, y);
+
+    if(!CurrentPackage)
+        return;
+
+    if(!HoveredControl)
+    {
+        // nothing here takes it: the NO WAY cursor
+        if(Cursor != cursor::No)
+            setCursor(cursor::No);
+        return;
+    }
+
+    // Tell the target of every move, so it can show where the drop would land.
+    // It marks what it changes itself: a move that changes nothing writes
+    // nothing.
     HoveredControl->dragAndDrop_hover(CurrentPackage, x, y);
-    // Override the cursor - since it might have been set my underlying controls
-    // Ideally this would show the 'being dragged' control. TODO
-    platform::setCursor(cursor::Normal);
-    hoveredControl->redraw();
+
+    if(CurrentPackage && (Cursor != cursor::Normal))
+        setCursor(cursor::Normal);
+}
+
+bool onCanvasThink(gweni::controls::Canvas *canvas)
+{
+    if(!CurrentPackage || (DragCanvas != canvas))
+        return false;
+
+    // An item drag's list hidden: there is no list to drop back into. (A
+    // control drag's source hides itself as it starts: a tab, a dock.)
+    if(CurrentPackage->sourceList && !CurrentPackage->sourceList->visible())
+        return cancel();
+
+    return false;
 }
 
 }//namespace draganddrop

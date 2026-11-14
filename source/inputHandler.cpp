@@ -82,6 +82,12 @@ static Point g_pntLastClickPos;
 // look covers both the old and the new control changes nothing.
 static void UpdateHoveredControl(controls::Base *inCanvas)
 {
+    // While a drag is live on this canvas the hover stays where it was: the
+    // controls the cursor crosses take no hover look (the drag core finds its
+    // target itself). It is hit-tested again when the drag ends.
+    if(draganddrop::isDragging() && (draganddrop::dragCanvas() == inCanvas))
+        return;
+
     if(MouseFocus && MouseFocus->getCanvas() == inCanvas)
     {
         if(HoveredControl != MouseFocus)
@@ -160,6 +166,11 @@ bool dropLostKeyboardFocus()
 
 void onCanvasThink(controls::Base *control)
 {
+    // an item drag whose list went away is cancelled; the hover, left where it
+    // was while it lasted, is taken again below
+    if(controls::Canvas *dragged=control->getCanvas())
+        draganddrop::onCanvasThink(dragged);
+
     if(MouseFocus && !MouseFocus->visible())
     {
         const bool captured=(MouseFocus->getCanvas() == control);
@@ -281,6 +292,20 @@ static bool deliverMouseClick(controls::Base *canvas, int iMouseButton, bool dow
 
 bool onMouseClicked(controls::Base *canvas, int iMouseButton, bool down)
 {
+    // The release that ends a live drag drops it (or, over nothing that takes
+    // it, cancels it) and goes nowhere else. It is taken before the hovered
+    // control is looked at: the hover was left where it was during the drag,
+    // on a control the drag may have hidden (a tab). The hover then goes to
+    // what is under the mouse.
+    if((iMouseButton == 0) && !down && draganddrop::isDragging()
+        && (draganddrop::dragCanvas() == canvas))
+    {
+        g_keyData.LeftMouseDown=false;
+        draganddrop::nnMouseButton(nullptr, g_mousePosition.x, g_mousePosition.y, false);
+        UpdateHoveredControl(canvas);
+        return true;
+    }
+
     // If we click on a control that isn't a menu we want to close
     // all the open menus. Menus are children of the canvas.
     if(down && (!HoveredControl || !HoveredControl->isMenuComponent()))
@@ -486,6 +511,14 @@ bool onKeyEvent(controls::Base *canvas, int key, bool down)
     if(down && (key == keys::Escape) && !g_keyData.KeyState[key])
     {
         controls::Canvas *target=canvas->getCanvas();
+
+        // a live drag first: Escape cancels it, and the hover goes to what is
+        // under the mouse
+        if(target && (draganddrop::dragCanvas() == target) && draganddrop::cancel())
+        {
+            UpdateHoveredControl(canvas);
+            return true;
+        }
 
         if(target && target->escapePopup())
             return true;

@@ -15,6 +15,7 @@
 
 #include <gweni/platforms/platformTypes.h>
 #include <algorithm>
+#include <cstdint>
 #include <limits>
 #include <string>
 
@@ -52,6 +53,13 @@ struct GWENI_EXPORT Package
     String  name;
     void *userdata;
     bool draggable;
+    //! For an item drag, the list the item is dragged from: the drag core then
+    //! takes it as draganddrop::SourceControl, not the pressed row, and
+    //! cancels the drag when it is hidden or deleted. Null for a control drag
+    //! (a tab, a dock).
+    controls::Base *sourceList=nullptr;
+    //! The dragged item's key in sourceList, stable across the list's changes
+    uint64_t key=0;
 };
 
 

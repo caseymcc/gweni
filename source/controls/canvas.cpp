@@ -1046,6 +1046,14 @@ bool Canvas::inputMouseMoved(int x, int y, int deltaX, int deltaY)
     // coordinates through the scale (input::GLFW3::setWindowMetrics).
     input::onMouseMoved(this, x, y, deltaX, deltaY);
 
+    // A live drag takes the move: the hover stays where it was, and no control
+    // hears the move but the drag's target.
+    if(draganddrop::isDragging() && (draganddrop::dragCanvas() == this))
+    {
+        draganddrop::onMouseMoved(this, x, y);
+        return true;
+    }
+
     if(!HoveredControl)
         return false;
 
@@ -1061,7 +1069,7 @@ bool Canvas::inputMouseMoved(int x, int y, int deltaX, int deltaY)
 
     HoveredControl->onMouseMoved(x, y, deltaX, deltaY);
     HoveredControl->updateCursor();
-    draganddrop::onMouseMoved(HoveredControl, x, y);
+    draganddrop::onMouseMoved(this, x, y);
     return true;
 }
 

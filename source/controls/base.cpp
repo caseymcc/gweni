@@ -4444,8 +4444,13 @@ draganddrop::Package *Base::dragAndDrop_getPackage(int /*x*/, int /*y*/)
     return m_dragAndDrop_Package;
 }
 
-bool Base::dragAndDrop_handleDrop(draganddrop::Package * /*package*/, int /*x*/, int /*y*/)
+bool Base::dragAndDrop_handleDrop(draganddrop::Package *package, int /*x*/, int /*y*/)
 {
+    // an item drag's source is its list, which is never moved: a list that
+    // takes items handles their drop itself
+    if(package && package->sourceList)
+        return false;
+
     draganddrop::SourceControl->setParent(this);
     return true;
 }
