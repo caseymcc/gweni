@@ -16,9 +16,12 @@
  *  SegmentDisabled, SegmentOnDisabled) and its text in the skin's
  *  SegmentedButton colours. The check icon is drawn at the segment's z+1 in
  *  getCheckRect() while it is selected in a row that shows checks, and hidden
- *  otherwise. The segment holding the keyboard focus is drawn over its whole
- *  bounds, covering its left joint, its border SegmentFocus's on every side,
- *  its fill its state's. A hover writes the hovered segment's fill slot alone, an
+ *  otherwise. The segment holding the keyboard focus is drawn as it is
+ *  unfocused, its border SegmentFocus's and its fill its state's, and after
+ *  the first its third slot paints its left joint in SegmentFocus's border: a
+ *  rect of no width at its fill's left edge, NoBorderLeft with the border
+ *  width as its reach (the renderer widens it over exactly the neighbour's
+ *  border pixels), hidden while it is not focused. A hover writes the hovered segment's fill slot alone, an
  *  exclusive click only the two segments' slots, a multi toggle one
  *  segment's, and a settled frame nothing.
  */
@@ -58,6 +61,7 @@ public:
         Rect rect;
         Color top, bottom, border;
         uint8_t edges;
+        float reach;
     };
 
     struct Icon
@@ -71,7 +75,7 @@ public:
     void drawRoundedRect(size_t primitiveId, Rect rect, float radius, float border, Color top,
         Color bottom, Color borderColor, int zIndex) override
     {
-        draws[primitiveId]={rect, top, bottom, borderColor, 0};
+        draws[primitiveId]={rect, top, bottom, borderColor, 0, 0.0f};
         hidden.erase(primitiveId);
         touched.push_back(primitiveId);
         test::StubRenderer::drawRoundedRect(primitiveId, rect, radius, border, top, bottom,
@@ -83,6 +87,7 @@ public:
     {
         drawRoundedRect(primitiveId, rect, radius, border, top, bottom, borderColor, zIndex);
         draws[primitiveId].edges=edges;
+        draws[primitiveId].reach=reach;
     }
 
     void drawIcon(size_t primitiveId, Rect rect, int kind, int direction, Color color, int zIndex) override
@@ -183,13 +188,13 @@ struct Scene
         frame();
     }
 
-    //! The segment's fill slot [0] and check slot [1].
+    //! The segment's fill slot [0], check slot [1] and focus joint slot [2].
     static std::vector<size_t> slotsOf(const controls::Base *control)
     {
         std::vector<size_t> primitives, texts;
 
         control->getSkinControl()->appendIds(primitives, texts);
-        REQUIRE(primitives.size() == 2);
+        REQUIRE(primitives.size() == 3);
         return primitives;
     }
 
@@ -206,6 +211,16 @@ struct Scene
         const size_t id=slotsOf(row->getSegment(index))[1];
 
         return renderer.icons.count(id) == 1 && renderer.hidden.count(id) == 0;
+    }
+
+    //! The focus joint's draw, null while it is hidden.
+    const Recorder::Draw *focusJointOf(int index)
+    {
+        const size_t id=slotsOf(row->getSegment(index))[2];
+
+        if(renderer.hidden.count(id) || !renderer.draws.count(id))
+            return nullptr;
+        return &renderer.draws.at(id);
     }
 
     //! The slots the last frame wrote, as the segments that own them.
@@ -414,7 +429,7 @@ TEST_CASE("Segmented look: a hover, a click and a toggle write only the segments
     CHECK(scene.segmentsTouched() == std::set<int>{3});
 }
 
-TEST_CASE("Segmented look: the focused segment draws its whole outline in the focus colour")
+TEST_CASE("Segmented look: the focused segment's outline and left joint are in the focus colour")
 {
     Scene scene({"A", "B", "C"});
     SegmentedButtons *row=scene.row;
@@ -427,11 +442,27 @@ TEST_CASE("Segmented look: the focused segment draws its whole outline in the fo
     const Recorder::Draw &fill=scene.fillOf(1);
     const Rect bounds=segment->getRenderBounds();
 
-    CHECK(fill.rect.x == bounds.x);
-    CHECK(fill.rect.w == bounds.w);
-    CHECK(fill.edges == (renderer::SquareTopLeft|renderer::SquareBottomLeft|kRightJoined));
+    CHECK(fill.rect.x == bounds.x+SegmentedButtons::Joint);
+    CHECK(fill.rect.w == bounds.w-SegmentedButtons::Joint);
+    CHECK(fill.edges == (kLeftJoined|kRightJoined));
     CHECK(sameColor(fill.border, tn::SegmentFocus.border));
     CHECK(sameColor(fill.top, tn::SegmentOn.top));
+
+    // its left joint: no width at the fill's left edge, reaching over the
+    // neighbour's border column by the border's width, in the focus colour
+    const Recorder::Draw *joint=scene.focusJointOf(1);
+
+    REQUIRE(joint != nullptr);
+    CHECK(joint->rect.x == fill.rect.x);
+    CHECK(joint->rect.w == 0);
+    CHECK(joint->rect.y == fill.rect.y);
+    CHECK(joint->rect.h == fill.rect.h);
+    CHECK((joint->edges&renderer::NoBorderLeft) != 0);
+    CHECK(joint->reach == doctest::Approx(tn::SegmentOn.borderWidth));
+    CHECK(sameColor(joint->top, tn::SegmentFocus.border));
+    CHECK(sameColor(joint->bottom, tn::SegmentFocus.border));
+    CHECK(scene.focusJointOf(0) == nullptr);
+    CHECK(scene.focusJointOf(2) == nullptr);
     // the others as they were
     CHECK(sameColor(scene.fillOf(2).border, tn::Segment.border));
     CHECK(scene.fillOf(2).edges == kLeftJoined);
@@ -444,7 +475,9 @@ TEST_CASE("Segmented look: the focused segment draws its whole outline in the fo
     scene.frame();
     CHECK(scene.segmentsTouched() == std::set<int>({1, 2}));
     CHECK(sameColor(scene.fillOf(2).border, tn::SegmentFocus.border));
-    CHECK(scene.fillOf(2).rect.x == row->getSegment(2)->getRenderBounds().x);
+    CHECK(scene.fillOf(2).rect.x == row->getSegment(2)->getRenderBounds().x+SegmentedButtons::Joint);
+    CHECK(scene.focusJointOf(2) != nullptr);
+    CHECK(scene.focusJointOf(1) == nullptr);
     CHECK(scene.fillOf(1).edges == (kLeftJoined|kRightJoined));
     CHECK(scene.fillOf(1).rect.x == row->getSegment(1)->getRenderBounds().x+SegmentedButtons::Joint);
     CHECK(sameColor(scene.fillOf(1).border, tn::Segment.border));
@@ -453,4 +486,13 @@ TEST_CASE("Segmented look: the focused segment draws its whole outline in the fo
     scene.frame();
     CHECK(sameColor(scene.fillOf(2).border, tn::SegmentOn.border));
     CHECK(scene.fillOf(2).edges == kLeftJoined);
+    CHECK(scene.focusJointOf(2) == nullptr);
+
+    // the first segment has no left joint: its own outline is the focus's
+    row->getSegment(0)->focus();
+    scene.frame();
+    CHECK(sameColor(scene.fillOf(0).border, tn::SegmentFocus.border));
+    CHECK(scene.focusJointOf(0) == nullptr);
+    KeyboardFocus->unfocus();
+    scene.frame();
 }

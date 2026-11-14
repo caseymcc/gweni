@@ -1008,7 +1008,7 @@ void NavigationItem::update(renderer::Base *renderer, controls::Base *baseContro
 //SegmentedButton
 void SegmentedButton::update(renderer::Base *renderer, controls::Base *baseControl)
 {
-    if(m_primitives.size() < 2)
+    if(m_primitives.size() < 3)
         return;
 
     controls::SegmentedButton *segment=static_cast<controls::SegmentedButton *>(baseControl);
@@ -1038,13 +1038,11 @@ void SegmentedButton::update(renderer::Base *renderer, controls::Base *baseContr
     if(focused)
         look.border=tokyonight::SegmentFocus.border;
 
-    // the left neighbour draws the shared column, unless this one has the
-    // focus: then it draws its whole outline, in front of the neighbour
+    // the left neighbour draws the shared column; the segment starts a Joint
+    // past it, with no border on its left side
     if(index > 0)
-        edges|=renderer::SquareTopLeft|renderer::SquareBottomLeft;
-    if((index > 0) && !focused)
     {
-        edges|=renderer::NoBorderLeft;
+        edges|=renderer::SquareTopLeft|renderer::SquareBottomLeft|renderer::NoBorderLeft;
         rect.x+=controls::SegmentedButtons::Joint;
         rect.w-=controls::SegmentedButtons::Joint;
     }
@@ -1052,6 +1050,22 @@ void SegmentedButton::update(renderer::Base *renderer, controls::Base *baseContr
         edges|=renderer::SquareTopRight|renderer::SquareBottomRight;
 
     tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, look, rect, edges);
+
+    // Focused after the first, its left side is the neighbour's border column
+    // painted over in the focus colour: a rect of no width at the column's
+    // right edge reaching over it by the border's width, so it covers exactly
+    // the device pixels the neighbour's border has, at any scale (a 1-unit
+    // joint is 1 or 2 px at 1.5, by where it lands, and the border always 2).
+    if(baseControl->visible() && focused && (index > 0))
+    {
+        renderer->drawRoundedRect(m_primitives[2], gweni::Rect(rect.x, rect.y, 0, rect.h), 0.0f, 0.0f,
+            look.border, look.border, look.border, baseControl->getZIndex(),
+            renderer::SquareTopLeft|renderer::SquareTopRight|renderer::SquareBottomLeft|
+            renderer::SquareBottomRight|renderer::NoBorderLeft, look.borderWidth);
+        renderer->showPrimitive(4, m_primitives[2]);
+    }
+    else
+        renderer->hidePrimitive(m_primitives[2]);
 
     if(baseControl->visible() && selected && segment->hasCheckRoom())
     {

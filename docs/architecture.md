@@ -3805,9 +3805,15 @@ two programs and the draws. What follows describes both together:
     `SegmentOnHover`, `SegmentDisabled`, `SegmentOnDisabled`), the state shown by the
     fill. A selected segment of a row that shows checks draws the check icon (kind 0)
     at `getZIndex()+1` in `getCheckRect()` (`depthLayers()` 2). The segment holding
-    the keyboard focus is drawn over its whole bounds instead, with `SegmentFocus`'s
-    border on every side, covering its left joint (it is in front of its left
-    neighbour, and its right neighbour does not draw on their joint). It is not an
+    the keyboard focus is drawn as it is otherwise, with `SegmentFocus`'s border, and
+    after the first a third slot paints its left joint in that colour: a rect of no
+    width at its fill's left edge, `NoBorderLeft` with the border's width as its
+    `reach`, which the renderer widens over exactly the device pixels the neighbour's
+    border has. Its own left border could not: a 1-unit joint is 1 or 2 px at 1.5 by
+    where it lands and the border always 2, so drawn over its bounds it left a column
+    of the neighbour's border beside it on every other joint (3 px in all). The slot is
+    hidden while the segment is not focused (`requiredPrimitives()` 3), and the
+    scenario's `focus_joints` scans each joint with each segment focused. It is not an
     inset ring: style 4's alpha is the fill's times the shape's, so a rect with a
     transparent fill shows no border either. The text is `Colors.SegmentedButton`'s
     (`SegmentNormal`, `SegmentHover` (the normal one, so a hover writes no glyph),

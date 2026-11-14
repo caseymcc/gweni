@@ -1033,6 +1033,11 @@
  *                 scanned just under the top border from one segment's
  *                 middle to the next one's, is one run of the border colour
  *                 as wide as the outer border (max(1, snap(1)) device px);
+ *                 focus_joints: each segment after the first focused in turn
+ *                 leaves its left and right joints one run of SegmentFocus's
+ *                 border that wide, none of Segment's beside it (at 1.5 a
+ *                 1-unit joint is 1 or 2 px by its position), and unfocused
+ *                 gives the settled frame back;
  *                 the hover writes the segment's one slot, no glyph and no
  *                 pixel outside it, marks no control outside it, and moving
  *                 off gives the frame back; the click and each key write the
@@ -12383,12 +12388,12 @@ static bool runSwitchScenario(Session &s, const std::string &shotDir, bool &pass
 namespace
 {
 
-// The device-pixel runs of the segment border's colour (each channel within
-// 2) on device row `y` from x0 up to x1: their starts and lengths.
+// The device-pixel runs of `border` (each channel within 2; the segment
+// border's colour by default) on device row `y` from x0 up to x1: their
+// starts and lengths.
 std::vector<std::pair<int, int>> borderRuns(const Session &s, const std::vector<uint8_t> &pixels, int y,
-    int x0, int x1)
+    int x0, int x1, const gweni::Color &border=gweni::skin::textured::tokyonight::Segment.border)
 {
-    const gweni::Color &border=gweni::skin::textured::tokyonight::Segment.border;
     std::vector<std::pair<int, int>> runs;
 
     if(y < 0 || y >= s.pixels.y)
@@ -12476,6 +12481,66 @@ static bool runSegmentedScenario(Session &s, const std::string &shotDir, bool &p
     checks.check("joints", jointsOk, "an inner joint is not one border column of "+std::to_string(borderPx)
         +" device px: "+joints);
 
+    // (1b) each segment after the first focused in turn: its left joint is
+    // one run of the focus border as wide as the outer border, with none of
+    // the neighbour's border left beside it, whichever device px the 1-unit
+    // joint lands on (at 1.5 it is 1 or 2 by its position; Day|Week is the
+    // odd one there); its right joint the same
+    bool focusJointsOk=true;
+    std::string focusJoints;
+
+    {
+        const gweni::Color &focus=gweni::skin::textured::tokyonight::SegmentFocus.border;
+        const gweni::Rect first=row->getSegment(0)->getCanvasBounds();
+        const int y=devicePixels(gweni::Point(0, first.y), s.scale).y+borderPx+1;
+        auto middle=[&](int i) {
+            const gweni::Rect bounds=row->getSegment(i)->getCanvasBounds();
+
+            return devicePixels(gweni::Point(bounds.x+bounds.w/2, 0), s.scale).x;
+        };
+        auto jointOk=[&](const std::vector<uint8_t> &shown, int i, std::string &what) {
+            const auto line=borderRuns(s, shown, y, middle(i), middle(i+1));
+            const auto blue=borderRuns(s, shown, y, middle(i), middle(i+1), focus);
+
+            what+=std::to_string(i)+"|"+std::to_string(i+1)+"=";
+            for(size_t r=0; r < blue.size(); ++r)
+                what+=(r?",":"")+std::to_string(blue[r].second);
+            what+="/"+std::to_string(line.size());
+            return line.empty() && (blue.size() == 1) && (blue[0].second == borderPx);
+        };
+
+        for(int i=1; i < row->segmentCount(); ++i)
+        {
+            std::vector<uint8_t> shown;
+
+            row->getSegment(i)->focus();
+            renderFrames(s, 1);
+            s.renderer->readPixels(s.pixels.x, s.pixels.y, shown);
+            focusJoints+=" "+std::to_string(i)+":";
+            if(!jointOk(shown, i-1, focusJoints))
+                focusJointsOk=false;
+            if(i+1 < row->segmentCount())
+            {
+                focusJoints+=",";
+                if(!jointOk(shown, i, focusJoints))
+                    focusJointsOk=false;
+            }
+        }
+        row->getSegment(row->segmentCount()-1)->unfocus();
+        renderFrames(s, 1);
+
+        std::vector<uint8_t> back;
+
+        s.renderer->readPixels(s.pixels.x, s.pixels.y, back);
+        if(back != pixels)
+        {
+            focusJointsOk=false;
+            focusJoints+=" unfocused_differs";
+        }
+    }
+    checks.check("focus_joints", focusJointsOk, "a focused segment's joint is not one focus-border column of "
+        +std::to_string(borderPx)+" device px (blue runs/line runs):"+focusJoints);
+
     demo->setLabelUpdates(false);
 
     // (2) a hover on an unselected segment: its slot alone, no glyph, no pixel
@@ -12518,9 +12583,24 @@ static bool runSegmentedScenario(Session &s, const std::string &shotDir, bool &p
     idleWork+=settleCodeEditor(s, pixels);
     clickMouse(s, hoverRect.x+hoverRect.w/2, hoverRect.y+hoverRect.h/2);
 
+    // a focused segment after the first paints its left joint, the left
+    // neighbour's border column, in the focus colour: at a fractional scale
+    // part of that column lies outside its bounds, so the focus moving on is
+    // allowed there too (a Joint wider on the left)
+    auto withJoint=[](gweni::controls::SegmentedButton *segment) {
+        gweni::Rect bounds=segment->getCanvasBounds();
+        gweni::controls::SegmentedButtons *owner=segment->getSegmentedButtons();
+
+        if(owner && owner->indexOf(segment) > 0)
+        {
+            bounds.x-=gweni::controls::SegmentedButtons::Joint;
+            bounds.w+=gweni::controls::SegmentedButtons::Joint;
+        }
+        return bounds;
+    };
     const CodeEditorFrame click=codeEditorFrame(s);
     const size_t clickOutside=differencesOutsideRects(s, pixels, click.pixels,
-        {from->getCanvasBounds(), hoverRect});
+        {withJoint(from), withJoint(hovered)});
 
     checks.check("exclusive_click",
         selectedBefore == 1 && row->getSelectedIndex() == 2 && !click.primitives.empty()
@@ -12542,7 +12622,7 @@ static bool runSegmentedScenario(Session &s, const std::string &shotDir, bool &p
 
     idsOf({hovered, next}, keyPrims, keyTexts);
 
-    const std::vector<gweni::Rect> keyRects={hoverRect, next->getCanvasBounds()};
+    const std::vector<gweni::Rect> keyRects={withJoint(hovered), withJoint(next)};
 
     sendKey(s, "right");
 
@@ -12652,7 +12732,7 @@ static bool runSegmentedScenario(Session &s, const std::string &shotDir, bool &p
     std::cout<<"segmented";
     for(const auto &result : checks.results)
         std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
-    std::cout<<" border_px="<<borderPx<<" "<<joints<<" hover_prims="<<hover.primitives.size()
+    std::cout<<" border_px="<<borderPx<<" "<<joints<<" focus"<<focusJoints<<" hover_prims="<<hover.primitives.size()
              <<" hover_changed="<<hover.changed<<" click_changed="<<click.changed
              <<" click_prims="<<click.primitives.size()<<" click_texts="<<click.texts.size()
              <<" toggle_prims="<<on.primitives.size()<<"\n";

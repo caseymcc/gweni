@@ -1292,16 +1292,17 @@ public:
 // border column, which the neighbour draws: it is drawn from a Joint further
 // right, with no border on its left side, so every joint is one border column
 // at any scale and a segment's state never repaints its neighbours. The
-// segment holding the keyboard focus is drawn over its whole bounds instead,
-// its border SegmentFocus's on every side, so it covers its left joint: it is
-// in front of its left neighbour, and its right neighbour does not draw on
-// their joint.
+// segment holding the keyboard focus has SegmentFocus's border, and after the
+// first [2] paints its left joint in it: a rect of no width at the joint's
+// right edge with NoBorderLeft and the border's width as its reach, so it
+// covers exactly the neighbour's border pixels at any scale (hidden
+// otherwise).
 class SegmentedButton:public textured::ControlRegister<SegmentedButton>
 {
 public:
     static void staticInit(TexturedSkin *) { m_staticInit=true; }
 
-    size_t requiredPrimitives() override { return 2; }
+    size_t requiredPrimitives() override { return 3; }
     // the check is drawn at getZIndex()+1, over the fill
     size_t depthLayers() override { return 2; }
 
