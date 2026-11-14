@@ -43,7 +43,9 @@ public:
 
 //! The veil over a reorder drag's item where it is in the source list (the
 //! DragSource look): a child of the source list's panel, owner-placed over the
-//! item's rect by its Reorderable, numbered last, one slot. Placed from the
+//! item's rect by its Reorderable, numbered last, one slot. It is in front of
+//! the item in depth, so the item shows as a placeholder: its text, drawn after
+//! every slot, fails the depth test there. Placed from the
 //! item's index, not attached to the row that shows it, so on a list of
 //! pooled rows it is over whichever row holds the item, and hidden while the
 //! item is out of view.
@@ -172,6 +174,14 @@ public:
     //! Does nothing otherwise.
     void placeLooks();
 
+    //! The list's layout pass has placed its items (ScrollControl::arrange
+    //! calls it last): while this list is in a drag, an edit the list's
+    //! cheapKeys() adapter did not describe is resolved (the tree changed,
+    //! Canvas::treeSerial()), and the looks are placed again and the panel
+    //! arranged again in the pass, entering only them, so the pass leaves
+    //! nothing dirty. Does nothing otherwise.
+    void listArranged(skin::Base *skin);
+
     //! Whether it takes its own items back at another place (default true)
     void setReorderWithin(bool reorder) { m_reorderWithin=reorder; }
     bool getReorderWithin() const { return m_reorderWithin; }
@@ -234,6 +244,9 @@ public:
     //! The package for a drag of the item at \p index, from the pressed row's
     //! or the list's dragAndDrop_getPackage; null when there is no such item
     draganddrop::Package *beginDrag(size_t index);
+    //! beginDrag for the item under the canvas point (x, y), from the list's
+    //! own dragAndDrop_getPackage
+    draganddrop::Package *beginDragAt(int x, int y);
     bool canAcceptPackage(draganddrop::Package *package);
     void hoverEnter(draganddrop::Package *package, int x, int y);
     void hover(draganddrop::Package *package, int x, int y);
@@ -261,6 +274,15 @@ protected:
     virtual Rect itemRect(size_t index) const=0;
     //! Whether it may take its own items at this moment (a sorted table: no)
     virtual bool reorderWithinNow() const { return true; }
+    //! The item under \p local, a point in the panel, NoItem over none: the
+    //! one a press starts dragging
+    virtual size_t itemAt(Point local) const=0;
+    //! Whether keyAt() and indexOf() are the list's own and cheap (a card's key
+    //! is its control id): then the gap is held as the item after it, so an
+    //! edit the list cannot describe (itemsChanged) keeps it before that item;
+    //! otherwise it is found from the cursor again. An app's key functions are
+    //! called only at a drag's start, its drop and a list change.
+    virtual bool cheapKeys() const { return false; }
 
     // The looks
 
@@ -307,6 +329,54 @@ private:
     size_t m_gap=NoItem;
     bool m_gapAllowed=false;
     Point m_lastPoint;
+    // with cheapKeys(): the item the gap is before, or the end
+    uint64_t m_gapKey=0;
+    bool m_gapAtEnd=false;
+    // the canvas's tree serial the last listArranged() saw
+    unsigned m_treeSerial=0;
+};
+
+class ScrollControl;
+
+//! The Reorderable of a column of cards: the visible children of a
+//! ScrollControl's inner panel (cards docked Top, say), in their order, each
+//! keyed by its control id (keyOf, cardFor). The gap is found from the cards'
+//! bounds, the half-height rule on the card under the cursor; its bar is centred
+//! between two cards, in the gap above the first and below the last. A card
+//! pressed anywhere, a part of it included, starts its drag (once the press has
+//! moved 5 units), and the app's cards added, removed or reordered during a drag
+//! are found again in the list's next layout (cheapKeys(): the gap stays before
+//! the card it was before); the dragged card deleted cancels the drag.
+//!
+//! \code
+//! auto *todo=CardReorder::attach(todoColumn);
+//! todo->setOnItemDropped([](const ItemDrop &drop) { ... move the card ... });
+//! \endcode
+class GWENI_EXPORT CardReorder: public Reorderable
+{
+public:
+    explicit CardReorder(ScrollControl *list);
+
+    //! Makes one for \p list, gives it to the list (setReorderable) and
+    //! returns it
+    static CardReorder *attach(ScrollControl *list);
+
+    static uint64_t keyOf(const Base *card) { return const_cast<Base *>(card)->getControlId(); }
+    //! The card of \p key, null once it is deleted
+    static Base *cardFor(uint64_t key) { return Base::getControlById(static_cast<size_t>(key)); }
+
+    //! The cards, in order: the panel's visible children but the looks
+    std::vector<Base *> cards() const;
+
+protected:
+    size_t itemCount() const override;
+    uint64_t keyAt(size_t index) const override;
+    size_t indexOf(uint64_t key) const override;
+    size_t gapAt(Point local) const override;
+    int gapPosition(size_t gap) const override;
+    Rect itemRect(size_t index) const override;
+    size_t itemAt(Point local) const override;
+    bool cheapKeys() const override { return true; }
 };
 
 }//namespace controls

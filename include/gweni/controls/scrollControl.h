@@ -16,11 +16,15 @@
 #include <gweni/controls/verticalScrollBar.h>
 #include <gweni/controls/horizontalScrollBar.h>
 
+#include <memory>
+
 
 namespace gweni
 {
 namespace controls
 {
+
+class Reorderable;
 
 class GWENI_EXPORT ScrollControl: public Base
 {
@@ -29,6 +33,27 @@ public:
     GWENI_CONTROL(ScrollControl, Base);
 
 public:
+    ~ScrollControl() override;
+
+    //! Makes its items reorderable by drag and drop: the Reorderable (a
+    //! CardReorder for the inner panel's cards, a list's own adapter) is this
+    //! control's, which forwards its drag-and-drop hooks to it and has it
+    //! place its looks as its layout ends. A press on anything inside the
+    //! inner panel, in the viewport, starts the drag of the item under it.
+    //! Null takes it away (a live drag of it is cancelled).
+    void setReorderable(std::unique_ptr<Reorderable> reorderable);
+    Reorderable *getReorderable() const { return m_reorderable.get(); }
+
+    bool dragAndDrop_draggable() override;
+    bool dragAndDrop_takesDescendantDrag(Base *descendant) override;
+    draganddrop::Package *dragAndDrop_getPackage(int x, int y) override;
+    void dragAndDrop_startDragging(draganddrop::Package *package, int x, int y) override;
+    void dragAndDrop_endDragging(bool success, int x, int y) override;
+    bool dragAndDrop_canAcceptPackage(draganddrop::Package *package) override;
+    void dragAndDrop_hoverEnter(draganddrop::Package *package, int x, int y) override;
+    void dragAndDrop_hover(draganddrop::Package *package, int x, int y) override;
+    void dragAndDrop_hoverLeave(draganddrop::Package *package) override;
+    bool dragAndDrop_handleDrop(draganddrop::Package *package, int x, int y) override;
     //! A container: its inner panel's children and its scroll bars draw.
     GWENI_DRAWS_NOTHING
 
@@ -236,6 +261,8 @@ private:
     };
 
     BarDecision decideBars(const Size &content) const;
+
+    std::unique_ptr<Reorderable> m_reorderable;
 };
 
 }//namespace controls

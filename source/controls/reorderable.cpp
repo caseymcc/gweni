@@ -6,9 +6,12 @@
 
 #include <gweni/controls/reorderable.h>
 #include <gweni/controls/base.h>
+#include <gweni/controls/canvas.h>
+#include <gweni/controls/scrollControl.h>
 #include <gweni/dragAndDrop.h>
 
 #include <algorithm>
+#include <memory>
 
 namespace gweni
 {
@@ -39,6 +42,13 @@ const char *const Reorderable::PackageName="gweni:ReorderItem";
 // One drag at a time: its source and the list showing its gap.
 static Reorderable *s_source=nullptr;
 static Reorderable *s_target=nullptr;
+
+// The tree serial of \p list's canvas, 0 off a canvas
+static unsigned treeSerialOf(Base *list)
+{
+    Canvas *canvas=list->getCanvas();
+    return canvas ? canvas->treeSerial() : 0;
+}
 
 ReorderGroup::~ReorderGroup()
 {
@@ -115,7 +125,7 @@ Look *Reorderable::look(size_t &id)
     Look *control=gweni_cast<Look>(Base::getControlById(id));
 
     // made the first time it shows (again, if the app cleared the panel)
-    if(!control || (control->getParent() != m_panel))
+    if(!control || (control->getActualParent() != m_panel))
     {
         control=m_panel->newChild<Look>();
         id=control->getControlId();
@@ -143,7 +153,42 @@ Look *Reorderable::look(size_t &id)
         for(size_t i=0; i < count; ++i)
             tail[i]->bringToFront();
     }
+
+    // the looks' own changes to the tree are no edit of the items
+    m_treeSerial=treeSerialOf(m_list);
     return control;
+}
+
+void Reorderable::listArranged(skin::Base *skin)
+{
+    if((s_source != this) && (s_target != this))
+        return;
+
+    if(cheapKeys())
+    {
+        const unsigned serial=treeSerialOf(m_list);
+
+        if(serial != m_treeSerial)
+        {
+            m_treeSerial=serial;
+            itemsChanged();
+
+            // the dragged item was gone: the drag is over
+            if((s_source != this) && (s_target != this))
+            {
+                placeLooks();
+                return;
+            }
+        }
+    }
+
+    placeLooks();
+
+    // Placed after the panel was arranged, which marked the way down to them:
+    // the panel is arranged again in this pass, entering only them (its items
+    // are clean), so the pass ends with nothing left dirty.
+    if(m_panel != m_list)
+        m_panel->doArrange(skin, Dim::Y);
 }
 
 void Reorderable::placeLooks()
@@ -244,6 +289,11 @@ Reorderable *Reorderable::fromPackage(const draganddrop::Package *package)
     return static_cast<Reorderable *>(package->userdata);
 }
 
+draganddrop::Package *Reorderable::beginDragAt(int x, int y)
+{
+    return beginDrag(itemAt(m_panel->canvasPosToLocal(Point(x, y))));
+}
+
 draganddrop::Package *Reorderable::beginDrag(size_t index)
 {
     if(index >= itemCount())
@@ -265,6 +315,7 @@ void Reorderable::startDragging()
     m_dragKey=m_package.key;
     m_dragIndex=m_pendingIndex;
     m_pendingIndex=NoItem;
+    m_treeSerial=treeSerialOf(m_list);
     dragMoved();
 }
 
@@ -294,6 +345,7 @@ void Reorderable::hoverEnter(draganddrop::Package *package, int x, int y)
     s_target=this;
     m_gap=NoItem;
     m_gapAllowed=false;
+    m_treeSerial=treeSerialOf(m_list);
     hover(package, x, y);
 }
 
@@ -341,6 +393,13 @@ void Reorderable::setGapState(size_t gap, bool allowed)
 
     m_gap=gap;
     m_gapAllowed=allowed;
+
+    // held as the item after it, for an edit the list cannot describe
+    if(cheapKeys() && (gap != NoItem))
+    {
+        m_gapAtEnd=(gap >= itemCount());
+        m_gapKey=m_gapAtEnd ? 0 : keyAt(gap);
+    }
     gapMoved();
 }
 
@@ -405,10 +464,19 @@ void Reorderable::itemsChanged()
         placeVeil();
     }
 
-    // the gap is found again where the cursor was, and checked again (the
-    // indexes it gives may be others)
+    // The gap is found again, before the item it was before when the keys are
+    // cheap (else where the cursor was), and checked again: the indexes it
+    // gives may be others.
     if(s_target == this)
-        updateGap(gapAt(m_lastPoint), true);
+    {
+        size_t gap=NoItem;
+
+        if(cheapKeys() && (m_gap != NoItem))
+            gap=m_gapAtEnd ? itemCount() : indexOf(m_gapKey);
+        if(gap == NoItem)
+            gap=gapAt(m_lastPoint);
+        updateGap(gap, true);
+    }
 }
 
 bool Reorderable::handleDrop(draganddrop::Package *package, int /*x*/, int /*y*/)
@@ -449,6 +517,150 @@ bool Reorderable::handleDrop(draganddrop::Package *package, int /*x*/, int /*y*/
         m_onItemDropped(drop);
     }
     return true;
+}
+
+CardReorder::CardReorder(ScrollControl *list):
+    Reorderable(list, const_cast<Base *>(list->getInnerPanel()))
+{}
+
+CardReorder *CardReorder::attach(ScrollControl *list)
+{
+    auto reorder=std::make_unique<CardReorder>(list);
+    CardReorder *result=reorder.get();
+
+    list->setReorderable(std::move(reorder));
+    return result;
+}
+
+// a child of the panel that is a card: shown, and none of the looks
+static bool isCard(Base *child)
+{
+    return !child->hidden() && !gweni_cast<internal::DropIndicator>(child)
+        && !gweni_cast<internal::DragSourceVeil>(child);
+}
+
+std::vector<Base *> CardReorder::cards() const
+{
+    std::vector<Base *> result;
+
+    for(Base *child : getPanel()->getActualChildren())
+    {
+        if(isCard(child))
+            result.push_back(child);
+    }
+    return result;
+}
+
+size_t CardReorder::itemCount() const
+{
+    size_t count=0;
+
+    for(Base *child : getPanel()->getActualChildren())
+        count+=isCard(child) ? 1 : 0;
+    return count;
+}
+
+uint64_t CardReorder::keyAt(size_t index) const
+{
+    for(Base *child : getPanel()->getActualChildren())
+    {
+        if(!isCard(child))
+            continue;
+        if(index == 0)
+            return keyOf(child);
+        --index;
+    }
+    return 0;
+}
+
+size_t CardReorder::indexOf(uint64_t key) const
+{
+    size_t index=0;
+
+    for(Base *child : getPanel()->getActualChildren())
+    {
+        if(!isCard(child))
+            continue;
+        if(keyOf(child) == key)
+            return index;
+        ++index;
+    }
+    return NoItem;
+}
+
+size_t CardReorder::gapAt(Point local) const
+{
+    size_t index=0;
+
+    // before the first card whose middle the cursor is above
+    for(Base *child : getPanel()->getActualChildren())
+    {
+        if(!isCard(child))
+            continue;
+
+        const Rect &bounds=child->getBounds();
+
+        if(local.y < bounds.y+bounds.h/2)
+            return index;
+        ++index;
+    }
+    return index;
+}
+
+int CardReorder::gapPosition(size_t gap) const
+{
+    const std::vector<Base *> items=cards();
+
+    if(items.empty())
+        return IndicatorThickness/2;
+
+    // half-way between the cards either side, inside the panel at the ends
+    if(gap == 0)
+        return std::max(IndicatorThickness/2, items.front()->getY()/2);
+
+    if(gap >= items.size())
+    {
+        const Base *last=items.back();
+        return last->getY()+last->getHeight()+last->getMargin().bottom/2+IndicatorThickness/2;
+    }
+
+    const Base *above=items[gap-1];
+    const Base *below=items[gap];
+
+    // the middle of the space between them, rounded down
+    return (above->getY()+above->getHeight()+below->getY())/2;
+}
+
+Rect CardReorder::itemRect(size_t index) const
+{
+    for(Base *child : getPanel()->getActualChildren())
+    {
+        if(!isCard(child))
+            continue;
+        if(index == 0)
+            return child->getBounds();
+        --index;
+    }
+    return Rect();
+}
+
+size_t CardReorder::itemAt(Point local) const
+{
+    size_t index=0;
+
+    for(Base *child : getPanel()->getActualChildren())
+    {
+        if(!isCard(child))
+            continue;
+
+        const Rect &bounds=child->getBounds();
+
+        if(local.x >= bounds.x && local.x < bounds.x+bounds.w && local.y >= bounds.y
+            && local.y < bounds.y+bounds.h)
+            return index;
+        ++index;
+    }
+    return NoItem;
 }
 
 }//namespace controls
