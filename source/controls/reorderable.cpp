@@ -777,7 +777,13 @@ bool Reorderable::handleDrop(draganddrop::Package *package, int /*x*/, int /*y*/
         drop.sourceIndex=sourceIndex;
         drop.target=this;
         drop.targetIndex=targetIndex;
-        m_onItemDropped(drop);
+
+        // Called on a copy: the handler may delete this Reorderable (its list
+        // deleted, or reordering taken off it), and with it the member. Nothing
+        // of this object is touched after the call.
+        const DropHandler handler=m_onItemDropped;
+
+        handler(drop);
     }
     return true;
 }
