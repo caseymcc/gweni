@@ -60,6 +60,9 @@
  *  A refused gap first allowed by auto-scroll or a card insert shows its bar
  *  in that layout pass, with no second pass or render-phase layout, both on
  *  the first drag and when the indicator is reused from an earlier drag.
+ *  A card the app appends to the source or the target column while the drag
+ *  rests over it leaves the looks the panel's last children, numbered over
+ *  it, in one layout pass.
  */
 #include "headlessFixture.h"
 
@@ -1588,5 +1591,44 @@ TEST_CASE("CardReorder: the top band scrolls back up, and at the top does nothin
         scene.step();
     CHECK(list->getVerticalScrollOffset() == 0);
     CHECK(anim::activeCount(list) == 0);
+    scene.release();
+}
+
+TEST_CASE("CardReorder: a card appended to a column under a resting drag keeps the looks last, in one pass")
+{
+    Scene scene;
+    scene.startDrag(scene.todo.cards[0]);
+    REQUIRE(draganddrop::isDragging());
+    Column *column=&scene.todo;
+
+    SUBCASE("the source column")
+    {
+        scene.move(Scene::on(scene.todo.cards[2], 20));
+        REQUIRE(scene.todo.reorder->gap() == 3);
+    }
+    SUBCASE("the target column")
+    {
+        column=&scene.running;
+        scene.move(Scene::on(scene.running.cards[1], 20));
+        REQUIRE(Reorderable::dropTarget() == scene.running.reorder);
+    }
+    REQUIRE(column->reorder->indicatorShown());
+    scene.frame();
+
+    // live data: the app appends a card, with no move
+    controls::Button *added=scene.card(*column);
+    column->cards.push_back(added);
+    scene.frame();
+
+    const controls::LayoutStats &stats=scene.canvas->getLayoutStats();
+    CHECK(stats.passes <= 1);
+    CHECK_FALSE(stats.renderLayout);
+    CHECK_FALSE(scene.canvas->layoutDirty());
+    // still the panel's last children, so drawn over the new card
+    controls::internal::DropIndicator *indicator=column->reorder->getIndicator();
+    REQUIRE(indicator != nullptr);
+    CHECK(column->reorder->getPanel()->getChildren().back() == indicator);
+    CHECK(indicator->getZIndex() > added->getZIndex());
+    CHECK(column->reorder->indicatorShown());
     scene.release();
 }

@@ -179,7 +179,9 @@ Look *Reorderable::look(size_t &id)
     }
 
     // Kept after the panel's items, so numbered after them, the indicator
-    // after the veil: reordered only when something was added after them.
+    // after the veil: reordered only when something was added after them
+    // (a card appended, a pool grown in this pass), with no layout, since
+    // the looks are placed by listArranged, so a pass is not re-dirtied.
     Base *tail[2]={nullptr, nullptr};
     size_t count=0;
 
@@ -198,7 +200,7 @@ Look *Reorderable::look(size_t &id)
     if(!inPlace)
     {
         for(size_t i=0; i < count; ++i)
-            tail[i]->bringToFront();
+            tail[i]->bringToFrontKeepingLayout();
     }
 
     // the looks' own changes to the tree are no edit of the items
