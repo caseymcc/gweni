@@ -7,6 +7,7 @@
 
 #include <gweni/controls/navigationRail.h>
 #include <gweni/controls/badge.h>
+#include <gweni/controls/canvas.h>
 #include <gweni/controls/imagePanel.h>
 #include <gweni/skin.h>
 
@@ -450,7 +451,12 @@ void NavigationRail::calculateSize(skin::Base *skin, Dim dim)
 
 Base *NavigationRail::getHeader() const
 {
-    return m_headerSlot->getChild(0);
+    // a replaced header waits in the slot for its delayed delete
+    Canvas *canvas=const_cast<NavigationRail *>(this)->getCanvas();
+    for(Base *child : m_headerSlot->getActualChildren())
+        if(!canvas || !canvas->isPendingDelete(child))
+            return child;
+    return nullptr;
 }
 
 void NavigationRail::setHeader(Base *header)
@@ -459,12 +465,19 @@ void NavigationRail::setHeader(Base *header)
     if(previous == header)
         return;
 
-    if(previous)
-        delete previous;
+    // The new header first, so one inside the old header is moved out of it
+    // before that goes.
     if(header)
     {
         header->setParent(m_headerSlot);
         header->setDock(DockPosition::Top);
+    }
+    // Delayed: the old header may be what is replacing itself (a Menu button's
+    // press handler), and its code is still running.
+    if(previous)
+    {
+        previous->setHidden(true);
+        previous->delayedDelete();
     }
 }
 

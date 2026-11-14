@@ -109,7 +109,9 @@ public:
     //! automatically join the same group as the main items.
     Base *getFooter() const { return m_footer; }
     //! Transfers the control to the header slot and docks it Top. Replacing
-    //! or clearing the header deletes the old one.
+    //! or clearing the header hides the old one and delayedDelete()s it, so a
+    //! header may replace itself from its own handler; getHeader() gives the
+    //! new one at once.
     void setHeader(Base *header);
     Base *getHeader() const;
 
@@ -124,7 +126,10 @@ public:
     void calculateSize(skin::Base *skin, Dim dim) override;
 
     //! Once per real selection change: controlCaller is this rail, control
-    //! is the newly selected NavigationItem (or null for none).
+    //! is the newly selected NavigationItem (or null for none). Moving the
+    //! selected item between the main items and the footer leaves and joins
+    //! the group, so it fires twice, null and then the item, with the item
+    //! selected again after.
     event::Caller onSelectionChange;
     //! Once per real change, with integer 1 for collapsed and 0 for expanded.
     event::Caller onCollapsedChanged;

@@ -21,6 +21,9 @@
  *  The rail holds keyboard focus as one Tab stop: arrows/Home/End move its
  *  logical focus (skipping disabled/hidden rows and including footer rows),
  *  Return/Space select, and focus entry starts at the selected enabled row.
+ *  A header replaced or cleared from its own press handler is deleted only
+ *  with the canvas's delayed deletes (an ASAN failure otherwise), and one
+ *  inside the old header is moved out of it first.
  *  The textured renderer paints theme surfaces with a leading selection
  *  border in the row's one slot, hides idle slots, and changes only the two
  *  rows/runs involved in selection. Theme edits reach retained rail slots.
@@ -881,6 +884,77 @@ TEST_CASE("NavigationRail: footer items share selection and reparenting moves th
     CHECK(changes.calls == 5);
 }
 
+//! A header that swaps itself for another from its own press handler.
+struct HeaderSwap: event::Handler
+{
+    controls::NavigationRail *rail=nullptr;
+    controls::Base *next=nullptr;
+
+    void pressed(event::Info)
+    {
+        rail->setHeader(next);
+    }
+};
+
+TEST_CASE("NavigationRail: a header replaced or cleared from its own press handler outlives the handler")
+{
+    Scene scene;
+    scene.rail->addItem("Home");
+    HeaderSwap swap;
+    swap.rail=scene.rail;
+
+    SUBCASE("replaced")
+    {
+        auto *menu=scene.canvas->newChild<controls::Button>("menu");
+        menu->setText("Menu");
+        scene.rail->setHeader(menu);
+        swap.next=scene.canvas->newChild<controls::Label>("logo");
+        menu->onPressCaller.add(&swap, &HeaderSwap::pressed);
+        scene.frame();
+
+        const size_t menuId=menu->getControlId();
+        // the press runs the handler inside Button's own code: under ASAN an
+        // immediate delete is a heap-use-after-free here
+        scene.click(menu);
+        CHECK(scene.rail->getHeader() == swap.next);
+        CHECK(swap.next->getParent() == scene.rail->getHeader()->getParent());
+        CHECK(controls::Base::getControlById(menuId) == nullptr);
+        scene.frame();
+        CHECK(scene.rail->getHeader() == swap.next);
+    }
+    SUBCASE("cleared")
+    {
+        auto *menu=scene.canvas->newChild<controls::Button>("menu");
+        menu->setText("Menu");
+        scene.rail->setHeader(menu);
+        menu->onPressCaller.add(&swap, &HeaderSwap::pressed);
+        scene.frame();
+
+        const size_t menuId=menu->getControlId();
+        scene.click(menu);
+        CHECK(scene.rail->getHeader() == nullptr);
+        CHECK(controls::Base::getControlById(menuId) == nullptr);
+    }
+    SUBCASE("the new header was inside the old one")
+    {
+        auto *box=scene.canvas->newChild<controls::Base>("box");
+        auto *logo=box->newChild<controls::Label>("logo");
+        logo->setText("gweni");
+        scene.rail->setHeader(box);
+        scene.frame();
+
+        const size_t boxId=box->getControlId();
+        scene.rail->setHeader(logo);
+        CHECK(scene.rail->getHeader() == logo);
+        CHECK(logo->getParent() != box);
+        scene.frame();
+        CHECK(controls::Base::getControlById(boxId) == nullptr);
+        CHECK(scene.rail->getHeader() == logo);
+        CHECK(logo->visible());
+    }
+    scene.checkSettled();
+}
+
 TEST_CASE("NavigationRail: owned icon and label, header above items, footer below, all ids returned")
 {
     Scene scene;
@@ -925,11 +999,14 @@ TEST_CASE("NavigationRail: owned icon and label, header above items, footer belo
     CHECK(icon->getImageName() == "other.png");
     CHECK_FALSE(icon->hidden());
 
-    // Replacing the header transfers ownership and deletes the previous one.
+    // Replacing the header transfers ownership and deletes the previous one
+    // with the canvas's delayed deletes.
     const size_t oldHeaderId=header->getControlId();
     auto *replacement=scene.canvas->newChild<controls::Button>();
     scene.rail->setHeader(replacement);
     CHECK(scene.rail->getHeader() == replacement);
+    CHECK(header->hidden());
+    scene.frame();
     CHECK(controls::Base::getControlById(oldHeaderId) == nullptr);
     scene.rail->setHeader(nullptr);
     CHECK(scene.rail->getHeader() == nullptr);

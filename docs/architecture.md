@@ -3587,7 +3587,9 @@ two programs and the draws. What follows describes both together:
   (`include/gweni/controls/navigationRail.h`) is a side rail of pages (Material's
   NavigationRail, WinUI's NavigationView) put together from what exists: docked Left,
   filling its parent's height, it holds a header slot docked Top (`setHeader`, which
-  takes the control over and deletes the one it replaces), a footer docked Bottom
+  takes the control over and hides the one it replaces, `delayedDelete()`ing it as a
+  TabControl does a closed tab, so a header may replace itself from its own press
+  handler; `getHeader()` skips the one waiting to go), a footer docked Bottom
   (`getFooter()`, any controls) and the items between them (`internal::NavigationRailItems`,
   the rail's inner panel, so `newChild()` on the rail makes a main item). Both item
   containers enrol a `NavigationItem` in the rail's one `SelectableGroup` as it is
@@ -3600,7 +3602,10 @@ two programs and the draws. What follows describes both together:
     `arrange()`: the Selectable's own Text stays empty and hidden, so the label is a
     control the rail can hide without hiding the row. `setSelected(item)` (only an
     item of this rail; null clears it) and `getSelected()` go through the group, and
-    `onSelectionChange` fires once per real change, `control` the new item.
+    `onSelectionChange` fires once per real change, `control` the new item. Moving the
+    selected item between the main items and the footer (`setParent`) takes it out of
+    the group and enrols it again, so that fires twice, null and then the item, which
+    is selected again after.
   - *Collapse.* The app decides (`setCollapsed`, `isCollapsed`, `onCollapsedChanged`);
     the rail watches no width. Collapsed, each label is hidden (`setHidden`, never
     deleted) and its text is the item's tooltip (`setToolTipText`, kept in step by
