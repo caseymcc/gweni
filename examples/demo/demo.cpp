@@ -49,6 +49,7 @@
 #include "demo/labelMultiline.h"
 #include "demo/listBox.h"
 #include "demo/menuStrip.h"
+#include "demo/navigationRail.h"
 #include "demo/numeric.h"
 #include "demo/pageControl.h"
 #include "demo/progressBar.h"
@@ -224,6 +225,7 @@ void Demo::init(const String &name)
         addDemo<TextBoxDemo>(cat, "TextBoxDemo", "Text box");
         addDemo<ListBoxDemo>(cat, "ListBoxDemo", "List box");
         addDemo<SelectableDemo>(cat, "SelectableDemo", "Selectable");
+        addDemo<NavigationRailDemo>(cat, "NavigationRailDemo", "Navigation rail");
         addDemo<VirtualListDemo>(cat, "VirtualListDemo", "Virtual list");
         addDemo<VirtualListVariableDemo>(cat, "VirtualListVariableDemo", "Wrapped list");
         addDemo<DataTableDemo>(cat, "DataTableDemo", "Data table");

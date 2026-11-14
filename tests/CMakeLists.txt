@@ -227,14 +227,19 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # stats overlay, the depth view, the zoom panel, the node graph and a
     # variable-height VirtualList, the code editor, the log view, the
     # badges' counts and anchor moves, the dialogs, the toasts, a Flow's
-    # resizes and rebuilds and the switches' toggles
+    # resizes and rebuilds, the switches' toggles and the navigation rail's
+    # collapse/selection
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
-            dialog toast flow switch)
+            dialog toast flow switch navigation-rail)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
+        set(verify_flags)
+        if(verify_scenario STREQUAL "navigation-rail")
+            list(APPEND verify_flags --require-one-pass)
+        endif()
         add_test(NAME controltest_verify_layout_${verify_name}
             COMMAND $<TARGET_FILE:ControlTest> --headless --scenario ${verify_scenario}
-                --verify-layout
+                --verify-layout ${verify_flags}
                 --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/verify_layout_${verify_name}
             WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
         set_tests_properties(controltest_verify_layout_${verify_name} PROPERTIES
@@ -557,6 +562,13 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_switch 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario switch --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/switch@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # NavigationRailDemo: bounded hover/selection, keyboard/footer, isolated
+    # badge counts, one-pass collapse, delayed tooltip and exact expansion.
+    gweni_whole_app_test(controltest_navigation_rail 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario navigation-rail --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/navigation_rail@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # gweni::tools::Inspector over the settled Demo, opened and closed by F12:

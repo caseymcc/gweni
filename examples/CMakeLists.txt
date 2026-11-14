@@ -102,6 +102,8 @@ set(GWENI_DEMO_SOURCES
     demo/switch.cpp
     demo/switch.h
     demo/chipBadge.h
+    demo/navigationRail.cpp
+    demo/navigationRail.h
     demo/nodeGraph.cpp
     demo/nodeGraph.h
     demo/flow.cpp

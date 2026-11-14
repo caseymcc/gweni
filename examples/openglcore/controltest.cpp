@@ -167,7 +167,7 @@
  *                       inspector |
  *                       stats-overlay | depth-view | zoom-panel |
  *                       node-graph | code-editor | log-view |
- *                       chip-badge | flow | switch (see below)
+ *                       chip-badge | navigation-rail | flow | switch (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -894,6 +894,23 @@
  *                 more than the row and the way down to it and gives back the
  *                 chip's ids; settled frames write nothing; the demo gives
  *                 every id back. Exits non-zero if any check is no.
+ *    navigation-rail NavigationRailDemo at 640x480, the clock frozen except
+ *                 for the tooltip delay (navigation-rail*.png): the app's
+ *                 selection callback, menu and count buttons, then the rail's
+ *                 hover, click and Material keyboard activation; footer keys
+ *                 skip the disabled Archive row. The app callback is detached
+ *                 for the rail's cost checks. Hover changes only its row;
+ *                 selection writes the two rows and their label glyphs, with
+ *                 no layout. Badge counts of the same and a wider size touch
+ *                 only the badge, expanded and collapsed. Collapse takes one
+ *                 pass through the rail and its parent's path, hiding labels
+ *                 and showing a delayed canvas tooltip. Expansion restores
+ *                 the pre-collapse frame byte for byte. Resizing below 560
+ *                 collapses from the app's layout in one pass; resizing back
+ *                 restores that same frame. Every settled frame writes
+ *                 nothing. One line
+ *                   navigation-rail hover=yes|no ... idle_work=N
+ *                 reports the checks. Exits non-zero if any check is no.
  *    flow         FlowDemo, the clock frozen, the canvas 480 high (flow-*.png):
  *                 canvas widths worked out from the canvas less the Flow's
  *                 width at 640 (the bar and the insets), so the Flow is 1023,
@@ -1191,6 +1208,8 @@
 #include <demo/chipBadge.h>
 #include <demo/switch.h>
 #include <gweni/controls/switch.h>
+#include <demo/navigationRail.h>
+#include <gweni/controls/navigationRail.h>
 #include <gweni/controls/badge.h>
 #include <gweni/controls/chip.h>
 #include <demo/dialog.h>
@@ -1349,7 +1368,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(ChartAreasDemo) X(TimelineDemo) X(ComboBoxDemo) \
-    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
+    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(NavigationRailDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(SwitchDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
@@ -1448,7 +1467,7 @@ static void printUsage(std::ostream &out)
          "                     | inspector\n"
          "                     | stats-overlay | depth-view | zoom-panel\n"
          "                     | node-graph | code-editor | log-view | chip-badge\n"
-         "                     | flow | switch;\n"
+         "                     | navigation-rail | flow | switch;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -2487,7 +2506,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
-    ChipBadge, Flow, Switch };
+    ChipBadge, NavigationRail, Flow, Switch };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2523,6 +2542,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "code-editor") scenario=Scenario::CodeEditor;
     else if(name == "log-view") scenario=Scenario::LogView;
     else if(name == "chip-badge") scenario=Scenario::ChipBadge;
+    else if(name == "navigation-rail") scenario=Scenario::NavigationRail;
     else if(name == "flow") scenario=Scenario::Flow;
     else if(name == "switch") scenario=Scenario::Switch;
     else return false;
@@ -12233,6 +12253,278 @@ static bool runSwitchScenario(Session &s, const std::string &shotDir, bool &pass
     return ok;
 }
 
+//-----------------------------------------------------------------------------
+// NavigationRailDemo: app callbacks first, then the rail alone. Updating a
+// page is the app's work, so detach its callback before bounding selection to
+// two rows and their glyphs. Counts are frozen; only tooltip waits step time.
+//-----------------------------------------------------------------------------
+static bool runNavigationRailScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+    if(!resizeSession(s, 640, 480))
+        return false;
+    InteractionChecks checks;
+    checks.scenario="navigation-rail";
+    auto *control=addControl(s, "NavigationRailDemo");
+    auto *demo=gweni::gweni_cast<gweni::NavigationRailDemo>(control);
+    if(!demo || demo->items().size() != 6)
+        return false;
+    auto *rail=demo->rail();
+    auto *home=demo->items()[0];
+    auto *inbox=demo->items()[1];
+    auto *activity=demo->items()[2];
+    auto *footer=demo->footerItem();
+    auto *badge=inbox->getBadge();
+    s.label="navigation-rail";
+    renderFrames(s, s.frames);
+    bool ok=shoot(s, shotDir+"/navigation-rail.png");
+
+    std::vector<uint8_t> pixels;
+    size_t idleWork=0;
+    auto settle=[&]()
+    {
+        const auto before=framePixels(s);
+        for(int i=0; i < 2; ++i)
+        {
+            const auto frame=codeEditorFrame(s);
+            const auto counts=s.renderer->frameStats();
+            idleWork+=frame.written+frame.changed+frame.visited+frame.passes
+                +counts.uploadCalls+s.canvas->getUpdateStats().animsRun;
+            if(frame.pixels != before) ++idleWork;
+            pixels=frame.pixels;
+        }
+    };
+    auto click=[&](gweni::controls::Base *item)
+    {
+        const auto r=item->getCanvasBounds();
+        clickMouse(s, r.x+r.w/2, r.y+r.h/2);
+    };
+    auto off=[&]() { moveMouse(s, s.size.x-4, s.size.y-4); };
+    auto rowIds=[](gweni::controls::NavigationItem *item,
+        std::set<size_t> &primitives, std::set<size_t> &texts)
+    {
+        std::vector<size_t> p, t;
+        item->getSkinControl()->appendIds(p, t);
+        primitives.insert(p.begin(), p.end());
+        subtreeIds(item->getLabel(), primitives, texts);
+    };
+    struct Changes: gweni::event::Handler
+    {
+        int calls=0;
+        void changed(gweni::event::Info) { ++calls; }
+    } changes;
+
+    // The real demo callback and buttons are exercised before cost isolation.
+    click(inbox);
+    renderFrames(s, 1);
+    checks.check("page_callback", rail->getSelected() == inbox && demo->pageLabel()->getText() == "Inbox",
+        "click did not show the selected Inbox page");
+    click(demo->countButton());
+    renderFrames(s, 1);
+    checks.check("count_button", badge->getCount() == 10,
+        "New inbox message expected count 10, got "+std::to_string(badge->getCount()));
+    click(demo->menuButton());
+    renderFrames(s, 1);
+    const bool menuCollapsed=rail->isCollapsed();
+    click(demo->menuButton());
+    renderFrames(s, 1);
+    checks.check("menu_button", menuCollapsed && !rail->isCollapsed(),
+        "two menu clicks did not collapse then expand");
+    rail->onSelectionChange.removeHandler(demo);
+    rail->onSelectionChange.add(&changes, &Changes::changed);
+    rail->setSelected(home);
+    demo->pageLabel()->setText("Home");
+    inbox->setBadgeCount(9);
+    rail->focus();
+    off();
+    renderFrames(s, 1);
+    changes.calls=0;
+    settle();
+
+    std::set<size_t> inboxPrims, inboxTexts, selectedPrims, selectedTexts;
+    rowIds(inbox, inboxPrims, inboxTexts);
+    rowIds(home, selectedPrims, selectedTexts);
+    rowIds(inbox, selectedPrims, selectedTexts);
+    const auto homeRect=home->getCanvasBounds();
+    const auto inboxRect=inbox->getCanvasBounds();
+    moveMouse(s, inboxRect.x+16, inboxRect.y+inboxRect.h/2);
+    const auto hover=codeEditorFrame(s);
+    off();
+    const auto hoverOff=codeEditorFrame(s);
+    checks.check("hover", !hover.primitives.empty() && hover.primitives.size() <= inboxPrims.size()
+        && idsWithin(hover.primitives, inboxPrims) && hover.texts.empty()
+        && hover.changed <= 2 && hover.passes == 0 && hover.visited == 0
+        && differencesOutsideRects(s, pixels, hover.pixels, {inboxRect}) == 0
+        && differencesIn(s, pixels, hover.pixels, inboxRect) > 0 && hoverOff.pixels == pixels
+        && idsWithin(hoverOff.primitives, inboxPrims) && hoverOff.primitives.size() <= inboxPrims.size()
+        && hoverOff.texts.empty() && hoverOff.changed <= 2 && hoverOff.passes == 0 && hoverOff.visited == 0,
+        "hover wrote "+std::to_string(hover.primitives.size())+" primitives/"
+        +std::to_string(hover.glyphSlots)+" glyphs, changed "+std::to_string(hover.changed)
+        +" controls, visited "+std::to_string(hover.visited)+" layouts, or pixels escaped/did not return");
+    settle();
+
+    // Hover is settled before clicking, so this measures selection alone.
+    moveMouse(s, inboxRect.x+16, inboxRect.y+inboxRect.h/2);
+    renderFrames(s, 1);
+    settle();
+    click(inbox);
+    std::vector<std::string> clickStrays;
+    pendingOutside(s.canvas, {home, inbox}, clickStrays);
+    const auto selected=codeEditorFrame(s);
+    checks.check("click", rail->getSelected() == inbox && changes.calls == 1
+        && selected.primitives.size() <= selectedPrims.size()
+        && idsWithin(selected.primitives, selectedPrims) && idsWithin(selected.texts, selectedTexts)
+        && selected.glyphSlots <= home->getText().size()+inbox->getText().size()
+        // Each row also inherits Button's empty, hidden Text; it follows the
+        // row colour but holds no glyphs. All changed controls stay in rows.
+        && clickStrays.empty() && selected.changed <= 6 && selected.passes == 0 && selected.visited == 0
+        && differencesOutsideRects(s, pixels, selected.pixels, {homeRect, inboxRect}) == 0,
+        "click expected Inbox and one event, got "+std::to_string(changes.calls)+" events; wrote "
+        +std::to_string(selected.primitives.size())+" primitives/"+std::to_string(selected.glyphSlots)
+        +" glyphs, changed "+std::to_string(selected.changed)+" controls, visited "
+        +std::to_string(selected.visited)+" layouts, or changed pixels outside the two rows");
+    click(inbox);
+    const auto repeated=codeEditorFrame(s);
+    checks.check("repeat", changes.calls == 1 && repeated.glyphSlots == 0 && repeated.passes == 0,
+        "repeat click selected again or changed label glyphs/layout");
+    off();
+    renderFrames(s, 1);
+    settle();
+
+    std::set<size_t> keyboardPrims, keyboardTexts;
+    rowIds(inbox, keyboardPrims, keyboardTexts);
+    rowIds(activity, keyboardPrims, keyboardTexts);
+    sendKey(s, "down");
+    const auto down=codeEditorFrame(s);
+    checks.check("focus", rail->getFocused() == activity && rail->getSelected() == inbox
+        && changes.calls == 1 && idsWithin(down.primitives, keyboardPrims)
+        && down.primitives.size() <= keyboardPrims.size() && down.texts.empty()
+        && down.changed <= 2 && down.passes == 0 && down.visited == 0,
+        "Down selected a page or wrote/laid out beyond the two focus rows");
+    settle();
+    sendKey(s, "return");
+    std::vector<std::string> keyboardStrays;
+    pendingOutside(s.canvas, {inbox, activity}, keyboardStrays);
+    const auto keyboard=codeEditorFrame(s);
+    checks.check("keyboard", rail->getSelected() == activity && changes.calls == 2
+        && idsWithin(keyboard.primitives, keyboardPrims) && idsWithin(keyboard.texts, keyboardTexts)
+        && keyboard.primitives.size() <= keyboardPrims.size()
+        && keyboard.glyphSlots <= inbox->getText().size()+activity->getText().size()
+        && keyboardStrays.empty() && keyboard.changed <= 6 && keyboard.passes == 0 && keyboard.visited == 0
+        && differencesOutsideRects(s, pixels, keyboard.pixels, {inboxRect, activity->getCanvasBounds()}) == 0,
+        "Return expected Activity and two events, got "+std::to_string(changes.calls)+" events; wrote "
+        +std::to_string(keyboard.primitives.size())+" primitives/"+std::to_string(keyboard.glyphSlots)
+        +" glyphs, changed "+std::to_string(keyboard.changed)+" controls, visited "
+        +std::to_string(keyboard.visited)+" layouts, or pixels escaped the two rows");
+    settle();
+    sendKey(s, "end");
+    sendKey(s, "return");
+    renderFrames(s, 1);
+    const bool footerSelected=rail->getSelected() == footer;
+    sendKey(s, "up");
+    renderFrames(s, 1);
+    checks.check("footer_disabled", footerSelected && footer->getGroup() == home->getGroup()
+        && rail->getFocused() == demo->items()[4],
+        "End/Return did not select the footer, or Up did not skip disabled Archive");
+    rail->setSelected(home);
+    demo->countButton()->focus();
+    rail->focus();
+    renderFrames(s, 1);
+    settle();
+
+    std::set<size_t> badgePrims, badgeTexts;
+    subtreeIds(badge, badgePrims, badgeTexts);
+    auto counts=[&](const char *state)
+    {
+        inbox->setBadgeCount(8);
+        const auto same=codeEditorFrame(s);
+        checks.check(std::string(state)+"_badge_same", badge->getCount() == 8
+            && !same.texts.empty() && idsWithin(same.primitives, badgePrims)
+            && idsWithin(same.texts, badgeTexts) && same.changed == 1 && same.passes == 0
+            && same.visited == 0 && differencesOutsideRects(s, pixels, same.pixels, {badge->getCanvasBounds()}) == 0,
+            "same-width count wrote outside badge or visited layout");
+        inbox->setBadgeCount(9);
+        renderFrames(s, 1);
+        settle();
+        const auto narrow=badge->getCanvasBounds();
+        inbox->setBadgeCount(10);
+        const auto wider=codeEditorFrame(s);
+        checks.check(std::string(state)+"_badge_wider", badge->getCount() == 10
+            && badge->getWidth() > narrow.w && idsWithin(wider.primitives, badgePrims)
+            && idsWithin(wider.texts, badgeTexts) && wider.changed == 1 && wider.passes == 1
+            && wider.visited <= 4*pathLength(badge)
+            && differencesOutsideRects(s, pixels, wider.pixels, {narrow, badge->getCanvasBounds()}) == 0,
+            "wider count visited "+std::to_string(wider.visited)+" layouts or wrote outside badge");
+        inbox->setBadgeCount(9);
+        renderFrames(s, 1);
+        settle();
+    };
+    counts("expanded");
+    const auto beforeCollapse=pixels;
+    rail->setCollapsed(true);
+    const auto collapsed=codeEditorFrame(s);
+    bool labelsHidden=footer->getLabel()->hidden() && footer->getToolTipText() == footer->getText();
+    for(auto *item : demo->items())
+        labelsHidden=labelsHidden && item->getLabel()->hidden() && item->getToolTipText() == item->getText();
+    checks.check("collapse", labelsHidden
+        && rail->getWidth() == gweni::controls::NavigationItem::IconSize+2*gweni::controls::NavigationItem::PaddingX
+        && collapsed.passes == 1
+        && collapsed.visited <= 4*(pathLength(rail)+subtreeControls(rail)-1)
+        && badge->visible() && activity->getBadge()->visible(),
+        "collapse labels/tooltips/badges/width wrong, or "+std::to_string(collapsed.passes)
+        +" passes visited "+std::to_string(collapsed.visited)+" layouts (rail subtree and parent path allowed)");
+    settle();
+    counts("collapsed");
+
+    // A stationary mouse waits for the canvas ToolTip; no delay is bypassed.
+    const auto collapsedInbox=inbox->getCanvasBounds();
+    moveMouse(s, collapsedInbox.x+16, collapsedInbox.y+collapsedInbox.h/2);
+    renderFrames(s, 1);
+    const bool early=s.canvas->toolTipShown();
+    s.freezeClock=false;
+    renderFrames(s, int(std::ceil(s.canvas->getToolTipDelay()/g_frameStep))+2);
+    s.freezeClock=true;
+    auto *tip=s.canvas->toolTipControl();
+    checks.check("tooltip", !early && tip && s.canvas->toolTipShown()
+        && s.canvas->toolTipOwner() == inbox && tip->getText() == inbox->getText(),
+        "stationary mouse did not show Inbox as the canvas tooltip after its delay");
+    ok=shoot(s, shotDir+"/navigation-rail-collapsed-tooltip.png") && ok;
+    settle();
+    off();
+    renderFrames(s, 1);
+    settle();
+    rail->setCollapsed(false);
+    const auto expanded=codeEditorFrame(s);
+    bool labelsShown=!footer->getLabel()->hidden() && footer->getToolTipText().empty();
+    for(auto *item : demo->items())
+        labelsShown=labelsShown && !item->getLabel()->hidden() && item->getToolTipText().empty();
+    checks.check("expand", labelsShown && rail->getWidth() == gweni::NavigationRailDemo::ExpandedWidth
+        && expanded.passes == 1 && expanded.pixels == beforeCollapse,
+        "expanded labels/width wrong, or pixels did not return byte for byte");
+    settle();
+    resizeSession(s, gweni::NavigationRailDemo::CollapseBelow-1, 480);
+    const auto narrow=codeEditorFrame(s);
+    const bool responsive=rail->isCollapsed();
+    resizeSession(s, 640, 480);
+    const auto restored=codeEditorFrame(s);
+    checks.check("app_width", responsive && !rail->isCollapsed()
+        && narrow.passes == 1 && restored.passes == 1 && restored.pixels == beforeCollapse,
+        "app width threshold did not collapse/restore the rail in one pass");
+    settle();
+    checks.check("settled", idleWork == 0, "settled frames did "+std::to_string(idleWork)+" writes/layouts/uploads/animations/pixel changes");
+    dropControl(s, control);
+    renderFrames(s, 1);
+    passed=checks.allPassed();
+    std::cout<<"navigation-rail";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<" hover_prims="<<hover.primitives.size()<<" click_prims="<<selected.primitives.size()
+        <<" click_glyphs="<<selected.glyphSlots<<" keyboard_prims="<<keyboard.primitives.size()
+        <<" keyboard_glyphs="<<keyboard.glyphSlots<<" collapse_visited="<<collapsed.visited
+        <<" collapse_passes="<<collapsed.passes<<" idle_work="<<idleWork<<"\n";
+    return ok;
+}
+
 static bool runCodeEditorScenario(Session &s, const std::string &shotDir, bool &passed)
 {
     s.freezeClock=true;
@@ -16231,6 +16523,15 @@ int main(int argc, char *argv[])
             ok=runSwitchScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a hover, a slide or a disabled switch did more than its part
+            break;
+        }
+
+        case Scenario::NavigationRail:
+        {
+            bool passed=false;
+            ok=runNavigationRailScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;
             break;
         }
 
