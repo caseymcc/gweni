@@ -34,6 +34,9 @@
  *  and the gap before its card, re-checks the drop rule and places the veil
  *  on the dragged card in one pass. This includes a hide/show pair with no
  *  change in visible card count. Hiding the dragged card cancels.
+ *  A wheel during the drag scrolls the column under the pointer, leaving the
+ *  source column and hover alone. The gap follows the scrolled cards and the
+ *  drop reports the dragged key and that new gap.
  *
  *  Auto-scroll, on the stepped canvas clock (1/60 s a frame): the cursor
  *  resting in the bottom band of an overflowing column's viewport scrolls it
@@ -808,6 +811,42 @@ TEST_CASE("CardReorder: a refused gap allowed by a card insert shows its indicat
     REQUIRE(scene.todo.drops.size() == 1);
     CHECK(scene.todo.drops[0].sourceIndex == 4);
     CHECK(scene.todo.drops[0].targetIndex == 1);
+}
+
+TEST_CASE("CardReorder: the wheel during a drag scrolls the column under the pointer without hover")
+{
+    Scene scene(20);
+    for(int i=0; i < 17; ++i)
+        scene.running.cards.push_back(scene.card(scene.running));
+    scene.frame();
+
+    scene.startDrag(scene.todo.cards[2]);
+    REQUIRE(draganddrop::isDragging());
+    const uint64_t key=scene.todo.reorder->dragKey();
+    scene.move(Scene::on(scene.running.cards[3], 10));
+    REQUIRE(scene.running.reorder->gap() == 3);
+    REQUIRE(HoveredControl == nullptr);
+
+    CHECK(scene.canvas->inputMouseWheel(-120));
+    const controls::CanvasFrameStats stats=scene.inputFrame();
+    CHECK(scene.running.list->getVerticalScrollOffset() > 0);
+    CHECK(scene.todo.list->getVerticalScrollOffset() == 0);
+    CHECK(scene.running.reorder->gap() == 4);
+    CHECK(stats.layout.passes == 1);
+    CHECK_FALSE(stats.layout.renderLayout);
+    CHECK(draganddrop::isDragging());
+    CHECK(scene.todo.reorder->dragKey() == key);
+    CHECK(scene.todo.reorder->dragIndex() == 2);
+    CHECK((scene.todo.reorder->getSourceVeil()->getBounds() == scene.todo.cards[2]->getBounds()));
+    CHECK(HoveredControl == nullptr);
+    for(controls::Button *card : scene.running.cards)
+        CHECK_FALSE(card->isHovered());
+
+    scene.release();
+    REQUIRE(scene.running.drops.size() == 1);
+    CHECK(scene.running.drops[0].key == key);
+    CHECK(scene.running.drops[0].sourceIndex == 2);
+    CHECK(scene.running.drops[0].targetIndex == 4);
 }
 
 TEST_CASE("CardReorder: the cursor resting in the bottom band scrolls the column, faster deeper in")
