@@ -176,8 +176,9 @@ public:
     //! The package name of a reorder drag
     static const char *const PackageName;
 
-    //! \p panel is the control the gaps and items are placed in, the list
-    //! itself if null.
+    //! \p panel is the control the gaps and items are placed in; if null,
+    //! the list's inner panel when it has one (a ScrollControl's, where the
+    //! looks made with newChild() land), else the list itself.
     explicit Reorderable(Base *list, Base *panel=nullptr);
     virtual ~Reorderable();
 
