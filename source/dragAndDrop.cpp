@@ -504,6 +504,18 @@ void wheeled(gweni::controls::Canvas *canvas)
     }
 }
 
+void targetChanged(gweni::controls::Base *control)
+{
+    if(!CurrentPackage || !control || (HoveredControl != control) || !DragCanvas)
+        return;
+
+    HoveredControl=nullptr;
+    DropRefused=false;
+    RehoverCanvas=DragCanvas;
+    // nothing moved: the cursor is over what it was over
+    RehoverLaidOut=true;
+}
+
 bool rehoverPending(gweni::controls::Canvas *canvas)
 {
     return CurrentPackage && canvas && (RehoverCanvas == canvas);

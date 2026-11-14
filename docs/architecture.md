@@ -4308,7 +4308,9 @@ release before the next move drops nothing into it.
 `ScrollControl` (every list is one) a Reorderable, to which it forwards its
 `dragAndDrop_*` hooks; without one each hook is `Base`'s, so a `ScrollControl`
 an app drags with `dragAndDrop_setPackage` or drops onto keeps GWEN's drag and
-drop. An adapter subclass says what the items are: `itemCount`,
+drop; a Reorderable replaced or taken away while it is the drag's target has the
+core find the target again at the resting cursor in the next update phase
+(`draganddrop::targetChanged`), so the new one is entered. An adapter subclass says what the items are: `itemCount`,
 `keyAt`, `indexOf` (`NoItem` once gone), `gapAt` (the gap nearer a point of the
 panel, by the half-height rule), `gapPosition`, `itemRect` and `itemAt`, all from
 the list's geometry, never a hit test. The rules: a list takes its own items while
