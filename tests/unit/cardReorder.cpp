@@ -10,7 +10,10 @@
  *  A press on a card, or on a part of it (the Label), moved 5 units starts the
  *  column's drag of that card, keyed by its control id: the pressed Button is
  *  let go without a click (not toggled, not depressed). A press moved less is
- *  a plain click. A press on the column's scroll bar starts no drag. The gap
+ *  a plain click. A press that a part of the card takes for a drag of its
+ *  own (a Slider's thumb, a TextBox's selection) starts no card drag: the
+ *  part keeps the mouse to its release. A press on the column's scroll bar
+ *  starts no drag. The gap
  *  is the half-height rule over the cards' bounds and its bar is centred in
  *  the space between two cards. A drop within the column and one on another
  *  member of the group report the card's key and indexes, and gweni moves no
@@ -37,9 +40,11 @@
 #include <gweni/gweni.h>
 #include <gweni/anim.h>
 #include <gweni/controls/button.h>
+#include <gweni/controls/horizontalSlider.h>
 #include <gweni/controls/label.h>
 #include <gweni/controls/reorderable.h>
 #include <gweni/controls/scrollControl.h>
+#include <gweni/controls/textBox.h>
 #include <gweni/dragAndDrop.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/platform.h>
@@ -233,6 +238,55 @@ TEST_CASE("CardReorder: a press on a card or a part of it starts its drag, and a
         CHECK_FALSE(draganddrop::isDragging());
         scene.release();
         CHECK(card->getToggleState());
+    }
+}
+
+TEST_CASE("CardReorder: a press that a part of the card takes for its own drag starts no card drag")
+{
+    SUBCASE("a Slider's thumb")
+    {
+        Scene scene;
+        controls::Button *card=scene.todo.cards[1];
+        card->setHeight(60);
+        auto *slider=card->newChild<controls::HorizontalSlider>();
+        slider->setDock(DockPosition::Center);
+        slider->setRange(0, 100);
+        slider->setFloatValue(50);
+        scene.frame();
+        scene.frame();
+
+        controls::internal::SliderBar *thumb=slider->getSliderBar();
+        const Point at=thumb->localPosToCanvas(Point(thumb->getWidth()/2, thumb->getHeight()/2));
+        scene.press(at);
+        REQUIRE(thumb->isDepressed());
+        scene.move(Point(at.x+10, at.y));
+        CHECK_FALSE(draganddrop::isDragging());
+        scene.move(Point(at.x+30, at.y));
+        CHECK_FALSE(draganddrop::isDragging());
+        CHECK(slider->getFloatValue() > 60.0f);
+        scene.release();
+        CHECK_FALSE(thumb->isDepressed());
+        CHECK(scene.todo.drops.empty());
+    }
+
+    SUBCASE("a TextBox's selection")
+    {
+        Scene scene;
+        controls::Button *card=scene.todo.cards[1];
+        auto *box=card->newChild<controls::TextBox>();
+        box->setDock(DockPosition::Center);
+        box->setText("select me");
+        scene.frame();
+        scene.frame();
+
+        const Point at=box->localPosToCanvas(Point(4, box->getHeight()/2));
+        scene.press(at);
+        scene.move(Point(at.x+40, at.y));
+        CHECK_FALSE(draganddrop::isDragging());
+        CHECK(MouseFocus == box);
+        scene.release();
+        CHECK(MouseFocus == nullptr);
+        CHECK(scene.todo.drops.empty());
     }
 }
 
