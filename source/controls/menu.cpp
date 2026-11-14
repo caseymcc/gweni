@@ -12,6 +12,9 @@
 #include <gweni/controls/canvas.h>
 #include <gweni/controls/popup.h>
 
+#include <algorithm>
+#include <vector>
+
 namespace gweni
 {
 namespace controls
@@ -267,10 +270,14 @@ bool Menu::isMenuOpen()
 
 void Menu::onHoverItem(event::Info info)
 {
+    MenuItem *item=gweni_cast<MenuItem>(info.controlCaller);
+
+    // the mouse moves the one highlight; a disabled item takes none
+    if(item && m_keyboardNavigation && !item->isDisabled())
+        setHighlightedItem(item);
+
     if(!shouldHoverOpenMenu())
         return;
-
-    MenuItem *item=gweni_cast<MenuItem>(info.controlCaller);
 
     if(!item)
         return;
@@ -287,7 +294,7 @@ void Menu::open(Alignment /*pos*/)
     openAt(input::getMousePosition());
 }
 
-void Menu::openAt(const Point &cursor)
+void Menu::openAt(const Point &cursor, MenuFocus focus)
 {
     setHidden(false);
     bringToFront();
@@ -295,9 +302,12 @@ void Menu::openAt(const Point &cursor)
     m_atCursor=true;
     m_cursor=cursor;
     setPos(cursor.x, cursor.y);
+
+    if(focus == MenuFocus::FirstItem)
+        startKeyboardNavigation();
 }
 
-void Menu::openNextTo(Base *anchor, PopupPlacement side, int gap)
+void Menu::openNextTo(Base *anchor, PopupPlacement side, int gap, MenuFocus focus)
 {
     Canvas *canvas=anchor ? anchor->getCanvas() : nullptr;
 
@@ -318,6 +328,9 @@ void Menu::openNextTo(Base *anchor, PopupPlacement side, int gap)
     m_placedFor=Rect();
     invalidate();
     canvas->followAnchoredMenu(this);
+
+    if(focus == MenuFocus::FirstItem)
+        startKeyboardNavigation();
 }
 
 bool Menu::followAnchor(Canvas *canvas)
@@ -354,6 +367,9 @@ void Menu::setHidden(bool hidden)
 
     ParentClass::setHidden(hidden);
 
+    if(hidden && m_keyboardNavigation)
+        endKeyboardNavigation();
+
     if(changed)
         onVisibilityChanged.call(this);
 }
@@ -379,6 +395,295 @@ void Menu::addDivider()
     divider->setDock(DockPosition::Top);
     // 3 units of backdrop above and below the rule
     divider->setMargin(Margin(iconMarginDisabled()?0:24, 3, 4, 3));
+}
+
+// Keyboard navigation (startKeyboardNavigation()).
+
+void Menu::startKeyboardNavigation()
+{
+    if(hidden())
+        return;
+
+    if(!m_keyboardNavigation)
+    {
+        m_keyboardNavigation=true;
+        // the canvas drops a focus that takes no keyboard input
+        // (input::dropLostKeyboardFocus)
+        m_keyboardWasEnabled=getKeyboardInputEnabled();
+        setKeyboardInputEnabled(true);
+        m_focusReturn=(KeyboardFocus && (KeyboardFocus != this)) ? KeyboardFocus->getControlId() : 0;
+
+        // an item the mouse rests on drops its hover look, which only the
+        // highlight shows now
+        if(MenuItem *hovered=gweni_cast<MenuItem>(HoveredControl))
+        {
+            if(hovered->parentMenu() == this)
+                hovered->redraw();
+        }
+    }
+
+    focus();
+
+    const std::vector<MenuItem *> items=navigableItems();
+
+    setHighlightedItem(items.empty() ? nullptr : items.front());
+}
+
+void Menu::endKeyboardNavigation()
+{
+    MenuItem *highlighted=getHighlightedItem();
+
+    m_keyboardNavigation=false;
+    m_highlighted=0;
+    setKeyboardInputEnabled(m_keyboardWasEnabled);
+
+    // its look goes back to following the hover
+    if(highlighted)
+        highlighted->redraw();
+    if(MenuItem *hovered=gweni_cast<MenuItem>(HoveredControl))
+    {
+        if((hovered != highlighted) && (hovered->parentMenu() == this))
+            hovered->redraw();
+    }
+
+    if(KeyboardFocus != this)
+        return;
+
+    // Back to where the focus was at the start; a submenu took it from its
+    // parent menu, which may be closing in the same closeMenus(), before or
+    // after it, so a hidden menu passes it on to the control it took it from.
+    Base *target=getControlById(m_focusReturn);
+
+    for(int hops=0; target && (hops < 64); ++hops)
+    {
+        Menu *menu=gweni_cast<Menu>(target);
+
+        if(!menu || !menu->hidden())
+            break;
+        target=getControlById(menu->m_focusReturn);
+    }
+
+    if(target && target->visible())
+        target->focus();
+
+    // refused (a modal), gone or hidden: nothing keeps it
+    if(KeyboardFocus == this)
+        unfocus();
+}
+
+MenuItem *Menu::getHighlightedItem() const
+{
+    if(!m_highlighted)
+        return nullptr;
+
+    return gweni_cast<MenuItem>(getControlById(m_highlighted));
+}
+
+void Menu::setHighlightedItem(MenuItem *item)
+{
+    if(!m_keyboardNavigation)
+        return;
+
+    MenuItem *previous=getHighlightedItem();
+
+    if(previous == item)
+        return;
+
+    m_highlighted=item ? item->getControlId() : 0;
+
+    if(previous)
+        previous->redraw();
+    if(item)
+        item->redraw();
+}
+
+std::vector<MenuItem *> Menu::navigableItems() const
+{
+    std::vector<MenuItem *> items;
+
+    for(Base *child : m_innerPanel->getChildren())
+    {
+        MenuItem *item=gweni_cast<MenuItem>(child);
+
+        if(item && !item->hidden() && !item->isDisabled())
+            items.push_back(item);
+    }
+    return items;
+}
+
+void Menu::moveHighlight(int step)
+{
+    const std::vector<MenuItem *> items=navigableItems();
+
+    if(items.empty())
+        return;
+
+    const auto at=std::find(items.begin(), items.end(), getHighlightedItem());
+    const int count=static_cast<int>(items.size());
+    int index;
+
+    if(at == items.end())
+        index=(step > 0) ? 0 : count-1;
+    else
+        index=((static_cast<int>(at-items.begin())+step)%count+count)%count;
+
+    // a submenu the mouse opened on the item left goes with it
+    closeAll();
+    setHighlightedItem(items[index]);
+}
+
+bool Menu::openHighlightedSubmenu()
+{
+    MenuItem *item=getHighlightedItem();
+
+    if(!item || !item->m_menu)
+        return false;
+
+    if(!item->isMenuOpen())
+    {
+        closeAll();
+        item->openMenu();
+    }
+    item->m_menu->startKeyboardNavigation();
+    return true;
+}
+
+void Menu::chooseHighlighted()
+{
+    MenuItem *item=getHighlightedItem();
+
+    if(!item)
+        return;
+
+    if(openHighlightedSubmenu())
+        return;
+
+    // as a click: a checkable item toggles, onMenuItemSelected fires and the
+    // canvas closes every menu
+    item->doAction();
+}
+
+bool Menu::onKeyUp(bool down)
+{
+    if(!m_keyboardNavigation)
+        return ParentClass::onKeyUp(down);
+
+    if(down)
+        moveHighlight(-1);
+    return true;
+}
+
+bool Menu::onKeyDown(bool down)
+{
+    if(!m_keyboardNavigation)
+        return ParentClass::onKeyDown(down);
+
+    if(down)
+        moveHighlight(1);
+    return true;
+}
+
+bool Menu::onKeyHome(bool down)
+{
+    if(!m_keyboardNavigation)
+        return ParentClass::onKeyHome(down);
+
+    if(down)
+    {
+        const std::vector<MenuItem *> items=navigableItems();
+
+        if(!items.empty())
+        {
+            closeAll();
+            setHighlightedItem(items.front());
+        }
+    }
+    return true;
+}
+
+bool Menu::onKeyend(bool down)
+{
+    if(!m_keyboardNavigation)
+        return ParentClass::onKeyend(down);
+
+    if(down)
+    {
+        const std::vector<MenuItem *> items=navigableItems();
+
+        if(!items.empty())
+        {
+            closeAll();
+            setHighlightedItem(items.back());
+        }
+    }
+    return true;
+}
+
+bool Menu::onKeyReturn(bool down)
+{
+    if(!m_keyboardNavigation)
+        return ParentClass::onKeyReturn(down);
+
+    if(down)
+        chooseHighlighted();
+    return true;
+}
+
+bool Menu::onKeySpace(bool down)
+{
+    if(!m_keyboardNavigation)
+        return ParentClass::onKeySpace(down);
+
+    if(down)
+        chooseHighlighted();
+    return true;
+}
+
+bool Menu::onKeyRight(bool down)
+{
+    if(!m_keyboardNavigation)
+        return ParentClass::onKeyRight(down);
+
+    if(down)
+        openHighlightedSubmenu();
+    return true;
+}
+
+bool Menu::onKeyLeft(bool down)
+{
+    if(!m_keyboardNavigation)
+        return ParentClass::onKeyLeft(down);
+
+    // a submenu closes back to its item, which its parent menu highlights
+    // still; a first menu stays open
+    if(down && m_parentItem && !m_parentItem->onStrip())
+    {
+        closeAll();
+        close();
+    }
+    return true;
+}
+
+bool Menu::onKeyEscape(bool down)
+{
+    if(!m_keyboardNavigation)
+        return ParentClass::onKeyEscape(down);
+
+    // one level: a submenu gives the focus back to its parent menu
+    if(down)
+    {
+        closeAll();
+        close();
+    }
+    return true;
+}
+
+bool Menu::onKeyTab(bool down)
+{
+    if(!m_keyboardNavigation)
+        return ParentClass::onKeyTab(down);
+
+    return true;
 }
 
 }//namespace controls

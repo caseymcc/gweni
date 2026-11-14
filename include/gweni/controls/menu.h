@@ -21,6 +21,16 @@ namespace controls
 {
 class MenuItem;
 
+//! Whether a Menu opened by openNextTo() or openAt() navigates by keyboard
+//! (Menu::startKeyboardNavigation): None, as every menu did before, or
+//! FirstItem, taking the keyboard focus with its first enabled item
+//! highlighted.
+enum class MenuFocus
+{
+    None,
+    FirstItem
+};
+
 class GWENI_EXPORT Menu: public ScrollControl
 {
 public:
@@ -57,7 +67,9 @@ public:
     //! (canvas coordinates), flipped and kept inside the canvas by placement()
     //! once its size is known (in layout()). A setPos()/setBounds() after it
     //! places it there instead, kept inside the canvas.
-    virtual void openAt(const Point &cursor);
+    //! \p focus FirstItem starts keyboard navigation once it is shown
+    //! (startKeyboardNavigation()).
+    virtual void openAt(const Point &cursor, MenuFocus focus=MenuFocus::None);
     //! Shows it on the canvas and brings it to the front next to \p anchor (the
     //! MenuItem it is the menu of): on \p side of the anchor's canvas rect,
     //! \p gap units off it, flipped and kept inside the canvas by
@@ -69,8 +81,46 @@ public:
     //! (Canvas::anchoredMenus()): it is laid out again when the anchor moves,
     //! and closed when the anchor is hidden or deleted. A Right one whose
     //! anchor is in a menu that isLeftward() is placed as Left instead, so a
-    //! submenu chain that flipped left goes on opening left.
-    virtual void openNextTo(Base *anchor, PopupPlacement side, int gap);
+    //! submenu chain that flipped left goes on opening left. \p focus
+    //! FirstItem starts keyboard navigation once it is shown.
+    virtual void openNextTo(Base *anchor, PopupPlacement side, int gap,
+        MenuFocus focus=MenuFocus::None);
+
+    //! Keyboard navigation, for a shown menu: it takes the keyboard focus,
+    //! keeping the control that had it to give it back when it is hidden, and
+    //! highlights its first enabled item. Up/Down move the highlight over the
+    //! enabled, shown items (wrapping), Home/End go to the first/last,
+    //! Return/Space choose the highlighted item as a click does (a submenu's
+    //! item opens its submenu as Right does), Right opens the highlighted
+    //! item's submenu navigating by keyboard in turn, Left closes a submenu
+    //! back to its item, Escape closes it, and Tab is taken (the focus stays).
+    //! The highlight is the hover's look: while it navigates, an item shows
+    //! hovered only while it is the highlighted one, and the mouse moving
+    //! onto an enabled item highlights it, so there is one highlight. Ends
+    //! when it is hidden. A menu that never starts it takes no focus and no
+    //! key, as before.
+    void startKeyboardNavigation();
+    bool isKeyboardNavigating() const
+    {
+        return m_keyboardNavigation;
+    }
+    //! The item the keyboard highlights while it navigates; null otherwise.
+    MenuItem *getHighlightedItem() const;
+    //! Moves the keyboard highlight to \p item (one of its enabled items, or
+    //! null), redrawing the item it leaves and the one it reaches; nothing
+    //! while it does not navigate.
+    void setHighlightedItem(MenuItem *item);
+
+    bool onKeyUp(bool down) override;
+    bool onKeyDown(bool down) override;
+    bool onKeyHome(bool down) override;
+    bool onKeyend(bool down) override;
+    bool onKeyReturn(bool down) override;
+    bool onKeySpace(bool down) override;
+    bool onKeyRight(bool down) override;
+    bool onKeyLeft(bool down) override;
+    bool onKeyEscape(bool down) override;
+    bool onKeyTab(bool down) override;
     //! What openNextTo() placed it next to, while it does; null otherwise.
     Base *getAnchor() const
     {
@@ -146,6 +196,34 @@ protected:
     }
 
     virtual void onAddItem(MenuItem *item);
+
+    //! Its enabled, shown items in order, which the keyboard highlights.
+    std::vector<MenuItem *> navigableItems() const;
+    //! The highlight \p step items on (wrapping), or the first/last item for
+    //! a step from none.
+    void moveHighlight(int step);
+    //! Chooses the highlighted item: opens its submenu navigating by
+    //! keyboard, or presses it as a click does.
+    void chooseHighlighted();
+    //! Opens the highlighted item's submenu, navigating by keyboard; false
+    //! when it has none.
+    bool openHighlightedSubmenu();
+    //! Ends keyboard navigation on a hide: the highlight cleared and the focus,
+    //! if this menu still holds it, given back to the control that had it at
+    //! the start (through a hidden menu to the one it took it from), else
+    //! dropped.
+    void endKeyboardNavigation();
+
+    bool m_keyboardNavigation=false;
+    //! getKeyboardInputEnabled() before navigation turned it on.
+    bool m_keyboardWasEnabled=false;
+    //! getHighlightedItem()'s control id (0 for none): an id, not a pointer,
+    //! so a deleted item is no highlight.
+    size_t m_highlighted=0;
+    //! The id of the control that had the keyboard focus when navigation
+    //! started (0 for none), kept after it ends so a submenu closing after it
+    //! finds where its own focus goes.
+    size_t m_focusReturn=0;
 
     bool m_disableIconMargin;
     bool m_deleteOnClose;

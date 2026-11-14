@@ -89,10 +89,44 @@ void MenuItem::updateColors()
 {
     const gweni::Color before=getTextColor();
 
-    ParentClass::updateColors();
+    // while its menu navigates by keyboard the highlight, not the hover, has
+    // the hover colour (Button's order otherwise)
+    Menu *menu=parentMenu();
+
+    if(menu && menu->isKeyboardNavigating() && !isDisabled() && !isDepressed() && !getToggleState())
+        setTextColor((menu->getHighlightedItem() == this) ? getSkin()->Colors.Button.Hover
+            : getSkin()->Colors.Button.Normal);
+    else
+        ParentClass::updateColors();
 
     if(m_submenuArrow && !(getTextColor() == before))
         m_submenuArrow->redraw();
+}
+
+Menu *MenuItem::parentMenu() const
+{
+    for(Base *parent=getParent(); parent; parent=parent->getParent())
+    {
+        if(Menu *menu=gweni_cast<Menu>(parent))
+            return menu;
+    }
+    return nullptr;
+}
+
+bool MenuItem::isHighlighted()
+{
+    if(isDisabled())
+        return false;
+
+    if(isDepressed() || isMenuOpen())
+        return true;
+
+    Menu *menu=parentMenu();
+
+    if(menu && menu->isKeyboardNavigating())
+        return menu->getHighlightedItem() == this;
+
+    return isHovered();
 }
 
 Menu *MenuItem::getMenu()

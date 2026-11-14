@@ -44,6 +44,14 @@ public:
 
     Menu *getMenu();
 
+    //! The Menu it is an item of (its nearest Menu ancestor), or null.
+    Menu *parentMenu() const;
+    //! Whether it shows the highlight (the hover look): hovered, pressed or
+    //! with its submenu open; while its menu navigates by keyboard
+    //! (Menu::startKeyboardNavigation), the menu's highlighted item instead of
+    //! the hovered one. Never while disabled.
+    bool isHighlighted();
+
     bool isMenuOpen();
     void openMenu();
     void closeMenu();

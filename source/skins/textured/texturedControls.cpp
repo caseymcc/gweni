@@ -540,8 +540,7 @@ void MenuItem::update(renderer::Base *renderer, controls::Base *baseControl)
         return;
 
     controls::MenuItem *item=static_cast<controls::MenuItem *>(baseControl);
-    const bool highlighted=!item->isDisabled() &&
-        (item->isHovered() || item->isDepressed() || item->isMenuOpen());
+    const bool highlighted=item->isHighlighted();
 
     // an idle row draws nothing: a transparent rect would still write depth over
     // the backdrop, so the slot is hidden instead (drawRoundedRect shows it)
