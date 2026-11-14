@@ -24,7 +24,13 @@
  *    change (a drag that keeps them sets none);
  *  - the geometry, horizontal and vertical: the thumbs' bounds, the travel,
  *    the fill between their centres, a vertical text column;
- *  - disabled, a press, a drag and keys change nothing and take no focus.
+ *  - disabled, a press, a drag and keys change nothing and take no focus;
+ *  - with the textured RangeSlider and RangeSliderThumb renderers: the
+ *    thumbs are drawn at the slider's z+2 and z+3, the front one (dragged or
+ *    focused last) at z+3 and hit first where they overlap, the focused one
+ *    alone with RangeSliderThumbFocus's border; a hover writes the hovered
+ *    thumb's slot alone, a drag step the thumb's and the slider's (its track,
+ *    which the stub counts as written, and its fill), never the other thumb's.
  */
 #include "headlessFixture.h"
 
@@ -32,9 +38,14 @@
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/inputEvent.h>
 #include <gweni/platforms/platform.h>
+#include <gweni/skins/textured/texturedControls.h>
+#include <gweni/skins/textured/tokyoNight.h>
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
+#include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -464,12 +475,15 @@ TEST_CASE("RangeSlider: the value texts are set only when their strings change")
 
         s.moveTo(s.at(start+Thumb/2));
         s.press();
+        controls::resetChangeStats();
         s.moveTo(s.at(start+Thumb/2+1));
         CHECK(r->getLow() == doctest::Approx(20.5));
-        CHECK(r->getValueTextControl(0)->getStateChange() == controls::StateChange_Nothing);
-        CHECK((r->getValueTextControl(1)->getStateChange() == controls::StateChange_Nothing));
+        // the frame rendered no text change (no glyph slot to write)
+        CHECK(controls::getChangeStats().text == 0);
+        controls::resetChangeStats();
         s.moveTo(s.at(start+Thumb/2+3));
         CHECK(r->getValueText(0) == (joined?"22 \xE2\x80\x93 80":"22"));
+        CHECK(controls::getChangeStats().text == 1);
         s.release();
     }
 }
@@ -529,4 +543,157 @@ TEST_CASE("RangeSlider: disabled takes no mouse or keys")
     s.key(keys::Right);
     CHECK(r->getLow() == 30);
     CHECK(s.changes.empty());
+}
+
+namespace
+{
+
+//! Records the id, z and border width of each rounded rect drawn.
+class RangeRecorder: public test::StubRenderer
+{
+public:
+    struct Draw
+    {
+        size_t id;
+        int z;
+        float borderWidth;
+    };
+
+    void drawRoundedRect(size_t primitiveId, Rect rect, float radius, float borderWidth, Color top,
+        Color bottom, Color border, int zIndex) override
+    {
+        draws.push_back({primitiveId, zIndex, borderWidth});
+        StubRenderer::drawRoundedRect(primitiveId, rect, radius, borderWidth, top, bottom, border, zIndex);
+    }
+
+    //! The last draw of `id`.
+    const Draw *last(size_t id) const
+    {
+        for(auto it=draws.rbegin(); it != draws.rend(); ++it)
+            if(it->id == id)
+                return &*it;
+        return nullptr;
+    }
+
+    std::vector<Draw> draws;
+};
+
+class RangeSkin: public test::StubSkin
+{
+public:
+    explicit RangeSkin(test::StubRenderer *renderer): StubSkin(renderer) {}
+
+    std::unique_ptr<skin::Control> getControlRenderer(std::string typeName) override
+    {
+        if(typeName == "RangeSlider")
+            return std::make_unique<skin::textured::RangeSlider>();
+        if(typeName == "RangeSliderThumb")
+            return std::make_unique<skin::textured::RangeSliderThumb>();
+        return StubSkin::getControlRenderer(typeName);
+    }
+};
+
+}//namespace
+
+TEST_CASE("RangeSlider: the textured thumbs' layers, focus look and written slots")
+{
+    RangeRecorder renderer;
+    RangeSkin skin(&renderer);
+    float clock=nextClock();
+
+    platform::setTimeSource([&clock]() { return clock; });
+
+    controls::Canvas *canvas=new controls::Canvas(&skin);
+    canvas->setSize(400, 400);
+
+    controls::RangeSlider *slider=canvas->newChild<controls::RangeSlider>();
+    slider->setBounds(Origin, Origin, 100+Thumb, 20);
+    slider->setRange(0, 100);
+    slider->setValues(40, 60);
+
+    auto frame=[&]() {
+        renderer.draws.clear();
+        canvas->updateCanvas();
+        canvas->renderCanvas();
+    };
+    auto slotOf=[](controls::Base *control, size_t i) { return control->getSkinControl()->getPrimitives().at(i); };
+
+    frame();
+    frame();
+
+    const size_t low=slotOf(slider->getThumb(0), 0);
+    const size_t high=slotOf(slider->getThumb(1), 0);
+    const size_t fill=slotOf(slider, 1);
+    const int z=slider->getZIndex();
+
+    // drawn once, the high thumb in front
+    frame();
+    slider->getThumb(0)->redraw();
+    slider->getThumb(1)->redraw();
+    frame();
+    REQUIRE(renderer.last(low));
+    REQUIRE(renderer.last(high));
+    CHECK(slider->getFrontThumb() == 1);
+    CHECK(renderer.last(low)->z == z+2);
+    CHECK(renderer.last(high)->z == z+3);
+
+    // the low thumb focused: in front, alone with the focus border
+    slider->getThumb(0)->focus();
+    frame();
+    REQUIRE(renderer.last(low));
+    REQUIRE(renderer.last(high));
+    CHECK(slider->getFrontThumb() == 0);
+    CHECK(renderer.last(low)->z == z+3);
+    CHECK(renderer.last(high)->z == z+2);
+    CHECK(renderer.last(low)->borderWidth == skin::textured::tokyonight::RangeSliderThumbFocus.borderWidth);
+    CHECK(renderer.last(high)->borderWidth == skin::textured::tokyonight::SliderThumb.borderWidth);
+
+    // overlapping thumbs: the front one is hit
+    slider->setValues(50, 50);
+    frame();
+    const Point both=slider->localPosToCanvas(Point(50+Thumb/2, 10));
+    CHECK(canvas->getControlAt(both.x, both.y) == slider->getThumb(0));
+    slider->getThumb(1)->focus();
+    frame();
+    CHECK(canvas->getControlAt(both.x, both.y) == slider->getThumb(1));
+    slider->getThumb(1)->unfocus();
+    slider->setValues(40, 60);
+    frame();
+    frame();
+
+    // a hover writes the hovered thumb's slot alone
+    const Point onHigh=slider->localPosToCanvas(Point(60+Thumb/2, 10));
+
+    canvas->inputMouseMoved(onHigh.x, onHigh.y, 0, 0);
+    frame();
+    CHECK(std::set<size_t>(renderer.writtenPrimitiveIds().begin(), renderer.writtenPrimitiveIds().end())
+        == std::set<size_t>{high});
+    frame();
+    CHECK(renderer.writtenPrimitiveIds().empty());
+
+    // a drag step writes the thumb's and the fill's
+    clock+=1.0f;
+    canvas->inputMouseButton(0, true);
+    frame();
+    canvas->inputMouseMoved(onHigh.x+1, onHigh.y, 1, 0);
+    frame();
+    CHECK(slider->getHigh() == doctest::Approx(61));
+    {
+        // the stub counts every draw: the slider's update draws its track too,
+        // whose bytes a SlotRenderer finds unchanged
+        const std::set<size_t> written(renderer.writtenPrimitiveIds().begin(), renderer.writtenPrimitiveIds().end());
+
+        CHECK(written.count(high) == 1);
+        CHECK(written.count(fill) == 1);
+        CHECK(written.count(low) == 0);
+        CHECK(written.size() == 3);
+    }
+    canvas->inputMouseButton(0, false);
+    frame();
+
+    HoveredControl=nullptr;
+    KeyboardFocus=nullptr;
+    MouseFocus=nullptr;
+    delete canvas;
+    platform::setTimeSource(nullptr);
 }

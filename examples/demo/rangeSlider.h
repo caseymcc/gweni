@@ -15,6 +15,8 @@ class RangeSliderDemo: public controls::Base
 public:
     GWENI_CONTROL(RangeSliderDemo, controls::Base);
 
+public:
+
     //! The rows, for the range-slider scenario.
     controls::RangeSlider *price=nullptr;
     controls::RangeSlider *stepped=nullptr;

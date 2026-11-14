@@ -170,7 +170,8 @@
  *                       stats-overlay | depth-view | zoom-panel |
  *                       node-graph | code-editor | log-view |
  *                       chip-badge | navigation-rail | flow | board |
- *                       switch | spinner | image-grid | segmented (see below)
+ *                       switch | spinner | image-grid | segmented |
+ *                       range-slider (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -1068,6 +1069,29 @@
  *                 first frame back; the label names the view chosen; settled
  *                 frames write nothing; the demo gives every id back. Exits
  *                 non-zero if any check is no.
+ *    range-slider RangeSliderDemo, the clock frozen (range-slider.png,
+ *                 range-slider-gap.png): the mouse onto the price's low thumb
+ *                 and off; a drag of each price thumb toward the other, of the
+ *                 vertical one's thumbs and of the joined one's high thumb,
+ *                 each 12 one-unit steps, 2 of a tenth of the slider along
+ *                 the track and 2 off it, then one past the other thumb, and
+ *                 the release there; the price's low thumb focused and Right,
+ *                 Left, Up, Down, PageUp, PageDown, End and Home, then Tab and
+ *                 Home. One line
+ *                   range-slider settled_start=yes|no hover=yes|no
+ *                     drag_<name>=yes|no gap_<name>=yes|no ... ids_back=yes|no
+ *                     glyph_kept_frames=N
+ *                 reports the checks: the hover writes the thumb's slot alone
+ *                 and moving off gives the frame back; every drag and key
+ *                 frame writes the thumb's slot, the fill's and its text's
+ *                 glyphs alone (none when its string stays), lays nothing
+ *                 out, changes at most those three controls and no pixel
+ *                 outside the slider, and moves the thumb by exactly the step
+ *                 unless it stopped at a limit; each drag ends at the gap and
+ *                 its release leaves the thumb unhovered; the keys give the
+ *                 values a step, ten steps and the limits give; Tab focuses
+ *                 the high thumb, in front; settled frames write nothing; the
+ *                 demo gives every id back. Exits non-zero if any check is no.
  *    virtual-list VirtualListDemo with its list at 1 000 and then 100 000
  *                 items, the clock frozen: a settled frame, a one-row scroll
  *                 from the top (scrollByRows) and a wheel notch over the list
@@ -1261,6 +1285,7 @@
 #include <gweni/controls/label.h>
 #include <gweni/controls/menu.h>
 #include <gweni/controls/button.h>
+#include <gweni/controls/rangeSlider.h>
 #include <gweni/controls/segmentedButtons.h>
 #include <gweni/controls/selectable.h>
 #include <gweni/controls/toolTip.h>
@@ -1589,7 +1614,7 @@ static void printUsage(std::ostream &out)
          "                     | stats-overlay | depth-view | zoom-panel\n"
          "                     | node-graph | code-editor | log-view | chip-badge\n"
          "                     | navigation-rail | flow | board | switch | spinner\n"
-         "                     | image-grid | segmented;\n"
+         "                     | image-grid | segmented | range-slider;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -2640,7 +2665,8 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
-    ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented };
+    ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented,
+    RangeSlider };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2684,6 +2710,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "field-validation") scenario=Scenario::FieldValidation;
     else if(name == "image-grid") scenario=Scenario::ImageGrid;
     else if(name == "segmented") scenario=Scenario::Segmented;
+    else if(name == "range-slider") scenario=Scenario::RangeSlider;
     else return false;
     return true;
 }
@@ -12393,6 +12420,376 @@ static bool runSwitchScenario(Session &s, const std::string &shotDir, bool &pass
 }
 
 //-----------------------------------------------------------------------------
+// --scenario range-slider: RangeSliderDemo's sliders, the clock frozen
+//
+// A RangeSlider's thumbs are drawn, and hit, at their rects (getThumbRect),
+// their controls never moved, so a drag frame writes the dragged thumb's slot,
+// the fill's and its text's glyphs alone and lays nothing out; a thumb's
+// position is rounded from the value read off where the mouse put it, so a
+// drag step moves it by exactly the mouse's step until it stops at the other
+// thumb less (plus) the gap or at the range's end.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+// The ids a frame of `thumb`'s drag or key may write: its slot, the fill's
+// (the slider's second) and its value text's glyphs.
+struct RangeThumbIds
+{
+    std::set<size_t> primitives;
+    std::set<size_t> texts;
+};
+
+RangeThumbIds rangeThumbIds(gweni::controls::RangeSlider *slider, int thumb)
+{
+    RangeThumbIds ids;
+    std::set<size_t> unused;
+
+    ids.primitives.insert(slider->getThumb(thumb)->getSkinControl()->getPrimitives().at(0));
+    ids.primitives.insert(slider->getSkinControl()->getPrimitives().at(1));
+    if(gweni::controls::internal::Text *text=slider->getValueTextControl(thumb))
+        subtreeIds(text, unused, ids.texts);
+    return ids;
+}
+
+int rangeAlong(gweni::controls::RangeSlider *slider, int thumb)
+{
+    const gweni::Rect r=slider->getThumbRect(thumb);
+
+    return slider->isHorizontal()?r.x:r.y;
+}
+
+gweni::Point rangeThumbCentre(gweni::controls::RangeSlider *slider, int thumb)
+{
+    const gweni::Rect r=slider->getThumbRect(thumb);
+
+    return slider->localPosToCanvas(gweni::Point(r.x+r.w/2, r.y+r.h/2));
+}
+
+// The width of `thumb`'s value text, 0 with none.
+int textWidth(gweni::controls::RangeSlider *slider, int thumb)
+{
+    gweni::controls::internal::Text *text=slider->getValueTextControl(thumb);
+
+    return text?text->getWidth():0;
+}
+
+// A layout pass for a text of a new width: the canvas, the demo, the slider and
+// its texts, each measured and arranged in both axes.
+constexpr size_t RangeResizeEntries=24;
+
+// One frame of a drag or a key: what it did against what it may do.
+struct RangeStep
+{
+    std::string failures;
+    size_t glyphFramesKept=0;   // frames keeping the string, writing no glyph
+    size_t frames=0;
+};
+
+// Checks the frame after an input that moved `thumb` (or meant to, by `step`
+// units along the axis): its ids, its layout, the pixels outside the slider,
+// the controls it changed, and the thumb at its old place plus the step, or at
+// the limit it stopped at.
+void checkRangeFrame(Session &s, gweni::controls::RangeSlider *slider, int thumb, int step,
+    int before, const gweni::String &textBefore, int widthBefore, const std::vector<uint8_t> &previous,
+    const std::string &what, RangeStep &run, std::vector<uint8_t> &pixels)
+{
+    const RangeThumbIds ids=rangeThumbIds(slider, thumb);
+    const CodeEditorFrame frame=codeEditorFrame(s);
+    const int at=rangeAlong(slider, thumb);
+    const double value=slider->getValue(thumb);
+    const double lower=slider->getLowerLimit(thumb);
+    const double upper=slider->getUpperLimit(thumb);
+    const bool atLimit=(at == slider->positionOf(lower)) || (at == slider->positionOf(upper));
+    const gweni::String text=slider->getValueText(thumb);
+    const size_t outside=differencesOutsideRects(s, previous, frame.pixels, {slider->getCanvasBounds()});
+    std::string bad;
+
+    ++run.frames;
+    if(!idsWithin(frame.primitives, ids.primitives) || !idsWithin(frame.texts, ids.texts))
+        bad+=" wrote "+std::to_string(frame.primitives.size())+" primitive and "
+            +std::to_string(frame.texts.size())+" text ids outside the thumb, the fill and its text;";
+    if(text == textBefore && !frame.texts.empty())
+        bad+=" kept \""+text+"\" and wrote "+std::to_string(frame.glyphSlots)+" glyph slots;";
+    else if(text == textBefore)
+        ++run.glyphFramesKept;
+    // a string of another width is laid out again (the text's size changed):
+    // one pass, entering no more than the way down to the slider and its texts
+    const bool resized=(text.size() != textBefore.size()) || (textWidth(slider, thumb) != widthBefore);
+
+    if(frame.passes != 0 && !(resized && frame.passes == 1 && frame.visited <= RangeResizeEntries))
+        bad+=" ran "+std::to_string(frame.passes)+" layout passes entering "+std::to_string(frame.visited)
+            +(resized?"":", its strings' widths the same")+";";
+    if(!resized && frame.changed > 3)
+        bad+=" changed "+std::to_string(frame.changed)+" controls (the thumb, the slider and its text wanted);";
+    if(outside != 0)
+        bad+=" changed "+std::to_string(outside)+" pixels outside the slider;";
+    // a thumb short of both limits moved by exactly the step
+    if(at != before+step && !(atLimit && (value == lower || value == upper)))
+        bad+=" moved the thumb from "+std::to_string(before)+" to "+std::to_string(at)+" for a step of "
+            +std::to_string(step)+";";
+    if(!bad.empty())
+        run.failures+=" "+what+":"+bad;
+    pixels=frame.pixels;
+}
+
+// Drags `thumb` from its centre by `dir` (+1 or -1 along the axis, in canvas
+// units): 12 one-unit steps along the track, 2 steps of a tenth of its length
+// along it and 2 more off it (past its far side), then `last` units more,
+// each a frame (`last` past the other thumb, to stop it at the gap); then the
+// release where the mouse is.
+RangeStep dragRangeThumb(Session &s, gweni::controls::RangeSlider *slider, int thumb, int dir, int last,
+    std::vector<uint8_t> &previous, bool &hoveredWhileHeld, bool &releaseUnhovered)
+{
+    RangeStep run;
+    const bool horizontal=slider->isHorizontal();
+    const gweni::Point grab=rangeThumbCentre(slider, thumb);
+    const gweni::Rect bounds=slider->getCanvasBounds();
+    const int length=horizontal?bounds.w:bounds.h;
+    const int coarse=std::max(1, length/10);
+
+    moveMouse(s, grab.x, grab.y);
+    renderFrames(s, 1);
+    mouseDown(s, grab.x, grab.y, true);
+    previous=codeEditorFrame(s).pixels;
+
+    gweni::Point mouse=grab;
+
+    for(int i=1; i <= 17; ++i)
+    {
+        const int step=dir*(i <= 12?1:(i <= 16?coarse:last));
+        const bool offTrack=(i > 14);
+        const int before=rangeAlong(slider, thumb);
+        const gweni::String textBefore=slider->getValueText(thumb);
+        const int widthBefore=textWidth(slider, thumb);
+
+        if(horizontal)
+        {
+            mouse.x+=step;
+            mouse.y=offTrack?bounds.y+bounds.h+15:grab.y;
+        }
+        else
+        {
+            mouse.y+=step;
+            mouse.x=offTrack?bounds.x+bounds.w+15:grab.x;
+        }
+        moveMouse(s, mouse.x, mouse.y);
+        checkRangeFrame(s, slider, thumb, step, before, textBefore, widthBefore, previous,
+            "step "+std::to_string(i), run, previous);
+    }
+
+    hoveredWhileHeld=slider->getThumb(thumb)->isHovered();
+    mouseUp(s, mouse.x, mouse.y);
+    renderFrames(s, 1);
+    releaseUnhovered=!slider->getThumb(thumb)->isHovered() && gweni::MouseFocus == nullptr
+        && slider->getDraggedThumb() == -1;
+    return run;
+}
+
+std::string rangeReport(const RangeStep &run)
+{
+    return std::to_string(run.frames)+" frames, "+std::to_string(run.glyphFramesKept)
+        +" keeping the string;"+run.failures;
+}
+
+}//namespace
+
+static bool runRangeSliderScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    checks.scenario="range-slider";
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    gweni::controls::Base *control=addControl(s, "RangeSliderDemo");
+    auto *demo=gweni::gweni_cast<gweni::RangeSliderDemo>(control);
+
+    if(!demo || !demo->price || !demo->vertical || !demo->joined)
+    {
+        std::cerr<<"ControlTest: range-slider: RangeSliderDemo was not built\n";
+        return false;
+    }
+
+    s.label="range-slider";
+    renderFrames(s, s.frames);
+
+    const gweni::Point off(s.size.x-4, s.size.y-4);
+
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, 1);
+
+    std::vector<uint8_t> rest;
+    size_t idleWork=settleCodeEditor(s, rest);
+    bool ok=shoot(s, shotDir+"/range-slider.png");
+
+    checks.check("settled_start", idleWork == 0, "the demo's first settled frames wrote or changed "
+        +std::to_string(idleWork));
+
+    gweni::controls::RangeSlider *price=demo->price;
+
+    // (1) a hover writes the hovered thumb's slot alone; off gives it back
+    {
+        const size_t slot=price->getThumb(0)->getSkinControl()->getPrimitives().at(0);
+        const gweni::Point at=rangeThumbCentre(price, 0);
+
+        moveMouse(s, at.x, at.y);
+
+        const CodeEditorFrame hover=codeEditorFrame(s);
+
+        moveMouse(s, off.x, off.y);
+
+        const CodeEditorFrame leave=codeEditorFrame(s);
+
+        checks.check("hover", hover.primitives == std::set<size_t>{slot} && hover.texts.empty()
+            && hover.passes == 0 && hover.pixels != rest && leave.pixels == rest,
+            "the hover wrote "+std::to_string(hover.primitives.size())+" primitive ids (the thumb's alone wanted) and "
+            +std::to_string(hover.texts.size())+" text ids"+(leave.pixels == rest?"":", and moving off did not give the frame back"));
+    }
+
+    // (2) drags: each price thumb toward the other, stopping at the gap; the
+    // vertical one's low thumb up and its high one down; the joined one's high
+    // thumb toward the minimum
+    struct Drag
+    {
+        const char *name;
+        gweni::controls::RangeSlider *slider;
+        int thumb;
+        int dir;
+    };
+
+    const Drag drags[]=
+    {
+        {"price_low", price, 0, 1},
+        {"price_high", price, 1, -1},
+        {"vertical_low", demo->vertical, 0, -1},
+        {"vertical_high", demo->vertical, 1, 1},
+        {"joined_high", demo->joined, 1, -1},
+    };
+    size_t keptFrames=0;
+    std::vector<uint8_t> previous;
+
+    for(const Drag &drag : drags)
+    {
+        // each from the demo's values, so a drag that ended on the other
+        // thumb leaves the next one its own thumbs apart
+        const double startLow=drag.slider->getLow(), startHigh=drag.slider->getHigh();
+        bool hoveredWhileHeld=false, releaseUnhovered=false;
+        const RangeStep run=dragRangeThumb(s, drag.slider, drag.thumb, drag.dir, 200,
+            previous, hoveredWhileHeld, releaseUnhovered);
+        gweni::controls::RangeSlider *r=drag.slider;
+        // the last step went past the other thumb: it stopped at the gap
+        const double gap=r->getHigh()-r->getLow();
+        const bool stopped=std::abs(gap-r->getMinimumGap()) < 1e-9;
+
+        keptFrames+=run.glyphFramesKept;
+        checks.check(std::string("drag_")+drag.name, run.failures.empty() && hoveredWhileHeld,
+            rangeReport(run)+(hoveredWhileHeld?"":" the held thumb was not hovered"));
+        checks.check(std::string("gap_")+drag.name, stopped,
+            "the thumbs ended "+std::to_string(gap)+" apart, the gap is "+std::to_string(r->getMinimumGap()));
+        checks.check(std::string("release_")+drag.name, releaseUnhovered,
+            "the thumb let go off itself kept the hover, the mouse or the drag");
+        moveMouse(s, off.x, off.y);
+        renderFrames(s, 1);
+        idleWork+=settleCodeEditor(s, previous);
+        if(drag.thumb == 0 && drag.slider == price)
+            ok=shoot(s, shotDir+"/range-slider-gap.png") && ok;
+        drag.slider->setValues(startLow, startHigh);
+        renderFrames(s, 2);
+    }
+    checks.check("glyphs_kept", keptFrames > 0,
+        "no drag frame kept its string, so none showed a frame writing no glyph");
+
+    // (3) keys step the focused thumb the same way: Right, Left, PageUp,
+    // PageDown, Home, End on the price's low thumb, then Tab to the high one
+    price->setValues(200, 800);
+    price->getThumb(0)->focus();
+    renderFrames(s, 1);
+
+    std::vector<uint8_t> focused;
+
+    idleWork+=settleCodeEditor(s, focused);
+
+    RangeStep keys;
+    const double keyStep=price->getKeyStep();
+    struct Key
+    {
+        int key;
+        const char *name;
+        double expect;  // the low value after it
+    };
+    const Key keyList[]=
+    {
+        {GLFW_KEY_RIGHT, "right", 200+keyStep},
+        {GLFW_KEY_LEFT, "left", 200},
+        {GLFW_KEY_UP, "up", 200+keyStep},
+        {GLFW_KEY_DOWN, "down", 200},
+        {GLFW_KEY_PAGE_UP, "pageup", 200+10*keyStep},
+        {GLFW_KEY_PAGE_DOWN, "pagedown", 200},
+        {GLFW_KEY_END, "end", 800-price->getMinimumGap()},
+        {GLFW_KEY_HOME, "home", 0},
+    };
+    std::string keyValues;
+    std::vector<uint8_t> keyPixels=focused;
+
+    for(const Key &key : keyList)
+    {
+        const int before=rangeAlong(price, 0);
+        const gweni::String textBefore=price->getValueText(0);
+        const int widthBefore=textWidth(price, 0);
+        const int step=price->positionOf(key.expect)-before;
+
+        glfwKey(s, key.key, GLFW_PRESS, 0);
+        glfwKey(s, key.key, GLFW_RELEASE, 0);
+        checkRangeFrame(s, price, 0, step, before, textBefore, widthBefore, keyPixels, key.name, keys, keyPixels);
+        if(std::abs(price->getLow()-key.expect) > 1e-9)
+            keyValues+=" "+std::string(key.name)+": low "+std::to_string(price->getLow())+", "
+                +std::to_string(key.expect)+" wanted;";
+    }
+    checks.check("keys", keys.failures.empty() && keyValues.empty() && price->getHigh() == 800,
+        rangeReport(keys)+keyValues);
+
+    glfwKey(s, GLFW_KEY_TAB, GLFW_PRESS, 0);
+    glfwKey(s, GLFW_KEY_TAB, GLFW_RELEASE, 0);
+    renderFrames(s, 1);
+
+    const bool tabbed=gweni::KeyboardFocus == price->getThumb(1) && price->getFrontThumb() == 1;
+
+    glfwKey(s, GLFW_KEY_HOME, GLFW_PRESS, 0);
+    glfwKey(s, GLFW_KEY_HOME, GLFW_RELEASE, 0);
+    renderFrames(s, 1);
+    checks.check("tab_high", tabbed && price->getHigh() == price->getLow()+price->getMinimumGap(),
+        std::string(tabbed?"":"Tab did not focus the high thumb, in front; ")+"Home put the high value at "
+        +std::to_string(price->getHigh()));
+
+    // (4) settled, and the ids back
+    price->getThumb(1)->unfocus();
+    renderFrames(s, 1);
+    forgetMouse(s);
+    renderFrames(s, 2);
+
+    std::vector<uint8_t> last;
+
+    idleWork+=settleCodeEditor(s, last);
+    checks.check("settled", idleWork == 0, "settled frames wrote or changed "+std::to_string(idleWork));
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()+liveTextIds()-idsBefore;
+
+    checks.check("ids_back", idsLeft == 0, std::to_string(idsLeft)+" ids not given back");
+
+    passed=checks.allPassed();
+    std::cout<<"range-slider";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<" glyph_kept_frames="<<keptFrames<<"\n";
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // --scenario segmented: SegmentedButtonsDemo's rows, the clock frozen
 //
 // A segment's state is drawn by its own slot alone: a joint between two
@@ -18160,6 +18557,15 @@ int main(int argc, char *argv[])
             ok=runZoomPanelScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a zoomed panel did not draw as a scaled canvas
+            break;
+        }
+
+        case Scenario::RangeSlider:
+        {
+            bool passed=false;
+            ok=runRangeSliderScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a drag, a hover or a key did more than its thumb, or missed a step
             break;
         }
 

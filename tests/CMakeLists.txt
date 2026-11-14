@@ -229,10 +229,12 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # badges' counts and anchor moves, the dialogs, the toasts, a Flow's
     # resizes and rebuilds, the switches' toggles, the spinners' stops and
     # hides, the navigation rail's collapse/selection, the board's wheels and
-    # edits, the fields' messages and the segmented buttons' selections
+    # edits, the fields' messages, the segmented buttons' selections and the
+    # range slider's drags and keys
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
-            dialog toast flow switch spinner navigation-rail board field-validation segmented)
+            dialog toast flow switch spinner navigation-rail board field-validation segmented
+            range-slider)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail")
@@ -575,6 +577,18 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_switch 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario switch --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/switch@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # RangeSliderDemo, the clock frozen: a hover writes the thumb's slot alone;
+    # every frame of a drag of each thumb (one-unit steps, then larger ones
+    # along and off the track) writes the thumb's, the fill's and its text's
+    # slots alone, no glyph when its string stays, lays nothing out unless the
+    # string's width changed, and moves the thumb by exactly the step until it
+    # stops at the gap; the release off the thumb takes its hover away; the
+    # keys step the focused thumb the same way; settled frames write nothing
+    gweni_whole_app_test(controltest_range_slider 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario range-slider --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/range_slider@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # SpinnerDemo, the clock stepping: a spinning frame writes the arc slots
