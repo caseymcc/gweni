@@ -190,7 +190,8 @@ void SplitButton::setDisabled(bool disabled)
     m_arrow->setDisabled(disabled);
 }
 
-// Both parts draw the control's focus in their borders.
+// Both parts draw the control's focus in their borders (Base::focus() and
+// unfocus() redraw the control itself, so its divider too).
 void SplitButton::onKeyboardFocus()
 {
     m_main->redraw();
@@ -235,15 +236,35 @@ bool SplitButton::onKeyDown(bool down)
     if(!input::isKeyDown(keys::Alt))
         return ParentClass::onKeyDown(down);
 
-    if(down && !isMenuOpen())
-        openMenu(MenuFocus::FirstItem);
+    if(down)
+        toggleMenuFromKey();
     return true;
 }
 
 bool SplitButton::onKeyF4(bool down)
 {
-    if(down && !isMenuOpen())
+    if(down)
+        toggleMenuFromKey();
+    return true;
+}
+
+// The menu open while the control has the focus (a press on the open arrow
+// let go off it): Alt+Down and F4 close it, as a second press would.
+void SplitButton::toggleMenuFromKey()
+{
+    if(isMenuOpen())
+        closeMenu();
+    else
         openMenu(MenuFocus::FirstItem);
+}
+
+bool SplitButton::onKeyEscape(bool down)
+{
+    if(!isMenuOpen())
+        return ParentClass::onKeyEscape(down);
+
+    if(down)
+        closeMenu();
     return true;
 }
 

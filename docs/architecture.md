@@ -508,8 +508,9 @@ The keys are WinUI's and Win32's: Up and Down move the highlight over the shown,
 `MenuItem`s (`Menu::navigableItems()`: dividers, disabled and hidden items are skipped),
 wrapping, from none to the first or the last; Home and End go to the first and the last;
 Return and Space choose the highlighted item as a click does (`doAction()`: a checkable
-item toggles, `onMenuItemSelected` fires, the canvas closes every menu), or, for an item
-with a submenu, open it as Right does; Right opens the highlighted item's submenu
+item toggles, the canvas closes every menu, then `onMenuItemSelected` fires), or, for an
+item with a submenu, open it as Right does, and do nothing for an item disabled or hidden
+since it was highlighted; Right opens the highlighted item's submenu
 navigating in turn (`MenuFocus::FirstItem`), the item staying highlighted in its parent
 (its submenu is open); Left closes a submenu back to its item, and does nothing in the
 first menu; Escape closes one level; Tab is taken, so the focus stays in the menu. A
@@ -534,7 +535,10 @@ elsewhere, `Canvas::closeMenus`, its anchor hidden), navigation ends and, if the
 still holds the focus, it goes back to that control. A submenu took it from its parent
 menu, and both may close in one `closeMenus()` in either order, so a hidden menu passes
 it on to the control it took it from, and a pick in a submenu gives the focus back to
-the button that opened the first menu. A control that is gone, hidden or refused by a
+the button that opened the first menu. A chosen item closes the menus before its
+`onMenuItemSelected` runs, so the focus is back on the opener by then, and a dialog the
+handler opens records the opener as the control to give it back to, not a menu hidden
+by the time the dialog closes. A control that is gone, hidden or refused by a
 modal gets nothing and the focus is dropped. Not yet: a highlight moved past the
 viewport of a menu that scrolls does not scroll it into view.
 
@@ -551,7 +555,10 @@ on the button while its menu is open closes it: the button is a menu component
 (`isMenuComponent()`, as a `MenuStrip` item is), so `input::onMouseClicked` does not
 close every menu before the press, and its own press decides (`openMenu` closes the
 other open menus first). While the menu is open the button is pressed (`isDepressed()`),
-redrawn from the menu's `onVisibilityChanged`. Its textured renderer draws
+redrawn from the menu's `onVisibilityChanged`. Disabling it closes the menu. A press on
+the open button let go off it presses nothing, so the menu stays open with the focus
+on the button; there Escape, Space, Return, Alt+Down and F4 close it. Its textured
+renderer draws
 `buttonSurface()` (the Button surface of a state, shared with every Button's renderer)
 and the down chevron (icon kind 1, direction 0) at z+1, `ChevronSize` square
 `ChevronInset` from its right edge, in the right text padding's `ChevronRoom`.
@@ -567,7 +574,8 @@ closes the menu, and neither fires the other's. The arrow's menu opens below the
 control, left-aligned with it (`SplitButtonArrow::menuAnchor()`). `setMainItem(item)`
 makes a menu item the main action (the "last used" pattern): the main part shows its
 text and a press fires its `onMenuItemSelected` after `onPress`. `setDisabled` disables
-both parts and closes the menu.
+both parts and closes the menu; with the menu open and the focus on the control (a press
+on the open arrow let go off it), Escape, Alt+Down and F4 close it.
 
 Each part has its own renderer and slots, so a hover or press of one writes its slots
 alone: the main part draws its `buttonSurface()` square on its right with no border there
@@ -575,7 +583,11 @@ alone: the main part draws its `buttonSurface()` square on its right with no bor
 chevron at z+1, and the `SplitButton` itself draws the `Divider`-unit column between them
 in the `SplitButtonDivider` surface (the Button border colour), so the two read as one
 outline. Both parts take the control's focus as their own (`buttonSurface(part,
-focused)`), the focus change redrawing them. SplitButtonDemo shows both kinds, and
+focused)`), the focus change redrawing them. While the control is focused the divider is
+`ButtonFocus`'s border colour and while it is disabled the disabled main part's, the
+colour both parts' borders are then, so the outline has no notch at its top and bottom
+rows; `Base::focus()`, `unfocus()` and `setDisabled()` redraw the control, and so the
+divider. SplitButtonDemo shows both kinds, and
 `--scenario split-button` holds them to their slots.
 
 #### The modal stack: what a dialog blocks

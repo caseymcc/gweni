@@ -13,6 +13,8 @@
  *    wrapping, and Home/End go to the first/last;
  *  - Return and Space choose the highlighted item as a click does
  *    (onMenuItemSelected once, a checkable item toggled, every menu closed);
+ *    an item disabled or hidden after it was highlighted is neither chosen
+ *    nor, a submenu's item, opened;
  *  - Right opens the highlighted item's submenu with its first item
  *    highlighted and the focus in it, Left closes it back to its item, which
  *    stays highlighted in the parent menu with the focus back there, and
@@ -458,4 +460,40 @@ TEST_CASE("Menu keyboard navigation: a menu opened without it takes no focus, no
     CHECK(scene.opener->isFocussed());
     scene.moveOnto(scene.one);
     CHECK(scene.one->isHighlighted());
+}
+
+TEST_CASE("Menu keyboard navigation: an item disabled or hidden after it was highlighted is not chosen or opened")
+{
+    Scene scene;
+
+    scene.openNavigating();
+    REQUIRE(scene.menu->getHighlightedItem() == scene.one);
+
+    // disabled under the highlight: Return and Space choose nothing
+    scene.one->setDisabled(true);
+    scene.key(keys::Return);
+    scene.key(keys::Space);
+    CHECK(scene.chosen.calls == 0);
+    CHECK_FALSE(scene.menu->hidden());
+
+    // a submenu's item disabled, then hidden, under the highlight: Right and
+    // Return open nothing
+    for(bool hide : {false, true})
+    {
+        CAPTURE(hide);
+        scene.key(keys::End);
+        REQUIRE(scene.menu->getHighlightedItem() == scene.sub);
+        if(hide)
+            scene.sub->setHidden(true);
+        else
+            scene.sub->setDisabled(true);
+        scene.frame();
+        scene.key(keys::Right);
+        scene.key(keys::Return);
+        CHECK_FALSE(scene.sub->isMenuOpen());
+        CHECK(scene.chosen.calls == 0);
+        CHECK_FALSE(scene.menu->hidden());
+        scene.sub->setDisabled(false);
+        scene.frame();
+    }
 }

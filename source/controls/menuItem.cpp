@@ -236,8 +236,12 @@ void MenuItem::onPress(event::Info info)
     {
         if(m_checkable)
             setChecked(!m_checked);
+        // Closed first, so a navigating menu has given the focus back before
+        // the handler runs: a dialog it opens records that control as its
+        // focus return, not a menu that is hidden by then.
+        if(Canvas *canvas=getCanvas())
+            canvas->closeMenus();
         onMenuItemSelected.call(this);
-        getCanvas()->closeMenus();
     }
 
     ParentClass::onPress(info);

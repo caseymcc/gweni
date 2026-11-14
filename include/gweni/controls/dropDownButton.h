@@ -33,7 +33,9 @@ namespace controls
 //! (MenuFocus::Menu: the menu has the focus, Down highlights its first item);
 //! Space, Return, Alt+Down and F4 on the focused button open it with its first
 //! enabled item highlighted (MenuFocus::FirstItem). Either way the menu gives
-//! the keyboard focus back to the button when it closes.
+//! the keyboard focus back to the button when it closes. Should the button
+//! hold the focus with the menu open (a press on it let go off it), those keys
+//! and Escape close the menu.
 //!
 //! While the menu is open the button shows its pressed look (isDepressed());
 //! its opening and closing redraw the button alone. It takes the keyboard
@@ -59,6 +61,9 @@ public:
     //! Closes the menu, with every submenu open under it.
     void closeMenu();
 
+    //! Disabling it closes its menu.
+    void setDisabled(bool disabled) override;
+
     //! Pressed, or showing its menu.
     bool isDepressed() const override;
 
@@ -74,6 +79,9 @@ public:
     //! Alt+Down opens the menu; a plain Down is not taken.
     bool onKeyDown(bool down) override;
     bool onKeyF4(bool down) override;
+    //! Closes the open menu (one the button kept the focus from: a press on
+    //! it let go off it); otherwise not taken.
+    bool onKeyEscape(bool down) override;
 
     //! The chevron's side and its room in the right text padding: the
     //! chevron's side plus a gap before the text.
@@ -90,6 +98,9 @@ public:
 protected:
     //! The menu was shown or hidden: the pressed look follows it.
     void onMenuVisibilityChanged(event::Info);
+    //! Space, Return, Alt+Down and F4: open it with the first item
+    //! highlighted, or close it if it is open.
+    void toggleMenuFromKey();
     //! The control the menu opens below: this button (a SplitButton's arrow
     //! part gives the whole SplitButton).
     virtual Base *menuAnchor()

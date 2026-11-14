@@ -617,8 +617,22 @@ void SplitButton::update(renderer::Base *renderer, controls::Base *baseControl)
     const gweni::Rect divider(bounds.x+arrow->getX()-controls::SplitButton::Divider, bounds.y,
         controls::SplitButton::Divider, bounds.h);
 
-    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::SplitButtonDivider,
-        divider);
+    // The divider joins the two outlines: focused or disabled, the parts' border
+    // colour (both parts draw the same one then), so the outline has no notch
+    // at its top and bottom rows; otherwise its own surface.
+    tokyonight::Surface surface=tokyonight::SplitButtonDivider;
+
+    if(split->isDisabled() || split->isFocussed())
+    {
+        const Color border=split->isDisabled()
+            ?buttonSurface(split->getMainPart(), false).border:tokyonight::ButtonFocus.border;
+
+        surface.top=border;
+        surface.bottom=border;
+        surface.border=border;
+    }
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, surface, divider);
 }
 
 ///////////////////////////////////////////////////////////////////////////

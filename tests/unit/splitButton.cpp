@@ -16,8 +16,15 @@
  *    1, direction 0) in slot [1] at z+1 in its text colour; opening and
  *    closing write the button's slots and the menu's alone;
  *  - opening it closes another open menu (a second DropDownButton's);
- *  - disabled, neither a click nor a key opens it;
- *  - deleting the button deletes its menu.
+ *  - disabled, neither a click nor a key opens it, and disabling it closes
+ *    its open menu;
+ *  - a press on the open button let go off it leaves the focus on the button
+ *    and the menu open, and Escape, Space, Return, Alt+Down or F4 closes it;
+ *  - an item, chosen by Return or by a click, whose handler opens a dialog:
+ *    the dialog closed, the focus is back on the button (the menu had given
+ *    it back before the handler ran);
+ *  - deleting the button deletes its menu, also one set to delete itself on
+ *    close and taken off the canvas (a use-after-free here shows under ASAN).
  *
  *  SplitButton, on the same canvas:
  *  - its parts are laid out in one row, the main part as wide as its content
@@ -35,11 +42,16 @@
  *    the arrow part square on its left with the chevron at z+1, the divider
  *    the SplitButtonDivider column between them; a hover of one part writes
  *    that part's slots alone, and the control's focus draws ButtonFocus in
- *    both parts;
+ *    both parts; the divider takes the parts' border colour while the
+ *    control is focused (ButtonFocus's) or disabled (the disabled main part's),
+ *    redrawn by those changes, and SplitButtonDivider otherwise;
+ *  - a press on the open arrow part let go off it leaves the menu open with
+ *    the focus on the control, and Escape, Alt+Down or F4 closes it;
  *  - setMainItem makes a menu item the main part's action and text.
  */
 #include "headlessFixture.h"
 
+#include <gweni/controls/dialogs/query.h>
 #include <gweni/controls/dropDownButton.h>
 #include <gweni/controls/menu.h>
 #include <gweni/controls/menuItem.h>
@@ -710,4 +722,187 @@ TEST_CASE("SplitButton: setMainItem makes a menu item the main part's action and
     scene.click(split->getMainPart());
     CHECK(selected.calls == 1);
     CHECK(pressed.calls == 2);
+}
+
+TEST_CASE("DropDownButton: disabling it closes its open menu")
+{
+    Scene scene;
+    controls::DropDownButton *button=scene.dropDown(40, 40);
+
+    scene.frame();
+    button->focus();
+    scene.key(keys::F4);
+    REQUIRE(button->isMenuOpen());
+
+    button->setDisabled(true);
+    scene.frame();
+    CHECK_FALSE(button->isMenuOpen());
+    CHECK(button->getMenu()->hidden());
+}
+
+TEST_CASE("DropDownButton: a press on the open button let go off it, then a key closes the menu")
+{
+    for(int code : {int(keys::Escape), int(keys::Space), int(keys::Return), int(keys::Down), int(keys::F4)})
+    {
+        CAPTURE(code);
+        Scene scene;
+        controls::DropDownButton *button=scene.dropDown(40, 40);
+
+        scene.frame();
+        scene.click(button);
+        REQUIRE(button->isMenuOpen());
+
+        // pressed on the button, released off it: no press, the menu open
+        const Point at=button->localPosToCanvas();
+        scene.clock+=1.0;
+        scene.canvas->inputMouseMoved(at.x+10, at.y+10, 0, 0);
+        input::onMouseClicked(scene.canvas, 0, true);
+        scene.canvas->inputMouseMoved(400, 400, 0, 0);
+        input::onMouseClicked(scene.canvas, 0, false);
+        scene.frame();
+        REQUIRE(button->isMenuOpen());
+        REQUIRE(button->isFocussed());
+
+        if(code == keys::Down)
+            scene.altKey(code);
+        else
+            scene.key(code);
+        CHECK_FALSE(button->isMenuOpen());
+        CHECK(button->isFocussed());
+    }
+}
+
+namespace
+{
+
+//! Opens a message dialog from a menu item's handler, as "Paste special…".
+struct DialogOpener: public event::Handler
+{
+    controls::Canvas *canvas=nullptr;
+    int opened=0;
+
+    void open(event::Info)
+    {
+        ++opened;
+        dialogs::message(canvas, "Paste special", "Nothing to paste.");
+    }
+};
+
+}//namespace
+
+TEST_CASE("DropDownButton: an item opening a dialog, chosen by Return or a click, leaves the focus on the button once the dialog closes")
+{
+    for(bool byClick : {false, true})
+    {
+        CAPTURE(byClick);
+        Scene scene;
+        controls::DropDownButton *button=scene.dropDown(40, 40);
+        controls::MenuItem *item=Scene::firstItem(button);
+        DialogOpener opener;
+
+        opener.canvas=scene.canvas;
+        item->onMenuItemSelected.add(&opener, &DialogOpener::open);
+        scene.frame();
+
+        if(byClick)
+        {
+            scene.click(button);
+            REQUIRE(button->isMenuOpen());
+            scene.frame();
+            scene.click(item);
+        }
+        else
+        {
+            button->focus();
+            scene.key(keys::Space);
+            REQUIRE(button->getMenu()->getHighlightedItem() == item);
+            scene.key(keys::Return);
+        }
+        REQUIRE(opener.opened == 1);
+        CHECK_FALSE(button->isMenuOpen());
+        REQUIRE(scene.canvas->modalCount() == 1);
+
+        scene.key(keys::Escape);
+        scene.frame();
+        CHECK(scene.canvas->modalCount() == 0);
+        CHECK((KeyboardFocus == button));
+    }
+}
+
+TEST_CASE("DropDownButton: deleting it deletes a menu that deletes itself on close, off the canvas")
+{
+    Scene scene;
+    controls::DropDownButton *button=scene.dropDown(40, 40);
+    controls::Menu *menu=button->getMenu();
+    const size_t menuId=menu->getControlId();
+
+    scene.frame();
+    menu->setDeleteOnClose(true);
+    // off any canvas: close() deletes it at once
+    menu->setParent(nullptr);
+    REQUIRE((menu->getCanvas() == nullptr));
+
+    delete button;
+    scene.frame();
+    CHECK(controls::Base::getControlById(menuId) == nullptr);
+}
+
+TEST_CASE("SplitButton: the divider takes the parts' border colour while focused or disabled")
+{
+    Scene scene;
+    controls::SplitButton *split=makeSplit(scene, 40, 40);
+    const size_t divider=Scene::ids(split)[0];
+
+    namespace tn=skin::textured::tokyonight;
+
+    split->redraw();
+    scene.frame();
+    CHECK((scene.renderer.lastTop(divider) == tn::SplitButtonDivider.top));
+
+    split->focus();
+    scene.frame();
+    CHECK((scene.renderer.lastTop(divider) == tn::ButtonFocus.border));
+
+    split->unfocus();
+    scene.frame();
+    CHECK((scene.renderer.lastTop(divider) == tn::SplitButtonDivider.top));
+
+    split->setDisabled(true);
+    scene.frame();
+    CHECK((scene.renderer.lastTop(divider) == tn::ButtonDisabled.border));
+
+    split->setDisabled(false);
+    scene.frame();
+    CHECK((scene.renderer.lastTop(divider) == tn::SplitButtonDivider.top));
+}
+
+TEST_CASE("SplitButton: a press on the open arrow let go off it, then Escape, Alt+Down or F4 closes the menu")
+{
+    for(int code : {int(keys::Escape), int(keys::Down), int(keys::F4)})
+    {
+        CAPTURE(code);
+        Scene scene;
+        controls::SplitButton *split=makeSplit(scene, 40, 40);
+        controls::Button *arrow=split->getArrowPart();
+
+        scene.click(arrow);
+        REQUIRE(split->isMenuOpen());
+
+        const Point at=arrow->localPosToCanvas();
+        scene.clock+=1.0;
+        scene.canvas->inputMouseMoved(at.x+arrow->getWidth()/2, at.y+arrow->getHeight()/2, 0, 0);
+        input::onMouseClicked(scene.canvas, 0, true);
+        scene.canvas->inputMouseMoved(400, 400, 0, 0);
+        input::onMouseClicked(scene.canvas, 0, false);
+        scene.frame();
+        REQUIRE(split->isMenuOpen());
+        REQUIRE(split->isFocussed());
+
+        if(code == keys::Down)
+            scene.altKey(code);
+        else
+            scene.key(code);
+        CHECK_FALSE(split->isMenuOpen());
+        CHECK(split->isFocussed());
+    }
 }

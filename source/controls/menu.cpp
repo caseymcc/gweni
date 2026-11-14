@@ -536,7 +536,8 @@ bool Menu::openHighlightedSubmenu()
 {
     MenuItem *item=getHighlightedItem();
 
-    if(!item || !item->m_menu)
+    // disabled or hidden since it was highlighted: not a choice any more
+    if(!item || !item->m_menu || item->isDisabled() || !item->visible())
         return false;
 
     if(!item->isMenuOpen())
@@ -552,7 +553,7 @@ void Menu::chooseHighlighted()
 {
     MenuItem *item=getHighlightedItem();
 
-    if(!item)
+    if(!item || item->isDisabled() || !item->visible())
         return;
 
     if(openHighlightedSubmenu())

@@ -41,9 +41,12 @@ DropDownButton::~DropDownButton()
     if(canvas && canvas->releasingChildren())
         return;
 
+    // read first: close() deletes a deleteOnClose menu off any canvas at once
+    const bool deletesItself=menu->deleteOnClose();
+
     menu->closeAll();
     menu->close();
-    if(!menu->deleteOnClose())
+    if(!deletesItself)
         menu->delayedDelete();
 }
 
@@ -99,6 +102,14 @@ void DropDownButton::closeMenu()
     menu->close();
 }
 
+void DropDownButton::setDisabled(bool disabled)
+{
+    if(disabled)
+        closeMenu();
+
+    ParentClass::setDisabled(disabled);
+}
+
 bool DropDownButton::isDepressed() const
 {
     return ParentClass::isDepressed() || isMenuOpen();
@@ -124,15 +135,15 @@ void DropDownButton::onPress(event::Info info)
 
 bool DropDownButton::onKeySpace(bool down)
 {
-    if(down && !isMenuOpen())
-        openMenu(MenuFocus::FirstItem);
+    if(down)
+        toggleMenuFromKey();
     return true;
 }
 
 bool DropDownButton::onKeyReturn(bool down)
 {
-    if(down && !isMenuOpen())
-        openMenu(MenuFocus::FirstItem);
+    if(down)
+        toggleMenuFromKey();
     return true;
 }
 
@@ -141,15 +152,35 @@ bool DropDownButton::onKeyDown(bool down)
     if(!input::isKeyDown(keys::Alt))
         return ParentClass::onKeyDown(down);
 
-    if(down && !isMenuOpen())
-        openMenu(MenuFocus::FirstItem);
+    if(down)
+        toggleMenuFromKey();
     return true;
 }
 
 bool DropDownButton::onKeyF4(bool down)
 {
-    if(down && !isMenuOpen())
+    if(down)
+        toggleMenuFromKey();
+    return true;
+}
+
+// The menu open while the button has the focus (a press on the open button let
+// go off it): the key closes it, as a second press would.
+void DropDownButton::toggleMenuFromKey()
+{
+    if(isMenuOpen())
+        closeMenu();
+    else
         openMenu(MenuFocus::FirstItem);
+}
+
+bool DropDownButton::onKeyEscape(bool down)
+{
+    if(!isMenuOpen())
+        return ParentClass::onKeyEscape(down);
+
+    if(down)
+        closeMenu();
     return true;
 }
 

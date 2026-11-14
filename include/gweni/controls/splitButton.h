@@ -135,9 +135,13 @@ public:
     void onLostKeyboardFocus() override;
     bool onKeySpace(bool down) override;
     bool onKeyReturn(bool down) override;
-    //! Alt+Down opens the menu; a plain Down is not taken.
+    //! Alt+Down opens the menu (closes it if open); a plain Down is not
+    //! taken.
     bool onKeyDown(bool down) override;
     bool onKeyF4(bool down) override;
+    //! Closes the open menu (one the control kept the focus from: a press on
+    //! the arrow let go off it); otherwise not taken.
+    bool onKeyEscape(bool down) override;
 
     //! The main part was pressed (a click, Space, Return).
     gweni::event::Caller onPress;
@@ -147,6 +151,9 @@ public:
 protected:
     void onMainPressed(event::Info info);
     void onMainToggled(event::Info info);
+    //! Alt+Down and F4: open the menu with its first item highlighted, or
+    //! close it if it is open.
+    void toggleMenuFromKey();
 
     internal::SplitButtonMain *m_main=nullptr;
     internal::SplitButtonArrow *m_arrow=nullptr;

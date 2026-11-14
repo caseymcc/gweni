@@ -170,7 +170,8 @@
  *                       stats-overlay | depth-view | zoom-panel |
  *                       node-graph | code-editor | log-view |
  *                       chip-badge | navigation-rail | flow | board |
- *                       switch | spinner | image-grid | segmented (see below)
+ *                       switch | spinner | image-grid | segmented |
+ *                       split-button (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -204,7 +205,7 @@
  *                       inputMouseWheelH (the horizontal wheel)
  *    --key <name>       a key: return, kp-enter, tab, space, escape, up, down,
  *                       left, right, home, end, pageup, pagedown, backspace,
- *                       delete, shift, control, alt, command, f9, f10, f11
+ *                       delete, shift, control, alt, command, f4, f9, f10, f11
  *                       and f12 (which,
  *                       as in the window, open and close the depth view, the
  *                       stats overlay, the theme editor, saving to and
@@ -1647,7 +1648,7 @@ static void printUsage(std::ostream &out)
          "                     | stats-overlay | depth-view | zoom-panel\n"
          "                     | node-graph | code-editor | log-view | chip-badge\n"
          "                     | navigation-rail | flow | board | switch | spinner\n"
-         "                     | image-grid | segmented;\n"
+         "                     | image-grid | segmented | split-button;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
