@@ -1690,3 +1690,175 @@ TEST_CASE("CardReorder: the target column's Reorderable replaced mid-drag is the
         CHECK(scene.todo.drops.empty());
     }
 }
+
+namespace
+{
+
+//! The frame after \p scene's lists were hidden: what its update phase leaves
+//! for the render phase and how many passes it took
+struct HideFrame
+{
+    bool dirtyAfterUpdate;
+    bool renderLayout;
+    int passes;
+};
+
+HideFrame hideFrame(Scene &scene)
+{
+    scene.canvas->updateCanvas();
+    const bool dirty=scene.canvas->layoutDirty();
+    scene.canvas->renderCanvas();
+    const controls::LayoutStats &stats=scene.canvas->getLayoutStats();
+    return {dirty, stats.renderLayout, stats.passes};
+}
+
+//! Hides \p target in its first postLayout() once armed: a list the layout
+//! hides, after the update phase's own look at the lists
+class LayoutHider: public controls::Base
+{
+public:
+    GWENI_CONTROL_INLINE(LayoutHider, controls::Base)
+    {}
+
+    GWENI_DRAWS_NOTHING
+
+    void postLayout(skin::Base *skin) override
+    {
+        controls::Base::postLayout(skin);
+
+        if(target)
+        {
+            target->hide();
+            target=nullptr;
+        }
+    }
+
+    controls::Base *target=nullptr;
+};
+
+}//namespace
+
+TEST_CASE("CardReorder: a list hidden mid-drag is dropped before the layout, in its one pass")
+{
+    Scene scene;
+    scene.startDrag(scene.todo.cards[1]);
+    scene.move(Scene::on(scene.running.cards[0], 3));
+    REQUIRE(Reorderable::dropTarget() == scene.running.reorder);
+    REQUIRE(scene.running.reorder->indicatorShown());
+    REQUIRE(scene.todo.reorder->veilShown());
+    scene.frame();
+
+    bool sourceHidden=false;
+
+    SUBCASE("the target")
+    {
+        scene.running.list->hide();
+    }
+    SUBCASE("the source")
+    {
+        scene.todo.list->hide();
+        sourceHidden=true;
+    }
+    SUBCASE("both")
+    {
+        scene.todo.list->hide();
+        scene.running.list->hide();
+        sourceHidden=true;
+    }
+
+    const HideFrame hidden=hideFrame(scene);
+    CHECK_FALSE(hidden.dirtyAfterUpdate);
+    CHECK_FALSE(hidden.renderLayout);
+    CHECK(hidden.passes <= 1);
+    CHECK(Reorderable::dropTarget() == nullptr);
+    CHECK_FALSE(scene.running.reorder->indicatorShown());
+
+    if(sourceHidden)
+    {
+        CHECK_FALSE(draganddrop::isDragging());
+        CHECK_FALSE(scene.todo.reorder->veilShown());
+        CHECK(draganddrop::currentCursor() == cursor::Normal);
+    }
+    else
+    {
+        CHECK(draganddrop::isDragging());
+        CHECK(draganddrop::currentCursor() == cursor::No);
+    }
+
+    scene.release();
+    CHECK_FALSE(draganddrop::isDragging());
+    CHECK(scene.todo.drops.empty());
+    CHECK(scene.running.drops.empty());
+}
+
+TEST_CASE("CardReorder: the target's page hidden mid-drag is dropped before the layout, in its one pass")
+{
+    Scene scene;
+    controls::Base *page=scene.canvas->newChild<controls::Base>();
+    page->setDock(DockPosition::Right);
+    page->setWidth(150);
+    page->setSizeFlags({SizeFlag::Fixed, SizeFlag::Expand});
+    scene.running.list->setParent(page);
+    scene.running.list->setDock(DockPosition::Center);
+    scene.frame();
+    scene.frame();
+    scene.startDrag(scene.todo.cards[1]);
+    scene.move(Scene::on(scene.running.cards[0], 3));
+    REQUIRE(Reorderable::dropTarget() == scene.running.reorder);
+    REQUIRE(scene.running.reorder->indicatorShown());
+    scene.frame();
+
+    // as a TabControl leaves the page it switched away from
+    page->hide();
+    const HideFrame hidden=hideFrame(scene);
+    CHECK_FALSE(hidden.dirtyAfterUpdate);
+    CHECK_FALSE(hidden.renderLayout);
+    CHECK(hidden.passes <= 1);
+    CHECK(Reorderable::dropTarget() == nullptr);
+    CHECK(draganddrop::isDragging());
+    CHECK(draganddrop::currentCursor() == cursor::No);
+
+    scene.release();
+    CHECK_FALSE(draganddrop::isDragging());
+    CHECK(scene.running.drops.empty());
+}
+
+TEST_CASE("CardReorder: a list the layout hides mid-drag is dropped in the next update phase")
+{
+    Scene scene;
+    LayoutHider *hider=scene.canvas->newChild<LayoutHider>();
+    hider->setDock(DockPosition::Top);
+    hider->setHeight(1);
+    scene.frame();
+    scene.startDrag(scene.todo.cards[1]);
+    scene.move(Scene::on(scene.running.cards[0], 3));
+    REQUIRE(Reorderable::dropTarget() == scene.running.reorder);
+    scene.frame();
+
+    hider->target=scene.running.list;
+    hider->invalidate();
+    scene.frame();
+    REQUIRE_FALSE(scene.running.list->visible());
+    // found after the layout: left for the next update phase, which is work
+    CHECK(draganddrop::isDragging());
+    CHECK(scene.canvas->nextWorkTime() == controls::Canvas::WorkNow);
+
+    SUBCASE("the next frame drops it")
+    {
+        const HideFrame next=hideFrame(scene);
+        CHECK_FALSE(next.dirtyAfterUpdate);
+        CHECK_FALSE(next.renderLayout);
+        CHECK(next.passes <= 1);
+        CHECK(Reorderable::dropTarget() == nullptr);
+        CHECK_FALSE(scene.running.reorder->indicatorShown());
+        CHECK(draganddrop::currentCursor() == cursor::No);
+        CHECK(scene.canvas->nextWorkTime() != controls::Canvas::WorkNow);
+    }
+    SUBCASE("a release before it drops nothing")
+    {
+    }
+
+    scene.release();
+    CHECK_FALSE(draganddrop::isDragging());
+    CHECK(scene.running.drops.empty());
+}

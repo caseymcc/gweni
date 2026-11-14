@@ -41,6 +41,9 @@ static gweni::controls::Canvas *ReleaseCanvas=nullptr;
 // the target is found again in the update phase after that layout
 static gweni::controls::Canvas *RehoverCanvas=nullptr;
 static bool RehoverLaidOut=false;
+// the drag's canvas, when a list of the drag was found hidden after its
+// layout: it is dropped in the next update phase, before that layout
+static gweni::controls::Canvas *HiddenCanvas=nullptr;
 
 static void setCursor(int type)
 {
@@ -59,6 +62,7 @@ static void clear()
     Cursor=cursor::Normal;
     DropRefused=false;
     RehoverCanvas=nullptr;
+    HiddenCanvas=nullptr;
 }
 
 bool isDragging()
@@ -165,6 +169,9 @@ void controlDeleted(gweni::controls::Base *control)
     if(control == RehoverCanvas)
         RehoverCanvas=nullptr;
 
+    if(control == HiddenCanvas)
+        HiddenCanvas=nullptr;
+
     if(CurrentPackage && (control == DragCanvas))
     {
         // the canvas goes: nothing it holds may be called
@@ -223,9 +230,10 @@ static bool OnDrop(int x, int y)
     Package *package=CurrentPackage;
     gweni::controls::Base *target=HoveredControl;
 
-    // released over nothing that accepts it, or where its target refuses it:
-    // a cancel
-    if(!target || DropRefused)
+    // released over nothing that accepts it, where its target refuses it, or
+    // into a list hidden since the last update phase: a cancel
+    if(!target || DropRefused || !target->visible()
+        || (SourceList && !SourceList->visible()))
         return cancelDrag(true);
 
     gweni::controls::Base *source=SourceControl;
@@ -518,11 +526,50 @@ void targetChanged(gweni::controls::Base *control)
 
 bool rehoverPending(gweni::controls::Canvas *canvas)
 {
-    return CurrentPackage && canvas && (RehoverCanvas == canvas);
+    return CurrentPackage && canvas && ((RehoverCanvas == canvas) || (HiddenCanvas == canvas));
+}
+
+static bool listHidden()
+{
+    return (SourceList && !SourceList->visible()) || (HoveredControl && !HoveredControl->visible());
+}
+
+// The live drag's lists hidden: an item drag's source cancels it (there is no
+// list to drop back into; a control drag's source hides itself as it starts: a
+// tab, a dock), and a target hidden under the cursor is the target no more (a
+// release before the next move would drop into it; the next move finds what is
+// there). Either hides or parks the looks, so it runs before a layout.
+static bool dropHiddenLists()
+{
+    HiddenCanvas=nullptr;
+
+    if(SourceList && !SourceList->visible())
+        return cancel();
+
+    if(HoveredControl && !HoveredControl->visible())
+    {
+        gweni::controls::Base *target=HoveredControl;
+
+        HoveredControl=nullptr;
+        DropRefused=false;
+        target->dragAndDrop_hoverLeave(CurrentPackage);
+
+        if(CurrentPackage && (Cursor != cursor::No))
+            setCursor(cursor::No);
+    }
+    return false;
 }
 
 void beforeLayout(gweni::controls::Canvas *canvas)
 {
+    if(!CurrentPackage || (DragCanvas != canvas))
+        return;
+
+    // hidden by this frame's input, posts and animations, or by the last
+    // frame's layout (onCanvasThink())
+    if(dropHiddenLists() || !CurrentPackage)
+        return;
+
     if(!rehoverPending(canvas) || !RehoverLaidOut)
         return;
 
@@ -543,24 +590,11 @@ bool onCanvasThink(gweni::controls::Canvas *canvas)
     if(RehoverCanvas == canvas)
         RehoverLaidOut=true;
 
-    // An item drag's list hidden: there is no list to drop back into. (A
-    // control drag's source hides itself as it starts: a tab, a dock.)
-    if(SourceList && !SourceList->visible())
-        return cancel();
-
-    // A target hidden under the cursor is the target no more: a release before
-    // the next move would drop into it. The next move finds what is there.
-    if(HoveredControl && !HoveredControl->visible())
-    {
-        gweni::controls::Base *target=HoveredControl;
-
-        HoveredControl=nullptr;
-        DropRefused=false;
-        target->dragAndDrop_hoverLeave(CurrentPackage);
-
-        if(CurrentPackage && (Cursor != cursor::No))
-            setCursor(cursor::No);
-    }
+    // A list hidden by this frame's layout (or after it): what dropping it
+    // hides or parks would be laid out again in the render phase, so it waits
+    // for the next update phase (a release before then drops nothing).
+    if(listHidden())
+        HiddenCanvas=canvas;
 
     return false;
 }

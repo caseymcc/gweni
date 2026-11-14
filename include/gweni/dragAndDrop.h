@@ -91,13 +91,18 @@ GWENI_EXPORT bool rehoverPending(gweni::controls::Canvas *canvas);
 //! update phase (or by the next move), so a new Reorderable is entered.
 GWENI_EXPORT void targetChanged(gweni::controls::Base *control);
 
-//! The update phase of \p canvas, before its layout: after a wheel (wheeled())
-//! the target under the resting cursor is found again and told of the point,
-//! as a move would.
+//! The update phase of \p canvas, before its layout: an item drag whose
+//! source list is no longer visible is cancelled, and a target no longer
+//! visible (itself or an ancestor, a TabControl's page) is the target no more
+//! (the cursor No), so the looks they hide or park are laid out in this
+//! frame's one pass; then, after a wheel (wheeled()), the target under the
+//! resting cursor is found again and told of the point, as a move would.
 GWENI_EXPORT void beforeLayout(gweni::controls::Canvas *canvas);
 
-//! The update phase of \p canvas: an item drag whose source list is no longer
-//! visible is cancelled. Returns whether it cancelled one.
+//! The update phase of \p canvas, after its layout: a list of the live drag
+//! hidden by that layout (or after it) is left for the next update phase's
+//! beforeLayout(), and the canvas has work until then (rehoverPending()); a
+//! release before it drops nothing. Returns false (it ends no drag itself).
 GWENI_EXPORT bool onCanvasThink(gweni::controls::Canvas *canvas);
 
 //! \p control is being deleted, before its children are. The live drag's
