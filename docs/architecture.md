@@ -4297,8 +4297,10 @@ the list's geometry, never a hit test. The rules: a list takes its own items whi
 while both are in one `ReorderGroup` (a plain object, like `SelectableGroup`) and
 `setAcceptsFromGroup`; a list that refuses the item is no target, so there is no
 gap and the cursor is `No`. `setCanDrop(source, key, target, index)` is asked
-when the gap changes, and a refused gap shows nothing, the cursor `No`, a release
-there cancelling. The demo's three rules are all three: Todo reorders and takes
+when the gap changes, an insert or removal moving its index included, and a
+refused gap shows nothing, the cursor `No`, a release there cancelling. Every
+such check asks the list's rules again too, so a table the app sorts during a
+drag within it shows no gap from then on. The demo's three rules are all three: Todo reorders and takes
 nothing else, Running and Done take any column's cards and do not reorder, and
 nothing goes above Todo's pinned card.
 

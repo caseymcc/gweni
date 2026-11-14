@@ -485,7 +485,8 @@ void Reorderable::updateAutoScroll()
     int direction=0;
     float rate=0.0f;
 
-    if((s_target == this) && scroller && scroller->canScrollVertical() && (m_autoScrollBand > 0))
+    if((s_target == this) && accepts(s_source) && scroller && scroller->canScrollVertical()
+        && (m_autoScrollBand > 0))
     {
         const Point local=m_list->canvasPosToLocal(m_lastCanvasPoint);
         const Rect &viewport=scroller->getViewport();
@@ -602,7 +603,13 @@ void Reorderable::updateGap(size_t gap, bool force)
 {
     if(force || (gap != m_gap))
     {
-        bool allowed=(gap != NoItem) && s_source;
+        // asked again here, not only as the drag entered: the app may have
+        // sorted a table since, which then takes none of its own items
+        const bool accepted=accepts(s_source);
+        bool allowed=(gap != NoItem) && accepted;
+
+        if(!accepted)
+            stopAutoScroll();
 
         if(allowed && m_canDrop)
         {
@@ -643,12 +650,10 @@ void Reorderable::itemsInserted(size_t at, size_t count)
         placeVeil();
     }
 
-    // the gap stays before the item it was before
-    if((s_target == this) && (m_gap != NoItem) && (at <= m_gap))
-    {
-        m_gap+=count;
-        gapMoved();
-    }
+    // the gap stays before the item it was before, and is asked about again:
+    // canDrop takes its index, which moved
+    if((s_target == this) && (m_gap != NoItem))
+        updateGap((at <= m_gap) ? m_gap+count : m_gap, true);
 }
 
 void Reorderable::itemsRemoved(size_t at, size_t count)
@@ -672,10 +677,13 @@ void Reorderable::itemsRemoved(size_t at, size_t count)
         }
     }
 
-    if((s_target == this) && (m_gap != NoItem) && (m_gap > at))
+    if((s_target == this) && (m_gap != NoItem))
     {
-        m_gap=(m_gap >= at+count) ? m_gap-count : at;
-        gapMoved();
+        size_t gap=m_gap;
+
+        if(gap > at)
+            gap=(gap >= at+count) ? gap-count : at;
+        updateGap(gap, true);
     }
 }
 
