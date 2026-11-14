@@ -119,6 +119,15 @@
  *  gets one pick, no chip of the query; an onSelection handler of a plain
  *  and of a filterable box moving the focus (a form's auto-advance) keeps
  *  it there, as does an onCustomValue handler's, single and multi-select.
+ *  What the field losing the focus to a handler does is done once, after the
+ *  handler: an onTextChanged handler pushing a modal on a free-text box's
+ *  first character leaves the list closed and that character taken as the
+ *  value by one onCustomValue outside the handler, one focusing another
+ *  control leaves a filterable box's list closed and its value shown, and a
+ *  chip's x whose onSelectionChange handler focuses another control has the
+ *  query typed taken as a chip by a second onSelectionChange, not nested in
+ *  the first. A multi-select Add row's onSelectionChange sees the field and
+ *  the query empty and no Add row, as an option pick's does.
  */
 #include "headlessFixture.h"
 
@@ -2525,4 +2534,116 @@ TEST_CASE("SearchComboBox: an onCustomValue handler moving the focus keeps it th
         else
             CHECK(box->getValue() == "zzz");
     }
+}
+
+TEST_CASE("SearchComboBox: an onTextChanged handler opening a dialog leaves the box as a lost focus does, after it")
+{
+    Scene scene;
+    SearchComboBox *box=freeText(scene, {"web-1", "web-2"});
+    Reacts texts;
+    Reacts customs;
+    bool inText=false;
+    bool customInsideText=false;
+
+    texts.listen(box->onTextChangedCaller);
+    customs.listen(box->onCustomValue);
+    texts.run=[&](event::Info) {
+        inText=true;
+        pushDialog(scene);
+        inText=false;
+    };
+    customs.run=[&](event::Info) { customInsideText=customInsideText || inText; };
+    type(scene, "z");
+    CHECK(texts.calls == 1);
+    // the free text taken once, after the handler, never inside it
+    CHECK(customs.calls == 1);
+    CHECK(!customInsideText);
+    CHECK(box->getValue() == "z");
+    CHECK(!box->isListOpen());
+    CHECK(scene.canvas->modalCount() == 1);
+}
+
+TEST_CASE("SearchComboBox: an onTextChanged handler moving the focus closes the list and shows the value")
+{
+    Scene scene;
+    SearchComboBox *box=filterable(scene, {"web-1", "web-2"});
+    controls::TextBox *other=scene.canvas->newChild<controls::TextBox>();
+    Reacts texts;
+
+    other->setBounds(20, 300, 100, 20);
+    scene.frame();
+    box->getField()->focus();
+    box->getField()->onSelectAll(box->getField());
+    texts.listen(box->onTextChangedCaller);
+    texts.run=[&](event::Info) { other->focus(); };
+    type(scene, "w");
+    CHECK(texts.calls == 1);
+    CHECK(KeyboardFocus == other);
+    CHECK(!box->isListOpen());
+    CHECK(box->getField()->getText() == "web-1");
+    CHECK(box->getSelectedIndex() == 0);
+}
+
+TEST_CASE("SearchComboBox: a chip's x whose onSelectionChange handler moves the focus takes the typed text once, after it")
+{
+    Scene scene;
+    SearchComboBox *box=freeText(scene, {"controls", "layout", "docs"});
+    controls::TextBox *other=scene.canvas->newChild<controls::TextBox>();
+    Reacts changes;
+    int depth=0;
+    int deepest=0;
+
+    box->setMultiSelect(true);
+    box->setSelectedIndices({0, 2});
+    other->setBounds(20, 300, 100, 20);
+    scene.frame();
+    box->getField()->focus();
+    type(scene, "foo");
+    REQUIRE(box->isListOpen());
+    changes.listen(box->onSelectionChange);
+    changes.run=[&](event::Info) {
+        deepest=std::max(deepest, ++depth);
+        if(changes.calls == 1)
+            other->focus();
+        --depth;
+    };
+
+    const std::vector<Chip *> chips=box->getChips();
+
+    REQUIRE(chips.size() == 2);
+    REQUIRE(chips[0]->getRemoveButton());
+    scene.clickOn(chips[0]->getRemoveButton());
+    // the removal, then "foo" taken as the lost focus takes it
+    CHECK(changes.calls == 2);
+    CHECK(deepest == 1);
+    CHECK(box->getSelectedValues() == std::vector<String>{"docs", "foo"});
+    CHECK(box->getField()->getText() == "");
+    CHECK(!box->isListOpen());
+    CHECK(KeyboardFocus == other);
+}
+
+TEST_CASE("SearchComboBox: a multi-select Add row's onSelectionChange comes with the field emptied, as an option's")
+{
+    Scene scene;
+    SearchComboBox *box=freeText(scene, {"controls", "layout", "docs"});
+    Reacts changes;
+    std::vector<String> seen;
+
+    box->setMultiSelect(true);
+    scene.frame();
+    box->getField()->focus();
+    changes.listen(box->onSelectionChange);
+    changes.run=[&](event::Info) {
+        seen.push_back("query='"+box->getQuery()+"' add="+std::to_string(box->isAddRowShown())
+            +" field='"+box->getField()->getText()+"'");
+    };
+    type(scene, "zzz");
+    REQUIRE(box->isAddRowHighlighted());
+    scene.key(keys::Return);
+    type(scene, "lay");
+    scene.key(keys::Return);
+    REQUIRE(seen.size() == 2);
+    CHECK(seen[0] == "query='' add=0 field=''");
+    CHECK(seen[1] == seen[0]);
+    CHECK(box->getSelectedValues() == std::vector<String>{"zzz", "layout"});
 }

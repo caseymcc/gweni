@@ -309,7 +309,9 @@ public:
     //! staying. No event fires. While the field holds what
     //! the user typed (an app refilling the options from
     //! onTextChangedCaller), it keeps it and the open list shows the new
-    //! options matching it; the value shows again when the edit ends.
+    //! options matching it; the value shows again when the edit ends. An
+    //! open list's highlight goes to its first row (a refill from an
+    //! onSelectionChange handler included).
     void setOptions(std::vector<Option> options);
     //! No options; the value is held, as setOptions({}) holds it
     //! (setSelectedIndex(NoOption) or setSelectedIndices({}) drop it).
@@ -335,10 +337,15 @@ public:
     //! delayedDelete(), as any control. Each event comes after the box's own
     //! work (the list closed, the field showing the value), so a handler may
     //! move the focus (the next field of a form) or open a dialog: the box
-    //! leaves the focus where it put it, and the field losing the focus to it
-    //! takes nothing (resolveText() does not run again).
+    //! leaves the focus where it put it, and what the field losing the focus
+    //! to it does (the list closed, the value shown, a free-text box taking
+    //! or refusing what it holds) is done once, after the handler and the
+    //! box's work, never inside the handler.
     gweni::event::Caller onSelection;
-    //! Fired once per edit of the field (the info's string is its text).
+    //! Fired once per edit of the field (the info's string is its text),
+    //! after the list has opened or filtered for it; a handler refilling the
+    //! options (setOptions()) filters it again, and one moving the focus
+    //! leaves the box as a lost focus does.
     gweni::event::Caller onTextChangedCaller;
     //! Fired when a typed text that is no option's label is to become the
     //! value (the info's string); refuseCustomValue() from the handler keeps
@@ -486,9 +493,36 @@ protected:
     //! empty), firing onSelection with \p doEvents when it changed; whether
     //! it changed.
     bool select(int index, bool doEvents);
-    //! \p caller called with \p info as one of the box's events: the
-    //! field's lost focus meanwhile takes nothing (m_inEvent).
+    //! While one is alive the box is at work (an edit, a pick, a value
+    //! taken, one of its events): the field losing the focus meanwhile only
+    //! closes the list, and what the lost focus takes or gives back waits
+    //! until the outermost one ends (settleLostFocus()).
+    struct Busy
+    {
+        explicit Busy(SearchComboBox &box);
+        ~Busy();
+
+        Busy(const Busy &)=delete;
+        Busy &operator=(const Busy &)=delete;
+
+        SearchComboBox &m_box;
+        int m_exceptions;
+    };
+
+    //! \p caller called with \p info as one of the box's events, the box
+    //! Busy meanwhile.
     void callEvent(gweni::event::Caller &caller, gweni::event::Info info);
+    //! The outermost Busy ended: if the field lost the focus meanwhile (a
+    //! handler opened a dialog or focused another control) and has not got
+    //! it back, what a lost focus does, once, now that the box's work is
+    //! done.
+    void settleLostFocus();
+    //! What the field losing the focus does: the list closed, a free-text
+    //! box taking its text (resolveText()), any other showing the value.
+    void loseFocus();
+    //! The query over: the field emptied (no edit) and, open, the list
+    //! showing every option again.
+    void clearQuery();
     //! The focus to the input (focusInput()) unless an event moved it from
     //! \p focused, the keyboard focus before the box's work began.
     void focusInputUnlessMoved(const Base *focused);
@@ -543,8 +577,10 @@ protected:
     int optionWithLabel(const String &text) const;
     //! A free-text box takes the field's text as the value (see the class).
     void resolveText();
-    //! onCustomValue for \p text; whether it was taken.
-    bool commitCustom(const String &text);
+    //! onCustomValue for \p text; whether it was taken. Multi-select, a
+    //! text not picked yet becomes a pick (\p added true), and the caller
+    //! fires onSelectionChange once its own work is done.
+    bool commitCustom(const String &text, bool &added);
     //! Highlights the shown option at \p position (VirtualList::NoItem for
     //! none), scrolling it into view with \p scroll.
     void highlightPosition(size_t position, bool scroll);
@@ -604,8 +640,10 @@ protected:
     bool m_fieldEdited=false;
     //! Set by refuseCustomValue() during onCustomValue.
     bool m_refusing=false;
-    //! How many of the box's events are running (callEvent()).
-    int m_inEvent=0;
+    //! How many Busy are alive.
+    int m_busy=0;
+    //! The field lost the focus while the box was Busy.
+    bool m_lostFocusPending=false;
     int m_selected=NoOption;
     //! The selection is m_heldOption, which no option equals now
     //! (m_selected NoOption).

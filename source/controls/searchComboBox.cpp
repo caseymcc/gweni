@@ -10,6 +10,7 @@
 #include <gweni/skin.h>
 
 #include <algorithm>
+#include <exception>
 
 namespace gweni
 {
@@ -470,8 +471,8 @@ int SearchComboBox::findOption(const std::vector<Option> &options, const Option 
 // theirs); a free-text value stays the value; with nothing selected the first
 // option is, or none while the user types. The field keeps what the user is
 // typing, which the open list matches against the new options: an app
-// refilling them from onTextChangedCaller (an async search) runs before the
-// box filters for that edit.
+// refilling them from onTextChangedCaller (an async search) runs after the
+// box filtered for that edit, which then filters again here.
 void SearchComboBox::setOptions(std::vector<Option> options)
 {
     const bool edited=fieldHoldsEdit();
@@ -592,14 +593,43 @@ bool SearchComboBox::select(int index, bool doEvents)
     return true;
 }
 
+SearchComboBox::Busy::Busy(SearchComboBox &box):
+    m_box(box),
+    m_exceptions(std::uncaught_exceptions())
+{
+    ++m_box.m_busy;
+}
+
+// A handler that threw: the lost focus is left for the next edit or focus.
+SearchComboBox::Busy::~Busy()
+{
+    if((--m_box.m_busy == 0) && (std::uncaught_exceptions() == m_exceptions))
+        m_box.settleLostFocus();
+}
+
 // A handler opening a dialog or moving the focus takes the focus from the
-// field: that lost focus closes the list and takes nothing, since the box's
-// work around the event (a pick, a free-text value, a refusal) is its own.
+// field: that lost focus closes the list at once, and what it takes or gives
+// back waits until the box's work around the event (a pick, a free-text
+// value, a refusal) is done.
 void SearchComboBox::callEvent(event::Caller &caller, event::Info info)
 {
-    ++m_inEvent;
+    Busy busy(*this);
+
     caller.call(this, info);
-    --m_inEvent;
+}
+
+// Each pass a fresh lost focus: a handler of an event loseFocus() fires may
+// take the focus again (it is not the field's then, so nothing is left to
+// take: the field shows the value, is empty, or is refused).
+void SearchComboBox::settleLostFocus()
+{
+    while(m_lostFocusPending)
+    {
+        m_lostFocusPending=false;
+
+        if(m_field && (KeyboardFocus != m_field))
+            loseFocus();
+    }
 }
 
 void SearchComboBox::focusInputUnlessMoved(const Base *focused)
@@ -658,7 +688,9 @@ void SearchComboBox::pick(int index, bool doEvents)
 {
     const bool changed=select(index, false);
 
-    showSelection();
+    // select() showed a changed one
+    if(!changed)
+        showSelection();
     closeList();
     focusInput();
 
@@ -909,15 +941,15 @@ void SearchComboBox::fieldTextChanged()
     // an edit is no longer the refused value
     setRefused(false);
 
-    event::Info info(this);
-
-    info.string=m_query;
-    onTextChangedCaller.call(this, info);
-
     if(isListOpen())
         filter();
     else
         showList(true);
+
+    event::Info info(this);
+
+    info.string=m_query;
+    callEvent(onTextChangedCaller, info);
 }
 
 // A click on the field with the list closed opens it with the field's text
@@ -939,11 +971,21 @@ bool SearchComboBox::fieldClicked()
 // back.
 void SearchComboBox::fieldLostFocus()
 {
-    closeList();
-
-    // to a handler of the box's own event (callEvent())
-    if(m_inEvent > 0)
+    // to a handler of the box's own event, or during its work: once it is
+    // done (settleLostFocus())
+    if(m_busy > 0)
+    {
+        closeList();
+        m_lostFocusPending=true;
         return;
+    }
+
+    loseFocus();
+}
+
+void SearchComboBox::loseFocus()
+{
+    closeList();
 
     if(m_allowCustom && !isDisabled())
         resolveText();
@@ -968,6 +1010,7 @@ int SearchComboBox::optionWithLabel(const String &text) const
 // else, a free-text value.
 void SearchComboBox::resolveText()
 {
+    Busy busy(*this);
     const String text=m_field->getText();
 
     // refused, the text stays the user's edit
@@ -987,15 +1030,21 @@ void SearchComboBox::resolveText()
         const int option=optionWithLabel(text);
 
         if(option == NoOption)
-            commitCustom(text);
+        {
+            bool added=false;
+
+            if(commitCustom(text, added))
+                clearQuery();
+            if(added)
+                fireSelectionChange(NoOption);
+        }
         else
         {
             const bool add=!isPicked(option);
 
             if(add)
                 togglePick(option);
-            m_field->showText(String());
-            m_fieldEdited=false;
+            clearQuery();
 
             if(add)
                 fireSelectionChange(option);
@@ -1018,7 +1067,8 @@ void SearchComboBox::resolveText()
     {
         const bool changed=select(option, false);
 
-        showSelection();
+        if(!changed)
+            showSelection();
 
         if(changed)
             callEvent(onSelection, event::Info(this));
@@ -1026,14 +1076,21 @@ void SearchComboBox::resolveText()
     else if(text.empty())
         showSelection();
     else
-        commitCustom(text);
+    {
+        bool added=false;
+
+        commitCustom(text, added);
+    }
 }
 
 // The handler may refuse it (refuseCustomValue()); the field then keeps it in
 // the refused colour, and the value stays what it was.
-bool SearchComboBox::commitCustom(const String &text)
+bool SearchComboBox::commitCustom(const String &text, bool &added)
 {
+    Busy busy(*this);
     event::Info info(this);
+
+    added=false;
 
     info.string=text;
     m_refusing=false;
@@ -1056,11 +1113,7 @@ bool SearchComboBox::commitCustom(const String &text)
 
         if(!picked)
             addPick(NoOption, text);
-        m_field->showText(String());
-        m_fieldEdited=false;
-
-        if(!picked)
-            fireSelectionChange(NoOption);
+        added=!picked;
         return true;
     }
 
@@ -1214,6 +1267,7 @@ void SearchComboBox::pickPosition(size_t position)
     if(isDisabled())
         return;
 
+    Busy busy(*this);
     const size_t key=rowKey(position);
     // a handler of onCustomValue or onSelectionChange may have moved it
     const Base *const focused=KeyboardFocus;
@@ -1222,12 +1276,19 @@ void SearchComboBox::pickPosition(size_t position)
     {
         // a copy: a handler may set the field's text
         const String text=m_field->getText();
+        bool added=false;
 
-        if(!commitCustom(text))
+        if(!commitCustom(text, added))
             return;
 
         if(m_multi)
+        {
+            // the field emptied (the query no longer the text), then the event
             afterMultiPick(NoOption, focused);
+
+            if(added)
+                fireSelectionChange(NoOption);
+        }
         else
         {
             closeList();
@@ -1617,22 +1678,32 @@ void SearchComboBox::refreshCheck(int index)
 // again), the highlight on the option just picked.
 void SearchComboBox::afterMultiPick(int option, const Base *focused)
 {
-    // the query, not the field: a free-text pick has emptied the field already
-    if(m_filterable && !m_query.empty())
-    {
-        m_field->showText(String());
-        m_fieldEdited=false;
-        m_query.clear();
-        m_lowerQuery.clear();
-
-        if(isListOpen())
-            filter();
-    }
+    clearQuery();
 
     if(option != NoOption)
         setHighlightedIndex(option);
 
     focusInputUnlessMoved(focused);
+}
+
+// The query, not the field: a free-text pick has emptied the field already.
+void SearchComboBox::clearQuery()
+{
+    if(!m_filterable)
+        return;
+
+    if(!m_field->getText().empty())
+        m_field->showText(String());
+    m_fieldEdited=false;
+
+    if(m_query.empty())
+        return;
+
+    m_query.clear();
+    m_lowerQuery.clear();
+
+    if(isListOpen())
+        filter();
 }
 
 // Each chip at its preferred size (cut to the row), left to right from the

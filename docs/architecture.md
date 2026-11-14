@@ -4443,11 +4443,11 @@ two programs and the draws. What follows describes both together:
   then takes none and is no Tab stop, so a press on its chevron keeps the field's
   focus); Up, Down, Return and Escape go to the box. Each edit is the query: an
   `insertText()` is one edit however many text changes it makes (typing over a
-  selection erases it, then inserts), it fires `onTextChangedCaller` and matches the
-  lower-cased query against the cached labels, a substring anywhere (ASCII letters
-  only are folded), every option for an empty query, the first match highlighted (the
-  option whose label is the query, if one is, so in a single-select free-text box
-  Return picks what Tab would).
+  selection erases it, then inserts): it matches the lower-cased query against the
+  cached labels, a substring anywhere (ASCII letters only are folded), every option
+  for an empty query, the first match highlighted (the option whose label is the
+  query, if one is, so in a single-select free-text box Return picks what Tab would),
+  and then fires `onTextChangedCaller`.
   Then only the pooled rows whose option changed are bound again (`rebindChanged`,
   comparing each row's key, its option or one of the two rows below, before and
   after; `getRowBindCount()` counts the binds): a keystroke matches over data, makes
@@ -4466,8 +4466,8 @@ two programs and the draws. What follows describes both together:
   instead of taking a free-text value.
 
   **Options refilled while the user types** (an app's async search: `setOptions()`,
-  or `clearOptions()` and `addOption()`, from `onTextChangedCaller`, which runs before
-  the box filters for that edit) leave the field's text and the query as they are,
+  or `clearOptions()` and `addOption()`, from `onTextChangedCaller`, which runs after
+  the box filtered for that edit, so the refill filters again) leave the field's text and the query as they are,
   and the open list shows the new options matching it. "While the user types" is a
   flag, not a comparison of the field with the value (an emptied query with nothing
   selected would look like none): an edit of the field sets it, and showing the value
@@ -4510,16 +4510,24 @@ two programs and the draws. What follows describes both together:
   back, as the field's own Escape would.
 
   **Handlers that open a dialog or move the focus.** Each event (`onSelection`,
-  `onSelectionChange`, `onCustomValue`) is called through `callEvent()`, and comes after
-  the box's own work where that work does not depend on it: a pick has closed the list,
-  shown the value and focused the input, a multi-select pick has emptied the field for
-  the next query, before the event. A handler that pushes a modal (a `dialogs::confirm`
-  asking whether to add a host) or focuses another field (a form's auto-advance) takes
-  the focus from the field, and that lost focus, while an event runs, closes the list
-  and takes nothing, so `resolveText()` never runs again under the handler (a refusal
-  held, no query turned into a chip). `onCustomValue` must come first (its refusal
+  `onSelectionChange`, `onCustomValue`, `onTextChangedCaller`) is called through
+  `callEvent()`, and comes after the box's own work where that work does not depend on
+  it: an edit has opened or filtered the list, a pick has closed the list, shown the
+  value and focused the input, a multi-select pick (the Add row's included) has
+  emptied the field for the next query, before the event. A handler that pushes a
+  modal (a `dialogs::confirm` asking whether to add a host) or focuses another field
+  (a form's auto-advance) takes the focus from the field. While the box is at work
+  (a `SearchComboBox::Busy` alive: an event, a pick, a text resolved) that lost focus
+  only closes the list and is noted; when the outermost `Busy` ends, if the field has
+  not got the focus back, the box does what a lost focus does (`settleLostFocus()`):
+  the value shown, or a free-text box's text taken or refused, once, so
+  `resolveText()` never runs under a handler (a refusal held, no query turned into a
+  chip, no `onCustomValue` nested in an `onTextChangedCaller`). After a pick that is
+  nothing (the field shows the value, is empty, or is refused); after an edit or a
+  chip's x it takes what was typed. `onCustomValue` must come first (its refusal
   decides the rest); after it the box focuses its input only if the keyboard focus is
-  where it was before the pick (`focusInputUnlessMoved()`).
+  where it was before the pick (`focusInputUnlessMoved()`). A handler that throws
+  leaves the noted lost focus untaken.
 
   **Multi-select** (`setMultiSelect(true)`) holds picks in order, each an
   owner-placed, removable `Chip` that takes no keyboard (a press on it keeps the
