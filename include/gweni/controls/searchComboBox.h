@@ -332,7 +332,11 @@ public:
 
     //! Fired once per pick or Up/Down step that changes the selection. The
     //! box goes on after its events: a handler deletes it with
-    //! delayedDelete(), as any control.
+    //! delayedDelete(), as any control. Each event comes after the box's own
+    //! work (the list closed, the field showing the value), so a handler may
+    //! move the focus (the next field of a form) or open a dialog: the box
+    //! leaves the focus where it put it, and the field losing the focus to it
+    //! takes nothing (resolveText() does not run again).
     gweni::event::Caller onSelection;
     //! Fired once per edit of the field (the info's string is its text).
     gweni::event::Caller onTextChangedCaller;
@@ -479,8 +483,15 @@ protected:
     void listVisibilityChanged(event::Info info);
     void makeList();
     //! Makes \p index the selection and shows its label (NoOption: none,
-    //! empty), firing onSelection with \p doEvents when it changed.
-    void select(int index, bool doEvents);
+    //! empty), firing onSelection with \p doEvents when it changed; whether
+    //! it changed.
+    bool select(int index, bool doEvents);
+    //! \p caller called with \p info as one of the box's events: the
+    //! field's lost focus meanwhile takes nothing (m_inEvent).
+    void callEvent(gweni::event::Caller &caller, gweni::event::Info info);
+    //! The focus to the input (focusInput()) unless an event moved it from
+    //! \p focused, the keyboard focus before the box's work began.
+    void focusInputUnlessMoved(const Base *focused);
     //! The selection's label on the box, or in the field when filterable.
     void showSelection();
     //! Whether the field holds text the user typed: an edit of it made it,
@@ -540,7 +551,8 @@ protected:
     //! Picks option \p index from the list: selects it and closes the list.
     void pick(int index, bool doEvents);
     //! Multi-select: option \p index picked if it was not, taken away if it
-    //! was (onSelectionChange once); the list stays open.
+    //! was, firing nothing (the caller fires onSelectionChange once its own
+    //! work is done); the list stays open.
     void togglePick(int index);
     //! A pick added: option \p index, or free text \p text with NoOption.
     void addPick(int index, const String &text);
@@ -552,7 +564,8 @@ protected:
     void clearPicks(bool keepCustom);
     //! After a multi-select pick: the field emptied for the next query, the
     //! list showing every option again, the highlight on \p position's option.
-    void afterMultiPick(int option);
+    //! The focus back to the input unless an event moved it from \p focused.
+    void afterMultiPick(int option, const Base *focused);
     //! The row showing option \p index checked or not.
     void refreshCheck(int index);
     //! onSelectionChange for option \p index (NoOption: a free-text pick).
@@ -591,6 +604,8 @@ protected:
     bool m_fieldEdited=false;
     //! Set by refuseCustomValue() during onCustomValue.
     bool m_refusing=false;
+    //! How many of the box's events are running (callEvent()).
+    int m_inEvent=0;
     int m_selected=NoOption;
     //! The selection is m_heldOption, which no option equals now
     //! (m_selected NoOption).

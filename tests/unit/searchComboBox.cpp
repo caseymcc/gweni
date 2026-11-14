@@ -110,6 +110,15 @@
  *  value is a chip of its own, once, the field emptied and the list on every
  *  option again; an option's label typed in full and a lost focus pick it.
  *  Multi-select off gives the box back the height flag it had.
+ *
+ *  Handlers that open a dialog or move the focus: an onCustomValue handler
+ *  refusing a text and pushing a modal runs once and the refusal holds (the
+ *  field losing the focus to the modal takes nothing), as does an accepting
+ *  one on Return with the list closed; a multi-select free-text box's
+ *  onSelectionChange handler pushing a modal or focusing another control
+ *  gets one pick, no chip of the query; an onSelection handler of a plain
+ *  and of a filterable box moving the focus (a form's auto-advance) keeps
+ *  it there, as does an onCustomValue handler's, single and multi-select.
  */
 #include "headlessFixture.h"
 
@@ -123,6 +132,7 @@
 
 #include <doctest/doctest.h>
 
+#include <functional>
 #include <set>
 #include <string>
 
@@ -2338,4 +2348,181 @@ TEST_CASE("SearchComboBox: free text, an option's label typed highlights it firs
     scene.key(keys::Return);
     CHECK(box->getValue() == "web-1");
     CHECK(box->getSelectedIndex() == 1);
+}
+
+namespace
+{
+
+//! A handler counting its calls and running `run`, if set, from each.
+class Reacts: public event::Handler
+{
+public:
+    void react(event::Info info)
+    {
+        ++calls;
+
+        if(run)
+            run(info);
+    }
+
+    void listen(event::Caller &caller)
+    {
+        caller.add(this, &Reacts::react);
+    }
+
+    std::function<void(event::Info)> run;
+    int calls=0;
+};
+
+//! A plain control on \p scene's canvas pushed as its modal, as a dialog is.
+void pushDialog(Scene &scene)
+{
+    controls::Base *dialog=scene.canvas->newChild<controls::Base>();
+
+    dialog->setBounds(200, 400, 50, 50);
+    scene.canvas->pushModal(dialog);
+}
+
+}//namespace
+
+TEST_CASE("SearchComboBox: an onCustomValue handler refusing and opening a dialog runs once, the refusal held")
+{
+    Scene scene;
+    SearchComboBox *box=freeText(scene, {"web-1", "web-2"});
+    Reacts handler;
+
+    handler.listen(box->onCustomValue);
+    handler.run=[&](event::Info) {
+        box->refuseCustomValue();
+        pushDialog(scene);
+    };
+    type(scene, "zzz");
+    REQUIRE(box->isAddRowHighlighted());
+    scene.key(keys::Return);
+    CHECK(handler.calls == 1);
+    CHECK(scene.canvas->modalCount() == 1);
+    CHECK(box->isCustomValueRefused());
+    CHECK(!box->hasCustomValue());
+    CHECK(box->getValue() == "web-1");
+    CHECK(box->getField()->getText() == "zzz");
+}
+
+TEST_CASE("SearchComboBox: an onCustomValue handler opening a dialog on Return with the list closed runs once")
+{
+    Scene scene;
+    SearchComboBox *box=freeText(scene, {"web-1", "web-2"});
+    Reacts handler;
+
+    handler.listen(box->onCustomValue);
+    handler.run=[&](event::Info) { pushDialog(scene); };
+    type(scene, "zzz");
+    // the chevron's toggle closes the list and keeps the text
+    box->getList()->hide();
+    scene.frame();
+    REQUIRE(!box->isListOpen());
+    scene.key(keys::Return);
+    CHECK(handler.calls == 1);
+    CHECK(scene.canvas->modalCount() == 1);
+    CHECK(box->hasCustomValue());
+    CHECK(box->getValue() == "zzz");
+}
+
+TEST_CASE("SearchComboBox: a multi-select onSelectionChange handler opening a dialog or moving the focus gets one pick")
+{
+    for(const bool modal : {true, false})
+    {
+        CAPTURE(modal);
+        Scene scene;
+        SearchComboBox *box=freeText(scene, {"controls", "layout", "docs"});
+        controls::TextBox *other=scene.canvas->newChild<controls::TextBox>();
+        Reacts changes;
+        Reacts customs;
+
+        box->setMultiSelect(true);
+        other->setBounds(20, 300, 100, 20);
+        scene.frame();
+        box->getField()->focus();
+        changes.listen(box->onSelectionChange);
+        customs.listen(box->onCustomValue);
+        changes.run=[&](event::Info) {
+            if(modal)
+                pushDialog(scene);
+            else
+                other->focus();
+        };
+        type(scene, "lay");
+        REQUIRE(box->isListOpen());
+        scene.key(keys::Return);
+        CHECK(changes.calls == 1);
+        CHECK(customs.calls == 0);
+        CHECK(box->getSelectedValues() == std::vector<String>{"layout"});
+        CHECK(box->getField()->getText() == "");
+
+        if(!modal)
+            CHECK(KeyboardFocus == other);
+    }
+}
+
+TEST_CASE("SearchComboBox: an onSelection handler moving the focus keeps it there, plain and filterable")
+{
+    for(const bool filter : {false, true})
+    {
+        CAPTURE(filter);
+        Scene scene;
+        SearchComboBox *box=filter?filterable(scene, {"web-1", "web-2"}):scene.box(3);
+        controls::TextBox *other=scene.canvas->newChild<controls::TextBox>();
+        Reacts selections;
+
+        other->setBounds(20, 300, 100, 20);
+        scene.frame();
+        selections.listen(box->onSelection);
+        selections.run=[&](event::Info) { other->focus(); };
+
+        if(filter)
+        {
+            box->getField()->focus();
+            box->getField()->onSelectAll(box->getField());
+            type(scene, "web-2");
+        }
+        else
+        {
+            scene.clickOn(box);
+            scene.key(keys::Down);
+        }
+        REQUIRE(box->isListOpen());
+        scene.key(keys::Return);
+        CHECK(selections.calls == 1);
+        CHECK(box->getSelectedIndex() == 1);
+        CHECK(KeyboardFocus == other);
+        CHECK(!box->isListOpen());
+    }
+}
+
+TEST_CASE("SearchComboBox: an onCustomValue handler moving the focus keeps it there, single and multi-select")
+{
+    for(const bool multi : {false, true})
+    {
+        CAPTURE(multi);
+        Scene scene;
+        SearchComboBox *box=freeText(scene, {"web-1", "web-2"});
+        controls::TextBox *other=scene.canvas->newChild<controls::TextBox>();
+        Reacts customs;
+
+        box->setMultiSelect(multi);
+        other->setBounds(20, 300, 100, 20);
+        scene.frame();
+        box->getField()->focus();
+        customs.listen(box->onCustomValue);
+        customs.run=[&](event::Info) { other->focus(); };
+        type(scene, "zzz");
+        REQUIRE(box->isAddRowHighlighted());
+        scene.key(keys::Return);
+        CHECK(customs.calls == 1);
+        CHECK(KeyboardFocus == other);
+
+        if(multi)
+            CHECK(box->getSelectedValues() == std::vector<String>{"zzz"});
+        else
+            CHECK(box->getValue() == "zzz");
+    }
 }

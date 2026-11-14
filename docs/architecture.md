@@ -4509,6 +4509,18 @@ two programs and the draws. What follows describes both together:
   list), `listVisibilityChanged` reads `Canvas::closingOnEscape()` and gives the value
   back, as the field's own Escape would.
 
+  **Handlers that open a dialog or move the focus.** Each event (`onSelection`,
+  `onSelectionChange`, `onCustomValue`) is called through `callEvent()`, and comes after
+  the box's own work where that work does not depend on it: a pick has closed the list,
+  shown the value and focused the input, a multi-select pick has emptied the field for
+  the next query, before the event. A handler that pushes a modal (a `dialogs::confirm`
+  asking whether to add a host) or focuses another field (a form's auto-advance) takes
+  the focus from the field, and that lost focus, while an event runs, closes the list
+  and takes nothing, so `resolveText()` never runs again under the handler (a refusal
+  held, no query turned into a chip). `onCustomValue` must come first (its refusal
+  decides the rest); after it the box focuses its input only if the keyboard focus is
+  where it was before the pick (`focusInputUnlessMoved()`).
+
   **Multi-select** (`setMultiSelect(true)`) holds picks in order, each an
   owner-placed, removable `Chip` that takes no keyboard (a press on it keeps the
   field's focus or gives it to the box). A pick of an option not picked adds it and

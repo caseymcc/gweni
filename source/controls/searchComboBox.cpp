@@ -572,13 +572,13 @@ String SearchComboBox::getValue()
     return option->name.empty()?option->label:option->name;
 }
 
-void SearchComboBox::select(int index, bool doEvents)
+bool SearchComboBox::select(int index, bool doEvents)
 {
     if((index < 0) || (static_cast<size_t>(index) >= m_options.size()))
         index=NoOption;
 
     if((index == m_selected) && !m_hasCustom && !m_held)
-        return;
+        return false;
 
     m_selected=index;
     m_held=false;
@@ -588,7 +588,24 @@ void SearchComboBox::select(int index, bool doEvents)
     showSelection();
 
     if(doEvents)
-        onSelection.call(this);
+        callEvent(onSelection, event::Info(this));
+    return true;
+}
+
+// A handler opening a dialog or moving the focus takes the focus from the
+// field: that lost focus closes the list and takes nothing, since the box's
+// work around the event (a pick, a free-text value, a refusal) is its own.
+void SearchComboBox::callEvent(event::Caller &caller, event::Info info)
+{
+    ++m_inEvent;
+    caller.call(this, info);
+    --m_inEvent;
+}
+
+void SearchComboBox::focusInputUnlessMoved(const Base *focused)
+{
+    if(KeyboardFocus == focused)
+        focusInput();
 }
 
 String SearchComboBox::shownValueText() const
@@ -635,12 +652,18 @@ void SearchComboBox::setRefused(bool refused)
 // The value shown again even when the pick is the selected option: the
 // field holds the query (or a refused text), which would otherwise stay and,
 // with free text, be taken as a value when the field loses the focus.
+//
+// onSelection last, so a handler's focus move stays.
 void SearchComboBox::pick(int index, bool doEvents)
 {
-    select(index, doEvents);
+    const bool changed=select(index, false);
+
     showSelection();
     closeList();
     focusInput();
+
+    if(changed && doEvents)
+        callEvent(onSelection, event::Info(this));
 }
 
 void SearchComboBox::focusInput()
@@ -918,6 +941,10 @@ void SearchComboBox::fieldLostFocus()
 {
     closeList();
 
+    // to a handler of the box's own event (callEvent())
+    if(m_inEvent > 0)
+        return;
+
     if(m_allowCustom && !isDisabled())
         resolveText();
     else
@@ -963,10 +990,15 @@ void SearchComboBox::resolveText()
             commitCustom(text);
         else
         {
-            if(!isPicked(option))
+            const bool add=!isPicked(option);
+
+            if(add)
                 togglePick(option);
             m_field->showText(String());
             m_fieldEdited=false;
+
+            if(add)
+                fireSelectionChange(option);
         }
         return;
     }
@@ -984,8 +1016,12 @@ void SearchComboBox::resolveText()
     // one's included (select() leaves an unchanged index alone)
     if(option != NoOption)
     {
-        select(option, true);
+        const bool changed=select(option, false);
+
         showSelection();
+
+        if(changed)
+            callEvent(onSelection, event::Info(this));
     }
     else if(text.empty())
         showSelection();
@@ -1001,7 +1037,7 @@ bool SearchComboBox::commitCustom(const String &text)
 
     info.string=text;
     m_refusing=false;
-    onCustomValue.call(this, info);
+    callEvent(onCustomValue, info);
 
     if(m_refusing)
     {
@@ -1019,12 +1055,12 @@ bool SearchComboBox::commitCustom(const String &text)
             picked=picked || (pick.custom && (pick.value.label == text));
 
         if(!picked)
-        {
             addPick(NoOption, text);
-            fireSelectionChange(NoOption);
-        }
         m_field->showText(String());
         m_fieldEdited=false;
+
+        if(!picked)
+            fireSelectionChange(NoOption);
         return true;
     }
 
@@ -1179,6 +1215,8 @@ void SearchComboBox::pickPosition(size_t position)
         return;
 
     const size_t key=rowKey(position);
+    // a handler of onCustomValue or onSelectionChange may have moved it
+    const Base *const focused=KeyboardFocus;
 
     if(key == AddRowKey)
     {
@@ -1189,11 +1227,11 @@ void SearchComboBox::pickPosition(size_t position)
             return;
 
         if(m_multi)
-            afterMultiPick(NoOption);
+            afterMultiPick(NoOption, focused);
         else
         {
             closeList();
-            focusInput();
+            focusInputUnlessMoved(focused);
         }
         return;
     }
@@ -1204,7 +1242,8 @@ void SearchComboBox::pickPosition(size_t position)
     if(m_multi)
     {
         togglePick(static_cast<int>(key));
-        afterMultiPick(static_cast<int>(key));
+        afterMultiPick(static_cast<int>(key), focused);
+        fireSelectionChange(static_cast<int>(key));
     }
     else
         pick(static_cast<int>(key), true);
@@ -1539,14 +1578,13 @@ void SearchComboBox::togglePick(int index)
         for(size_t i=0; i < m_picks.size(); ++i)
         {
             if(m_picks[i].option == index)
-                return removePick(i, true);
+                return removePick(i, false);
         }
         return;
     }
 
     addPick(index, String());
     refreshCheck(index);
-    fireSelectionChange(index);
 }
 
 void SearchComboBox::fireSelectionChange(int index)
@@ -1554,7 +1592,7 @@ void SearchComboBox::fireSelectionChange(int index)
     event::Info info(this);
 
     info.integer=static_cast<size_t>(index);
-    onSelectionChange.call(this, info);
+    callEvent(onSelectionChange, info);
 }
 
 void SearchComboBox::refreshCheck(int index)
@@ -1577,7 +1615,7 @@ void SearchComboBox::refreshCheck(int index)
 // The list stays open. A query typed is over: the field is emptied and the
 // list shows every option again (only the rows whose option changed bound
 // again), the highlight on the option just picked.
-void SearchComboBox::afterMultiPick(int option)
+void SearchComboBox::afterMultiPick(int option, const Base *focused)
 {
     // the query, not the field: a free-text pick has emptied the field already
     if(m_filterable && !m_query.empty())
@@ -1594,7 +1632,7 @@ void SearchComboBox::afterMultiPick(int option)
     if(option != NoOption)
         setHighlightedIndex(option);
 
-    focusInput();
+    focusInputUnlessMoved(focused);
 }
 
 // Each chip at its preferred size (cut to the row), left to right from the
