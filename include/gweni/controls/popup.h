@@ -47,7 +47,9 @@ enum class PopupPlacement
 //! it follows the anchor and a canvas that shrinks or grows again. It is
 //! closed by close(), setHidden(true), a press of either button outside it
 //! and its anchor (and outside a Menu opened over it, a ComboBox's list in
-//! it; a menu bar, a MenuStrip, is outside it like any control), Escape, its
+//! it; a menu bar, a MenuStrip, is outside it like any control), Escape (a
+//! keyboard focus inside it is offered the key first, and the popup stays
+//! open if it takes it: a DragNumber's edit cancels), its
 //! anchor hidden, disabled or deleted, and its own deletion. A press on the anchor is left to the anchor, so a button can
 //! toggle the popup it opened.
 //!

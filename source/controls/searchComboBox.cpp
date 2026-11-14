@@ -359,7 +359,10 @@ void SearchComboBox::makeList()
 // after one: the query is over. The field shows the value again; with free
 // text a press outside keeps what was typed, which Return or the field
 // losing the focus then takes or gives back (resolveText()). An Escape is
-// the field's own (onKeyEscape(), offered it first inside a Popup too).
+// the field's own (onKeyEscape(), offered it first inside a Popup too),
+// but for the canvas's: with the field outside the shown Popup and the list
+// open over it, the canvas closes the list and the field never sees the
+// key, so that Escape (Canvas::closingOnEscape()) gives the value back too.
 void SearchComboBox::listVisibilityChanged(event::Info)
 {
     redraw();
@@ -370,7 +373,9 @@ void SearchComboBox::listVisibilityChanged(event::Info)
     m_query.clear();
     m_lowerQuery.clear();
 
-    if(!m_allowCustom)
+    const Canvas *canvas=getCanvas();
+
+    if(!m_allowCustom || (canvas && canvas->closingOnEscape()))
         showSelection();
 }
 

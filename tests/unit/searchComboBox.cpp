@@ -2233,6 +2233,99 @@ TEST_CASE("SearchComboBox: free text in a Popup, a refused text with the list sh
     CHECK(box->getValue() == "web-1");
 }
 
+namespace
+{
+// A free-text box on the canvas, its value "web-1", beside a Popup opened
+// from a button with a TextBox in it.
+struct FreeTextBesidePopup
+{
+    SearchComboBox *box=nullptr;
+    controls::Button *anchor=nullptr;
+    controls::Popup *popup=nullptr;
+    controls::TextBox *inPopup=nullptr;
+    controls::TextBox *other=nullptr;
+
+    explicit FreeTextBesidePopup(Scene &scene)
+    {
+        box=scene.box(0);
+        box->setOptions({{"web-1", ""}, {"web-2", ""}});
+        box->setAllowCustomValue(true);
+        box->setSelectedIndex(0);
+
+        anchor=scene.canvas->newChild<controls::Button>();
+        anchor->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+        anchor->setBounds(250, 300, 60, 20);
+        anchor->setTabable(false);
+        popup=anchor->createPopup();
+        inPopup=popup->newChild<controls::TextBox>();
+        inPopup->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+        inPopup->setBounds(0, 0, 80, 20);
+        other=scene.canvas->newChild<controls::TextBox>();
+        other->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+        other->setBounds(250, 500, 80, 20);
+        other->setTabable(false);
+        scene.frame();
+    }
+};
+}//namespace
+
+TEST_CASE("SearchComboBox: free text outside a Popup, the list open over it, the canvas's Escape gives the value back")
+{
+    Scene scene;
+    FreeTextBesidePopup setup(scene);
+    SearchComboBox *box=setup.box;
+    CustomValues customs;
+
+    customs.listen(box);
+    box->getField()->focus();
+    box->getField()->onSelectAll(box->getField());
+    scene.frame();
+    type(scene, "zzz");
+    REQUIRE(box->isListOpen());
+    // the app opens a Popup while the list is open: the list is over it
+    setup.popup->open(setup.anchor);
+    scene.frame();
+    REQUIRE(setup.popup->isOpen());
+    REQUIRE(box->isListOpen());
+    scene.key(keys::Escape);
+    CHECK(!box->isListOpen());
+    CHECK(box->getField()->getText() == "web-1");
+    setup.other->focus();
+    scene.frame();
+    CHECK(customs.texts.empty());
+    CHECK(box->getValue() == "web-1");
+}
+
+TEST_CASE("SearchComboBox: Tab out of a Popup into a free-text box, typed, the canvas's Escape gives the value back")
+{
+    Scene scene;
+    FreeTextBesidePopup setup(scene);
+    SearchComboBox *box=setup.box;
+    CustomValues customs;
+
+    customs.listen(box);
+    setup.popup->open(setup.anchor);
+    scene.frame();
+    setup.inPopup->focus();
+    scene.frame();
+    scene.key(keys::Tab);
+    REQUIRE(box->getField()->isFocussed());
+    type(scene, "zzz");
+    REQUIRE(box->isListOpen());
+    // the list opened after the popup, so over it: the canvas closes the list
+    scene.key(keys::Escape);
+    CHECK(!box->isListOpen());
+    CHECK(setup.popup->isOpen());
+    CHECK(box->getField()->getText() == "web-1");
+    scene.key(keys::Escape);
+    CHECK(!setup.popup->isOpen());
+    CHECK(box->getField()->getText() == "web-1");
+    setup.other->focus();
+    scene.frame();
+    CHECK(customs.texts.empty());
+    CHECK(box->getValue() == "web-1");
+}
+
 TEST_CASE("SearchComboBox: free text, an option's label typed highlights it first and Return picks it")
 {
     Scene scene;

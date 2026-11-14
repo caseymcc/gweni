@@ -230,7 +230,9 @@ private:
 //! option instead). The list closing on a press outside it leaves a
 //! free-text box's field as it is, for Return or the lost focus to decide;
 //! Escape gives the value back, over a Popup too (input::onKeyEvent offers
-//! a focus inside the shown Popup the key before the canvas closes it).
+//! a focus inside the shown Popup the key before the canvas closes it; a
+//! field outside it whose list the canvas closes on Escape, the list open
+//! over the popup, gives it back through Canvas::closingOnEscape()).
 //!
 //! Multi-select (setMultiSelect(true)): the box holds picks, each shown as a
 //! removable Chip in pick order, then the field when filterable, wrapped onto
@@ -472,7 +474,8 @@ protected:
     //! The list is being deleted: it is no longer held.
     void listDeleted();
     //! The list was shown or hidden, by the box or from outside (a press
-    //! outside it, Escape over a Popup): the box's open look follows it.
+    //! outside it, the canvas's Escape over a Popup, Canvas::closingOnEscape()):
+    //! the box's open look follows it.
     void listVisibilityChanged(event::Info info);
     void makeList();
     //! Makes \p index the selection and shows its label (NoOption: none,

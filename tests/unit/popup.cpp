@@ -46,8 +46,7 @@
  *  control: Escape still closes the popup, and a press on the strip does.
  *  A keyboard focus inside the popup is offered Escape first: a DragNumber's
  *  edit cancels and the popup stays open, the next Escape closing it, while
- *  a focused TextBox, which takes no Escape, lets the first close it, and its
- *  release then reaches nothing.
+ *  a focused TextBox, which takes no Escape, lets the first close it.
  *
  *  Owned popups (Base::createPopup, Popup::setOwner): a canvas deleted with an
  *  owned popup and its owner deletes each once, whichever comes first among
