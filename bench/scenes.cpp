@@ -19,6 +19,7 @@
 #include <gweni/controls/logView.h>
 #include <gweni/controls/nodeGraph.h>
 #include <gweni/controls/progressBar.h>
+#include <gweni/controls/reorderable.h>
 #include <gweni/controls/scrollControl.h>
 #include <gweni/controls/textBox.h>
 #include <gweni/controls/timeline.h>
@@ -1585,6 +1586,76 @@ private:
     Point m_mouse=Point(-1, -1);
 };
 
+//-----------------------------------------------------------------------------
+// reorder-drag: a VirtualList of N 20-unit rows, 300x400, its items reordered
+// by drag and drop (a VirtualListReorder keyed by index: the app's key
+// functions are O(1) here, and are not called on a move or a scroll frame
+// anyway). The drag starts in the warm-up (a press on item 2 and a move of 6
+// units); the measured frames move the cursor 7 units down a frame for 10
+// frames, crossing gaps, then rest it in the viewport's bottom band, the list
+// auto-scrolling 10 units a frame, and the last one releases it there. Every
+// frame's work is the indicator, the veil and the rows the scroll brings into
+// view, at any N.
+//-----------------------------------------------------------------------------
+class ReorderDragScene: public Scene
+{
+public:
+    void build(SceneContext &ctx) override
+    {
+        m_list=ctx.canvas->newChild<controls::VirtualList>();
+        place(m_list, 10, 10, 300, 400);
+        m_list->setRowHeight(20);
+        m_list->setRowBinder([](controls::Base *row, size_t index)
+            {
+                if(controls::Label *label=gweni_cast<controls::Label>(row))
+                    label->setText(format("Task %06d", static_cast<int>(index%1000000)));
+            });
+        m_list->setItemCount(static_cast<size_t>(ctx.n));
+        m_reorder=controls::VirtualListReorder::attach(m_list,
+            [](size_t index) { return static_cast<uint64_t>(index); },
+            [this](uint64_t key) {
+                return (key < m_list->getItemCount()) ? static_cast<size_t>(key) : controls::VirtualList::NoItem;
+            });
+        m_reorder->setAutoScrollSpeed(600.0f);
+        m_reorder->setOnItemDropped([this](const controls::ItemDrop &) { ++m_drops; });
+    }
+
+    void step(SceneContext &ctx, int frame) override
+    {
+        const Point origin=m_list->localPosToCanvas(Point(150, 0));
+
+        if(frame == -2)
+        {
+            moveMouse(ctx, m_mouse, origin+Point(0, 45));
+            ctx.canvas->inputMouseButton(0, true);
+            return;
+        }
+        if(frame == -1)
+        {
+            moveMouse(ctx, m_mouse, origin+Point(6, 45));
+            return;
+        }
+        if(frame < 0)
+            return;
+
+        // down the list across its gaps, then at rest in the bottom band (the
+        // band's outer edge: the whole speed)
+        if(frame < 10)
+            moveMouse(ctx, m_mouse, origin+Point(6, 52+7*frame));
+        else if(frame == 10)
+            moveMouse(ctx, m_mouse, origin+Point(6, 398));
+
+        if(frame == ctx.frames-1)
+            ctx.canvas->inputMouseButton(0, false);
+    }
+
+private:
+    controls::VirtualList *m_list=nullptr;
+    controls::VirtualListReorder *m_reorder=nullptr;
+    Point m_mouse=Point(-1, -1);
+    int m_drops=0;
+};
+
 const std::vector<SceneInfo> &scenes()
 {
     static const std::vector<SceneInfo> list=
@@ -1679,6 +1750,9 @@ const std::vector<SceneInfo> &scenes()
         {"graph-zoom", "zoom a NodeGraph of N linked nodes a wheel notch in and out in turn",
             true, 300, 3, 20, Scaling::Linear,
             []{ return std::unique_ptr<Scene>(new GraphZoomScene()); }},
+        {"reorder-drag", "drag an item of an N-item VirtualList across its gaps, then let it auto-scroll",
+            true, 1000, 3, 20, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new ReorderDragScene()); }},
     };
     return list;
 }
