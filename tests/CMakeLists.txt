@@ -1247,6 +1247,36 @@ if(GWENI_RENDER_VULKAN)
     gweni_vulkan_test_environment(vulkan_smoke)
 endif()
 
+# One frame drawn with renderer::Vulkan and nothing GL, as a Vulkan-only app
+# draws it (vulkan/vulkanFrame.cpp, whose header says what it pins): a
+# validated device, the textured skin from resources/, a few controls, a frame
+# read back that is not one flat colour. It links gweni alone, so in the
+# Vulkan-only tree (no GL renderer) its ELF is the one vulkan_frame_no_gl checks
+# for GL libraries and symbols, and vulkan_cache_no_gl checks the tree's cache
+# for a GL, GLEW or EGL find (vulkan/noGl.cmake). Those two need no device.
+if(GWENI_RENDER_VULKAN AND NOT EMSCRIPTEN)
+    add_executable(vulkan_frame vulkan/vulkanFrame.cpp)
+    gweni_set_warnings(vulkan_frame)
+    target_link_libraries(vulkan_frame gweni)
+    add_test(NAME vulkan_frame COMMAND $<TARGET_FILE:vulkan_frame>
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    set_tests_properties(vulkan_frame PROPERTIES TIMEOUT 120)
+    gweni_vulkan_test_environment(vulkan_frame)
+
+    if(NOT GWENI_RENDER_OPENGL_CORE)
+        add_test(NAME vulkan_frame_no_gl
+            COMMAND ${CMAKE_COMMAND} -DMODE=elf
+                -DEXE=$<TARGET_FILE:vulkan_frame>
+                -DREADELF=${CMAKE_READELF} -DNM=${CMAKE_NM}
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/vulkan/noGl.cmake)
+        add_test(NAME vulkan_cache_no_gl
+            COMMAND ${CMAKE_COMMAND} -DMODE=cache
+                -DCACHE=${CMAKE_BINARY_DIR}/CMakeCache.txt
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/vulkan/noGl.cmake)
+        set_tests_properties(vulkan_frame_no_gl vulkan_cache_no_gl PROPERTIES TIMEOUT 30)
+    endif()
+endif()
+
 # the example window's idle loop in a real window (windowIdle.cmake, whose
 # header says what it runs): ControlTest --idle-test under an Xvfb of its own,
 # on GL and, with Vulkan, on renderer::Vulkan validated. Without Xvfb it fails
