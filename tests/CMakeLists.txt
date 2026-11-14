@@ -907,6 +907,74 @@ else()
         $<TARGET_PROPERTY:glfw,INTERFACE_INCLUDE_DIRECTORIES>)
 endif()
 
+# The renderer headers a Vulkan app includes are GL-free in every tree:
+# vulkan.h, slotRenderer.h (freetype-gl's headers with it) and depthView.h each
+# compile as the only include of a translation unit whose first include
+# directory, gl_poison/, holds an #error file in place of every GL-family header
+# (desktop GL, glew, GLES, EGL, the Apple and loader headers, GLFW, which
+# includes GL's). A plain compile would prove nothing: the container has GL
+# headers in /usr/include and vcpkg's glew beside the other ports. The OBJECT
+# library gweni_gl_free_header_check is part of `all`, so a GL include reaching
+# one of them fails cmake --build, naming the poisoned header and the chain.
+set(gweni_gl_free_headers)
+if(GWENI_RENDER_OPENGL_CORE OR GWENI_RENDER_VULKAN)
+    list(APPEND gweni_gl_free_headers
+        gweni/platforms/renderers/slotRenderer.h
+        gweni/tools/depthView.h)
+endif()
+if(GWENI_RENDER_VULKAN)
+    list(APPEND gweni_gl_free_headers gweni/platforms/renderers/vulkan.h)
+endif()
+if(gweni_gl_free_headers)
+    set(gweni_gl_poison_dir ${CMAKE_CURRENT_BINARY_DIR}/gl_poison)
+    foreach(poisoned
+            GL/gl.h GL/glu.h GL/glext.h GL/glcorearb.h GL/glx.h GL/glxext.h
+            GL/glew.h GL/glxew.h GL/wglew.h GL/eglew.h GL/wglext.h
+            GLES/gl.h GLES/glext.h
+            GLES2/gl2.h GLES2/gl2ext.h GLES2/gl2platform.h
+            GLES3/gl3.h GLES3/gl31.h GLES3/gl32.h GLES3/gl3platform.h
+            EGL/egl.h EGL/eglext.h EGL/eglplatform.h KHR/khrplatform.h
+            OpenGL/gl.h OpenGL/gl3.h OpenGL/glext.h
+            OpenGLES/ES2/gl.h OpenGLES/ES3/gl.h
+            glad/glad.h glad/gl.h glad/egl.h
+            GLFW/glfw3.h)
+        set(content "#error \"gweni GL-free header check: <${poisoned}> included\"\n")
+        set(written "")
+        if(EXISTS ${gweni_gl_poison_dir}/${poisoned})
+            file(READ ${gweni_gl_poison_dir}/${poisoned} written)
+        endif()
+        if(NOT written STREQUAL content)
+            file(WRITE ${gweni_gl_poison_dir}/${poisoned} "${content}")
+        endif()
+    endforeach()
+    set(gweni_gl_free_sources)
+    foreach(header IN LISTS gweni_gl_free_headers)
+        set(source ${CMAKE_CURRENT_BINARY_DIR}/gl_free_check/${header}.cpp)
+        set(content "#include <${header}>\n")
+        set(written "")
+        if(EXISTS ${source})
+            file(READ ${source} written)
+        endif()
+        if(NOT written STREQUAL content)
+            file(WRITE ${source} "${content}")
+        endif()
+        list(APPEND gweni_gl_free_sources ${source})
+    endforeach()
+    add_library(gweni_gl_free_header_check OBJECT ${gweni_gl_free_sources})
+    gweni_set_warnings(gweni_gl_free_header_check)
+    # gweni's usage requirements (transitive: freetype-gl's, volk's, ...) without
+    # a link to it, so the check does not wait on the library building: a GL
+    # include that also breaks a gweni source still fails here, by name
+    target_include_directories(gweni_gl_free_header_check SYSTEM PRIVATE
+        $<TARGET_PROPERTY:gweni,INTERFACE_INCLUDE_DIRECTORIES>)
+    target_include_directories(gweni_gl_free_header_check BEFORE PRIVATE
+        ${gweni_gl_poison_dir})
+    target_compile_definitions(gweni_gl_free_header_check PRIVATE
+        $<TARGET_PROPERTY:gweni,INTERFACE_COMPILE_DEFINITIONS>)
+    target_compile_options(gweni_gl_free_header_check PRIVATE
+        $<TARGET_PROPERTY:gweni,INTERFACE_COMPILE_OPTIONS>)
+endif()
+
 find_package(doctest CONFIG REQUIRED)
 include(doctest)
 

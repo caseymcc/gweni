@@ -31,6 +31,9 @@ namespace ftgl {
 
 /**
  * Generic vertex buffer.
+ *
+ * gweni patch: a CPU accumulator only (no GL buffer, VAO, upload or render;
+ * opengl.h), the same struct in every tree.
  */
 typedef struct vertex_buffer_t
 {
@@ -40,30 +43,10 @@ typedef struct vertex_buffer_t
     /** Vector of vertices. */
     vector_t * vertices;
 
-#ifdef FREETYPE_GL_USE_VAO
-    /** GL identity of the Vertex Array Object */
-    GLuint VAO_id;
-#endif
-
-    /** GL identity of the vertices buffer. */
-    GLuint vertices_id;
-
     /** Vector of indices. */
     vector_t * indices;
 
-    /** GL identity of the indices buffer. */
-    GLuint indices_id;
-
-    /** Current size of the vertices buffer in GPU */
-    size_t GPU_vsize;
-
-    /** Current size of the indices buffer in GPU*/
-    size_t GPU_isize;
-
-    /** GL primitives to render. */
-    GLenum mode;
-
-    /** Whether the vertex buffer needs to be uploaded to GPU memory. */
+    /** Whether the vertex buffer is being changed (DIRTY) or frozen. */
     char state;
 
     /** Individual items */
@@ -85,7 +68,7 @@ typedef struct vertex_buffer_t
 
 
 /**
- * Deletes vertex buffer and releases GPU memory.
+ * Deletes vertex buffer.
  *
  * @param  self  a vertex buffer
  */
@@ -123,57 +106,6 @@ typedef struct vertex_buffer_t
 
 
 /**
- * Prepare vertex buffer for render.
- *
- * @param  self  a vertex buffer
- * @param  mode  render mode
- */
-  void
-  vertex_buffer_render_setup ( vertex_buffer_t *self,
-                               GLenum mode );
-
-
-/**
- * Finish rendering by setting back modified states
- *
- * @param  self  a vertex buffer
- */
-  void
-  vertex_buffer_render_finish ( vertex_buffer_t *self );
-
-
-/**
- * Render vertex buffer.
- *
- * @param  self  a vertex buffer
- * @param  mode  render mode
- */
-  void
-  vertex_buffer_render ( vertex_buffer_t *self,
-                         GLenum mode );
-
-
-/**
- * Render a specified item from the vertex buffer.
- *
- * @param  self   a vertex buffer
- * @param  index index of the item to be rendered
- */
-  void
-  vertex_buffer_render_item ( vertex_buffer_t *self,
-                              size_t index );
-
-
-/**
- * Upload buffer to GPU memory.
- *
- * @param  self  a vertex buffer
- */
-  void
-  vertex_buffer_upload( vertex_buffer_t *self );
-
-
-/**
  * Clear all items.
  *
  * @param  self  a vertex buffer
@@ -193,7 +125,7 @@ typedef struct vertex_buffer_t
  */
   void
   vertex_buffer_push_back_indices ( vertex_buffer_t *self,
-                                    const GLuint * indices,
+                                    const ftgl_uint * indices,
                                     const size_t icount );
 
 
@@ -227,7 +159,7 @@ typedef struct vertex_buffer_t
   void
   vertex_buffer_insert_indices ( vertex_buffer_t *self,
                                  const size_t index,
-                                 const GLuint *indices,
+                                 const ftgl_uint *indices,
                                  const size_t icount );
 
 
@@ -288,7 +220,7 @@ typedef struct vertex_buffer_t
   size_t
   vertex_buffer_push_back( vertex_buffer_t * self,
                            const void * vertices, const size_t vcount,
-                           const GLuint * indices, const size_t icount );
+                           const ftgl_uint * indices, const size_t icount );
 
 
 /**
@@ -305,7 +237,7 @@ typedef struct vertex_buffer_t
   vertex_buffer_insert( vertex_buffer_t * self,
                         const size_t index,
                         const void * vertices, const size_t vcount,
-                        const GLuint * indices, const size_t icount );
+                        const ftgl_uint * indices, const size_t icount );
 
 /**
  * Erase an item from the vertex buffer.

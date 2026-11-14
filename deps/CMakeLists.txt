@@ -2,25 +2,17 @@
 # locates freetype/glew via CMake's standard find modules (satisfied by the
 # vcpkg toolchain).
 set(freetype-gl_USE_HUNTER OFF CACHE BOOL "" FORCE)
-set(freetype-gl_USE_VAO ON CACHE BOOL "Use a VAO to render a vertex_buffer instance (required for forward compatible OpenGL 3.0 contexts)" FORCE)
 set(freetype-gl_BUILD_DEMOS OFF CACHE BOOL "Build the freetype-gl example programs" FORCE)
 set(freetype-gl_BUILD_APIDOC OFF CACHE BOOL "Build the freetype-gl API documentation" FORCE)
 set(freetype-gl_BUILD_TESTS OFF CACHE BOOL "Build the tests" FORCE)
-# The GLES tree (GWENI_GL_ES) and the web tree: freetype-gl against
-# <GLES3/gl3.h> (libGLESv2 natively, Emscripten's WebGL 2 library on the web),
-# without glew (freetype-gl_WITH_GLES3 is a gweni patch)
-if(GWENI_GL_ES OR EMSCRIPTEN)
-    set(freetype-gl_WITH_GLEW OFF CACHE BOOL "Use the GLEW library to fetch OpenGL function pointers" FORCE)
-    set(freetype-gl_WITH_GLES3 ON CACHE BOOL "Build against GLES 3.0 (<GLES3/gl3.h>, libGLESv2)" FORCE)
-else()
-    set(freetype-gl_WITH_GLEW ON CACHE BOOL "Use the GLEW library to fetch OpenGL function pointers" FORCE)
-    set(freetype-gl_WITH_GLES3 OFF CACHE BOOL "Build against GLES 3.0 (<GLES3/gl3.h>, libGLESv2)" FORCE)
-endif()
+# Nothing uses makefont
+set(freetype-gl_BUILD_MAKEFONT OFF CACHE BOOL "Build the makefont tool" FORCE)
+# freetype-gl is GL-free in every tree (a gweni patch, its opengl.h): no GL,
+# GLEW or GLES headers or libraries, one vertex_buffer_t layout everywhere.
 
 # SYSTEM: freetype-gl keeps its own flags, and its headers must not be able to
-# raise a diagnostic inside a gweni translation unit. Only OpenGLCore uses it,
-# and it needs GL headers to configure, so a tree without the renderer leaves it
-# out.
+# raise a diagnostic inside a gweni translation unit. Only the renderers use it,
+# so a tree without one leaves it out.
 if(GWENI_RENDER_OPENGL_CORE)
     add_subdirectory(freetype-gl SYSTEM)
 endif()

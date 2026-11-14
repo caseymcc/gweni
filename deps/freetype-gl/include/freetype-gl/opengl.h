@@ -6,32 +6,31 @@
 #ifndef __OPEN_GL_H__
 #define __OPEN_GL_H__
 
-#if defined(GL_WITH_GLAD)
-#   include <glad/glad.h>
-#elif defined(FREETYPE_GL_GLES3) || defined(__EMSCRIPTEN__)
-/* gweni patch: GLES 3.0 / WebGL 2 (freetype-gl_WITH_GLES3), no loader */
-#   include <GLES3/gl3.h>
-#else
-#if defined(__APPLE__)
-#   include "TargetConditionals.h"
-#   if TARGET_OS_SIMULATOR || TARGET_OS_IPHONE
-#     if defined(FREETYPE_GL_ES_VERSION_3_0)
-#       include <OpenGLES/ES3/gl.h>
-#     else
-#       include <OpenGLES/ES2/gl.h>
-#     endif
-#   else
-#     include <OpenGL/gl.h>
-#   endif
-#elif defined(_WIN32) || defined(_WIN64)
-#  include <GL/glew.h>
-#  include <GL/wglew.h>
-#elif defined(__ANDROID__)
-#  include <GLES3/gl3.h>
-#else
-#  include <GL/glew.h>
-#  include <GL/gl.h>
-#endif
-#endif /* GL_WITH_GLAD */
+/* gweni patch: freetype-gl is GL-free in every tree. Its vertex buffers are CPU
+ * vertex and index accumulators only (gweni's renderers upload and draw them),
+ * so no GL header is included and the vertex buffer's GL calls are gone. The
+ * types and attribute-type constants its API names are freetype-gl's own, the
+ * same sizes and values as GL's, and never GL's names: a file that includes
+ * this and a GL header sees no redefinition. */
+
+typedef char           ftgl_char;
+typedef int            ftgl_int;
+typedef unsigned int   ftgl_uint;
+typedef unsigned int   ftgl_enum;
+typedef unsigned char  ftgl_boolean;
+typedef int            ftgl_sizei;
+
+/* vertex_attribute_t::type, as GL numbers them */
+#define FTGL_BYTE           0x1400
+#define FTGL_UNSIGNED_BYTE  0x1401
+#define FTGL_SHORT          0x1402
+#define FTGL_UNSIGNED_SHORT 0x1403
+#define FTGL_INT            0x1404
+#define FTGL_UNSIGNED_INT   0x1405
+#define FTGL_FLOAT          0x1406
+#define FTGL_BOOL           0x8B56
+
+/* vertex_buffer_t::mode, as GL numbers it */
+#define FTGL_TRIANGLES      0x0004
 
 #endif /* OPEN_GL_H */

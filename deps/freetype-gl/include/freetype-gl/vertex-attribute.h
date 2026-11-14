@@ -93,42 +93,42 @@ namespace ftgl {
  *   <tr>
  *     <td> "b"               </td>
  *     <td> Signed byte       </td>
- *     <td> GL_BYTE           </td>
+ *     <td> FTGL_BYTE           </td>
  *   </tr>
  *   <tr>
  *     <td> "B"               </td>
  *     <td> Unsigned byte     </td>
- *     <td> GL_UNSIGNED_BYTE  </td>
+ *     <td> FTGL_UNSIGNED_BYTE  </td>
  *   </tr>
  *   <tr>
  *     <td> "s"               </td>
  *     <td> Signed short      </td>
- *     <td> GL_SHORT          </td>
+ *     <td> FTGL_SHORT          </td>
  *   </tr>
  *   <tr>
  *     <td> "S"               </td>
  *     <td> Unsigned short    </td>
- *     <td> GL_UNSIGNED_SHORT </td>
+ *     <td> FTGL_UNSIGNED_SHORT </td>
  *   </tr>
  *   <tr>
  *     <td> "i"               </td>
  *     <td> Signed int        </td>
- *     <td> GL_INT            </td>
+ *     <td> FTGL_INT            </td>
  *   </tr>
  *   <tr>
  *     <td> "I"               </td>
  *     <td> Unsigned int      </td>
- *     <td> GL_UNSIGNED_INT   </td>
+ *     <td> FTGL_UNSIGNED_INT   </td>
  *   </tr>
  *   <tr>
  *     <td> "f"               </td>
  *     <td> Float             </td>
- *     <td> GL_FLOAT          </td>
+ *     <td> FTGL_FLOAT          </td>
  *   </tr>
  *   <tr>
  *     <td> "d"               </td>
  *     <td> Double            </td>
- *     <td> GL_DOUBLE     T   </td>
+ *     <td> FTGL_DOUBLE     T   </td>
  *   </tr>
  * </table>
  *
@@ -176,35 +176,35 @@ typedef struct vertex_attribute_t
     /**
      *  atribute name
      */
-    GLchar * name;
+    ftgl_char * name;
 
     /**
      * index of the generic vertex attribute to be modified.
      */
-    GLuint index;
+    ftgl_uint index;
 
     /**
      * Number of components per generic vertex attribute.
      *
      * Must be 1, 2, 3, or 4. The initial value is 4.
      */
-    GLint size;
+    ftgl_int size;
 
     /**
      *  data type of each component in the array.
      *
-     *  Symbolic constants GL_BYTE, GL_UNSIGNED_BYTE, GL_SHORT,
-     *  GL_UNSIGNED_SHORT, GL_INT, GL_UNSIGNED_INT, GL_FLOAT, or GL_DOUBLE are
-     *  accepted. The initial value is GL_FLOAT.
+     *  Symbolic constants FTGL_BYTE, FTGL_UNSIGNED_BYTE, FTGL_SHORT,
+     *  FTGL_UNSIGNED_SHORT, FTGL_INT, FTGL_UNSIGNED_INT, FTGL_FLOAT, or FTGL_DOUBLE are
+     *  accepted. The initial value is FTGL_FLOAT.
      */
-    GLenum type;
+    ftgl_enum type;
 
     /**
-     *  whether fixed-point data values should be normalized (GL_TRUE) or
-     *  converted directly as fixed-point values (GL_FALSE) when they are
+     *  whether fixed-point data values should be normalized (1) or
+     *  converted directly as fixed-point values (0) when they are
      *  accessed.
      */
-    GLboolean normalized;
+    ftgl_boolean normalized;
 
     /**
      *  byte offset between consecutive generic vertex attributes.
@@ -212,18 +212,13 @@ typedef struct vertex_attribute_t
      *  If stride is 0, the generic vertex attributes are understood to be
      *  tightly packed in the array. The initial value is 0.
      */
-    GLsizei stride;
+    ftgl_sizei stride;
 
     /**
      *  pointer to the first component of the first attribute element in the
      *  array.
      */
-    GLvoid * pointer;
-
-    /**
-     * pointer to the function that enable this attribute.
-     */
-    void ( * enable )(void *);
+    void * pointer;
 
 } vertex_attribute_t;
 
@@ -235,8 +230,8 @@ typedef struct vertex_attribute_t
  * @param size       number of component
  * @param type       data type
  * @param normalized Whether fixed-point data values should be normalized
-                     (GL_TRUE) or converted directly as fixed-point values
-                     (GL_FALSE) when they are  accessed.
+                     (1) or converted directly as fixed-point values
+                     (0) when they are  accessed.
  * @param stride     byte offset between consecutive attributes.
  * @param pointer    pointer to the first component of the first attribute
  *                   element in the array.
@@ -245,12 +240,12 @@ typedef struct vertex_attribute_t
  * @private
  */
 vertex_attribute_t *
-vertex_attribute_new( GLchar * name,
-                      GLint size,
-                      GLenum type,
-                      GLboolean normalized,
-                      GLsizei stride,
-                      GLvoid *pointer );
+vertex_attribute_new( ftgl_char * name,
+                      ftgl_int size,
+                      ftgl_enum type,
+                      ftgl_boolean normalized,
+                      ftgl_sizei stride,
+                      void *pointer );
 
 
 
@@ -274,17 +269,6 @@ vertex_attribute_delete( vertex_attribute_t * self );
  */
   vertex_attribute_t *
   vertex_attribute_parse( char *format );
-
-/**
- * Enable a vertex attribute.
- *
- * @param attr  a vertex attribute
- *
- * @private
- */
-  void
-  vertex_attribute_enable( vertex_attribute_t *attr );
-
 
 /** @} */
 

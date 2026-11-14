@@ -26,20 +26,9 @@ set(CMAKE_MODULE_PATH
 message(STATUS "Building for ${CMAKE_SYSTEM_NAME} target system")
 message(STATUS "Building with ${CMAKE_C_COMPILER_ID} compiler")
 
-set(freetype-gl_WITH_GLEW_DEFAULT ON)
-
-if((${CMAKE_SYSTEM_NAME} MATCHES "Darwin") OR
-    (${CMAKE_SYSTEM_NAME} MATCHES "Android"))
-    set(freetype-gl_WITH_GLEW_DEFAULT OFF)
-endif()
-
-option(freetype-gl_WITH_GLEW
-    "Use the GLEW library to fetch OpenGL function pointers"
-    ${freetype-gl_WITH_GLEW_DEFAULT})
-option(freetype-gl_WITH_GLAD "Use the GLAD gl loader" OFF)
-# gweni patch: GLES 3.0 headers and libGLESv2 (FREETYPE_GL_GLES3, opengl.h)
-option(freetype-gl_WITH_GLES3 "Build against GLES 3.0 (<GLES3/gl3.h>, libGLESv2)" OFF)
-option(freetype-gl_USE_VAO "Use a VAO to render a vertex_buffer instance (required for forward compatible OpenGL 3.0 contexts)" OFF)
+# gweni patch: GL-free in every tree (opengl.h). The vertex buffers are CPU
+# accumulators, so there is no GL, GLEW, GLAD or GLES to find, link or choose,
+# and no VAO switch changing vertex_buffer_t's layout.
 option(freetype-gl_BUILD_DEMOS "Build the freetype-gl example programs" ON)
 option(freetype-gl_BUILD_APIDOC "Build the freetype-gl API documentation" ON)
 option(freetype-gl_BUILD_HARFBUZZ "Build the freetype-gl harfbuzz support (experimental)" OFF)
@@ -89,34 +78,8 @@ if(NOT HAVE_M_PI)
 endif()
 
 if(NOT MINGW AND (WIN32 OR WIN64) AND NOT freetype-gl_USE_HUNTER)
-    set(GLEW_ROOT_DIR
-        ${CMAKE_CURRENT_SOURCE_DIR}/windows/glew)
     set(ENV{FREETYPE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/windows/freetype)
-endif()
-
-if(freetype-gl_WITH_GLES3 AND EMSCRIPTEN)
-    # gweni patch: the web tree, where <GLES3/gl3.h> is Emscripten's and WebGL 2
-    # is linked by the executable (-sMAX_WEBGL_VERSION=2), with nothing to find
-    set(OPENGL_TARGET_LIBS)
-elseif(freetype-gl_WITH_GLES3)
-    find_package(OpenGL REQUIRED COMPONENTS GLES3)
-    set(OPENGL_TARGET_LIBS OpenGL::GLES3)
-elseif(ANDROID)
-    find_package(OpenGL REQUIRED)
-    find_package(gles3 REQUIRED)
-    set(OPENGL_TARGET_LIBS gles3::gles3)
-elseif(IOS)
-    find_package(OpenGL REQUIRED)
-    find_package(opengles REQUIRED)
-    set(OPENGL_TARGET_LIBS opengles::opengles)
-else()
-    find_package(OpenGL REQUIRED)
-    if(APPLE)
-        set(OPENGL_TARGET_LIBS OpenGL::OpenGL)
-    else()
-        set(OPENGL_TARGET_LIBS OpenGL::GL)
-    endif()
 endif()
 
 if(freetype-gl_USE_HUNTER)
@@ -129,37 +92,16 @@ else()
     set(FREETYPE_TARGET_LIBS ${FREETYPE_LIBRARIES})
 endif()
 
-if(freetype-gl_WITH_GLEW)
-    if(freetype-gl_USE_HUNTER)
-        hunter_add_package(glew)
-        find_package(glew CONFIG REQUIRED)
-        set(GLEW_TARGET_LIBS glew::glew)
-    else()
-        find_package(GLEW REQUIRED)
-        set(GLEW_TARGET_LIBS ${GLEW_LIBRARY})
-    endif()
-endif()
-
-if(freetype-gl_WITH_GLAD)
-    add_definitions(-DGL_WITH_GLAD)
-endif()
-
 include_directories(
-    ${OPENGL_INCLUDE_DIRS}
     ${FREETYPE_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/include/freetype-gl
-    ${GLEW_INCLUDE_PATH}
 )
 
 if(MSVC)
     # _CRT_NONSTDC_NO_DEPRECATE -> remove warning C4996
     add_definitions(-D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE)
 endif(MSVC)
-
-if(freetype-gl_USE_VAO)
-    add_definitions(-DFREETYPE_GL_USE_VAO)
-endif(freetype-gl_USE_VAO)
 
 set(FREETYPE_GL_HDR
     include/freetype-gl/distance-field.h
@@ -204,27 +146,10 @@ target_include_directories(freetype-gl PUBLIC
 
 # Link freetype-gl's dependencies regardless of how they were located (Hunter or
 # the standard find modules used with vcpkg) so the static library and its
-# consumers (e.g. makefont) resolve freetype/glew/opengl symbols.
+# consumers (e.g. makefont) resolve the freetype symbols.
 target_link_libraries(freetype-gl
     ${FREETYPE_TARGET_LIBS}
-    ${GLEW_TARGET_LIBS}
-    ${OPENGL_TARGET_LIBS}
 )
-
-# gweni patch: opengl.h, which the public headers include, picks the GLES 3.0
-# headers for freetype-gl and everything including it
-if(freetype-gl_WITH_GLES3)
-    target_compile_definitions(freetype-gl PUBLIC FREETYPE_GL_GLES3)
-endif()
-
-# gweni patch: FREETYPE_GL_USE_VAO adds a field to vertex_buffer_t (VAO_id), so
-# everything including vertex-buffer.h must see it as freetype-gl was built
-# (the add_definitions above reaches only this directory). On x86-64 the field
-# fitted in the padding before `indices` and the mismatch went unseen; on wasm32
-# gweni read text_buffer_t's indices from the wrong offset.
-if(freetype-gl_USE_VAO)
-    target_compile_definitions(freetype-gl PUBLIC FREETYPE_GL_USE_VAO)
-endif()
 
 if(freetype-gl_BUILD_MAKEFONT)
     add_executable(makefont makefont.c)

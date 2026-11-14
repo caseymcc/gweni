@@ -12,9 +12,8 @@ message("Project version: ${GWENI_VERSION_STR}")
 #-----------------------------------------------------------
 # User options
 
-# Cross-platform
-option(GWENI_RENDER_OPENGL_CORE   "Renderer: OPENGL Core Profile" OFF)
-
+# Cross-platform (GWENI_RENDER_OPENGL_CORE and GWENI_RENDER_VULKAN are
+# CMakeLists.txt's)
 option(GWENI_USE_GLFW             "Use GLFW for OpenGL renderer." ON)
 
 #option(GWENI_WITH_TESTS           "Include unittests" ON)
@@ -75,27 +74,14 @@ if(GWENI_RENDER_OPENGL_CORE)
     set(GWENI_INPUT_NAME "GLFW3")
     set(GWENI_PLATFORM_NAME "Cross")
 
-    find_package(glm CONFIG REQUIRED)
-
-    if(EMSCRIPTEN)
-        # the web tree: Emscripten's GLES 3.0 headers and its WebGL 2 library,
-        # linked by the executables (-sMAX_WEBGL_VERSION=2), no loader
-        set(GWENI_RENDER_LIBRARIES glm::glm)
-    elseif(GWENI_GL_ES)
-        # GLES 3.0 headers and libGLESv2, no loader (include/gweni/platforms/renderers/glApi.h)
-        set(GWENI_RENDER_LIBRARIES glm::glm OpenGL::GLES3)
-    else()
-        find_package(GLEW REQUIRED)
-
-        set(GWENI_RENDER_LIBRARIES glm::glm GLEW::GLEW)
-    endif()
-
+    # The renderers find and link their own libraries (CMakeLists.txt): GL and
+    # GLEW (or GLES and EGL) with OpenGLCore alone, nothing GL for the slot core.
+    # GLFW is found here, at the top level, for the examples, the bench and the
+    # tests, which link it.
     # on the web GLFW is Emscripten's contrib.glfw3 port, which the examples
     # link through --use-port (examples/openglcore/CMakeLists.txt)
     if(GWENI_USE_GLFW AND NOT EMSCRIPTEN)
         find_package(glfw3 CONFIG REQUIRED)
-
-        set(GWENI_RENDER_LIBRARIES ${GWENI_RENDER_LIBRARIES} glfw)
     endif()
 else()
     # No renderer: the library, the skins and the headless unit tests only.
@@ -125,21 +111,12 @@ endif()
 
 #-----------------------------------------------------------
 
-# MinGW problems
-if (WIN32)
-    set(GWENI_RENDER_LIBRARIES ${GWENI_RENDER_LIBRARIES} -liconv)
-endif()
-
 set(GWENI_LIB_DEFINES "-DGWENI_PLATFORM_${GWENI_PLATFORM_NAME}=1 -DGWENI_RENDER_${GWENI_RENDER_NAME}=1")
 
 if(GWENI_RENDER_INCLUDES)
     list(REMOVE_DUPLICATES GWENI_RENDER_INCLUDES)
 endif()
-if(GWENI_RENDER_LIBRARIES)
-    list(REMOVE_DUPLICATES GWENI_RENDER_LIBRARIES)
-endif()
 
 # Summary
 message(STATUS "Using renderer '${GWENI_RENDER_NAME}' with input '${GWENI_INPUT_NAME}' on platform '${GWENI_PLATFORM_NAME}'")
 message(STATUS "${GWENI_RENDER_NAME} includes: ${GWENI_RENDER_INCLUDES}")
-message(STATUS "${GWENI_RENDER_NAME} libs: ${GWENI_RENDER_LIBRARIES}")

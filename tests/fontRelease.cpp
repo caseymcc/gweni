@@ -30,6 +30,8 @@
 
 #include "glRenderer.h"
 
+#include <gweni/platforms/renderers/glApi.h>
+
 #include <gweni/controls/canvas.h>
 #include <gweni/controls/label.h>
 #include <gweni/platforms/commonPlatform.h>

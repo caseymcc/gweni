@@ -247,7 +247,7 @@ text_buffer_add_char( text_buffer_t * self,
     //  - 2 triangles for strikethrough
     //  - 2 triangles for glyph
     glyph_vertex_t vertices[4*5];
-    GLuint indices[6*5];
+    ftgl_uint indices[6*5];
     texture_glyph_t *glyph;
     texture_glyph_t *black;
     float kerning = 0.0f;

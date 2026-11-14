@@ -531,6 +531,15 @@ if(GWENI_RENDER_OPENGL_CORE)
         # point such as glTexSubImage3D's family has no implementation
         set(GWENI_COMPILE_DEFINITIONS ${GWENI_COMPILE_DEFINITIONS} GWENI_GL_ES GLFW_INCLUDE_NONE)
         set(GWENI_WEB_LINK_OPTIONS -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2)
+    else()
+        # desktop GL through glew (glApi.h). OpenGLCore links them itself:
+        # freetype-gl, which once brought them in, is GL-free
+        find_package(OpenGL REQUIRED)
+        find_package(GLEW REQUIRED)
+        set(GWENI_ADDITIONAL_LIBRARIES ${GWENI_ADDITIONAL_LIBRARIES}
+            GLEW::GLEW
+            OpenGL::GL
+        )
     endif()
 endif()
 

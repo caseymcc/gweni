@@ -27,6 +27,8 @@
 
 #include "glRenderer.h"
 
+#include <gweni/platforms/renderers/glApi.h>
+
 #include <string>
 #include <vector>
 
