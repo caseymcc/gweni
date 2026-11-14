@@ -118,6 +118,8 @@ set(GWENI_DEMO_SOURCES
     demo/segmentedButtons.h
     demo/splitButton.cpp
     demo/splitButton.h
+    demo/stepper.cpp
+    demo/stepper.h
     demo/nodeGraph.cpp
     demo/nodeGraph.h
     demo/flow.cpp

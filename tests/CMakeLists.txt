@@ -231,11 +231,12 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # hides, the navigation rail's collapse/selection, the board's wheels and
     # edits, the fields' messages, the segmented buttons' selections, the
     # tree table's expands, collapses and keys, the split and drop-down
-    # buttons' menus and the range slider's drags and keys
+    # buttons' menus, the range slider's drags and keys and the
+    # steppers' step changes
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
             dialog toast flow switch spinner navigation-rail board field-validation segmented
-            tree-table split-button range-slider)
+            tree-table split-button range-slider stepper)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail")
@@ -670,6 +671,16 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_split_button 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario split-button --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/split_button@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # StepperDemo: Next writes only the steps whose looks change, the two
+    # pages and the Next button in one pass inside the stepper, Back gives
+    # the frame before it back, a vetoed Next writes the Error step alone, Next
+    # past a disabled step reads Finish, a clickable step's hover writes its
+    # one slot and a vertical step change lays out inside the stepper
+    gweni_whole_app_test(controltest_stepper 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario stepper --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/stepper@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # gweni::tools::Inspector over the settled Demo, opened and closed by F12:
