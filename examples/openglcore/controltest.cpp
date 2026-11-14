@@ -1068,6 +1068,33 @@
  *                 first frame back; the label names the view chosen; settled
  *                 frames write nothing; the demo gives every id back. Exits
  *                 non-zero if any check is no.
+ *    split-button SplitButtonDemo, the clock frozen (split-button.png), its
+ *                 label not updating: the mouse onto the Paste SplitButton's
+ *                 main part and off, onto its arrow part and off, a click on
+ *                 the main part, a click on the arrow part, Down, Down and
+ *                 Return in its menu; then the Options DropDownButton focused,
+ *                 Space, End, Right, Left and Escape. One line
+ *                   split-button hover=yes|no ... ids_back=yes|no
+ *                     main:prims=N,changed=N,outside=N,back=yes|no ...
+ *                 reports the checks: each part's hover writes its own slots
+ *                 alone, marks no control outside it, lays nothing out and
+ *                 changes no pixel outside the control, and moving off gives
+ *                 the frame back; the main part's click fires onPress once,
+ *                 opens nothing and changes no pixel outside the control; the
+ *                 arrow's click opens the menu below the control, left-aligned
+ *                 with it and inside the canvas, focused, firing nothing and changing no pixel
+ *                 outside the menu and the control; a settled frame with it
+ *                 open writes nothing; the first Down highlights the first
+ *                 item and the second moves it to the second, writing the two
+ *                 items' slots alone, laying nothing out and changing no
+ *                 pixel outside them; Return chooses that item once and closes
+ *                 the menu, the focus back on the control and the frame
+ *                 before the open back; Space opens Options navigating, End
+ *                 reaches Recent, Right opens its submenu focused on the
+ *                 item's right and Left closes it back to Recent; Escape
+ *                 closes Options, the focus back on the button and the frame
+ *                 before Space back; settled frames write nothing; the demo
+ *                 gives every id back. Exits non-zero if any check is no.
  *    virtual-list VirtualListDemo with its list at 1 000 and then 100 000
  *                 items, the clock frozen: a settled frame, a one-row scroll
  *                 from the top (scrollByRows) and a wheel notch over the list
@@ -1288,6 +1315,8 @@
 #include <gweni/controls/menu.h>
 #include <gweni/controls/button.h>
 #include <gweni/controls/segmentedButtons.h>
+#include <gweni/controls/splitButton.h>
+#include <gweni/controls/dropDownButton.h>
 #include <gweni/controls/selectable.h>
 #include <gweni/controls/toolTip.h>
 #include <gweni/controls/popup.h>
@@ -1352,6 +1381,7 @@
 #include <demo/navigationRail.h>
 #include <gweni/controls/navigationRail.h>
 #include <demo/segmentedButtons.h>
+#include <demo/splitButton.h>
 #include <gweni/controls/badge.h>
 #include <gweni/controls/chip.h>
 #include <demo/dialog.h>
@@ -1516,7 +1546,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(ChartAreasDemo) X(TimelineDemo) X(ComboBoxDemo) \
-    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(NavigationRailDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(TreeTableDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(SegmentedButtonsDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
+    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(NavigationRailDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(TreeTableDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(SegmentedButtonsDemo) X(SplitButtonDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(SwitchDemo) X(SpinnerDemo) X(FieldValidationDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
@@ -2670,7 +2700,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, TreeTable, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
-    ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented };
+    ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented, SplitButton };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2715,6 +2745,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "field-validation") scenario=Scenario::FieldValidation;
     else if(name == "image-grid") scenario=Scenario::ImageGrid;
     else if(name == "segmented") scenario=Scenario::Segmented;
+    else if(name == "split-button") scenario=Scenario::SplitButton;
     else return false;
     return true;
 }
@@ -12794,6 +12825,317 @@ static bool runSegmentedScenario(Session &s, const std::string &shotDir, bool &p
 }
 
 //-----------------------------------------------------------------------------
+// --scenario split-button: SplitButtonDemo, the clock frozen
+//
+// A SplitButton's part draws its own state: a hover writes that part's slot
+// (and its text's colour), never the other part's; the main part fires its
+// action and opens nothing; the arrow part opens the menu below the control
+// with the keyboard focus in it, a Down highlighting the first item and a
+// second moving it on (the two items' slots), and Return chooses the item and
+// closes the menu, the focus back on the control. Then the DropDownButton
+// Options opened by Space goes into its Recent submenu with Right and back
+// with Left, and Escape closes it, the focus back on the button. The demo's
+// label is the app's reply to an action: its new text is laid out, so it is
+// off throughout. The mouse moves off the canvas between the inputs.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+//! Counts a Caller's calls.
+class ScenarioCounter: public gweni::event::Handler
+{
+public:
+    void count(gweni::event::Info)
+    {
+        ++calls;
+    }
+
+    int calls=0;
+};
+
+// The canvas rect of a control and every shown menu on the canvas: what an
+// open menu may change.
+std::vector<gweni::Rect> withShownMenus(Session &s, gweni::controls::Base *control)
+{
+    std::vector<gweni::Rect> rects{control->getCanvasBounds()};
+
+    for(gweni::controls::Base *child : s.canvas->getActualChildren())
+    {
+        if(gweni::gweni_cast<gweni::controls::Menu>(child) && !child->hidden())
+            rects.push_back(child->getCanvasBounds());
+    }
+    return rects;
+}
+
+}//namespace
+
+static bool runSplitButtonScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    checks.scenario="split-button";
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    gweni::controls::Base *control=addControl(s, "SplitButtonDemo");
+    auto *demo=gweni::gweni_cast<gweni::SplitButtonDemo>(control);
+
+    if(!demo)
+    {
+        std::cerr<<"ControlTest: split-button: SplitButtonDemo was not built\n";
+        return false;
+    }
+
+    s.label="split-button";
+    renderFrames(s, s.frames);
+
+    bool ok=shoot(s, shotDir+"/split-button.png");
+    std::vector<uint8_t> pixels;
+    size_t idleWork=settleCodeEditor(s, pixels);
+    gweni::controls::SplitButton *paste=demo->pasteButton();
+    gweni::controls::Button *mainPart=paste->getMainPart();
+    gweni::controls::Button *arrowPart=paste->getArrowPart();
+    const gweni::Rect pasteRect=paste->getCanvasBounds();
+    auto centre=[](gweni::controls::Base *c) {
+        const gweni::Rect r=c->getCanvasBounds();
+
+        return gweni::Point(r.x+r.w/2, r.y+r.h/2);
+    };
+
+    demo->setLabelUpdates(false);
+
+    // (1) a hover of each part: that part's slot alone (and its text), no
+    // pixel outside the control, and moving off gives the frame back
+    bool hoverOk=true;
+    std::string hoverWhat;
+
+    for(gweni::controls::Button *part : {mainPart, arrowPart})
+    {
+        std::set<size_t> partPrims, partTexts;
+        const size_t ownSlots=part->getSkinControl()->getPrimitives().size();
+
+        subtreeIds(part, partPrims, partTexts);
+
+        const gweni::Point at=centre(part);
+
+        moveMouse(s, at.x, at.y);
+
+        const CodeEditorFrame hover=codeEditorFrame(s);
+        const size_t outside=differencesOutsideRects(s, pixels, hover.pixels, {pasteRect});
+
+        forgetMouse(s);
+
+        const CodeEditorFrame off=codeEditorFrame(s);
+        const bool partOk=gweni::HoveredControl == nullptr && !hover.primitives.empty()
+            && hover.primitives.size() <= ownSlots && idsWithin(hover.primitives, partPrims)
+            && idsWithin(hover.texts, partTexts) && hover.changed <= subtreeControls(part) && hover.passes == 0
+            && outside == 0 && off.pixels == pixels;
+
+        hoverWhat+=std::string(" ")+(part == mainPart ? "main" : "arrow")+":prims="
+            +std::to_string(hover.primitives.size())+",changed="+std::to_string(hover.changed)+",outside="
+            +std::to_string(outside)+",back="+(off.pixels == pixels ? "yes" : "no");
+        if(!partOk)
+            hoverOk=false;
+    }
+    checks.check("hover", hoverOk, "a part's hover wrote outside its own slots, marked more than it, laid out, "
+        "changed pixels outside the control, or moving off did not give the frame back:"+hoverWhat);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (2) a click on the main part fires its action and opens nothing
+    ScenarioCounter pressed;
+
+    paste->onPress.add(&pressed, &ScenarioCounter::count);
+    {
+        const gweni::Point at=centre(mainPart);
+
+        clickMouse(s, at.x, at.y);
+    }
+
+    const CodeEditorFrame mainClick=codeEditorFrame(s);
+    const size_t mainOutside=differencesOutsideRects(s, pixels, mainClick.pixels, {pasteRect});
+
+    checks.check("main_click", pressed.calls == 1 && !paste->isMenuOpen() && mainOutside == 0
+        && paste->isFocussed(),
+        "the main part's click fired "+std::to_string(pressed.calls)+" actions (1 expected), opened the menu ("
+        +(paste->isMenuOpen() ? "yes" : "no")+"), left the focus elsewhere or changed "
+        +std::to_string(mainOutside)+" pixels outside the control");
+    forgetMouse(s);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // the frame before opening: the control focused, the mouse off the canvas
+    const std::vector<uint8_t> beforeOpen=pixels;
+
+    // (3) a click on the arrow opens the menu below the control, inside the
+    // canvas, changing nothing outside the menu and the button
+    {
+        const gweni::Point at=centre(arrowPart);
+
+        clickMouse(s, at.x, at.y);
+    }
+
+    const CodeEditorFrame open=codeEditorFrame(s);
+    gweni::controls::Menu *menu=paste->getMenu();
+    const gweni::Rect menuRect=menu->getCanvasBounds();
+    const size_t openOutside=differencesOutsideRects(s, pixels, open.pixels, withShownMenus(s, paste));
+    const bool below=menuRect.y >= pasteRect.y+pasteRect.h && menuRect.x == pasteRect.x && menuRect.y >= 0
+        && menuRect.x+menuRect.w <= s.size.x && menuRect.y+menuRect.h <= s.size.y;
+
+    checks.check("arrow_open", paste->isMenuOpen() && pressed.calls == 1 && below && openOutside == 0
+        && menu->isFocussed(),
+        std::string("the arrow's click opened the menu: ")+(paste->isMenuOpen() ? "yes" : "no")+", fired "
+        +std::to_string(pressed.calls-1)+" actions, the menu at "+std::to_string(menuRect.x)+","
+        +std::to_string(menuRect.y)+" "+std::to_string(menuRect.w)+"x"+std::to_string(menuRect.h)
+        +" (below the control at y "+std::to_string(pasteRect.y+pasteRect.h)+", left-aligned with it at x "
+        +std::to_string(pasteRect.x)+", inside the canvas), "
+        +std::to_string(openOutside)+" pixels changed outside the menu and the control");
+    forgetMouse(s);
+    renderFrames(s, 1);
+
+    // (4) a settled frame with it open writes nothing
+    std::vector<uint8_t> openPixels;
+    const size_t openIdle=settleCodeEditor(s, openPixels);
+
+    checks.check("open_settled", openIdle == 0, "a settled frame with the menu open wrote or changed "
+        +std::to_string(openIdle));
+
+    // (5) Down highlights the first item, a second Down moves it on, writing
+    // the two items' slots alone; Return chooses it and closes the menu, the
+    // focus back on the control and the frame before the open back
+    std::vector<gweni::controls::MenuItem *> items;
+
+    for(gweni::controls::Base *child : menu->getChildren())
+    {
+        if(auto *item=gweni::gweni_cast<gweni::controls::MenuItem>(child))
+            items.push_back(item);
+    }
+
+    ScenarioCounter chosen;
+
+    if(items.size() >= 2)
+        items[1]->onMenuItemSelected.add(&chosen, &ScenarioCounter::count);
+
+    sendKey(s, "down");
+
+    const CodeEditorFrame firstDown=codeEditorFrame(s);
+    const bool firstHighlighted=(items.size() >= 2) && menu->getHighlightedItem() == items[0];
+
+    sendKey(s, "down");
+
+    const CodeEditorFrame secondDown=codeEditorFrame(s);
+    std::set<size_t> pairPrims, pairTexts;
+
+    if(items.size() >= 2)
+    {
+        subtreeIds(items[0], pairPrims, pairTexts);
+        subtreeIds(items[1], pairPrims, pairTexts);
+    }
+
+    const size_t downOutside=differencesOutsideRects(s, openPixels, secondDown.pixels,
+        items.size() >= 2 ? std::vector<gweni::Rect>{items[0]->getCanvasBounds(), items[1]->getCanvasBounds()}
+            : std::vector<gweni::Rect>{});
+
+    checks.check("down", firstHighlighted && menu->getHighlightedItem() == items[1]
+        && !secondDown.primitives.empty() && idsWithin(secondDown.primitives, pairPrims)
+        && idsWithin(secondDown.texts, pairTexts) && secondDown.passes == 0 && firstDown.passes == 0
+        && secondDown.changed <= subtreeControls(items[0])+subtreeControls(items[1]) && downOutside == 0,
+        "Down highlighted the first item ("+std::string(firstHighlighted ? "yes" : "no")+") and the second ("
+        +std::string((items.size() >= 2 && menu->getHighlightedItem() == items[1]) ? "yes" : "no")+"), the move wrote "
+        +std::to_string(secondDown.primitives.size())+" primitive ids outside or inside the two items' (theirs alone allowed), changed "
+        +std::to_string(secondDown.changed)+" controls and "+std::to_string(downOutside)
+        +" pixels outside the two items, or laid out");
+
+    sendKey(s, "return");
+
+    const CodeEditorFrame chose=codeEditorFrame(s);
+
+    checks.check("return", chosen.calls == 1 && !paste->isMenuOpen() && paste->isFocussed()
+        && pressed.calls == 1 && chose.pixels == beforeOpen,
+        "Return chose "+std::to_string(chosen.calls)+" times (1 expected), left the menu "
+        +(paste->isMenuOpen() ? "open" : "closed")+", the focus "+(paste->isFocussed() ? "back" : "elsewhere")
+        +", or did not give the frame before the open back");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (6) Options opened by Space: Recent's submenu with Right and out with
+    // Left; Escape closes it with the focus back on the button
+    gweni::controls::DropDownButton *options=demo->optionsButton();
+    gweni::controls::MenuItem *recent=demo->recentItem();
+    gweni::controls::Menu *optionsMenu=options->getMenu();
+    gweni::controls::Menu *submenu=recent->getMenu();
+
+    options->focus();
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    const std::vector<uint8_t> beforeSpace=pixels;
+
+    sendKey(s, "space");
+    renderFrames(s, 1);
+
+    const bool spaceOpened=options->isMenuOpen() && optionsMenu->isFocussed()
+        && optionsMenu->getHighlightedItem() != nullptr;
+
+    sendKey(s, "end");
+    renderFrames(s, 1);
+
+    const bool onRecent=optionsMenu->getHighlightedItem() == recent;
+
+    sendKey(s, "right");
+    renderFrames(s, 1);
+
+    const bool intoSubmenu=!submenu->hidden() && submenu->isFocussed() && submenu->getHighlightedItem() != nullptr;
+    const gweni::Rect subRect=submenu->getCanvasBounds();
+    // on its item's right, top to top (MenuItem::openMenu's placement)
+    const gweni::Rect optionsRect=recent->getCanvasBounds();
+    const bool subBeside=subRect.x == optionsRect.x+optionsRect.w && subRect.y == optionsRect.y;
+
+    sendKey(s, "left");
+    renderFrames(s, 1);
+
+    const bool outOfSubmenu=submenu->hidden() && optionsMenu->isFocussed()
+        && optionsMenu->getHighlightedItem() == recent && options->isMenuOpen();
+
+    checks.check("submenu", spaceOpened && onRecent && intoSubmenu && subBeside && outOfSubmenu,
+        std::string("Space opened Options navigating: ")+(spaceOpened ? "yes" : "no")+", End reached Recent: "
+        +(onRecent ? "yes" : "no")+", Right opened its submenu focused ("+(intoSubmenu ? "yes" : "no")
+        +") on Recent's right (at "+std::to_string(subRect.x)+","+std::to_string(subRect.y)+", the item's right edge "
+        +std::to_string(optionsRect.x+optionsRect.w)+", its top "+std::to_string(optionsRect.y)+"), Left closed it back to Recent: "+(outOfSubmenu ? "yes" : "no"));
+
+    sendKey(s, "escape");
+
+    const CodeEditorFrame escaped=codeEditorFrame(s);
+
+    checks.check("escape", !options->isMenuOpen() && options->isFocussed() && escaped.pixels == beforeSpace,
+        std::string("Escape left the menu ")+(options->isMenuOpen() ? "open" : "closed")+", the focus "
+        +(options->isFocussed() ? "on the button" : "elsewhere")+", or did not give the frame before Space back");
+
+    if(gweni::KeyboardFocus)
+        gweni::KeyboardFocus->unfocus();
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+    checks.check("settled", idleWork == 0, "settled frames wrote or changed "+std::to_string(idleWork));
+
+    paste->onPress.removeHandler(&pressed);
+    if(items.size() >= 2)
+        items[1]->onMenuItemSelected.removeHandler(&chosen);
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()+liveTextIds()-idsBefore;
+
+    checks.check("ids_back", idsLeft == 0, std::to_string(idsLeft)+" ids not given back");
+
+    passed=checks.allPassed();
+    std::cout<<"split-button";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<hoverWhat<<" open_prims="<<open.primitives.size()<<" down_prims="<<secondDown.primitives.size()
+             <<" down_changed="<<secondDown.changed<<"\n";
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // NavigationRailDemo: app callbacks first, then the rail alone. Updating a
 // page is the app's work, so detach its callback before bounding selection to
 // two rows and their glyphs. Counts are frozen; only tooltip waits step time.
@@ -18471,6 +18813,15 @@ int main(int argc, char *argv[])
             ok=runSegmentedScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a hover, a click, a key or a toggle did more than its segments, or a joint doubled
+            break;
+        }
+
+        case Scenario::SplitButton:
+        {
+            bool passed=false;
+            ok=runSplitButtonScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a part's hover, a click, a key or the menu did more than its part
             break;
         }
 

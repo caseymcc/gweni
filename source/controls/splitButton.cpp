@@ -43,6 +43,13 @@ SplitButton *SplitButtonArrow::getSplitButton() const
     return gweni_cast<SplitButton>(getParent());
 }
 
+Base *SplitButtonArrow::menuAnchor()
+{
+    if(SplitButton *split=getSplitButton())
+        return split;
+    return this;
+}
+
 }//namespace internal
 
 GWENI_CONTROL_CONSTRUCTOR(SplitButton)

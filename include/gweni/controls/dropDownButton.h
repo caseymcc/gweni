@@ -90,6 +90,12 @@ public:
 protected:
     //! The menu was shown or hidden: the pressed look follows it.
     void onMenuVisibilityChanged(event::Info);
+    //! The control the menu opens below: this button (a SplitButton's arrow
+    //! part gives the whole SplitButton).
+    virtual Base *menuAnchor()
+    {
+        return this;
+    }
 
     //! getMenu()'s control id (0 before it is made): an id, so a menu deleted
     //! by the app or the canvas is no menu.

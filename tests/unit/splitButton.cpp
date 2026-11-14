@@ -511,7 +511,10 @@ TEST_CASE("SplitButton: the main part fires without opening, the arrow part open
     CHECK(pressed.calls == 1);
     scene.frame();
     controls::Menu *menu=split->getMenu();
+    // below the whole control, its left edge with the main part's
     CHECK(menu->getY() >= split->getY()+split->getHeight());
+    CHECK(menu->getX() == split->getX());
+    CHECK(menu->getAnchor() == split);
     CHECK(menu->isFocussed());
     CHECK(split->getArrowPart()->isDepressed());
     CHECK_FALSE(split->getMainPart()->isDepressed());

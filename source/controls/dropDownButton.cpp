@@ -85,7 +85,7 @@ void DropDownButton::openMenu(MenuFocus focus)
 
     // one menu open at a time, as a press anywhere else closes them
     canvas->closeMenus();
-    menu->openNextTo(this, PopupPlacement::Below, 1, focus);
+    menu->openNextTo(menuAnchor(), PopupPlacement::Below, 1, focus);
 }
 
 void DropDownButton::closeMenu()

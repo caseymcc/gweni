@@ -36,7 +36,8 @@ public:
 
 //! A SplitButton's arrow part: a DropDownButton (its menu, its toggle and its
 //! pressed look while the menu is open) that never takes the keyboard focus,
-//! drawn square on its left with the chevron centred.
+//! drawn square on its left with the chevron centred. Its menu opens below the
+//! SplitButton.
 class GWENI_EXPORT SplitButtonArrow: public DropDownButton
 {
 public:
@@ -45,6 +46,10 @@ public:
 
 public:
     SplitButton *getSplitButton() const;
+
+protected:
+    //! The menu opens below the whole SplitButton, left-aligned with it.
+    Base *menuAnchor() override;
 };
 
 }//namespace internal

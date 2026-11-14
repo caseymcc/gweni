@@ -229,12 +229,13 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # badges' counts and anchor moves, the dialogs, the toasts, a Flow's
     # resizes and rebuilds, the switches' toggles, the spinners' stops and
     # hides, the navigation rail's collapse/selection, the board's wheels and
-    # edits, the fields' messages, the segmented buttons' selections and the
-    # tree table's expands, collapses and keys
+    # edits, the fields' messages, the segmented buttons' selections, the
+    # tree table's expands, collapses and keys and the split and drop-down
+    # buttons' menus
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
             dialog toast flow switch spinner navigation-rail board field-validation segmented
-            tree-table)
+            tree-table split-button)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail")
@@ -640,6 +641,17 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_segmented_scale150 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario segmented --require-one-pass --scale 1.5
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/segmented_scale150@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # SplitButtonDemo: a hover of each part writes that part's slots alone, a
+    # click on the main part fires and opens nothing, a click on the arrow
+    # opens the menu below with the focus in it, Down moves the highlight over
+    # the two items' slots alone and Return chooses and closes with the frame
+    # before back; a DropDownButton opened by Space goes into a submenu with
+    # Right and out with Left, and Escape gives the focus back
+    gweni_whole_app_test(controltest_split_button 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario split-button --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/split_button@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # gweni::tools::Inspector over the settled Demo, opened and closed by F12:
