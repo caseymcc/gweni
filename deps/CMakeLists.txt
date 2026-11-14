@@ -11,9 +11,10 @@ set(freetype-gl_BUILD_MAKEFONT OFF CACHE BOOL "Build the makefont tool" FORCE)
 # GLEW or GLES headers or libraries, one vertex_buffer_t layout everywhere.
 
 # SYSTEM: freetype-gl keeps its own flags, and its headers must not be able to
-# raise a diagnostic inside a gweni translation unit. Only the renderers use it,
-# so a tree without one leaves it out.
-if(GWENI_RENDER_OPENGL_CORE)
+# raise a diagnostic inside a gweni translation unit. Only the slot core
+# (SlotRenderer, under either renderer) uses it, so a tree without one leaves it
+# out.
+if(GWENI_RENDER_OPENGL_CORE OR GWENI_RENDER_VULKAN)
     add_subdirectory(freetype-gl SYSTEM)
 endif()
 

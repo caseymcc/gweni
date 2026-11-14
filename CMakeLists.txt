@@ -446,12 +446,16 @@ set(GWENI_COMPILE_DEFINITIONS "")
 find_package(RapidJSON CONFIG REQUIRED)
 include_directories(${RAPIDJSON_INCLUDE_DIRS})
 
-if(GWENI_RENDER_OPENGL_CORE)
+# The slot core, with either renderer: SlotRenderer, the API-independent part
+# of a retained renderer (the mirrors, the vertex packing, the text runs and
+# fonts over freetype-gl, which is GL-free), the depth view, which draws through
+# its view transform, and the fallback font. Nothing in it is GL.
+if(GWENI_RENDER_OPENGL_CORE OR GWENI_RENDER_VULKAN)
     find_package(glm CONFIG REQUIRED)
 
     find_package(freetype CONFIG REQUIRED)
 
-    # The built-in fallback font OpenGLCore::loadFont draws a missing or
+    # The built-in fallback font SlotRenderer::loadFont draws a missing or
     # unreadable face in: resources/OpenSans.ttf (Apache-2.0, see
     # resources/OpenSans-LICENSE.txt) as a byte array, generated into the build
     # tree whenever the font or the script changes.
@@ -466,9 +470,30 @@ if(GWENI_RENDER_OPENGL_CORE)
         COMMENT "Embedding the fallback font ${GWENI_FALLBACK_FONT}"
         VERBATIM)
 
-    # The programs' shader bodies, shared by OpenGLCore (embedded here as text,
-    # behind GL's prologue) and the Vulkan backend (compiled to SPIR-V from
-    # wrappers that #include them, source/platforms/renderers/Vulkan/)
+    list(APPEND GWENI_RENDER_SOURCES
+        include/gweni/platforms/renderers/slotRenderer.h
+        source/platforms/renderers/SlotRenderer/slotRenderer.cpp
+        include/gweni/tools/depthView.h
+        source/tools/depthView.cpp
+        ${GWENI_FALLBACK_FONT_SOURCE}
+    )
+    set(GWENI_ADDITIONAL_LIBRARIES ${GWENI_ADDITIONAL_LIBRARIES}
+        glm::glm
+        freetype
+        freetype-gl
+    )
+
+    set(GWENI_COMPILE_DEFINITIONS ${GWENI_COMPILE_DEFINITIONS}
+        GLM_HAS_TEMPLATE_ALIASES
+    )
+endif()
+
+# OpenGLCore, SlotRenderer's GL backend: GL's headers and libraries (glApi.h),
+# and the shader bodies embedded as text behind GL's prologue
+if(GWENI_RENDER_OPENGL_CORE)
+    # The programs' shader bodies, embedded here as text behind GL's prologue for
+    # OpenGLCore alone; the Vulkan backend compiles the same bodies to SPIR-V
+    # from wrappers that #include them (source/platforms/renderers/Vulkan/)
     set(GWENI_SHADER_DIR ${GWENI_SOURCE_DIR}/source/platforms/renderers/shaders)
     set(GWENI_SHADER_SOURCES "")
     foreach(shader primitive.vert:primitiveVertexGlsl primitive.frag:primitiveFragmentGlsl
@@ -488,28 +513,11 @@ if(GWENI_RENDER_OPENGL_CORE)
         list(APPEND GWENI_SHADER_SOURCES ${shaderOutput})
     endforeach()
 
-    # SlotRenderer, the API-independent part of a retained renderer (the mirrors,
-    # the vertex packing, the text runs and fonts), and OpenGLCore, its GL backend
     list(APPEND GWENI_RENDER_SOURCES
-        include/gweni/platforms/renderers/slotRenderer.h
-        source/platforms/renderers/SlotRenderer/slotRenderer.cpp
         include/gweni/platforms/renderers/glApi.h
         include/gweni/platforms/renderers/openglCore.h
         source/platforms/renderers/OpenGLCore/openglCore.cpp
-        # the depth view draws through SlotRenderer's view transform
-        include/gweni/tools/depthView.h
-        source/tools/depthView.cpp
-        ${GWENI_FALLBACK_FONT_SOURCE}
         ${GWENI_SHADER_SOURCES}
-    )
-    set(GWENI_ADDITIONAL_LIBRARIES ${GWENI_ADDITIONAL_LIBRARIES}
-        glm::glm
-        freetype
-        freetype-gl
-    )
-
-    set(GWENI_COMPILE_DEFINITIONS ${GWENI_COMPILE_DEFINITIONS}
-        GLM_HAS_TEMPLATE_ALIASES
     )
 
     if(GWENI_GL_ES)
@@ -550,12 +558,8 @@ if(GWENI_RENDER_VULKAN)
     # so code (the library, the examples, the tests) can #if on it
     set(GWENI_COMPILE_DEFINITIONS ${GWENI_COMPILE_DEFINITIONS} GWENI_HAS_VULKAN)
 
-    # renderer::Vulkan, the Vulkan backend of SlotRenderer, which (with
-    # freetype-gl and the shader bodies) is built with the GL renderer for now
-    if(NOT GWENI_RENDER_OPENGL_CORE)
-        message(FATAL_ERROR "GWENI_RENDER_VULKAN needs GWENI_RENDER_OPENGL_CORE: "
-            "renderer::Vulkan derives from SlotRenderer, built with it")
-    endif()
+    # renderer::Vulkan, the Vulkan backend of the slot core (above), with or
+    # without the GL renderer
     list(APPEND GWENI_RENDER_SOURCES
         include/gweni/platforms/renderers/vulkan.h
         source/platforms/renderers/Vulkan/vulkan.cpp
@@ -697,10 +701,10 @@ if(GWENI_BUILD_TESTS)
     add_subdirectory(tests)
 endif(GWENI_BUILD_TESTS)
 
-# gweni_bench (bench/): needs gweni_capture from the examples, and registers its
-# smoke test with the tests. Not in the web tree: the browser runs captures, not
-# timed scenes.
-if(GWENI_BUILD_TESTS AND GWENI_BUILD_EXAMPLES AND NOT EMSCRIPTEN)
+# gweni_bench (bench/): needs gweni_capture from the examples (built with the
+# GL renderer, examples/openglcore/), and registers its smoke test with the
+# tests. Not in the web tree: the browser runs captures, not timed scenes.
+if(GWENI_BUILD_TESTS AND GWENI_BUILD_EXAMPLES AND TARGET gweni_capture AND NOT EMSCRIPTEN)
     add_subdirectory(bench)
 endif()
 

@@ -8,6 +8,7 @@ cmake_custom_options=""
 sanitize=""
 profile=""
 gles=""
+vulkan_only=""
 manifest_features=""
 vulkan="ON"
 
@@ -45,6 +46,9 @@ for var in "$@"; do
     fi
     if [ "$var" = "gles" ]; then
         gles="gles"
+    fi
+    if [ "$var" = "vulkan" ]; then
+        vulkan_only="vulkan"
     fi
     if [[ $var = -DVCPKG_MANIFEST_FEATURES=* || $var = -DVCPKG_MANIFEST_FEATURES:*=* ]]; then
         # merged with the features this script adds, below
@@ -85,6 +89,17 @@ if [ -n "$gles" ]; then
     fi
     if [ "$platform" != "linux" ]; then
         echo "ERROR: gles is a linux tree; use ./generate.sh linux gles [release] [asan]"
+        exit 1
+    fi
+fi
+
+if [ -n "$vulkan_only" ]; then
+    # The Vulkan-only tree: renderer::Vulkan and the slot core with no GL
+    # renderer (GWENI_RENDER_OPENGL_CORE off), so nothing in it finds or links
+    # GL, GLEW or EGL. It combines with release and asan, not with gles, web or
+    # profile.
+    if [ -n "$gles" ] || [ -n "$profile" ] || [ "$platform" != "linux" ]; then
+        echo "ERROR: vulkan does not combine with gles, web or profile; use ./generate.sh linux vulkan [release] [asan]"
         exit 1
     fi
 fi
@@ -193,6 +208,13 @@ if [ -n "$gles" ]; then
     # build_linux_x64_debug_gles, beside the desktop GL tree
     cmake_options="$cmake_options -DGWENI_GL_ES=ON"
     build_dir="${build_dir}_gles"
+fi
+
+if [ -n "$vulkan_only" ]; then
+    # build_linux_x64_debug_vulkan, beside the GL tree; after the ON above, so
+    # it wins
+    cmake_options="$cmake_options -DGWENI_RENDER_OPENGL_CORE=OFF"
+    build_dir="${build_dir}_vulkan"
 fi
 
 if [ "$sanitize" = "asan" ]; then

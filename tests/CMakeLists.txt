@@ -867,15 +867,29 @@ endforeach()
 # has its dependencies.
 set(gweni_header_check_excluded)
 if(NOT GWENI_RENDER_OPENGL_CORE)
-    # freetype-gl and glew or the GLES headers come with the GL renderer
+    # glew or the GLES headers come with the GL renderer
     list(APPEND gweni_header_check_excluded
         gweni/platforms/renderers/glApi.h
-        gweni/platforms/renderers/openglCore.h
-        gweni/platforms/renderers/slotRenderer.h)
+        gweni/platforms/renderers/openglCore.h)
+endif()
+if(NOT GWENI_RENDER_OPENGL_CORE AND NOT GWENI_RENDER_VULKAN)
+    # freetype-gl and glm come with the slot core, under either renderer
+    list(APPEND gweni_header_check_excluded
+        gweni/platforms/renderers/slotRenderer.h
+        gweni/tools/depthView.h)
 endif()
 if(NOT GWENI_RENDER_VULKAN)
     # volk comes with the vcpkg feature vulkan
     list(APPEND gweni_header_check_excluded gweni/platforms/renderers/vulkan.h)
+endif()
+# GLFW's headers (vcpkg's glfw3, or Emscripten's port on the web)
+if(NOT EMSCRIPTEN)
+    find_package(glfw3 CONFIG QUIET)
+endif()
+if(NOT EMSCRIPTEN AND NOT TARGET glfw)
+    list(APPEND gweni_header_check_excluded
+        gweni/platforms/input/glfw3.h
+        gweni/platforms/input/glfwLoop.h)
 endif()
 set(gweni_header_check_sources)
 foreach(header IN LISTS gweni_public_headers)
@@ -896,13 +910,12 @@ endforeach()
 add_library(gweni_header_check OBJECT ${gweni_header_check_sources})
 gweni_set_warnings(gweni_header_check)
 # gweni brings the include dir, its compile definitions and its dependencies'
-# headers; platforms/input/glfw3.h needs GLFW's, which gweni does not link (as
-# for gweni_unit_tests below)
+# headers; platforms/input/glfw3.h and glfwLoop.h need GLFW's, which gweni does
+# not link (as for gweni_unit_tests below)
 target_link_libraries(gweni_header_check PRIVATE gweni)
 if(EMSCRIPTEN)
     target_compile_options(gweni_header_check PRIVATE --use-port=contrib.glfw3)
-else()
-    find_package(glfw3 CONFIG REQUIRED)
+elseif(TARGET glfw)
     target_include_directories(gweni_header_check PRIVATE
         $<TARGET_PROPERTY:glfw,INTERFACE_INCLUDE_DIRECTORIES>)
 endif()
