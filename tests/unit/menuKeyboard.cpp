@@ -217,7 +217,7 @@ struct Scene
 
 }//namespace
 
-TEST_CASE("Menu keyboard navigation: the focus and the first enabled item on open; Up/Down skip dividers and disabled and hidden items, wrapping; Home/End")
+TEST_CASE("Menu keyboard navigation: the focus and the first enabled item on open, Up/Down skipping dividers and disabled and hidden items and wrapping, and Home/End")
 {
     Scene scene;
 

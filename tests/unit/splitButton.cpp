@@ -327,7 +327,7 @@ TEST_CASE("DropDownButton: a click opens its menu below it with the focus in the
     CHECK(button->isMenuOpen());
 }
 
-TEST_CASE("DropDownButton: Space, Return, Alt+Down and F4 open it with the first item highlighted; Escape closes it with the focus back")
+TEST_CASE("DropDownButton: Space, Return, Alt+Down and F4 open it with the first item highlighted, and Escape closes it with the focus back")
 {
     Scene scene;
     controls::DropDownButton *button=scene.dropDown(40, 40);

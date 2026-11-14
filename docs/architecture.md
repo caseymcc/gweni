@@ -491,6 +491,93 @@ run from one of the menu's own item events; a canvas tearing down deletes it wit
 other children, and while it does (`Canvas::m_releasingChildren`) a deleted owner only
 hides its open menu, because the submenus `closeAll()` would reach may already be gone.
 
+#### Menu keyboard navigation
+
+A `Menu` takes no keys unless the code opening it asks (#632). `openNextTo(anchor, side,
+gap, focus)` and `openAt(cursor, focus)` take a `MenuFocus`: `None` (the default, every
+menu as it was, so a `ComboBox`'s list, a context menu and a `MenuStrip`'s menus take no
+focus and react to no key, and a list whose keys belong to a text field keeps them
+there), `FirstItem` (the keyboard focus and the first enabled item highlighted: an open
+from a key), or `Menu` (the focus and nothing highlighted until a key or the mouse moves
+it: an open from a click, WinUI's pointer open). `Menu::startKeyboardNavigation()` does
+the same for a menu already shown. While it navigates the menu turns its own keyboard
+input on (`input::dropLostKeyboardFocus` drops a focus that takes none) and restores it
+when it ends.
+
+The keys are WinUI's and Win32's: Up and Down move the highlight over the shown, enabled
+`MenuItem`s (`Menu::navigableItems()`: dividers, disabled and hidden items are skipped),
+wrapping, from none to the first or the last; Home and End go to the first and the last;
+Return and Space choose the highlighted item as a click does (`doAction()`: a checkable
+item toggles, `onMenuItemSelected` fires, the canvas closes every menu), or, for an item
+with a submenu, open it as Right does; Right opens the highlighted item's submenu
+navigating in turn (`MenuFocus::FirstItem`), the item staying highlighted in its parent
+(its submenu is open); Left closes a submenu back to its item, and does nothing in the
+first menu; Escape closes one level; Tab is taken, so the focus stays in the menu. A
+key's release goes where its press went, so the Space that opened a menu from a button
+does not choose in it. A move closes a submenu the mouse had opened on the item it
+leaves.
+
+**One highlight.** The keyboard highlight is the hover's look (`MenuHover`, no new
+surface). `MenuItem::isHighlighted()` is what the textured `MenuItem` renderer reads:
+pressed, its submenu open, or hovered, except that while its menu navigates by keyboard
+it is the menu's highlighted item (`Menu::getHighlightedItem()`, held as a control id, so
+a deleted item is none) instead of the hovered one, and `MenuItem::updateColors` gives
+that item the hover's text colour. The mouse moving onto an enabled item highlights it
+(`Menu::onHoverItem`), so mouse and keys move one highlight; a disabled item takes none.
+`setHighlightedItem` redraws the item it leaves and the one it reaches and nothing else,
+so a highlight move writes the two items' slots. Started and ended, the item under a
+resting mouse is redrawn, its look moving between the hover and the highlight.
+
+**The focus goes back.** At the start the menu keeps the control that had the keyboard
+focus (by id). When the menu is hidden, however it closes (Escape, a pick, a press
+elsewhere, `Canvas::closeMenus`, its anchor hidden), navigation ends and, if the menu
+still holds the focus, it goes back to that control. A submenu took it from its parent
+menu, and both may close in one `closeMenus()` in either order, so a hidden menu passes
+it on to the control it took it from, and a pick in a submenu gives the focus back to
+the button that opened the first menu. A control that is gone, hidden or refused by a
+modal gets nothing and the focus is dropped. Not yet: a highlight moved past the
+viewport of a menu that scrolls does not scroll it into view.
+
+#### The split and drop-down buttons
+
+`controls::DropDownButton` is a `Button` whose press opens `getMenu()`, a `Menu` it makes
+on the canvas on first use (hidden; held by id, so one the app deletes is none) and the
+app fills: `Menu::openNextTo(menuAnchor(), Below, 1, focus)`, so the canvas places it
+below the button, flips it above and keeps it inside the canvas, and follows the button
+while it is open as every anchored menu does. A click opens it with `MenuFocus::Menu`,
+Space, Return, Alt+Down and F4 (`keys::F4`, `Base::onKeyF4`, from `GLFW_KEY_F4`) with
+`MenuFocus::FirstItem`; either way the menu gives the focus back to the button. A press
+on the button while its menu is open closes it: the button is a menu component
+(`isMenuComponent()`, as a `MenuStrip` item is), so `input::onMouseClicked` does not
+close every menu before the press, and its own press decides (`openMenu` closes the
+other open menus first). While the menu is open the button is pressed (`isDepressed()`),
+redrawn from the menu's `onVisibilityChanged`. Its textured renderer draws
+`buttonSurface()` (the Button surface of a state, shared with every Button's renderer)
+and the down chevron (icon kind 1, direction 0) at z+1, `ChevronSize` square
+`ChevronInset` from its right edge, in the right text padding's `ChevronRoom`.
+
+`controls::SplitButton` is two parts in one row, owner-placed in its arrange:
+`internal::SplitButtonMain`, a `Button` as wide as its content, and
+`internal::SplitButtonArrow`, a `DropDownButton` `ArrowWidth` wide, `Divider` unit apart.
+Neither part takes the keyboard focus: a press finds the `SplitButton` as the nearest
+ancestor taking keyboard input, so the control is one Tab stop, Space and Return press
+the main part, and Alt+Down and F4 open the menu. The main part fires `onPress` (and
+`onToggle` with `setIsToggle(true)`, WinUI's ToggleSplitButton), the arrow part opens and
+closes the menu, and neither fires the other's. The arrow's menu opens below the whole
+control, left-aligned with it (`SplitButtonArrow::menuAnchor()`). `setMainItem(item)`
+makes a menu item the main action (the "last used" pattern): the main part shows its
+text and a press fires its `onMenuItemSelected` after `onPress`. `setDisabled` disables
+both parts and closes the menu.
+
+Each part has its own renderer and slots, so a hover or press of one writes its slots
+alone: the main part draws its `buttonSurface()` square on its right with no border there
+(`SquareTopRight|SquareBottomRight|NoBorderRight`), the arrow part mirrored with its
+chevron at z+1, and the `SplitButton` itself draws the `Divider`-unit column between them
+in the `SplitButtonDivider` surface (the Button border colour), so the two read as one
+outline. Both parts take the control's focus as their own (`buttonSurface(part,
+focused)`), the focus change redrawing them. SplitButtonDemo shows both kinds, and
+`--scenario split-button` holds them to their slots.
+
 #### The modal stack: what a dialog blocks
 
 A canvas keeps a stack of modals (`Canvas::pushModal`, `popModal`, `topModal`,
@@ -4990,12 +5077,12 @@ set by its bare name and one with some of them as `Name.field` per missing field
 the shipped theme with `"strict": true` added):
 
 ```
-theme strict: 190 of 194 surfaces not set: Badge, ButtonDisabled, ButtonDown, ...
+theme strict: 191 of 195 surfaces not set: Badge, ButtonDisabled, ButtonDown, ...
 theme strict: 68 of 70 text colors not set: AxisTagText, BadgeText, ButtonDisabled, ...
 ```
 
-(`theme strict: all 194 surfaces set` for a kind with no gaps, and a single
-`theme strict: all 194 surfaces and 70 text colors set` when there are none at all). A
+(`theme strict: all 195 surfaces set` for a kind with no gaps, and a single
+`theme strict: all 195 surfaces and 70 text colors set` when there are none at all). A
 rejected value counts as not set. A surface that is transparent at rest on purpose
 (`WindowButton`, `SelectableHover`: a transparent fill hides the slot) is magenta too
 until the theme sets it to `[0,0,0,0]`; the theme has not said what it looks like. The
