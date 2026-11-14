@@ -237,11 +237,27 @@ SegmentedButtons::~SegmentedButtons()
 
 SegmentedButton *SegmentedButtons::addSegment(const String &text, const String &name)
 {
+    return newSegment(text, String(), false, name);
+}
+
+SegmentedButton *SegmentedButtons::addSegment(const String &text, const String &image, bool imageOnly,
+    const String &name)
+{
+    return newSegment(text, image, imageOnly, name);
+}
+
+// The segment is whole (its image too) before it joins the selection, so an
+// onSelectionChange for the first segment sees it as it is returned.
+SegmentedButton *SegmentedButtons::newSegment(const String &text, const String &image, bool imageOnly,
+    const String &name)
+{
     SegmentedButton *segment=newChild<SegmentedButton>();
 
     segment->setPlacement(Placement::Owner);
     segment->setName(name);
     segment->setText(text);
+    segment->setImage(image);
+    segment->setImageOnly(imageOnly);
     segment->m_row=this;
     segment->setCheckRoom(m_showCheck);
     segment->onSelect.add(this, &SegmentedButtons::onSegmentSelect);
@@ -257,16 +273,6 @@ SegmentedButton *SegmentedButtons::addSegment(const String &text, const String &
     segment->updateColors();
     restyleSegments();
     invalidate();
-    return segment;
-}
-
-SegmentedButton *SegmentedButtons::addSegment(const String &text, const String &image, bool imageOnly,
-    const String &name)
-{
-    SegmentedButton *segment=addSegment(text, name);
-
-    segment->setImage(image);
-    segment->setImageOnly(imageOnly);
     return segment;
 }
 
@@ -505,9 +511,12 @@ void SegmentedButtons::segmentDestroyed(SegmentedButton *segment)
     restyleSegments();
 }
 
-// A segment moved to another parent leaves the row: its handlers, its
-// group, its owner placement and the check's room go with it (a deleted one
-// has left from its destructor already).
+// A segment moved to another parent leaves the row: its group, its owner
+// placement and the check's room go with it (a deleted one has left from its
+// destructor already). Its handlers stay, as after removeSegment: this may run
+// inside the segment's onSelect (an onSelectionChange handler moving the
+// clicked segment), whose Caller must not lose a handler while it calls it;
+// with m_row null they ignore it, and they go when either side is deleted.
 void SegmentedButtons::onChildRemoved(Base *child)
 {
     ParentClass::onChildRemoved(child);
@@ -520,8 +529,6 @@ void SegmentedButtons::onChildRemoved(Base *child)
     SegmentedButton *segment=m_segments[static_cast<size_t>(index)];
 
     segmentDestroyed(segment);
-    segment->onSelect.removeHandler(this);
-    segment->onDeselect.removeHandler(this);
     segment->setPlacement(Placement::Parent);
     segment->setCheckRoom(false);
 }

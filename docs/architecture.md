@@ -3786,8 +3786,9 @@ two programs and the draws. What follows describes both together:
     deletes itself leaves the row from its own destructor, while its selection can
     still be read (Base's destructor, which tells the row, runs after the
     `Selectable` part is gone), and one moved to another parent leaves it in
-    `onChildRemoved`, with the row's handlers, its group, its owner placement and the
-    check's room. A hidden segment is not supported (it keeps its room and its place
+    `onChildRemoved`, with its group, its owner placement and the check's room, its
+    handlers kept and ignored as a removed segment's are (an `onSelectionChange`
+    handler may move the clicked segment while its `onSelect` calls them). A hidden segment is not supported (it keeps its room and its place
     in the joints and the ends): remove it instead.
     `onSelectionChange` fires once per real change with the changed segment: the one
     the selection reached (the one it left fires nothing: its deselect comes while the

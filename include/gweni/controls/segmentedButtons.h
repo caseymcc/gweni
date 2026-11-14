@@ -182,11 +182,15 @@ public:
         const String &name="");
 
     //! Takes the segment out of the row at once (hidden, out of the
-    //! selection) and delayedDelete()s it, so it may be called from the
-    //! segment's own onSelectionChange; its ids go back with the canvas's
-    //! delayed deletes. If it was the exclusive
-    //! selection and the row does not allow none, the nearest enabled segment
-    //! after it, else before it, is selected.
+    //! selection) and delayedDelete()s it, so on a canvas it may be called
+    //! from the segment's own onSelectionChange; its ids go back with the
+    //! canvas's delayed deletes. A row on no canvas deletes it at once
+    //! (Base::delayedDelete), so there it must not be. If it was the
+    //! exclusive selection and the row does not allow none, the nearest
+    //! enabled segment after it, else before it, is selected (firing
+    //! onSelectionChange for that one); a removal itself fires nothing, even
+    //! of a selected segment in a Multi or allow-none row, whose
+    //! getSelectedIndices()/getSelectedIndex() change with it.
     void removeSegment(int index);
     void removeSegment(SegmentedButton *segment);
 
@@ -268,6 +272,11 @@ protected:
     void onChildRemoved(Base *child) override;
 
     friend class SegmentedButton;
+
+    //! Both addSegment()s: the segment with its text, image and tooltip set
+    //! before it joins the selection.
+    SegmentedButton *newSegment(const String &text, const String &image, bool imageOnly,
+        const String &name);
 
     //! A segment being deleted leaves the row (from its destructor, while its
     //! selection can still be read), the selection moving on as for a

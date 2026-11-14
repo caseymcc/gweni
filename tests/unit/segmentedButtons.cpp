@@ -30,7 +30,8 @@
  *  image-only segment's tooltip follows its text; Return goes on up from an
  *  exclusive row and toggles in a multi row; a row made taller than its
  *  segments keeps them at the tallest one's height; a segment moved to
- *  another parent leaves the row (the selection moving on) and its handlers.
+ *  another parent leaves the row (the selection moving on, its changes firing
+ *  nothing there), from an onSelectionChange handler of its own click too.
  *
  *  The keyboard, through input::onKeyEvent: the row is one Tab stop, entered
  *  at the exclusive selection (else the first enabled segment) and left from
@@ -492,6 +493,25 @@ struct RemoveOnChange: public event::Handler
     }
 };
 
+// Moves the clicked segment to \p to on the first change: the row's handler
+// for that segment's onSelect is the one running then.
+struct ReparentOnChange: public event::Handler
+{
+    controls::Base *to=nullptr;
+    SegmentedButton *moved=nullptr;
+    int calls=0;
+
+    void changed(event::Info info)
+    {
+        ++calls;
+        if(calls == 1)
+        {
+            moved=static_cast<SegmentedButton *>(info.control);
+            moved->setParent(to);
+        }
+    }
+};
+
 }//namespace
 
 // Base's arrange walks only the changed children from MinChangedWalk (16)
@@ -821,7 +841,7 @@ TEST_CASE("SegmentedButtons: a row made taller than its segments keeps them at t
     }
 }
 
-TEST_CASE("SegmentedButtons: a segment moved to another parent leaves the row and its handlers")
+TEST_CASE("SegmentedButtons: a segment moved to another parent leaves the row")
 {
     Scene scene;
     SegmentedButtons *row=scene.row({"A", "B", "C"});
@@ -849,6 +869,38 @@ TEST_CASE("SegmentedButtons: a segment moved to another parent leaves the row an
     moved->setSelected(false);
     moved->setSelected(true);
     CHECK(changes.segments.empty());
+    CHECK(row->getSelectedIndex() == 1);
+    scene.frame();
+}
+
+// The row's handler runs inside the segment's onSelect Caller when the app's
+// handler moves the segment, so leaving the row must not take the handler
+// out of that Caller (an ASAN tree reports a heap-use-after-free in
+// Caller::call otherwise).
+TEST_CASE("SegmentedButtons: a segment moved from its own click's onSelectionChange leaves the row")
+{
+    Scene scene;
+    SegmentedButtons *row=scene.row({"A", "B", "C"});
+    ReparentOnChange mover;
+
+    mover.to=scene.canvas;
+    row->onSelectionChange.add(&mover, &ReparentOnChange::changed);
+
+    scene.click(row->getSegment(1));
+    REQUIRE(mover.moved != nullptr);
+    CHECK(mover.calls == 2);
+    CHECK(row->segmentCount() == 2);
+    CHECK(row->indexOf(mover.moved) < 0);
+    CHECK(mover.moved->getParent() == static_cast<controls::Base *>(scene.canvas));
+    // the selection moved on to the next segment, which fired the second call
+    CHECK(row->getSelectedIndex() == 1);
+    CHECK(row->getSegment(1)->getText() == "C");
+    scene.frame();
+
+    // the moved one is the row's no more: its changes fire nothing there
+    mover.moved->setSelected(false);
+    mover.moved->setSelected(true);
+    CHECK(mover.calls == 2);
     CHECK(row->getSelectedIndex() == 1);
     scene.frame();
 }
