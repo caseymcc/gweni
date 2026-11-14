@@ -1708,7 +1708,7 @@ public:
         if(frame < 10)
             moveMouse(ctx, m_mouse, origin+Point(6, 52+7*frame));
         else if(frame == 10)
-            moveMouse(ctx, m_mouse, origin+Point(6, 398));
+            moveMouse(ctx, m_mouse, origin+Point(6, 399));
 
         if(frame == ctx.frames-1)
             ctx.canvas->inputMouseButton(0, false);
