@@ -41,6 +41,7 @@
 #include "demo/switch.h"
 #include "demo/fieldValidation.h"
 #include "demo/segmentedButtons.h"
+#include "demo/stepper.h"
 #include "demo/dialog.h"
 #include "demo/toast.h"
 #include "demo/crossSplitter.h"
@@ -250,6 +251,7 @@ void Demo::init(const String &name)
         addDemo<CrossSplitterDemo>(cat, "CrossSplitterDemo", "Cross splitter");
         addDemo<RadioButtonDemo>(cat, "RadioButtonDemo", "Radio button");
         addDemo<SegmentedButtonsDemo>(cat, "SegmentedButtonsDemo", "Segment buttons");
+        addDemo<StepperDemo>(cat, "StepperDemo", "Stepper");
         addDemo<CheckBoxDemo>(cat, "CheckBoxDemo", "Check box");
         addDemo<SwitchDemo>(cat, "SwitchDemo", "Switch");
         addDemo<SpinnerDemo>(cat, "SpinnerDemo", "Spinner");

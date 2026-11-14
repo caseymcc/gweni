@@ -170,7 +170,8 @@
  *                       stats-overlay | depth-view | zoom-panel |
  *                       node-graph | code-editor | log-view |
  *                       chip-badge | navigation-rail | flow | board |
- *                       switch | spinner | image-grid | segmented (see below)
+ *                       switch | spinner | image-grid | segmented |
+ *                       stepper (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -1068,6 +1069,25 @@
  *                 first frame back; the label names the view chosen; settled
  *                 frames write nothing; the demo gives every id back. Exits
  *                 non-zero if any check is no.
+ *    stepper      StepperDemo, the clock frozen (stepper.png, stepper-end.png):
+ *                 a click on the linear stepper's Next and one on Back, a
+ *                 vetoed next() (the name empty), the name typed and next(),
+ *                 next() past the disabled step to the last one, then a hover
+ *                 on the vertical non-linear stepper's third step and a click
+ *                 on it. One line
+ *                   stepper next=yes|no ... ids_back=yes|no next_prims=N ...
+ *                 reports the checks: Next writes only the two steps whose
+ *                 looks change, the two pages and the Next button, in one
+ *                 layout pass of no more entries than the stepper's subtree
+ *                 and ancestors, changing no pixel outside the stepper; Back
+ *                 gives the frame before Next back; the veto writes the Error
+ *                 step's ids alone, lays nothing out and changes no pixel
+ *                 outside it; Next past the disabled step reads Finish and
+ *                 writes only the two steps, the pages and Next; the hover
+ *                 writes the step's one slot and no glyph; the vertical click
+ *                 lays out in one pass inside the stepper, changing no pixel
+ *                 outside its column; settled frames write nothing; the demo
+ *                 gives every id back. Exits non-zero if any check is no.
  *    virtual-list VirtualListDemo with its list at 1 000 and then 100 000
  *                 items, the clock frozen: a settled frame, a one-row scroll
  *                 from the top (scrollByRows) and a wheel notch over the list
@@ -1288,6 +1308,7 @@
 #include <gweni/controls/menu.h>
 #include <gweni/controls/button.h>
 #include <gweni/controls/segmentedButtons.h>
+#include <gweni/controls/stepper.h>
 #include <gweni/controls/selectable.h>
 #include <gweni/controls/toolTip.h>
 #include <gweni/controls/popup.h>
@@ -1352,6 +1373,7 @@
 #include <demo/navigationRail.h>
 #include <gweni/controls/navigationRail.h>
 #include <demo/segmentedButtons.h>
+#include <demo/stepper.h>
 #include <gweni/controls/badge.h>
 #include <gweni/controls/chip.h>
 #include <demo/dialog.h>
@@ -1516,7 +1538,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(ChartAreasDemo) X(TimelineDemo) X(ComboBoxDemo) \
-    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(NavigationRailDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(TreeTableDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(SegmentedButtonsDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
+    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(NavigationRailDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(TreeTableDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(SegmentedButtonsDemo) X(StepperDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(SwitchDemo) X(SpinnerDemo) X(FieldValidationDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
@@ -1617,7 +1639,7 @@ static void printUsage(std::ostream &out)
          "                     | stats-overlay | depth-view | zoom-panel\n"
          "                     | node-graph | code-editor | log-view | chip-badge\n"
          "                     | navigation-rail | flow | board | switch | spinner\n"
-         "                     | image-grid | segmented;\n"
+         "                     | image-grid | segmented | stepper;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -2670,7 +2692,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, TreeTable, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
-    ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented };
+    ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented, Stepper };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2715,6 +2737,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "field-validation") scenario=Scenario::FieldValidation;
     else if(name == "image-grid") scenario=Scenario::ImageGrid;
     else if(name == "segmented") scenario=Scenario::Segmented;
+    else if(name == "stepper") scenario=Scenario::Stepper;
     else return false;
     return true;
 }
@@ -12794,6 +12817,264 @@ static bool runSegmentedScenario(Session &s, const std::string &shotDir, bool &p
 }
 
 //-----------------------------------------------------------------------------
+// --scenario stepper: StepperDemo's steppers, the clock frozen
+//
+// A step change is the looks that change, the page hidden and the one shown
+// and Next's text when it turns to or from "Finish": the linear stepper's
+// height is the demo's, so a page of another height moves nothing outside
+// it. The Next and Back presses are clicks on the buttons, so their own hover
+// and press looks are allowed too (the button is the stepper's); the mouse
+// moves off before a frame is compared with an earlier one.
+//-----------------------------------------------------------------------------
+
+static bool runStepperScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    checks.scenario="stepper";
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    gweni::controls::Base *control=addControl(s, "StepperDemo");
+    auto *demo=gweni::gweni_cast<gweni::StepperDemo>(control);
+
+    if(!demo)
+    {
+        std::cerr<<"ControlTest: stepper: StepperDemo was not built\n";
+        return false;
+    }
+
+    s.label="stepper";
+    renderFrames(s, s.frames);
+
+    bool ok=shoot(s, shotDir+"/stepper.png");
+    std::vector<uint8_t> pixels;
+    size_t idleWork=settleCodeEditor(s, pixels);
+    using gweni::controls::Stepper;
+    auto idsOf=[](std::initializer_list<gweni::controls::Base *> controls, std::set<size_t> &primitives,
+        std::set<size_t> &texts) {
+        for(gweni::controls::Base *part : controls)
+            subtreeIds(part, primitives, texts);
+    };
+    // the entries of a step change's pass: the stepper and its ancestors,
+    // its steps and connectors (placed again, a pure move entering none of
+    // their parts) and the shown part of its body, each measured and
+    // arranged in X and Y
+    std::function<size_t(gweni::controls::Base *)> shownControls=[&](gweni::controls::Base *at) -> size_t {
+        if(at->hidden())
+            return 0;
+
+        size_t count=1;
+
+        for(gweni::controls::Base *child : at->getActualChildren())
+            count+=shownControls(child);
+        return count;
+    };
+    auto layoutBound=[&](Stepper *stepper) {
+        size_t depth=0;
+
+        for(gweni::controls::Base *at=stepper->getActualParent(); at; at=at->getActualParent())
+            ++depth;
+        return 4*(depth+1+size_t(2*stepper->getStepCount()-1)+shownControls(stepper->getBody()));
+    };
+    auto click=[&](gweni::controls::Base *target) {
+        const gweni::Rect rect=target->getCanvasBounds();
+
+        clickMouse(s, rect.x+rect.w/2, rect.y+rect.h/2);
+    };
+
+    // (1) Next on the linear stepper, step 1 to 2: the two steps whose looks
+    // change (no connector does: the one into step 2 is not done), the two
+    // pages and the Next button alone, one pass inside the stepper, no pixel
+    // outside it; Back gives the frame before Next back
+    Stepper *linear=demo->linearStepper();
+    std::set<size_t> nextPrims, nextTexts;
+
+    idsOf({linear->getStep(0), linear->getStep(1), linear->getPage(0), linear->getPage(1), linear->nextButton()},
+        nextPrims, nextTexts);
+
+    const gweni::Rect linearRect=linear->getCanvasBounds();
+
+    click(linear->nextButton());
+
+    const CodeEditorFrame next=codeEditorFrame(s);
+    const size_t nextOutside=differencesOutsideRects(s, pixels, next.pixels, {linearRect});
+    const int afterNext=linear->getCurrentStep();
+
+    checks.check("next",
+        afterNext == 1 && !next.primitives.empty() && idsWithin(next.primitives, nextPrims)
+            && idsWithin(next.texts, nextTexts) && next.passes == 1 && next.visited <= layoutBound(linear)
+            && nextOutside == 0 && linear->getCanvasBounds() == linearRect,
+        "Next went to step "+std::to_string(afterNext)+" (1 expected), wrote "+std::to_string(next.primitives.size())
+        +" primitive and "+std::to_string(next.texts.size())+" text ids (outside the two steps, pages and Next: "
+        +(idsWithin(next.primitives, nextPrims) && idsWithin(next.texts, nextTexts)?"none":"some")+"), ran "
+        +std::to_string(next.passes)+" layout passes with "+std::to_string(next.visited)+" entries (at most "
+        +std::to_string(layoutBound(linear))+"), changed "+std::to_string(nextOutside)+" pixels outside the stepper");
+    forgetMouse(s);
+    renderFrames(s, 1);
+    {
+        std::vector<uint8_t> atTwo;
+
+        idleWork+=settleCodeEditor(s, atTwo);
+    }
+
+    click(linear->backButton());
+
+    const CodeEditorFrame back=codeEditorFrame(s);
+
+    // the click focused Back: the frame before Next had no focus
+    forgetMouse(s);
+    if(gweni::KeyboardFocus)
+        gweni::KeyboardFocus->unfocus();
+
+    const CodeEditorFrame backOff=codeEditorFrame(s);
+
+    checks.check("back",
+        linear->getCurrentStep() == 0 && back.passes == 1 && back.visited <= layoutBound(linear)
+            && backOff.pixels == pixels,
+        "Back went to step "+std::to_string(linear->getCurrentStep())+" (0 expected) in "
+        +std::to_string(back.passes)+" layout passes, or did not give the frame before Next back");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (2) Next again, then a vetoed Next (the name empty): nothing but step
+    // 2's indicator and title, in its Error look, no layout
+    linear->next();
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    std::set<size_t> errorPrims, errorTexts;
+
+    idsOf({linear->getStep(1)}, errorPrims, errorTexts);
+
+    const gweni::Rect errorRect=linear->getStep(1)->getCanvasBounds();
+    const bool vetoed=!linear->next();
+    const CodeEditorFrame veto=codeEditorFrame(s);
+    const size_t vetoOutside=differencesOutsideRects(s, pixels, veto.pixels, {errorRect});
+
+    checks.check("veto",
+        vetoed && linear->getCurrentStep() == 1 && linear->getStepLook(1) == gweni::controls::StepLook::Error
+            && !veto.primitives.empty() && idsWithin(veto.primitives, errorPrims) && idsWithin(veto.texts, errorTexts)
+            && veto.passes == 0 && vetoOutside == 0,
+        "the vetoed Next moved to step "+std::to_string(linear->getCurrentStep())+" or did not show the Error, wrote "
+        +std::to_string(veto.primitives.size())+" primitive and "+std::to_string(veto.texts.size())
+        +" text ids, ran "+std::to_string(veto.passes)+" layout passes or changed "+std::to_string(vetoOutside)
+        +" pixels outside the step");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // with a name, Next goes and the Error goes with it
+    demo->nameField()->focus();
+    typeText(s, "Ann");
+    renderFrames(s, 1);
+    demo->nameField()->unfocus();
+    renderFrames(s, 1);
+    linear->next();
+    renderFrames(s, 1);
+    checks.check("named", linear->getCurrentStep() == 2 && linear->getStepLook(1) == gweni::controls::StepLook::Done,
+        "with a name Next went to step "+std::to_string(linear->getCurrentStep())+" (2 expected)");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (3) the stepper with a disabled step: Next from Pay passes over Gift to
+    // Ship, the last, and reads Finish: the two steps, the connector into Pay
+    // (now done), the pages and Next
+    Stepper *skipping=demo->disabledStepStepper();
+
+    skipping->setCurrentStep(1);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    std::set<size_t> skipPrims, skipTexts;
+
+    idsOf({skipping->getStep(1), skipping->getStep(3), skipping->getConnector(0), skipping->getPage(1),
+        skipping->getPage(3), skipping->nextButton()}, skipPrims, skipTexts);
+
+    const gweni::Rect skippingRect=skipping->getCanvasBounds();
+
+    skipping->next();
+
+    const CodeEditorFrame skip=codeEditorFrame(s);
+    const size_t skipOutside=differencesOutsideRects(s, pixels, skip.pixels, {skippingRect});
+
+    checks.check("skip_finish",
+        skipping->getCurrentStep() == 3 && skipping->nextButton()->getText() == "Finish"
+            && idsWithin(skip.primitives, skipPrims) && idsWithin(skip.texts, skipTexts) && skip.passes == 1
+            && skip.visited <= layoutBound(skipping) && skipOutside == 0
+            && skipping->getConnector(0)->isDone() && !skipping->getConnector(2)->isDone(),
+        "Next went to step "+std::to_string(skipping->getCurrentStep())+" (3 expected) reading \""
+        +skipping->nextButton()->getText()+"\", wrote outside the two steps, the connector into Pay, the pages and Next, "
+        "left that connector's colour as it was, ran "
+        +std::to_string(skip.passes)+" layout passes with "+std::to_string(skip.visited)+" entries, or changed "
+        +std::to_string(skipOutside)+" pixels outside the stepper");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (4) the vertical non-linear stepper: a hover on a step writes its one
+    // slot, no glyph and no layout; a click on it goes there, the steps after
+    // the page moving with it, in one pass inside the stepper and with no
+    // pixel changed outside its column
+    Stepper *vertical=demo->verticalStepper();
+    gweni::controls::StepperStep *target=vertical->getStep(2);
+    std::set<size_t> hoverPrims, hoverTexts;
+
+    idsOf({target}, hoverPrims, hoverTexts);
+
+    const gweni::Rect targetRect=target->getCanvasBounds();
+    const gweni::Rect columnBefore=vertical->getParent()->getCanvasBounds();
+
+    moveMouse(s, targetRect.x+gweni::controls::StepperStep::IndicatorSize/2,
+        targetRect.y+gweni::controls::StepperStep::IndicatorSize/2);
+
+    const CodeEditorFrame hover=codeEditorFrame(s);
+    const size_t hoverOutside=differencesOutsideRects(s, pixels, hover.pixels, {targetRect});
+
+    checks.check("hover",
+        hover.primitives.size() == 1 && idsWithin(hover.primitives, hoverPrims) && hover.texts.empty()
+            && hover.passes == 0 && hoverOutside == 0,
+        "a hover on a clickable step wrote "+std::to_string(hover.primitives.size())+" primitive ids (its one allowed) and "
+        +std::to_string(hover.texts.size())+" text ids, ran "+std::to_string(hover.passes)+" layout passes or changed "
+        +std::to_string(hoverOutside)+" pixels outside it");
+
+    clickMouse(s, s.mouse.x, s.mouse.y);
+
+    const CodeEditorFrame jump=codeEditorFrame(s);
+    gweni::Rect column=vertical->getParent()->getCanvasBounds();
+
+    column.h=std::max(column.h, columnBefore.h);
+
+    const size_t jumpOutside=differencesOutsideRects(s, pixels, jump.pixels, {column});
+
+    checks.check("vertical_click",
+        vertical->getCurrentStep() == 2 && jump.passes == 1 && jump.visited <= layoutBound(vertical)
+            && jumpOutside == 0,
+        "the click went to step "+std::to_string(vertical->getCurrentStep())+" (2 expected) in "
+        +std::to_string(jump.passes)+" layout passes with "+std::to_string(jump.visited)+" entries (at most "
+        +std::to_string(layoutBound(vertical))+"), or changed "+std::to_string(jumpOutside)
+        +" pixels outside the stepper's column");
+
+    forgetMouse(s);
+    if(gweni::KeyboardFocus)
+        gweni::KeyboardFocus->unfocus();
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+    ok=shoot(s, shotDir+"/stepper-end.png") && ok;
+    checks.check("settled", idleWork == 0, "settled frames wrote or changed "+std::to_string(idleWork));
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()+liveTextIds()-idsBefore;
+
+    checks.check("ids_back", idsLeft == 0, std::to_string(idsLeft)+" ids not given back");
+
+    passed=checks.allPassed();
+    std::cout<<"stepper";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<" next_prims="<<next.primitives.size()<<" next_texts="<<next.texts.size()
+             <<" next_visited="<<next.visited<<" veto_prims="<<veto.primitives.size()
+             <<" skip_prims="<<skip.primitives.size()<<" jump_visited="<<jump.visited<<"\n";
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // NavigationRailDemo: app callbacks first, then the rail alone. Updating a
 // page is the app's work, so detach its callback before bounding selection to
 // two rows and their glyphs. Counts are frozen; only tooltip waits step time.
@@ -18471,6 +18752,15 @@ int main(int argc, char *argv[])
             ok=runSegmentedScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a hover, a click, a key or a toggle did more than its segments, or a joint doubled
+            break;
+        }
+
+        case Scenario::Stepper:
+        {
+            bool passed=false;
+            ok=runStepperScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a step change, a veto or a hover did more than its steps and pages
             break;
         }
 
