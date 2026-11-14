@@ -21,6 +21,10 @@ Package *CurrentPackage=nullptr;
 gweni::controls::Base *HoveredControl=nullptr;
 gweni::controls::Base *SourceControl=nullptr;
 
+// the live item drag's list (its package's sourceList), kept apart from the
+// package, which a control may free while the drag is told of it
+static gweni::controls::Base *SourceList=nullptr;
+
 static gweni::controls::Base *LastPressedControl=nullptr;
 static gweni::controls::Base *NewHoveredControl=nullptr;
 static gweni::Point LastPressedPos;
@@ -44,6 +48,7 @@ static void clear()
 {
     CurrentPackage=nullptr;
     SourceControl=nullptr;
+    SourceList=nullptr;
     HoveredControl=nullptr;
     DragCanvas=nullptr;
     Cursor=cursor::Normal;
@@ -107,6 +112,7 @@ static bool cancelDrag(bool byRelease)
     gweni::controls::Base *target=HoveredControl;
     gweni::controls::Canvas *canvas=DragCanvas;
     const gweni::Point pos=LastDragPos;
+    const bool controlDrag=!SourceList;
 
     // the state is cleared first, so a hook that looks finds no live drag
     clear();
@@ -119,7 +125,7 @@ static bool cancelDrag(bool byRelease)
         source->dragAndDrop_endDragging(false, pos.x, pos.y);
 
         // a control drag's source is repainted as it was after a refused drop
-        if(!package->sourceList)
+        if(controlDrag)
             source->redraw();
     }
 
@@ -168,12 +174,20 @@ void controlDeleted(gweni::controls::Base *control)
     if(NewHoveredControl == control)
         NewHoveredControl=nullptr;
 
-    if(CurrentPackage && ((SourceControl == control) || (CurrentPackage->sourceList == control)))
+    if(CurrentPackage && ((SourceControl == control) || (SourceList == control)))
     {
         // nothing of the source is called: it is half destroyed
         SourceControl=nullptr;
         cancel();
     }
+}
+
+void packageDeleted(Package *package)
+{
+    // the drag carries it: it ends while the package is still there to be
+    // passed to the target's hoverLeave
+    if(package && (CurrentPackage == package))
+        cancel();
 }
 
 bool start(gweni::controls::Base *control, Package *package)
@@ -183,6 +197,7 @@ bool start(gweni::controls::Base *control, Package *package)
 
     CurrentPackage=package;
     SourceControl=control;
+    SourceList=package ? package->sourceList : nullptr;
     DragCanvas=control ? control->getCanvas() : nullptr;
     return true;
 }
@@ -310,7 +325,8 @@ static bool ShouldStartDraggingControl(int x, int y)
 
     // Now we're dragging something! An item drag is the list's, not the
     // pressed row's.
-    SourceControl=CurrentPackage->sourceList ? CurrentPackage->sourceList : LastPressedControl;
+    SourceList=CurrentPackage->sourceList;
+    SourceControl=SourceList ? SourceList : LastPressedControl;
     DragCanvas=LastPressedControl->getCanvas();
 
     // An item drag takes the press from the control holding it (a card's
@@ -457,7 +473,7 @@ bool onCanvasThink(gweni::controls::Canvas *canvas)
 
     // An item drag's list hidden: there is no list to drop back into. (A
     // control drag's source hides itself as it starts: a tab, a dock.)
-    if(CurrentPackage->sourceList && !CurrentPackage->sourceList->visible())
+    if(SourceList && !SourceList->visible())
         return cancel();
 
     // A target hidden under the cursor is the target no more: a release before

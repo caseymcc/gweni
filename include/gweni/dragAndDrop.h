@@ -80,9 +80,16 @@ void GWENI_EXPORT onMouseMoved(gweni::controls::Canvas *canvas, int x, int y);
 //! visible is cancelled. Returns whether it cancelled one.
 GWENI_EXPORT bool onCanvasThink(gweni::controls::Canvas *canvas);
 
-//! \p control is being deleted. The live drag's source (or its source list)
-//! deleted cancels the drag, its canvas deleted ends it with nothing called.
+//! \p control is being deleted, before its children are. The live drag's
+//! source (or its source list) deleted cancels the drag, calling nothing of the
+//! source; its canvas deleted ends it with nothing called (~Canvas tells it
+//! before its children go).
 void GWENI_EXPORT controlDeleted(gweni::controls::Base *control);
+
+//! \p package, its control's (Base::dragAndDrop_setPackage), is about to be
+//! freed: if it is the live drag's, the drag is cancelled first (a TabTitleBar
+//! deleted mid-drag, whose drag's source is its TabControl).
+void GWENI_EXPORT packageDeleted(Package *package);
 }
 
 }

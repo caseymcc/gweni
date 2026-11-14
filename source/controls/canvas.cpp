@@ -79,6 +79,8 @@ Canvas::~Canvas()
         m_inputCapture=nullptr;
         capture->captureCanvasDeleted(this);
     }
+    // a drag on this canvas ends with nothing called, before its controls go
+    draganddrop::controlDeleted(this);
     releaseChildren();
     // What is still queued is off this tree (detached, or moved to another
     // canvas) or was queued by the teardown: it goes now, with whatever its
