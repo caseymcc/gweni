@@ -282,18 +282,28 @@ static void hideLook(Look *look)
     parkLook(look);
 
     const size_t id=look->getControlId();
+    const unsigned serial=look->useSerial();
 
     if(Canvas *canvas=look->getCanvas())
     {
-        canvas->post([id]() {
-            if(Base *control=Base::getControlById(id))
+        canvas->post([id, serial]() {
+            // taken into use by then for another drag (placed, or parked for
+            // a gap a pass may allow): left alone
+            if(auto *control=gweni_cast<Look>(Base::getControlById(id)))
             {
-                // shown again by then for another drag: placed, left alone
-                if(control->getY() == ParkedY)
+                if(control->useSerial() == serial)
                     control->setHidden(true);
             }
         });
     }
+}
+
+//! A look a drag uses from now on: shown (parked or placed) by the caller
+template<typename Look>
+static void takeIntoUse(Look *look)
+{
+    look->takeIntoUse();
+    look->setHidden(false);
 }
 
 bool Reorderable::indicatorShown() const
@@ -317,7 +327,10 @@ void Reorderable::placeIndicator()
         // the target with no gap shown (a refused one): parked, so a gap shown
         // again in a layout pass changes no visibility
         if(indicator && (s_target == this) && !indicator->hidden())
+        {
+            indicator->takeIntoUse();
             parkLook(indicator);
+        }
         else
             hideLook(indicator);
         return;
@@ -327,7 +340,7 @@ void Reorderable::placeIndicator()
 
     indicator->place(Rect(0, gapPosition(m_gap)-IndicatorThickness/2, m_panel->getWidth(),
         IndicatorThickness));
-    indicator->setHidden(false);
+    takeIntoUse(indicator);
 }
 
 void Reorderable::placeVeil()
@@ -343,7 +356,10 @@ void Reorderable::placeVeil()
 
         // the item out of view while it is dragged: parked
         if(veil && (s_source == this) && !veil->hidden())
+        {
+            veil->takeIntoUse();
             parkLook(veil);
+        }
         else
             hideLook(veil);
         return;
@@ -352,7 +368,7 @@ void Reorderable::placeVeil()
     internal::DragSourceVeil *veil=look<internal::DragSourceVeil>(m_veilId);
 
     veil->place(rect);
-    veil->setHidden(false);
+    takeIntoUse(veil);
 }
 
 void Reorderable::gapMoved()
@@ -482,7 +498,7 @@ void Reorderable::hoverEnter(draganddrop::Package *package, int x, int y)
     // moving the parked bar then creates no child and changes no visibility.
     internal::DropIndicator *indicator=look<internal::DropIndicator>(m_indicatorId);
     parkLook(indicator);
-    indicator->setHidden(false);
+    takeIntoUse(indicator);
 
     hover(package, x, y);
 }

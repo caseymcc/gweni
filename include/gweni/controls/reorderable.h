@@ -40,6 +40,13 @@ public:
     //! Its bounds in its panel, as its Reorderable places it
     void place(const Rect &bounds) { placeChild(this, bounds); }
     static bool layingOut() { return inLayoutPass(); }
+    //! Moved on whenever a drag takes it into use, so a hide posted before
+    //! that (by a cancel in a layout pass) leaves it alone
+    unsigned useSerial() const { return m_useSerial; }
+    void takeIntoUse() { ++m_useSerial; }
+
+private:
+    unsigned m_useSerial=0;
 };
 
 //! The veil over a reorder drag's item where it is in the source list (the
@@ -58,6 +65,12 @@ public:
 public:
     void place(const Rect &bounds) { placeChild(this, bounds); }
     static bool layingOut() { return inLayoutPass(); }
+    //! As DropIndicator's
+    unsigned useSerial() const { return m_useSerial; }
+    void takeIntoUse() { ++m_useSerial; }
+
+private:
+    unsigned m_useSerial=0;
 };
 
 }//namespace internal
