@@ -18,6 +18,8 @@
 #    is 64 KB; the layout and render walks recurse once per tree level) and the
 #    runtime exiting when main returns, so a capture run ends as natively (an
 #    interactive window's main loop, capture::runWindowLoop, keeps it alive);
+#  - Module._malloc, Module._free and Module.HEAPU8, for a script handing a
+#    page bytes (a fetched image, ControlTest's gweni_web_set_image);
 #  - Module.ccall, for a script reading what a page exports with
 #    EMSCRIPTEN_KEEPALIVE (ControlTest's gweni_web_* functions).
 #  An interactive window fills the shell's #canvas-container (capture.h's
@@ -36,7 +38,8 @@ function(gweni_web_page target)
         -sALLOW_MEMORY_GROWTH=1
         -sSTACK_SIZE=4MB
         -sEXIT_RUNTIME=1
-        -sEXPORTED_RUNTIME_METHODS=ccall)
+        -sEXPORTED_RUNTIME_METHODS=ccall,HEAPU8
+        -sEXPORTED_FUNCTIONS=_main,_malloc,_free)
     set_property(TARGET ${target} APPEND PROPERTY LINK_DEPENDS
         ${page_dir}/shell.html
         ${page_dir}/pre.js

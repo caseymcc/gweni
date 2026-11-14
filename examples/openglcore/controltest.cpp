@@ -16468,6 +16468,51 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_focused_text()
     return text.c_str();
 }
 
+//! The window canvas's ImageGridDemo, or null
+static gweni::ImageGridDemo *windowImageGrid(gweni::controls::Base *control)
+{
+    if(auto *grid=gweni::gweni_cast<gweni::ImageGridDemo>(control))
+        return grid;
+    for(gweni::controls::Base *child : control->getChildren())
+    {
+        if(gweni::ImageGridDemo *grid=windowImageGrid(child))
+            return grid;
+    }
+    return nullptr;
+}
+
+//! Gives cell \p cell of the window's ImageGridDemo (ControlTest.html?control=
+//! ImageGridDemo) the \p size encoded bytes at \p bytes (a PNG or JPEG), kept as
+//! the demo keeps its own (ImagePanel::setImageData, at its max size): what a
+//! page that fetched an image does with it, having copied the response into a
+//! buffer from Module._malloc, which it frees after the call (the bytes are not
+//! kept). Returns "status=loaded size=<w>x<h> rect=<x>,<y>,<w>,<h>" (the
+//! image's texture size and the panel's canvas rect, logical units),
+//! "status=failed rect=...", or "no grid" / "no cell".
+extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_set_image(int cell, const uint8_t *bytes, int size)
+{
+    static std::string result;
+
+    gweni::ImageGridDemo *grid=g_canvas?windowImageGrid(g_canvas):nullptr;
+
+    if(!grid)
+        return "no grid";
+    if(cell < 0 || (size_t)cell >= grid->panels().size())
+        return "no cell";
+
+    gweni::controls::ImagePanel *panel=grid->panels()[cell];
+
+    panel->setImageData(bytes, size > 0 ? (size_t)size : 0, gweni::ImageGridDemo::MaxImageSize);
+
+    const gweni::Rect rect=panel->getCanvasBounds();
+
+    result=panel->failedToLoad()?"status=failed":
+        "status=loaded size="+std::to_string(panel->textureWidth())+"x"+std::to_string(panel->textureHeight());
+    result+=" rect="+std::to_string(rect.x)+","+std::to_string(rect.y)+","+std::to_string(rect.w)+","
+        +std::to_string(rect.h);
+    return result.c_str();
+}
+
 //! Opens the window canvas's depth view (\p on 1) or closes it (0); any other
 //! value leaves it as it is. Returns "view=open" or "view=closed", after. The
 //! gallery page's "Depth view" checkbox calls it (tools/site/controltest.html).

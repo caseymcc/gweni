@@ -89,6 +89,12 @@
 //               navigator.clipboard.writeText) puts the first box's text there.
 //               No line on the page's stderr (the in-process clipboard's
 //               "in-process only" line included)
+//    image      ControlTest.html?control=ImageGridDemo: the page fetch()es a
+//               64x48 PNG served beside it (its left half orange, its right
+//               teal), copies it into a Module._malloc buffer and hands it to
+//               ControlTest's gweni_web_set_image for the grid's empty cell
+//               (ImagePanel::setImageData), freeing the buffer after; the cell
+//               then shows both halves where Fit places them
 //    idle       ControlTest.html?control=ButtonDemo, settled: over 30 more
 //               animation-frame callbacks (gweniRun.ticks) it draws no frame
 //               (gweniRun.frames stands still), and a post through
@@ -108,6 +114,7 @@ import { tmpdir } from 'node:os';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 
 import { firstFrame, settle } from './frames.mjs';
+import { decodePng, encodePng } from './png.mjs';
 import { isSwiftShader, launchOptions, loadPlaywright } from './probe.mjs';
 import { runPage } from './run.mjs';
 
@@ -130,18 +137,23 @@ const mimeTypes = {
     '.js': 'text/javascript',
     '.wasm': 'application/wasm',
     '.data': 'application/octet-stream',
+    '.png': 'image/png',
 };
 
-// The page directory on a loopback port, nothing outside it.
-function serve(root)
+// The page directory on a loopback port, nothing outside it, and \a extra:
+// files of no build served beside the pages, by name.
+function serve(root, extra = {})
 {
     const server = createServer((request, response) =>
     {
-        const path = normalize(join(root, decodeURIComponent(new URL(request.url, 'http://localhost').pathname)));
+        const name = decodeURIComponent(new URL(request.url, 'http://localhost').pathname).replace(/^\//, '');
+        const path = normalize(join(root, name));
         let body = null;
         try
         {
-            if((path === root || path.startsWith(root + sep)) && statSync(path).isFile())
+            if(Object.prototype.hasOwnProperty.call(extra, name))
+                body = extra[name];
+            else if((path === root || path.startsWith(root + sep)) && statSync(path).isFile())
                 body = readFileSync(path);
         }
         catch(e)
@@ -827,6 +839,79 @@ async function checkClipboard(s)
     await context.close();
 }
 
+// The PNG the image check serves beside the pages: 64x48, its left half
+// orange and its right half teal.
+const fetchedImageName = 'gweni-web-image.png';
+const fetchedLeft = [255, 128, 0];
+const fetchedRight = [0, 160, 160];
+function fetchedImage()
+{
+    const width = 64, height = 48;
+    const rgba = Buffer.alloc(width*height*4);
+    for(let y = 0; y < height; ++y)
+        for(let x = 0; x < width; ++x)
+        {
+            const c = x < width/2 ? fetchedLeft : fetchedRight;
+            rgba.set([...c, 255], (y*width + x)*4);
+        }
+    return encodePng(width, height, rgba);
+}
+
+// A pixel of a screenshot (decodePng's), as [r, g, b]
+function pixelAt(image, x, y)
+{
+    const at = (y*image.width + x)*image.channels;
+    return [image.pixels[at], image.pixels[at + 1], image.pixels[at + 2]];
+}
+const near = (a, b, tolerance = 6) => a.every((v, i) => Math.abs(v - b[i]) <= tolerance);
+
+async function checkImage(s)
+{
+    // tall enough that every cell of the grid, the empty one too, is in view
+    const opened = await s.open('image', 'ControlTest.html?control=ImageGridDemo', { width: 640, height: 800 + outputPanel });
+    if(!opened)
+        return;
+    const { page, context } = opened;
+    const cell = 12;    // ImageGridDemo::EmptyCell
+    // the page's own fetch of the PNG beside it, copied into the heap and handed
+    // to the export, the buffer freed after the call (the bytes are not kept)
+    const result = await page.evaluate(async ({ name, cell }) =>
+    {
+        const response = await fetch(name);
+        if(!response.ok)
+            return `fetch: HTTP ${response.status}`;
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        const pointer = Module._malloc(bytes.length);
+        Module.HEAPU8.set(bytes, pointer);
+        const text = Module.ccall('gweni_web_set_image', 'string', ['number', 'number', 'number'], [cell, pointer, bytes.length]);
+        Module._free(pointer);
+        return text;
+    }, { name: fetchedImageName, cell });
+    await s.frames(page);
+
+    const match = /^status=loaded size=(\d+)x(\d+) rect=(-?\d+),(-?\d+),(\d+),(\d+)$/.exec(result);
+    if(!match)
+    {
+        fail('image', `gweni_web_set_image said "${result}"`);
+        await context.close();
+        return;
+    }
+    const [width, height, x, y, w, h] = match.slice(1).map(Number);
+    const image = decodePng(await s.shot(page, { x: 0, y: 0, width: 640, height: 800 }, 'image'));
+    // Fit: the 64x48 image at its aspect ratio, centred in the panel
+    const fit = Math.min(w/width, h/height);
+    const left = pixelAt(image, Math.round(x + w/2 - width*fit/4), Math.round(y + h/2));
+    const right = pixelAt(image, Math.round(x + w/2 + width*fit/4), Math.round(y + h/2));
+
+    if(width !== 64 || height !== 48)
+        fail('image', `the image loaded at ${width}x${height}, not 64x48`);
+    else if(!near(left, fetchedLeft) || !near(right, fetchedRight))
+        fail('image', `the cell at ${x},${y} ${w}x${h} shows ${left} and ${right}, not the fetched image's ${fetchedLeft} and ${fetchedRight}`);
+    else
+        pass('image', `a fetched ${width}x${height} PNG shows in cell ${cell} (${left} | ${right})`);
+    await context.close();
+}
+
 async function main()
 {
     const argv = process.argv.slice(2);
@@ -853,7 +938,7 @@ async function main()
         mkdirSync(out, { recursive: true });
 
     const { chromium } = loadPlaywright();
-    const server = await serve(dir);
+    const server = await serve(dir, { [fetchedImageName]: fetchedImage() });
     const browser = await chromium.launch(launchOptions(true));
     const s = new Session(browser, `http://127.0.0.1:${server.address().port}`, out);
     const controlPage = join(dir, 'ControlTest.html');
@@ -873,6 +958,7 @@ async function main()
         await checkOpenGLCore(s);
         await checkStatsButton(s);
         await checkDepthButton(s);
+        await checkImage(s);
     }
     finally
     {
