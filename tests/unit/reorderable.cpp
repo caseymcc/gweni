@@ -41,6 +41,7 @@
 
 #include <gweni/gweni.h>
 #include <gweni/controls/reorderable.h>
+#include <gweni/controls/scrollControl.h>
 #include <gweni/dragAndDrop.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/platform.h>
@@ -893,4 +894,54 @@ TEST_CASE("Reorderable: the looks go with their Reorderable")
     REQUIRE(scene.a->reorder->getIndicator() != nullptr);
     scene.a->reorder.reset();
     CHECK(scene.a->getChildren().size() == children-2);
+}
+
+// A Reorderable given no panel on a ScrollControl places its looks in the
+// list's inner panel, where newChild() puts them: one indicator for the drag,
+// not a new one each time a look is asked for.
+TEST_CASE("Reorderable: with no panel given, a ScrollControl's inner panel is the panel")
+{
+    Scene scene;
+    controls::ScrollControl *list=scene.canvas->newChild<controls::ScrollControl>();
+    list->setDock(DockPosition::Center);
+    list->setScroll(false, true);
+    {
+        auto reorder=std::make_unique<KeyReorder>(list);
+        reorder->keys={21, 22, 23, 24};
+        list->setReorderable(std::move(reorder));
+    }
+    KeyReorder *reorder=static_cast<KeyReorder *>(list->getReorderable());
+    std::vector<ItemDrop> drops;
+    reorder->setOnItemDropped([&](const ItemDrop &drop) { drops.push_back(drop); });
+    scene.frame();
+
+    REQUIRE(list->getInnerPanel() != nullptr);
+    CHECK(reorder->getPanel() == list->getInnerPanel());
+
+    const Point at=list->localPosToCanvas(Point(list->getWidth()/2, ItemHeight/4));
+    scene.clock+=1.0f;
+    scene.move(at);
+    input::onMouseClicked(scene.canvas, 0, true);
+    scene.frame();
+    scene.move(Point(at.x+6, at.y));
+    REQUIRE(draganddrop::isDragging());
+    // across the gaps and back: each gap change asks for the indicator again
+    for(int item : {2, 3, 1, 2, 3})
+    {
+        scene.move(Point(at.x+6, list->localPosToCanvas(Point(0, item*ItemHeight+2)).y));
+        scene.frame();
+    }
+
+    size_t indicators=0;
+    for(controls::Base *child : list->getInnerPanel()->getActualChildren())
+    {
+        if(gweni_cast<controls::internal::DropIndicator>(child))
+            ++indicators;
+    }
+    CHECK(indicators == 1);
+    REQUIRE(reorder->getIndicator() != nullptr);
+    CHECK(reorder->getIndicator()->getActualParent() == list->getInnerPanel());
+    CHECK(reorder->indicatorShown());
+    scene.release();
+    CHECK(drops.size() == 1);
 }
