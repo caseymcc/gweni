@@ -16,7 +16,9 @@
  *  boundary is its top or bottom edge. Moves across gaps and scroll frames
  *  call neither key function. The veil is over the row that shows the dragged
  *  item, follows it as the pool's rows are bound to other items, hides while
- *  it is out of view and comes back with it. The cursor resting in the bottom
+ *  it is out of view and comes back with it, in one layout pass also when the
+ *  drag started with the item out of view (a fresh veil or one hidden after an
+ *  earlier drag). The cursor resting in the bottom
  *  band auto-scrolls the list, binding rows, the drag keeping its item, and
  *  an auto-scroll frame costs a plain scroll of the same distance plus the
  *  looks' two controls, and no row looks hovered (the drag took the hover from
@@ -538,4 +540,55 @@ TEST_CASE("VirtualListReorder: an insert or removal that moves the gap asks canD
         REQUIRE(scene.drops.size() == 1);
         CHECK(scene.drops[0].targetIndex == 1);
     }
+}
+
+// The pressed item pushed out of view by live inserts before the 5-unit move:
+// the drag starts with nothing to veil, and auto-scroll brings the item back
+// inside a layout pass, where a veil made or unhidden would dirty it again.
+TEST_CASE("VirtualListReorder: a drag started with its item out of view shows its veil in one pass")
+{
+    Scene scene;
+    SUBCASE("a fresh veil") {}
+    SUBCASE("a veil hidden after an earlier drag")
+    {
+        scene.startDrag(2);
+        REQUIRE(scene.reorder->veilShown());
+        scene.release();
+        REQUIRE(scene.reorder->getSourceVeil()->hidden());
+        scene.drops.clear();
+    }
+
+    const uint64_t key=scene.keys[1];
+    const Point p=scene.at(scene.top(1)+RowHeight/4);
+    scene.clock+=1.0f;
+    scene.move(p);
+    input::onMouseClicked(scene.canvas, 0, true);
+    scene.frame();
+    // live data pushes the pressed item below the viewport before the move
+    std::vector<uint64_t> fresh;
+    for(uint64_t i=0; i < 20; ++i)
+        fresh.push_back(100+i);
+    scene.keys.insert(scene.keys.begin(), fresh.begin(), fresh.end());
+    scene.list->insertItems(0, 20);
+    scene.list->setVerticalScrollOffset(0);
+    scene.frame();
+    scene.move(Point(p.x+6, p.y));
+    REQUIRE(draganddrop::isDragging());
+    REQUIRE(scene.reorder->dragKey() == key);
+    REQUIRE(scene.reorder->dragIndex() == 21);
+    CHECK_FALSE(scene.reorder->veilShown());
+
+    scene.move(scene.at(scene.list->getViewport().h-1));
+    bool shown=false;
+    for(int frame=0; frame < 40; ++frame)
+    {
+        scene.step();
+        const controls::LayoutStats &stats=scene.canvas->getLayoutStats();
+        INFO("frame ", frame, ", offset ", scene.list->getVerticalScrollOffset(), ", veil shown ", scene.reorder->veilShown());
+        CHECK(stats.passes <= 1);
+        CHECK_FALSE(stats.renderLayout);
+        shown=shown || scene.reorder->veilShown();
+    }
+    CHECK(shown);
+    scene.release();
 }

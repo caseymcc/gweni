@@ -505,6 +505,15 @@ void Reorderable::startDragging()
     m_treeSerial=treeSerialOf(m_list);
     if(cheapKeys())
         m_itemCount=itemCount();
+
+    // Prepare the veil in the input phase, as hoverEnter does the bar: an item
+    // out of view as the drag starts (live inserts or a scroll since the
+    // press) comes into view in a layout pass (auto-scroll, a wheel), where
+    // moving the parked veil creates no child and changes no visibility.
+    internal::DragSourceVeil *veil=look<internal::DragSourceVeil>(m_veilId);
+    parkLook(veil);
+    takeIntoUse(veil);
+
     dragMoved();
 }
 
