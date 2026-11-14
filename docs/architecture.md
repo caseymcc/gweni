@@ -4254,6 +4254,131 @@ in the same device px in every row, on GL and Vulkan. UnicodeTextDemo shows a sy
 through the chain, a log table in the mono face and the CJK line, which no shipped face
 has, still as missing-glyph boxes.
 
+## Reordering by drag and drop
+
+A list's items are reordered, within it or between lists, by dragging them
+(`include/gweni/controls/reorderable.h`, issue #613). gweni only reports a drop:
+`Reorderable::setOnItemDropped`'s handler gets an `ItemDrop` (the source list, the
+item's key, its index there as it drops, the target list and the index it lands
+at once it has left the source, SortableJS's `newIndex`), and the app applies it
+to its data and shows it (a card moved, `DataTable::setRowOrder`, a vector edited
+and `refresh()`). A drop where the item already was is not reported.
+
+**One drag core.** GWEN's `draganddrop` (`source/dragAndDrop.cpp`) carries every
+drag, the tabs' and the docks' as before. Its package names, for an item drag, the
+list it comes from (`Package::sourceList`) and the item's key (`Package::key`), and
+the core takes the list, not the pressed row, as `SourceControl`, so a pooled row
+given another item takes nothing with it. It has an explicit `cancel()`; Escape
+goes to a live drag ahead of the shown popup and the focus (`input::onKeyEvent`),
+its release going nowhere; a release over nothing that takes the package, or where
+its target refuses it (`setDropRefused`, the cursor `No`), cancels; an item drag's
+list hidden (checked in the update phase) or deleted cancels. A cancel calls no
+`handleDrop` and ends the source's drag with `false`. The move frames redraw
+nothing of their own (the old `redraw()` of the hovered control on every move is
+gone, which cost a TabStrip drag two controls and a layout pass a move). While a
+drag is live the input handler leaves the hover where it is and the core
+hit-tests its target itself, so the rows the cursor crosses take no hover look; an
+item drag takes the hover from the pressed control as it starts (a pooled row
+bound to other items as the list scrolls would look hovered otherwise) and lets
+go of the pressed Button with no click; the hover is hit-tested again when the
+drag ends. A press on a part of an item (a Label in a card) starts its list's
+drag through `Base::dragAndDrop_takesDescendantDrag`, which only a reorderable
+`ScrollControl` answers for its inner panel's descendants, so a tab's close button
+still drags nothing. `draganddrop::currentCursor()` is the cursor the core asked
+for, since natively `platform::setCursor` does nothing.
+
+**`Reorderable`, the part a list owns.** `ScrollControl::setReorderable` gives a
+`ScrollControl` (every list is one) a Reorderable, to which it forwards its
+`dragAndDrop_*` hooks. An adapter subclass says what the items are: `itemCount`,
+`keyAt`, `indexOf` (`NoItem` once gone), `gapAt` (the gap nearer a point of the
+panel, by the half-height rule), `gapPosition`, `itemRect` and `itemAt`, all from
+the list's geometry, never a hit test. The rules: a list takes its own items while
+`setReorderWithin` (and the adapter's `reorderWithinNow()`) allow, another list's
+while both are in one `ReorderGroup` (a plain object, like `SelectableGroup`) and
+`setAcceptsFromGroup`; a list that refuses the item is no target, so there is no
+gap and the cursor is `No`. `setCanDrop(source, key, target, index)` is asked
+when the gap changes, and a refused gap shows nothing, the cursor `No`, a release
+there cancelling. The demo's three rules are all three: Todo reorders and takes
+nothing else, Running and Done take any column's cards and do not reorder, and
+nothing goes above Todo's pinned card.
+
+**Keys and live data.** A drag follows its item by key, and the indexes it holds
+(the dragged item's, the gap) are kept by arithmetic as the list reports inserts
+and removals (`itemsInserted`, `itemsRemoved`; VirtualList's `insertItems` and
+`removeItems` call them), the gap staying before the item it was before; an edit
+the list cannot describe (`itemsChanged`: VirtualList's `setItemCount` and
+`refresh()`, DataTable's `rebind()`) looks the dragged item up again and finds the
+gap again. Only the dragged item gone cancels the drag; no other change does.
+The drag ends before the drop handler runs, so the app's own removal of the item
+applying the drop is a plain edit. The adapters:
+- `CardReorder`: the visible children of a ScrollControl's inner panel (cards
+  docked Top), each keyed by its control id, the gap from their bounds, the bar
+  centred between two cards. Its keys are its own and cheap (`cheapKeys()`), so the
+  gap is held as the card after it, and a card the app adds, removes or reorders
+  during the drag, found in the list's next layout through the canvas's
+  `treeSerial()`, keeps the bar before that card; the dragged card deleted cancels.
+- `VirtualListReorder`: a VirtualList's items, keyed by the app's `key(index)` and
+  `indexOf(key)`, asked only as a drag starts, as it drops and on a list change:
+  a move or a scroll frame asks the app nothing. The geometry is
+  `index*rowHeight` less the offset (in variable mode the height index's offsets
+  from the anchor).
+- `DataTable::setRowsReorderable` (row mode: a CardReorder over the body, each row
+  keyed by its control) and `setItemsReorderable(keyOf, indexOf)` (source mode: a
+  VirtualListReorder over `DataTableVirtualBody`). While the table has a sort
+  column it takes none of its own rows (`reorderWithinNow()` is false: no gap, the
+  `No` cursor), while a row dragged out of it drops on another list; and a header
+  click goes ascending, descending and back to no sort, a table without reordering
+  alternating as before.
+
+**The looks.** Two one-slot controls in the list's panel, made the first time they
+show and kept as its last children (numbered after the rows, the indicator last),
+owner-placed from the adapter's geometry and held by control id, so an app that
+clears the panel leaves nothing dangling: `internal::DropIndicator`, a 2-unit bar
+across the panel at the gap (theme surface `DropIndicator`), and
+`internal::DragSourceVeil`, over the dragged item's rect (`DragSource`). The veil
+is placed from the item's index, not applied to the row that shows it, so on a
+pooled list it is over whichever row holds the item, follows it as rows are
+bound to other items and goes while the item is out of view, with no change to
+the bind path; the cards' and the tables' work the same way. It is in front of
+the item in depth, and a glyph is drawn after every slot, so the item's text
+fails the depth test there: the item shows as a placeholder, its fill and text
+covered. A look's visibility changed inside a layout pass dirties layout again,
+so while its list is in the drag a look that shows nothing (a refused gap, the
+item scrolled out) is parked far above the panel, a pure move, and a hide that
+comes in a pass (a list edit cancelling the drag) is posted to the next update
+(`indicatorShown()`, `veilShown()` say whether one shows). `ScrollControl::arrange`
+ends with `Reorderable::listArranged()`, which resolves the edits, finds the gap
+again under a resting cursor once the list scrolled and places the looks; they
+were placed after the panel was arranged, which marks the way down to them, so
+it arranges the panel once more, entering only them, and the pass leaves nothing
+dirty.
+
+**Auto-scroll.** While the target is a ScrollControl that scrolls vertically and
+the cursor is in the top or bottom band of its viewport (`DefaultAutoScrollBand`,
+24 units) with content to scroll that way, one `anim::Animation` registered on the
+list scrolls it every frame through `setVerticalScrollOffset` (what a wheel notch
+calls), at `DefaultAutoScrollSpeed` (600 units a second) times the cursor's depth
+into the band over its height, on the canvas clock with the part of a unit not
+yet scrolled carried, so stepped captures are deterministic. It is removed at the
+content's end (as the last layout gave it), when the cursor leaves the band, on
+the target's hover leave and when the drag ends, so a settled frame runs none.
+
+**What a frame costs.** A move that keeps the gap changes no control and lays
+nothing out; one that changes it changes the indicator alone, in one pass that
+enters only the way down to it (12 entries for canvas, list and indicator in the
+headless test, its rows not entered). An auto-scroll frame of a VirtualList is
+the plain scroll of that distance plus the two looks (22 and 24 controls changed
+for 10 units). `gweni_bench`'s `reorder-drag` (a drag across the gaps of an
+N-item VirtualList, then 10 frames of auto-scroll) is `scaling=local`: every work
+counter is the same at N=1000 and N=10000, and `bench_scaling` holds it there.
+
+Tests: `tests/unit/dragAndDrop.cpp` (the core, the tabs' and docks' drags),
+`reorderable.cpp` (the rules, the indexes, re-resolution, the looks),
+`cardReorder.cpp`, `virtualListReorder.cpp`, `dataTableReorder.cpp`, and
+`ControlTest --scenario reorder --require-one-pass` on ReorderDemo
+(`controltest_reorder`, `_vulkan`, `controltest_verify_layout_reorder`), whose
+comment lists its checks.
+
 ## The zoom panel
 
 `controls::ZoomPanel` (`include/gweni/controls/zoomPanel.h`) shows its subtree at a
