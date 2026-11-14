@@ -12,7 +12,8 @@
  *  the app's key, taken at the press: items inserted above it between the
  *  press and the move leave it the one dragged, and the pressed item removed
  *  before the move starts no drag. The gap is the half-height rule over index*rowHeight less
- *  the offset, its bar at that boundary. Moves across gaps and scroll frames
+ *  the offset, its bar at that boundary, wholly inside the viewport where the
+ *  boundary is its top or bottom edge. Moves across gaps and scroll frames
  *  call neither key function. The veil is over the row that shows the dragged
  *  item, follows it as the pool's rows are bound to other items, hides while
  *  it is out of view and comes back with it. The cursor resting in the bottom
@@ -256,6 +257,38 @@ TEST_CASE("VirtualListReorder: the item pressed is the one dragged, whatever the
         CHECK_FALSE(draganddrop::isDragging());
         scene.release();
         CHECK(scene.drops.empty());
+    }
+}
+
+TEST_CASE("VirtualListReorder: the bar of a gap at the viewport's edge lies wholly inside it")
+{
+    SUBCASE("before the first item, unscrolled")
+    {
+        Scene scene;
+        scene.startDrag(3);
+        scene.move(scene.at(scene.top(0)+3));
+        REQUIRE(scene.reorder->gap() == 0);
+        REQUIRE(scene.reorder->indicatorShown());
+        const controls::Base *indicator=scene.reorder->getIndicator();
+        CHECK(indicator->getY() == 0);
+        CHECK(indicator->getHeight() == Reorderable::IndicatorThickness);
+        scene.release();
+    }
+
+    SUBCASE("after the last item, scrolled to the end")
+    {
+        Scene scene;
+        scene.scrollTo(scene.list->getMaxVerticalScrollOffset());
+        const int viewport=scene.list->getViewportHeight();
+        REQUIRE(scene.top(Items-1)+RowHeight == viewport);
+
+        scene.startDrag(Items-3);
+        scene.move(scene.at(scene.top(Items-1)+RowHeight-3));
+        REQUIRE(scene.reorder->gap() == Items);
+        REQUIRE(scene.reorder->indicatorShown());
+        const controls::Base *indicator=scene.reorder->getIndicator();
+        CHECK(indicator->getY()+indicator->getHeight() == viewport);
+        scene.release();
     }
 }
 
