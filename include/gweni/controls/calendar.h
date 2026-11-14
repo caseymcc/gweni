@@ -262,6 +262,8 @@ public:
     //! Some date of the month (the year) is inside the limits.
     bool isMonthEnabled(int year, int month) const;
     bool isYearEnabled(int year) const;
+    //! \p date, or the limit it is past.
+    Date clampToLimits(const Date &date) const;
 
     //! Switching mode clears the selection of the mode left.
     void setSelectionMode(SelectionMode mode);
@@ -368,6 +370,8 @@ protected:
     //! cursor, going on past disabled dates in that direction; nothing if
     //! that leaves the limits. \p unit: 0 days, 1 months, 2 years.
     bool moveCursor(int64_t step, int unit);
+    //! The first and last date the view would show at \p year / \p month.
+    void viewSpan(int year, int month, Date &first, Date &last) const;
     //! The cursor to \p target, or the first enabled date from it going
     //! \p direction (+1 or -1) a day at a time; nothing past the limits.
     bool moveCursorTo(const Date &target, int direction);
