@@ -10,15 +10,16 @@
  *  Row mode (setRowsReorderable): a press on a row moved 5 units drags it,
  *  keyed by its control; a drop reports its indexes and the app applying it
  *  with setRowOrder shows the new order; a setRowOrder in the input phase of
- *  the release drops before the row the gap was before. While the table has a sort column it
- *  takes no row of its own (no gap, the No cursor, a release cancels), but a
- *  row dragged out of it drops on the other table. Source mode
- *  (setItemsReorderable): a pooled row drags its item by the app's key, a
- *  drop reports the indexes, a rebind() after the app reordered its records
- *  during the drag looks the item up again, and a sorted table refuses its own
- *  items likewise, and one the app sorts during a drag within it shows no
- *  bar, the No cursor, and reports no drop. With reordering on, a header click goes ascending,
- *  descending, then no sort; without, it alternates as before.
+ *  the release drops before the row the gap was before. While the table has a
+ *  sort column it takes no row of its own (no gap, the No cursor, a release
+ *  cancels), but a row dragged out of it drops on the other table. Source
+ *  mode (setItemsReorderable): a pooled row drags its item by the app's key,
+ *  a drop reports the indexes, a rebind() after the app reordered its records
+ *  during the drag looks the item up again, and a sorted table refuses its
+ *  own items likewise, and one the app sorts during a drag within it shows no
+ *  bar, the No cursor, and reports no drop. With reordering on, a header
+ *  click goes ascending, descending, then no sort; without, it alternates as
+ *  before.
  */
 #include "headlessFixture.h"
 

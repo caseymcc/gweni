@@ -5185,7 +5185,8 @@ applying the drop is a plain edit. The adapters:
   phase as such an edit (a live update applied between two frames, then the
   mouseup) comes before that layout, so the drop finds the gap again itself,
   before its card or at the end, and asks `canDrop` again for the index that
-  gives. These checks run only during a drag, in card layouts and at the drop; VirtualList never calls its app key functions there.
+  gives. These checks run only during a drag, in card layouts and at the drop;
+  a VirtualList's layout never calls its app key functions.
 - `VirtualListReorder`: a VirtualList's items, keyed by the app's `key(index)` and
   `indexOf(key)`, asked only at a press (`key`), as a drag starts (`indexOf`), as
   it drops and on a list change:
