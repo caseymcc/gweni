@@ -3919,7 +3919,7 @@ void Base::arrange(skin::Base *skin, Dim dim)
     // height before arranging it, and a new one marks it again (setBounds),
     // so layout() runs a second time here with both final. A child's new size
     // does not: a layout() that reads a child's preferred height places it
-    // again in its Y arrange (PlotBase::arrange). What it computes in X must depend on the width only,
+    // again in its Y arrange (PlotBase::arrange, Slider::arrange). What it computes in X must depend on the width only,
     // so the second run writes the same X geometry (docs/layout.md).
     if(needsLayout())
     {

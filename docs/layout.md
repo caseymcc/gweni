@@ -157,7 +157,7 @@ The children placed this way:
 |---|---|---|
 | CrossSplitter | its bars and panels | `layout()` |
 | Properties, PropertyRow | the splitter bar; a row's label and property | `arrange()` |
-| Slider | the thumb | `layout()`, a value change, a click |
+| Slider | the thumb; its value text | `layout()`, a value change, a click; `layout()`, and again in its Y arrange, its height final |
 | PlotHistogram, PlotLines | its caption | `PlotBase::layout()`, and again in its Y arrange, its height final |
 | DragNumber | its edit box | `layout()` |
 | VectorField | its components' fields and axis tags | `layout()` |
@@ -519,7 +519,11 @@ it is already dirty, and the way up would only run each ancestor's `layout()`
 a second time in Y. So a child's new size no longer runs its parent's
 `layout()` again; a `layout()` that reads a child's preferred height places it
 again at the start of its own Y arrange, with both sizes final
-(`PlotBase::placeCaption`). Placement code in a pass that invalidates a
+(`PlotBase::placeCaption`, `Slider::placeValueText`). `--verify-layout` cannot
+see a `layout()` that does not: its full pass runs `layout()` only where
+`needsLayout()` is set, so a stale placement passes it, and the Slider's case
+(its value text 0 high, half a line low, in a slider whose height and parent
+did not change in the pass) is pinned by `tests/unit/sliderText.cpp`. Placement code in a pass that invalidates a
 control (`PlacementScope`, such as `ScrollControl::placeContents` giving its
 bars their new ranges) walks up only to the first ancestor already dirty,
 whose way up the pass has marked. Outside a pass (an input-phase `setSize`, a

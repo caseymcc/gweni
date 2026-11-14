@@ -13,7 +13,11 @@
  *  taken, and clearing the format gives its id back. The text is numbered and
  *  drawn above the thumb; a vertical slider's text column is the wider of the
  *  formatted min and max, so its width never changes with the value, and a
- *  horizontal slider is at least the text's line high.
+ *  horizontal slider is at least the text's line high. In a slider of a
+ *  requested size, on the canvas or in a panel laid out already, with the
+ *  format set before the first frame or at run time, the text is placed at
+ *  its preferred size and centred: its height is measured in the Y pass,
+ *  after layout() ran in X, so the slider places it again in its Y arrange.
  *
  *  It runs the textured skin's real Slider, SliderBar and Text renderers on a
  *  StubRenderer that records the rounded rects and text runs it is given.
@@ -519,4 +523,82 @@ TEST_CASE("Slider value text: a disabled slider's text takes the disabled colour
     REQUIRE(slider->setValueFormat(""));
     REQUIRE(slider->setValueFormat("%.0f"));
     CHECK((slider->getValueTextControl()->getTextColor() == skin->Colors.Button.Disabled));
+}
+
+namespace
+{
+
+//! The value text at its preferred size, vertically centred, in the field of
+//! a horizontal slider or the column of a vertical one.
+void checkValueTextPlaced(controls::Slider *slider)
+{
+    controls::Base *text=slider->getValueTextControl();
+    REQUIRE(text != nullptr);
+
+    const Size &size=text->getPreferredSize();
+
+    CHECK(size.height > 0);
+    CHECK(text->getWidth() == size.width);
+    CHECK(text->getHeight() == size.height);
+    CHECK(text->getY() == (slider->getHeight()-size.height)/2);
+
+    if(slider->isHorizontal())
+        CHECK(text->getX() == (slider->getWidth()-size.width)/2);
+    else
+        CHECK(text->getX() == slider->getTrackBounds().w+controls::Slider::ValueTextGap);
+}
+
+//! A slider of a requested size taller (wider) than its text needs, on a
+//! canvas already laid out: neither its height nor its parent's size changes
+//! in the pass that places its text, so nothing else lays it out again in Y.
+//! Its text's height is measured in the Y pass, after layout()'s run at the
+//! start of the X arrange; it must still be placed at that height.
+template<typename SliderType>
+void checkValueTextAtRequestedSize(int w, int h)
+{
+    SUBCASE("format set before the first frame")
+    {
+        Scene<SliderType> scene(w, h);
+        REQUIRE(scene.slider->setValueFormat("%.1f"));
+        scene.frame();
+        CHECK(scene.slider->getHeight() == h);
+        checkValueTextPlaced(scene.slider);
+    }
+
+    SUBCASE("format set at run time")
+    {
+        Scene<SliderType> scene(w, h);
+        scene.frame();
+        scene.frame();
+        REQUIRE(scene.slider->setValueFormat("%.1f"));
+        scene.frame();
+        CHECK(scene.slider->getHeight() == h);
+        checkValueTextPlaced(scene.slider);
+    }
+
+    SUBCASE("in a panel laid out already")
+    {
+        Scene<SliderType> scene(w, h);
+        controls::Base *panel=scene.canvas->template newChild<controls::Base>();
+        panel->setPos(20, 20);
+        panel->setSize(300, 250);
+        scene.slider->setParent(panel);
+        scene.frame();
+        REQUIRE(scene.slider->setValueFormat("%.1f"));
+        scene.frame();
+        CHECK(scene.slider->getHeight() == h);
+        checkValueTextPlaced(scene.slider);
+    }
+}
+
+}//namespace
+
+TEST_CASE("Slider value text: placed at its measured height in a slider of a requested size, horizontal")
+{
+    checkValueTextAtRequestedSize<controls::HorizontalSlider>(200, 40);
+}
+
+TEST_CASE("Slider value text: placed at its measured height in a slider of a requested size, vertical")
+{
+    checkValueTextAtRequestedSize<controls::VerticalSlider>(77, 200);
 }

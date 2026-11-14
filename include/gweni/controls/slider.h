@@ -60,6 +60,7 @@ public:
     //! by ValueTextGap and the text's column (getValueTextColumn()).
     void calculateSize(skin::Base *skin, Dim dim) override;
     void layout(skin::Base *skin) override;
+    void arrange(skin::Base *skin, Dim dim) override;
 
     //! Shows the value as text (imgui's SliderFloat), formatted by `format`
     //! with snprintf: e.g. "%.0f", "%.2f", "%.0f %%". A horizontal slider
@@ -207,7 +208,7 @@ protected:
     void updateValueText();
     //! Places the value text (an Owner child) at its preferred size: centred
     //! in a horizontal slider, in the column of a vertical one. Called from
-    //! layout().
+    //! layout() and again at the start of the Y arrange (arrange()).
     void placeValueText();
 
     internal::SliderBar *m_sliderBar;

@@ -75,6 +75,16 @@ void Slider::layout(skin::Base *skin)
     placeValueText();
 }
 
+// The value text's height is measured in the Y pass, after layout()'s run at
+// the start of the X arrange read it: it is placed again here, with its
+// height final, before the pass arranges it in Y.
+void Slider::arrange(skin::Base *skin, Dim dim)
+{
+    if(dim == Dim::Y)
+        placeValueText();
+    ParentClass::arrange(skin, dim);
+}
+
 void Slider::calculateSize(skin::Base *skin, Dim dim)
 {
     ParentClass::calculateSize(skin, dim);
