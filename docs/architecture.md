@@ -3533,7 +3533,9 @@ two programs and the draws. What follows describes both together:
   `Button`'s toggle: `setIsToggle(true)`, the state is `getToggleState()` (`setOn`,
   `isOn`, `toggle`), and a change fires Button's toggle callers, then `onToggled` and
   `onToggledOn` or `onToggledOff`, once per real change, from a click, a key or `setOn`
-  alike; `setOn` with the value it has fires and marks nothing. Its label is the
+  alike; `setOn` with the value it has fires and marks nothing. If a handler turns
+  it back from Button's callers or `onToggled`, the outer call stops its remaining
+  notifications, so it never announces a stale On or Off. Its label is the
   switch's own Text (`setText`), not a control beside it as a `CheckBoxWithLabel`'s
   is: the track sits in the switch's padding on the label's other side
   (`setLabelOnLeft`, `TrackWidth` and `Gap` units wide), so a hover or a click
@@ -3546,7 +3548,8 @@ two programs and the draws. What follows describes both together:
   keyboard focus and Tab; Space and Return toggle it on their release, since a held
   key repeats its press. Disabled, it takes no press, no keys, no focus and no Tab,
   and gives up the focus it holds (`setDisabled`: a click would otherwise focus it,
-  as it does any control taking keys).
+  as it does any control taking keys). Its cursor is Normal while disabled and
+  Finger while enabled.
 
   The textured `Switch` renderer has two slots: the track (style 4, its surface by
   state: `SwitchTrackOff`, `SwitchTrackOffHover`, `SwitchTrackOn`,

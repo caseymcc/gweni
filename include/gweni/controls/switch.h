@@ -76,7 +76,8 @@ public:
 
     //! On or off. A change fires onToggled, then onToggledOn or onToggledOff
     //! (and Button's toggle callers); the current value fires and marks
-    //! nothing.
+    //! nothing. If a handler turns it back, the superseded call stops its
+    //! remaining notifications.
     void setOn(bool on) { setToggleState(on); }
     bool isOn() const { return getToggleState(); }
     void toggle() override { setToggleState(!getToggleState()); }
@@ -103,7 +104,8 @@ public:
     void slideStep();
 
     //! Disabled, it takes no keyboard focus (a click would give it the focus,
-    //! as any control taking keys) and gives up the one it has.
+    //! as any control taking keys) and gives up the one it has; its cursor is
+    //! Normal while disabled, Finger while enabled.
     void setDisabled(bool disabled) override;
 
     //! Notes that it has been drawn: a toggle before that has nothing to

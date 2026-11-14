@@ -57,9 +57,15 @@ void Switch::setToggleState(bool on)
 
     // Button's: the state, its toggle callers and a redraw of this control
     ParentClass::setToggleState(on);
+    // A caller may have turned it back; that nested change owns its slide
+    // and notifications, so the superseded call stops here.
+    if(getToggleState() != on)
+        return;
     moveThumb();
 
     onToggled.call(this);
+    if(getToggleState() != on)
+        return;
     if(on)
         onToggledOn.call(this);
     else
@@ -205,6 +211,7 @@ Rect Switch::getThumbRect() const
 void Switch::setDisabled(bool disabled)
 {
     ParentClass::setDisabled(disabled);
+    setCursor(disabled?cursor::Normal:cursor::Finger);
     setKeyboardInputEnabled(!disabled);
     setTabable(!disabled);
     if(disabled && (KeyboardFocus == this))

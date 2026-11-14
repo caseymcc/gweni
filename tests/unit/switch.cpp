@@ -11,7 +11,9 @@
  *    onToggledOff once; a click on its label toggles it too;
  *  - setOn with the value it has fires nothing and marks nothing;
  *  - disabled, a click, Space and Return toggle nothing, fire nothing and give
- *    it no keyboard focus;
+ *    it no keyboard focus; its cursor is normal, the hand restored on enabling;
+ *  - a handler turning the switch back from onToggled or Button's toggle
+ *    callers stops the outer call's stale notifications;
  *  - the slide: after a toggle the thumb is at the half-cosine eased place at
  *    each clock time (drawn there by the renderer, in the thumb's slot at z+1),
  *    the animation is registered while it moves and gone once it arrives, a
@@ -92,6 +94,17 @@ public:
     }
 
     int calls=0;
+};
+
+//! Inspect the cursor Base::updateCursor sends to the platform (a no-op on Linux).
+class CursorSwitch: public controls::Switch
+{
+public:
+    static CursorSwitch *newInstance(const String &name) { return new CursorSwitch(name); }
+    unsigned char currentCursor() const { return m_cursor; }
+
+private:
+    explicit CursorSwitch(const String &name): Switch(name) {}
 };
 
 struct Scene
@@ -304,6 +317,60 @@ TEST_CASE("Switch: setOn with the value it has fires and marks nothing")
     CHECK_FALSE(control->isSliding());
 }
 
+TEST_CASE("Switch: onToggled reversing the state emits no stale On or Off")
+{
+    for(bool original : {false, true})
+    {
+        CAPTURE(original);
+        Scene scene;
+        controls::Switch *control=scene.newSwitch();
+        Counter toggled, on, off, reverse;
+
+        control->setOn(original);
+        toggled.listen(control->onToggled);
+        on.listen(control->onToggledOn);
+        off.listen(control->onToggledOff);
+        control->onToggled.addCallback(&reverse, [control, original](event::Handler &, event::Info) {
+            if(control->isOn() != original)
+                control->setOn(original);
+        });
+        scene.frame();
+
+        scene.click(control);
+        CHECK(control->isOn() == original);
+        CHECK(toggled.calls == 2);
+        CHECK(on.calls == (original?1:0));
+        CHECK(off.calls == (original?0:1));
+    }
+}
+
+TEST_CASE("Switch: Button toggle callers reversing the state stop stale Switch notifications")
+{
+    for(bool original : {false, true})
+    {
+        CAPTURE(original);
+        Scene scene;
+        controls::Switch *control=scene.newSwitch();
+        Counter toggled, on, off, reverse;
+
+        control->setOn(original);
+        toggled.listen(control->onToggled);
+        on.listen(control->onToggledOn);
+        off.listen(control->onToggledOff);
+        control->onToggleCaller.addCallback(&reverse, [control, original](event::Handler &, event::Info) {
+            if(control->isOn() != original)
+                control->setOn(original);
+        });
+        scene.frame();
+
+        scene.click(control);
+        CHECK(control->isOn() == original);
+        CHECK(toggled.calls == 1);
+        CHECK(on.calls == (original?1:0));
+        CHECK(off.calls == (original?0:1));
+    }
+}
+
 TEST_CASE("Switch: disabled, a click, Space and Return toggle nothing")
 {
     Scene scene;
@@ -328,10 +395,24 @@ TEST_CASE("Switch: disabled, a click, Space and Return toggle nothing")
     // given the focus anyway, its keys do nothing either
     KeyboardFocus=off;
     scene.key(keys::Space);
+    // The Space frame drops focus because keyboard input is disabled.
+    KeyboardFocus=off;
     scene.key(keys::Return);
     CHECK_FALSE(off->isOn());
     CHECK(toggled.calls == 0);
     CHECK_FALSE(off->isSliding());
+}
+
+TEST_CASE("Switch: disabling restores the normal cursor and enabling restores the hand")
+{
+    Scene scene;
+    CursorSwitch *control=scene.canvas->newChild<CursorSwitch>();
+
+    CHECK(control->currentCursor() == cursor::Finger);
+    control->setDisabled(true);
+    CHECK(control->currentCursor() == cursor::Normal);
+    control->setDisabled(false);
+    CHECK(control->currentCursor() == cursor::Finger);
 }
 
 TEST_CASE("Switch: the thumb slides, eased, while its animation is registered, and stops at its end")
