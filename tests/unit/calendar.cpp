@@ -856,3 +856,77 @@ TEST_CASE("Calendar: the keys and the limits in the year and decade views")
     CHECK(calendar->getDisplayedMonth() == calendar->getCursor().month);
     CHECK(calendar->isDateEnabled(calendar->getCursor()));
 }
+
+TEST_CASE("Calendar: new limits or a filter put the cursor on an enabled date of the month shown")
+{
+    Scene scene;
+    Calendar *calendar=scene.calendar(2026, 11);
+
+    // CalendarDemo's limited calendar: the limits set after the month, the
+    // cursor on the 1st before them
+    calendar->setDateLimits(Date(2026, 11, 5), Date(2026, 12, 18));
+    CHECK(calendar->getCursor().toIso() == "2026-11-05");
+    calendar->focus();
+    scene.frame();
+    CHECK(cursorCells(calendar) == 1);
+    CHECK(cellOf(calendar, Date(2026, 11, 5))->getLook().cursor);
+    scene.key(keys::Right);
+    CHECK(calendar->getCursor().toIso() == "2026-11-06");
+
+    // a filter refusing the cursor's day moves it on to the next enabled one
+    calendar->setCursor(Date(2026, 11, 14));
+    calendar->setDateFilter([](const Date &date) { return (date.weekday() != 0) && (date.weekday() != 6); });
+    CHECK(calendar->getCursor().toIso() == "2026-11-16");
+    // past the month's last enabled day it goes back, never into the next month
+    calendar->setCursor(Date(2026, 11, 28));
+    calendar->setDateFilter([](const Date &date) { return date.day < 20; });
+    CHECK(calendar->getCursor().toIso() == "2026-11-19");
+    CHECK(calendar->getDisplayedMonth() == 11);
+    scene.key(keys::Left);
+    CHECK(calendar->getCursor().toIso() == "2026-11-18");
+}
+
+TEST_CASE("Calendar: zooming in puts the cursor on an enabled month and day of what is shown")
+{
+    Scene scene;
+    Calendar *calendar=scene.calendar(2026, 11);
+
+    calendar->setDateLimits(Date(2026, 11, 5), Date(2026, 12, 18));
+    calendar->setCursor(Date(2026, 11, 25));
+    scene.click(calendar->getTitle());
+    REQUIRE(calendar->getView() == Calendar::View::Year);
+    // December: the 25th is past the maximum, so the cursor is its last enabled day
+    scene.click(calendar->getCell(11));
+    REQUIRE(calendar->getView() == Calendar::View::Month);
+    REQUIRE(calendar->getDisplayedMonth() == 12);
+    CHECK(calendar->getCursor().toIso() == "2026-12-18");
+
+    // a month whose days from the cursor's on are refused: back inside it,
+    // not on into the next month
+    calendar->setDateLimits(std::nullopt, std::nullopt);
+    calendar->setDateFilter([](const Date &date) { return (date.month != 2) || (date.day < 20); });
+    calendar->setDisplayedMonth(2027, 1);
+    calendar->setCursor(Date(2027, 1, 31));
+    scene.click(calendar->getTitle());
+    REQUIRE(calendar->getView() == Calendar::View::Year);
+    scene.click(calendar->getCell(1));
+    REQUIRE(calendar->getView() == Calendar::View::Month);
+    REQUIRE(calendar->getDisplayedMonth() == 2);
+    CHECK(calendar->getCursor().toIso() == "2027-02-19");
+
+    // the decade's 2027 in limits ending in August: the cursor's November is
+    // past them, so it is on August, the last enabled month
+    calendar->setDateFilter(nullptr);
+    calendar->setDateLimits(Date(2025, 3, 15), Date(2027, 8, 1));
+    calendar->setDisplayedMonth(2026, 11);
+    calendar->setCursor(Date(2026, 11, 11));
+    scene.click(calendar->getTitle());
+    scene.click(calendar->getTitle());
+    REQUIRE(calendar->getView() == Calendar::View::Decade);
+    scene.click(calendar->getCell(2027-calendar->decadeFirstYear()));
+    REQUIRE(calendar->getView() == Calendar::View::Year);
+    REQUIRE(calendar->getDisplayedYear() == 2027);
+    CHECK(calendar->getCursor().year == 2027);
+    CHECK(calendar->getCursor().month == 8);
+    CHECK_FALSE(calendar->getCell(calendar->getCursor().month-1)->getLook().disabled);
+}
