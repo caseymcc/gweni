@@ -76,6 +76,7 @@
 #include <gweni/controls/propertyTree.h>
 #include <gweni/controls/radioButton.h>
 #include <gweni/controls/radioButtonController.h>
+#include <gweni/controls/rangeSlider.h>
 #include <gweni/controls/rectangle.h>
 #include <gweni/controls/resizableControl.h>
 #include <gweni/controls/resizer.h>

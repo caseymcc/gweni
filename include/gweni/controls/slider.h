@@ -15,6 +15,9 @@
 #include <gweni/gweni.h>
 #include <gweni/skin.h>
 
+#include <algorithm>
+#include <cmath>
+
 namespace gweni
 {
 namespace controls
@@ -96,6 +99,15 @@ public:
 
     //! The gap between a vertical slider's track column and its text column.
     static constexpr int ValueTextGap=4;
+
+    //! A thumb's offset along a travel of `travel` units at `fraction` (0..1) of
+    //! it: rounded, so a thumb the mouse put at an offset, read back as
+    //! offset/travel, lands there again (#466). A Slider's and a RangeSlider's.
+    template<class T>
+    static int thumbOffset(int travel, T fraction)
+    {
+        return std::clamp(static_cast<int>(std::lround(travel*fraction)), 0, std::max(0, travel));
+    }
 
     //! The notches are drawn only while the value is clamped to them.
     virtual void setClampToNotches(bool bClamp)

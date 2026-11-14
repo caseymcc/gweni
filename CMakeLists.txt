@@ -288,6 +288,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/radioButton.cpp
     include/gweni/controls/radioButtonController.h
     source/controls/radioButtonController.cpp
+    include/gweni/controls/rangeSlider.h
+    source/controls/rangeSlider.cpp
     include/gweni/controls/rectangle.h
     source/controls/rectangle.cpp
     include/gweni/controls/resizableControl.h
