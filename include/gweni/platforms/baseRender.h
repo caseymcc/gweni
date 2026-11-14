@@ -126,9 +126,9 @@ enum RoundedEdge: uint8_t
     NoBorderLeft=0x80
 };
 
-//! drawArc's angles as its slot keeps them, in 1/65536 of a turn: a start's
-//! fraction of a turn, rounded (a whole turn is 0), and a sweep clamped to 0..1
-//! turn, rounded, where 65535 is the whole ring. Two angles with the same bits
+//! drawArc's angles as its slot keeps them: a start's fraction of a turn in
+//! 1/65536 of a turn, rounded (a whole turn is 0), and a sweep clamped to 0..1
+//! turn in 1/65535 of a turn, rounded, where 65535 is the whole ring. Two angles with the same bits
 //! draw the same arc, so a caller that animates one can tell a step that draws
 //! nothing new.
 inline uint16_t arcStartBits(float turns)
@@ -295,8 +295,8 @@ public:
     //! it starts, in turns from the top (12 o'clock) clockwise, any value (only its
     //! fraction counts); \a sweepTurns how far it runs on clockwise, clamped to
     //! 0..1 (a negative sweep runs anticlockwise from the start): 0 is a dot (its
-    //! two caps), 1 the whole ring with no cap. Both are kept to 1/65536 of a turn
-    //! (arcStartBits, arcSweepBits). A pixel the arc does not cover writes nothing,
+    //! two caps), 1 the whole ring with no cap. The start is kept to 1/65536 of a turn
+    //! and the sweep to 1/65535 (arcStartBits, arcSweepBits). A pixel the arc does not cover writes nothing,
     //! depth included. A spinner's arc, or a circular progress. The default draws
     //! nothing.
     virtual void drawArc(size_t /*primitiveId*/, gweni::Rect /*rect*/, float /*startTurns*/,

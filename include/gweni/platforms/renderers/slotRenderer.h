@@ -764,7 +764,7 @@ protected:
         uint16_t border; //border thickness in px; line thickness in px (style 3); grid (style 8):
                          //its major count in the low byte, its stroke px in the high one
         uint16_t cx, cy; //color1 (bottom fill for vertical gradient, image tint for style 2) packed rg/ba;
-                         //arc (style 5, kind 9): its start and sweep, 1/65536 of a turn
+                         //arc (style 5, kind 9): its start, 1/65536 of a turn, and sweep, 1/65535
                          //(arcStartBits, arcSweepBits: 65535 the whole ring); its start's
                          //and end's unit directions in border/by and dx/dy, int16_t/32767;
                          //line (style 3): its first endpoint, int16_t bits, in lx/ly's units

@@ -11,7 +11,6 @@
 #include <gweni/utility.h>
 
 #include <cmath>
-#include <limits>
 
 namespace gweni
 {

@@ -54,7 +54,9 @@ namespace controls
 //! Large suit a card; setDiameter() sets one of its own. The stroke is a tenth
 //! of the diameter, at least MinThickness. It takes no keyboard input and no
 //! focus, and no mouse input but for the hover a tooltip needs: with one set
-//! (setToolTipText, setToolTip), it is hovered and shows it.
+//! (setToolTipText, setToolTip), it is hovered and shows it, and the hover and
+//! a press over it are its own, not its parent's. So a spinner inside a Button
+//! gets no tooltip: give the Button one, or the button has a dead spot.
 class GWENI_EXPORT Spinner: public Base
 {
 public:

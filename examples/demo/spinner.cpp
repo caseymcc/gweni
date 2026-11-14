@@ -111,8 +111,10 @@ GWENI_CONTROL_CONSTRUCTOR(SpinnerDemo)
         controls::Base *row=line(column);
 
         m_saving=button(row, "Saving\xE2\x80\xA6", 110);
+        // the tooltip on the button: one on the spinner would take the
+        // button's hover and press over it
+        m_saving->setToolTipText("Saving your changes");
         m_inButton=m_saving->newChild<controls::Spinner>();
-        m_inButton->setToolTipText("Saving your changes");
         m_spinners.push_back(m_inButton);
 
         // the spinner at the button's left, centred down it, the text after it

@@ -529,7 +529,7 @@ void main()
             // Arc (drawArc): on the largest circle centred in the quad, its stroke,
             // the whole px drawArc packs into the border colour's red byte, inside
             // the circle, round caps at both ends. Its sweep is color1's second
-            // field, 1/65536 of a turn, 65535 the whole ring; the directions from
+            // field, 1/65535 of a turn, 65535 the whole ring; the directions from
             // the centre to its start and its end (clockwise from the top, y down)
             // are unit vectors drawArc worked out on the CPU, int16 in 1/32767:
             // the start in border and the border colour's second field, the end in
@@ -559,10 +559,12 @@ void main()
                 float toEnd = q.x*a1.y - q.y*a1.x;
                 bool inside;
 
-                // under half a turn: between the two directions, on their side;
-                // half a turn or more: outside the wedge it does not sweep
+                // under half a turn: between the two directions, on the side of
+                // one of them (not on a0 + a1, which just under half a turn nearly
+                // cancels after the int16 rounding and points anywhere); half a
+                // turn or more: outside the wedge it does not sweep
                 if(sweepBits < 32768.0)
-                    inside = fromStart >= 0.0 && toEnd >= 0.0 && dot(q, a0 + a1) > 0.0;
+                    inside = fromStart >= 0.0 && toEnd >= 0.0 && (dot(q, a0) > 0.0 || dot(q, a1) > 0.0);
                 else
                     inside = fromStart >= 0.0 || toEnd >= 0.0;
 

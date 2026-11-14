@@ -917,10 +917,12 @@ Otherwise it is the earliest of:
   canvas's animations. The default is now, today's every-frame behaviour. A
   `TimedAnimation` returns its start until it has started. The caret blink returns
   its next edge (`Base::nextCaretBlinkTime()`, `CaretBlink::nextEdge`). An
-  indeterminate or cycling ProgressBar keeps the default while it shows and returns
-  never while it is hidden: the demo shell's hidden pages hold several, which kept an
-  idle window drawing every frame. LogViewDemo's stream does the same, and leaves out
-  of its stream the time slept on its first run once shown (`window_idle_demo` runs the
+  indeterminate or cycling ProgressBar, and a spinning Spinner, keep the default
+  while they show and have no animation registered while they are hidden
+  (`Base::onVisibleChanged()` cancels it): the demo shell's hidden pages hold several,
+  which kept an idle window drawing every frame. LogViewDemo's stream returns never
+  from `nextThinkTime()` while it is hidden, and leaves out of its stream the time
+  slept on its first run once shown (`window_idle_demo` runs the
   idle check on the whole shell). The stats overlay's refresh and the Inspector's
   (`tools::RefreshAnimation`) keep the default while they are open;
 - the tooltip's deadline;
@@ -1942,7 +1944,7 @@ two programs and the draws. What follows describes both together:
   color1 into a flat varying, so the arc took no new attribute, varying or vertex
   code. **The `Vertex` fields:** `style` 5, `radius` 9 (the kind), `lx/ly` the quad's
   half-pixel local position as for every SDF style, `tx/ty` the colour, `bx`'s high
-  byte the stroke px, `cx` the start and `cy` the sweep, each in 1/65536 of a turn
+  byte the stroke px, `cx` the start in 1/65536 of a turn and `cy` the sweep in 1/65535
   (`renderer::arcStartBits`, the fraction rounded, and `arcSweepBits`, rounded with
   65535 the whole ring), and the unit directions from the centre to the start
   (`border`, `by`) and to the end (`dx`, `dy`), worked out from those bits on the CPU
@@ -3797,8 +3799,11 @@ two programs and the draws. What follows describes both together:
   `setDiameter()` sets one of its own. The stroke is a tenth of the shorter side of
   its bounds, at least 1.5 units (`drawArc` snaps it). It takes no keyboard input, no
   focus and no Tab, and no mouse input unless it has a tooltip (`setToolTipText`,
-  `setToolTip`), which needs its hover; with one, a press over it is its own, doing
-  nothing, as on any control taking the mouse. The three surfaces read only their top
+  `setToolTip`), which needs its hover; with one, the hover and a press over it are
+  its own, doing nothing, as on any control taking the mouse, so a spinner inside a
+  Button leaves the button a dead spot there (no hover look, a press that presses
+  nothing). A spinner in a host that takes the mouse has no tooltip of its own: the
+  host's goes on the host, as SpinnerDemo's "Saving…" button has it. The three surfaces read only their top
   colour, as a stroke has no fill or border. `tests/unit/spinner.cpp` pins the
   control and its renderer's draws; `--scenario spinner` (`controltest_spinner`, its
   `_vulkan` twin and `controltest_verify_layout_spinner`) its slots, pixels and

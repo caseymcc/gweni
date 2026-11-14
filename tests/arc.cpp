@@ -14,6 +14,8 @@
  *               cap's round end partly; at sweeps of 0.25, 0.5, 0.75 and 1 turn
  *               (the whole ring, no cap), each from a start in each quadrant,
  *               in a square and an odd, non-square rect.
+ *    half turn  sweeps of 32756..32767/65535, from 16 starts, are the model's
+ *               too: just under half a turn the end directions nearly cancel.
  *    start      a quarter-turn arc from a start in each quadrant covers the
  *               middle of its own quadrant's stroke and none of the other
  *               three's: the start is from the top, clockwise.
@@ -257,6 +259,37 @@ TEST_CASE("Arcs: every pixel is the arc's distance through the box filter, at ea
                     CHECK(frame.coverage(int(std::floor(sx-tx*(back+1.5))), int(std::floor(sy-ty*(back+1.5)))) == 0);
                 }
             }
+        }
+    }
+}
+
+TEST_CASE("Arcs: a sweep just under half a turn draws its whole sweep and both caps, from any start")
+{
+    // Just under half a turn the two end directions are nearly opposite and
+    // int16-rounded, so their sum is a few units long and points anywhere: a
+    // test on it cut a gap into the start cap (sweep bits 32766 and 32767, up
+    // to 54 pixels 255 levels off).
+    Primitives prims(1);
+    const Rect logical(40, 30, 48, 48);
+
+    for(int bits=32756; bits<=32767; ++bits)
+    {
+        for(int i=0; i<16; ++i)
+        {
+            const float start=(i+0.17f)/16.0f;
+            const float sweep=float(bits/65535.0);
+            const ArcModel arc(logical, 1.0f, start, sweep, 5.0f);
+
+            REQUIRE(gweni::renderer::arcSweepBits(sweep) == bits);
+            CAPTURE(bits);
+            CAPTURE(start);
+
+            const Frame frame=drawFrame([&](SlotRenderer &renderer)
+                {
+                    renderer.drawArc(prims.ids[0], logical, start, sweep, 5.0f, red, 1);
+                });
+
+            CHECK(coverageMismatches(frame, arc) == 0);
         }
     }
 }

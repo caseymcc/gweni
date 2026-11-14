@@ -116,18 +116,20 @@ protected:
     //! Hidden or shown: registers or cancels the animation (updateAnimation).
     void onVisibleChanged() override;
 
-    float m_progress;
-    float m_cycleSpeed;
+    // initialised here, not only in init(): onVisibleChanged() can run before
+    // init() (newChild() under a hidden parent) and reads the speeds
+    float m_progress=0.0f;
+    float m_cycleSpeed=0.0f;
 
     bool m_horizontal;
     bool m_autoLabel;
     //! the percentage the auto label shows, -1 when it may show anything
     int m_labelPercent;
 
-    bool m_indeterminate;
-    float m_indeterminateSpeed;
-    float m_segmentLength;
-    float m_phase;
+    bool m_indeterminate=false;
+    float m_indeterminateSpeed=0.75f;
+    float m_segmentLength=0.3f;
+    float m_phase=0.0f;
     //! the segment as last marked for drawing
     Rect m_segmentMarked;
     //! the registered animation while the bar moves, else null

@@ -844,6 +844,10 @@ public:
     //! ancestor, a descendant that hid itself). visible() is its new value,
     //! on it and on its subtree. For work kept only while the control shows (a
     //! moving ProgressBar's or a Spinner's animation); the default does nothing.
+    //! It can run before the control's init(): newChild() attaches it to its
+    //! parent (setParent()) first, so under a hidden parent an override reads
+    //! state its init() has not set yet. Read only members initialised in the
+    //! class body.
     virtual void onVisibleChanged() {}
 
     virtual void hide() { setHidden(true); }    //!< Make control invisible.
