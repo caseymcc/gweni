@@ -4291,7 +4291,13 @@ drag through `Base::dragAndDrop_takesDescendantDrag`, which only a reorderable
 `ScrollControl` answers for its inner panel's descendants, so a tab's close button
 still drags nothing; a part that took the mouse for a gesture of its own (a
 Slider's thumb, a TextBox's selection, a nested scroll bar: `MouseFocus` set and
-no Button) keeps it, and its list starts no drag. `draganddrop::currentCursor()` is the cursor the core asked
+no Button) keeps it, and its list starts no drag. The item is the one pressed, not
+the one under the press point when the mouse has moved 5 units: the core tells the
+pressed control of the press (`Base::dragAndDrop_pressed`), where a reorderable
+list notes the item's key (`Reorderable::pressedAt`), and the package is made for
+that key at its index then (`beginPressedDrag`), so a live insert above it or a
+scroll between the press and the move drags the item pressed, and one gone by
+then starts no drag. `draganddrop::currentCursor()` is the cursor the core asked
 for, since natively `platform::setCursor` does nothing (`platform::setCursorHandler`
 replaces what it does, for an app's own window or a test). A drag sets the Normal
 cursor as it starts, over whatever cursor the pressed control had set, and a
@@ -4338,7 +4344,8 @@ applying the drop is a plain edit. The adapters:
   the dragged card deleted or hidden cancels. These checks run only during a
   drag, in card layouts; VirtualList never calls its app key functions there.
 - `VirtualListReorder`: a VirtualList's items, keyed by the app's `key(index)` and
-  `indexOf(key)`, asked only as a drag starts, as it drops and on a list change:
+  `indexOf(key)`, asked only at a press (`key`), as a drag starts (`indexOf`), as
+  it drops and on a list change:
   a move or a scroll frame asks the app nothing. The geometry is
   `index*rowHeight` less the offset (in variable mode the height index's offsets
   from the anchor).

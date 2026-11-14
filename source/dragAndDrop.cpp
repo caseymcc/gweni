@@ -267,6 +267,7 @@ bool nnMouseButton(gweni::controls::Base *hoveredControl, int x, int y, bool dow
     // x pixels with the mouse down, we'll start to drag.
     LastPressedPos=gweni::Point(x, y);
     LastPressedControl=hoveredControl;
+    hoveredControl->dragAndDrop_pressed(x, y);
     return false;
 }
 

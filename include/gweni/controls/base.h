@@ -1701,6 +1701,12 @@ public:
     //! default, so a part of a draggable control (a tab's close button) starts
     //! no drag of it.
     virtual bool dragAndDrop_takesDescendantDrag(Base * /*descendant*/) { return false; }
+    //! The left press at the canvas point (x, y) that may start this control's
+    //! drag, once it has moved 5 units (dragAndDrop_getPackage, which is given
+    //! the press point then). A reorderable list notes the item under the
+    //! press here, so the drag is of that item whatever the list does before
+    //! the move. Nothing by default.
+    virtual void dragAndDrop_pressed(int /*x*/, int /*y*/) {}
     virtual bool dragAndDrop_shouldStartDrag() { return true; }
 
     virtual void dragAndDrop_startDragging(draganddrop::Package * /*package*/, int /*x*/,

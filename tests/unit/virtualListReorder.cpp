@@ -9,7 +9,9 @@
  *  through the input handler with the clock stepped 1/60 s a frame.
  *
  *  A press on a pooled row moved 5 units drags the item it shows, keyed by
- *  the app's key; the gap is the half-height rule over index*rowHeight less
+ *  the app's key, taken at the press: items inserted above it between the
+ *  press and the move leave it the one dragged, and the pressed item removed
+ *  before the move starts no drag. The gap is the half-height rule over index*rowHeight less
  *  the offset, its bar at that boundary. Moves across gaps and scroll frames
  *  call neither key function. The veil is over the row that shows the dragged
  *  item, follows it as the pool's rows are bound to other items, hides while
@@ -210,6 +212,51 @@ TEST_CASE("VirtualListReorder: a press on a row drags its item, and the gap is i
     CHECK(scene.drops[0].key == scene.keys[7]);
     CHECK(scene.drops[0].sourceIndex == 7);
     CHECK(scene.drops[0].targetIndex == 12);
+}
+
+TEST_CASE("VirtualListReorder: the item pressed is the one dragged, whatever the list did before the move")
+{
+    SUBCASE("items inserted above between the press and the move")
+    {
+        Scene scene;
+        const uint64_t key=scene.keys[4];
+        const Point p=scene.at(scene.top(4)+RowHeight/4);
+
+        scene.clock+=1.0f;
+        scene.move(p);
+        input::onMouseClicked(scene.canvas, 0, true);
+        scene.frame();
+        scene.keys.insert(scene.keys.begin(), {1, 2});
+        scene.list->insertItems(0, 2);
+        scene.list->setVerticalScrollOffset(0);
+        scene.frame();
+        REQUIRE(scene.list->getVerticalScrollOffset() == 0);
+
+        scene.move(Point(p.x+6, p.y));
+        REQUIRE(draganddrop::isDragging());
+        CHECK(scene.reorder->dragKey() == key);
+        CHECK(scene.reorder->dragIndex() == 6);
+        scene.release();
+    }
+
+    SUBCASE("the pressed item removed before the move starts no drag")
+    {
+        Scene scene;
+        const Point p=scene.at(scene.top(4)+RowHeight/4);
+
+        scene.clock+=1.0f;
+        scene.move(p);
+        input::onMouseClicked(scene.canvas, 0, true);
+        scene.frame();
+        scene.keys.erase(scene.keys.begin()+4);
+        scene.list->removeItems(4, 1);
+        scene.frame();
+
+        scene.move(Point(p.x+6, p.y));
+        CHECK_FALSE(draganddrop::isDragging());
+        scene.release();
+        CHECK(scene.drops.empty());
+    }
 }
 
 TEST_CASE("VirtualListReorder: moves across gaps and scroll frames call neither key function")
