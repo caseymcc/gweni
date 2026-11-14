@@ -8,7 +8,9 @@
 #include <gweni/controls/base.h>
 #include <gweni/controls/canvas.h>
 #include <gweni/controls/scrollControl.h>
+#include <gweni/anim.h>
 #include <gweni/dragAndDrop.h>
+#include <gweni/platforms/platform.h>
 
 #include <algorithm>
 #include <memory>
@@ -42,6 +44,36 @@ const char *const Reorderable::PackageName="gweni:ReorderItem";
 // One drag at a time: its source and the list showing its gap.
 static Reorderable *s_source=nullptr;
 static Reorderable *s_target=nullptr;
+
+// The ScrollControl a list is, if it is one
+static ScrollControl *scrollerOf(Base *list)
+{
+    return gweni_cast<ScrollControl>(list);
+}
+
+#if GWENI_ANIMATE
+// The auto-scroll's animation: registered on the list only while it scrolls,
+// so a drag resting outside the bands runs none.
+class ReorderAutoScroll: public anim::Animation
+{
+public:
+    explicit ReorderAutoScroll(Reorderable *owner): m_owner(owner) {}
+
+    void think() override
+    {
+        if(m_owner)
+            m_owner->autoScrollStep();
+    }
+
+    bool finished() override { return m_owner == nullptr; }
+
+    Reorderable *m_owner;
+};
+#else
+class ReorderAutoScroll
+{
+};
+#endif
 
 // The tree serial of \p list's canvas, 0 off a canvas
 static unsigned treeSerialOf(Base *list)
@@ -89,6 +121,8 @@ Reorderable::Reorderable(Base *list, Base *panel):
 
 Reorderable::~Reorderable()
 {
+    stopAutoScroll();
+
     if(m_group)
         m_group->remove(this);
 
@@ -180,6 +214,18 @@ void Reorderable::listArranged(skin::Base *skin)
                 return;
             }
         }
+    }
+
+    // the list scrolled under the resting cursor (the auto-scroll, a wheel):
+    // the gap is the one at the cursor now, and the auto-scroll goes on or
+    // stops (at the content's end)
+    if(s_target == this)
+    {
+        ScrollControl *scroller=scrollerOf(m_list);
+
+        if(scroller && (scroller->getVerticalScrollOffset() != m_hoverScrollOffset))
+            hoverAt(m_lastCanvasPoint);
+        updateAutoScroll();
     }
 
     placeLooks();
@@ -334,6 +380,7 @@ void Reorderable::endAsSource()
     if(Reorderable *target=s_target)
     {
         s_target=nullptr;
+        target->stopAutoScroll();
         target->gapMoved();
     }
 
@@ -354,8 +401,126 @@ void Reorderable::hover(draganddrop::Package * /*package*/, int x, int y)
     if(s_target != this)
         return;
 
-    m_lastPoint=m_panel->canvasPosToLocal(Point(x, y));
+    hoverAt(Point(x, y));
+    updateAutoScroll();
+}
+
+void Reorderable::hoverAt(Point canvasPoint)
+{
+    m_lastCanvasPoint=canvasPoint;
+    m_lastPoint=m_panel->canvasPosToLocal(canvasPoint);
+
+    if(ScrollControl *scroller=scrollerOf(m_list))
+        m_hoverScrollOffset=scroller->getVerticalScrollOffset();
+
     updateGap(gapAt(m_lastPoint), false);
+}
+
+void Reorderable::updateAutoScroll()
+{
+    ScrollControl *scroller=scrollerOf(m_list);
+    int direction=0;
+    float rate=0.0f;
+
+    if((s_target == this) && scroller && scroller->canScrollVertical() && (m_autoScrollBand > 0))
+    {
+        const Point local=m_list->canvasPosToLocal(m_lastCanvasPoint);
+        const Rect &viewport=scroller->getViewport();
+        const int band=m_autoScrollBand;
+        const int offset=scroller->getVerticalScrollOffset();
+        int depth=0;
+
+        if((local.x >= viewport.x) && (local.x < viewport.x+viewport.w))
+        {
+            // the cursor's depth into a band, the whole band past its edge
+            if(local.y < viewport.y+band)
+            {
+                depth=viewport.y+band-local.y;
+                direction=(offset > 0) ? -1 : 0;
+            }
+            else if(local.y >= viewport.y+viewport.h-band)
+            {
+                depth=local.y-(viewport.y+viewport.h-band)+1;
+                direction=(offset < scroller->getMaxVerticalScrollOffset()) ? 1 : 0;
+            }
+        }
+
+        rate=m_autoScrollSpeed*static_cast<float>(std::min(depth, band))/static_cast<float>(band);
+    }
+
+    if((direction == 0) || (rate <= 0.0f))
+    {
+        stopAutoScroll();
+        return;
+    }
+
+#if GWENI_ANIMATE
+    if(!m_autoScroll || (direction != m_scrollDirection))
+    {
+        stopAutoScroll();
+        m_autoScroll=new ReorderAutoScroll(this);
+        m_scrollTime=platform::getTimeInSeconds();
+        m_scrollCarry=0.0;
+        anim::add(m_list, m_autoScroll);
+    }
+    m_scrollDirection=direction;
+    m_scrollRate=rate;
+#else
+    (void)direction;
+#endif
+}
+
+void Reorderable::stopAutoScroll()
+{
+#if GWENI_ANIMATE
+    if(m_autoScroll)
+    {
+        m_autoScroll->m_owner=nullptr;
+        anim::cancel(m_list, m_autoScroll);
+        m_autoScroll=nullptr;
+    }
+#endif
+    m_scrollDirection=0;
+    m_scrollRate=0.0f;
+}
+
+void Reorderable::autoScrollStep()
+{
+    ScrollControl *scroller=scrollerOf(m_list);
+
+    if(!scroller || (m_scrollDirection == 0))
+    {
+        stopAutoScroll();
+        return;
+    }
+
+    // the canvas clock's time since the last step, at the rate the cursor's
+    // depth gives, whole units scrolled and the rest carried
+    const double now=platform::getTimeInSeconds();
+
+    m_scrollCarry+=m_scrollDirection*m_scrollRate*(now-m_scrollTime);
+    m_scrollTime=now;
+
+    const int step=static_cast<int>(m_scrollCarry);
+
+    if(step == 0)
+        return;
+
+    m_scrollCarry-=step;
+
+    // held to the content as the last layout gave it (a ScrollControl clamps a
+    // plain content's offset only in its next layout)
+    const int offset=scroller->getVerticalScrollOffset();
+    const int wanted=std::clamp(offset+step, 0, scroller->getMaxVerticalScrollOffset());
+
+    // at the content's end: nothing more to scroll
+    if(wanted == offset)
+    {
+        stopAutoScroll();
+        return;
+    }
+
+    scroller->setVerticalScrollOffset(wanted);
 }
 
 void Reorderable::hoverLeave(draganddrop::Package * /*package*/)
@@ -366,6 +531,7 @@ void Reorderable::hoverLeave(draganddrop::Package * /*package*/)
     // the gap is kept for handleDrop, which the core calls after the leave;
     // it is no longer shown
     s_target=nullptr;
+    stopAutoScroll();
     gapMoved();
 }
 
