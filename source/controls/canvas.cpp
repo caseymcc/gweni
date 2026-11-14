@@ -240,6 +240,7 @@ double Canvas::nextWorkTime()
 
     if(m_needsRedraw || m_zOrderDirty || hoverToTake || !m_deleteSet.empty()
         || modalsOrToasts
+        || (!hidden() && draganddrop::rehoverPending(this))
         || m_postQueue->pending()
         || (!hidden() && layoutDirty())
         || (render && (render->textLayoutSerial() != m_textLayoutSerial))
@@ -513,6 +514,9 @@ void Canvas::doThink()
     updateAnchoredMenus();
     updateToolTip();
     updateToasts();
+    // after a wheel during a drag, the target under the resting cursor
+    // (before this frame's layout, which places its bar)
+    draganddrop::beforeLayout(this);
     // A focus hidden or turned off before the frame is dropped before its
     // layout, so what its onLostKeyboardFocus() changes (a DragNumber ending
     // its edit) is laid out in this pass; one the layout hid is dropped after
@@ -2262,7 +2266,8 @@ bool Canvas::inputMouseWheelOnAxis(int val, Dim dim)
     // Drag hover is frozen to keep crossed controls from changing their look.
     // Wheel input still belongs to the control under the pointer.
     Base *target=HoveredControl;
-    if(draganddrop::isDragging() && draganddrop::dragCanvas() == this)
+    const bool dragging=draganddrop::isDragging() && (draganddrop::dragCanvas() == this);
+    if(dragging)
     {
         const Point mouse=input::getMousePosition();
         target=getControlAt(mouse.x, mouse.y);
@@ -2280,10 +2285,14 @@ bool Canvas::inputMouseWheelOnAxis(int val, Dim dim)
     if(!modalAllows(target))
         return false;
 
-    if(dim == Dim::X || input::isShiftDown())
-        return target->onMouseWheeledH(val);
+    const bool taken=(dim == Dim::X || input::isShiftDown())
+        ? target->onMouseWheeledH(val) : target->onMouseWheeled(val);
 
-    return target->onMouseWheeled(val);
+    // what it scrolled moves under the resting cursor: the drag finds its
+    // target and gap there again once that is laid out
+    if(taken && dragging)
+        draganddrop::wheeled(this);
+    return taken;
 }
 
 }//namespace controls

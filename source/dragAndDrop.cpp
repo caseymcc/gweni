@@ -36,6 +36,11 @@ static bool DropRefused=false;
 // the canvas whose next left release a cancel left pending: the button that
 // held the drag is still down, and its release must reach no control
 static gweni::controls::Canvas *ReleaseCanvas=nullptr;
+// the drag's canvas, when a wheel during the drag may have moved what is under
+// the resting cursor, and whether a layout has placed what it scrolled since:
+// the target is found again in the update phase after that layout
+static gweni::controls::Canvas *RehoverCanvas=nullptr;
+static bool RehoverLaidOut=false;
 
 static void setCursor(int type)
 {
@@ -53,6 +58,7 @@ static void clear()
     DragCanvas=nullptr;
     Cursor=cursor::Normal;
     DropRefused=false;
+    RehoverCanvas=nullptr;
 }
 
 bool isDragging()
@@ -155,6 +161,9 @@ void controlDeleted(gweni::controls::Base *control)
 {
     if(control == ReleaseCanvas)
         ReleaseCanvas=nullptr;
+
+    if(control == RehoverCanvas)
+        RehoverCanvas=nullptr;
 
     if(CurrentPackage && (control == DragCanvas))
     {
@@ -425,16 +434,10 @@ static void UpdateHoveredControl(gweni::controls::Base *ctrl, int x, int y)
     NewHoveredControl=nullptr;
 }
 
-void onMouseMoved(gweni::controls::Canvas *canvas, int x, int y)
+// The live drag's cursor at (x, y) on its canvas: the target under it found
+// (one hit test of the canvas) and told of the point.
+static void hoverAt(gweni::controls::Canvas *canvas, int x, int y)
 {
-    // If we're not carrying anything, then check to see if we should
-    // pick up from a control that we're holding down. If not, then forget it.
-    if(!CurrentPackage && !ShouldStartDraggingControl(x, y))
-        return;
-
-    if(DragCanvas != canvas)
-        return;
-
     LastDragPos=gweni::Point(x, y);
 
     // The target is found here, not from the input handler's hover, which
@@ -466,10 +469,60 @@ void onMouseMoved(gweni::controls::Canvas *canvas, int x, int y)
         setCursor(wanted);
 }
 
+void onMouseMoved(gweni::controls::Canvas *canvas, int x, int y)
+{
+    // If we're not carrying anything, then check to see if we should
+    // pick up from a control that we're holding down. If not, then forget it.
+    if(!CurrentPackage && !ShouldStartDraggingControl(x, y))
+        return;
+
+    if(DragCanvas != canvas)
+        return;
+
+    // a move finds the target itself
+    if(RehoverCanvas == canvas)
+        RehoverCanvas=nullptr;
+
+    hoverAt(canvas, x, y);
+}
+
+void wheeled(gweni::controls::Canvas *canvas)
+{
+    if(CurrentPackage && canvas && (DragCanvas == canvas))
+    {
+        RehoverCanvas=canvas;
+        // the scroll is laid out in this frame's pass, after its update
+        // phase's beforeLayout()
+        RehoverLaidOut=false;
+    }
+}
+
+bool rehoverPending(gweni::controls::Canvas *canvas)
+{
+    return CurrentPackage && canvas && (RehoverCanvas == canvas);
+}
+
+void beforeLayout(gweni::controls::Canvas *canvas)
+{
+    if(!rehoverPending(canvas) || !RehoverLaidOut)
+        return;
+
+    RehoverCanvas=nullptr;
+
+    // The wheel's scroll was laid out in the last frame's pass: what is under
+    // the resting cursor now is where the drop would land. Found before this
+    // frame's layout, so a new gap's bar is placed in its one pass.
+    hoverAt(canvas, LastDragPos.x, LastDragPos.y);
+}
+
 bool onCanvasThink(gweni::controls::Canvas *canvas)
 {
     if(!CurrentPackage || (DragCanvas != canvas))
         return false;
+
+    // this frame's layout placed what a wheel scrolled (beforeLayout())
+    if(RehoverCanvas == canvas)
+        RehoverLaidOut=true;
 
     // An item drag's list hidden: there is no list to drop back into. (A
     // control drag's source hides itself as it starts: a tab, a dock.)

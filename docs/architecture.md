@@ -4386,7 +4386,17 @@ ends with `Reorderable::listArranged()`, which resolves the edits, finds the gap
 again under a resting cursor once the list scrolled and places the looks; they
 were placed after the panel was arranged, which marks the way down to them, so
 it arranges the panel once more, entering only them, and the pass leaves nothing
-dirty.
+dirty. A wheel during the drag goes to the control under the cursor
+(`Canvas::inputMouseWheelOnAxis` hit-tests it, the hover staying), which may
+scroll something other than the target: a page holding the lists, or another
+list into place under the cursor. When a control takes it, the core
+(`draganddrop::wheeled`) finds the target and the gap again at the resting
+cursor in the next frame's update phase, before its layout
+(`draganddrop::beforeLayout`, once the frame of the wheel has laid the scroll
+out; the canvas has work until then), as a move there would: a new gap's bar is
+placed in that frame's one pass, a list carried from under the cursor is the
+target no more (a release then cancels), and the list now there is. The frame of
+the wheel itself still shows the old gap.
 
 **Auto-scroll.** While the target is a ScrollControl that scrolls vertically and
 the cursor is in the top or bottom band of its viewport (`DefaultAutoScrollBand`,

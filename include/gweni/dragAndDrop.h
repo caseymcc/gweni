@@ -76,6 +76,20 @@ bool GWENI_EXPORT nnMouseButton(gweni::controls::Base *hoveredControl, int x, in
 //! cursor crosses take no hover look; it is hit-tested again when the drag ends.
 void GWENI_EXPORT onMouseMoved(gweni::controls::Canvas *canvas, int x, int y);
 
+//! A wheel on \p canvas, the live drag's, was taken by a control under the
+//! cursor: what it scrolled (the target, an ancestor of it, another list) is
+//! laid out in this frame's pass, and the target and the gap are found again
+//! at the resting cursor in the next frame's update phase (beforeLayout()),
+//! so a release then drops where the cursor is. The canvas has work until then
+//! (rehoverPending()).
+GWENI_EXPORT void wheeled(gweni::controls::Canvas *canvas);
+GWENI_EXPORT bool rehoverPending(gweni::controls::Canvas *canvas);
+
+//! The update phase of \p canvas, before its layout: after a wheel (wheeled())
+//! the target under the resting cursor is found again and told of the point,
+//! as a move would.
+GWENI_EXPORT void beforeLayout(gweni::controls::Canvas *canvas);
+
 //! The update phase of \p canvas: an item drag whose source list is no longer
 //! visible is cancelled. Returns whether it cancelled one.
 GWENI_EXPORT bool onCanvasThink(gweni::controls::Canvas *canvas);
