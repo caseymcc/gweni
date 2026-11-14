@@ -180,6 +180,10 @@ set(GWENI_TOOL_SOURCES
 set(GWENI_CONTROL_SOURCES
     include/gweni/controls/base.h
     source/controls/base.cpp
+    include/gweni/controls/board.h
+    source/controls/board.cpp
+    include/gweni/controls/boardColumn.h
+    source/controls/boardColumn.cpp
     include/gweni/controls/button.h
     source/controls/button.cpp
     include/gweni/controls/canvas.h
