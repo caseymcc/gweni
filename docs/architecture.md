@@ -2314,12 +2314,12 @@ two programs and the draws. What follows describes both together:
   the bar is shown and enabled and the notch moves it (not at an end), else bubbles: the
   nearest ScrollControl that can move sideways takes it. An `InputCapture` gets the axis
   as `captureMouseWheel(delta, Dim)`, as it arrived, before the Shift mapping (the
-  DepthView, ZoomPanel and NodeGraph captures take it as their one wheel)
+  DepthView takes either axis as its one wheel; the ZoomPanel and NodeGraph captures drop
+  `Dim::X`, so a sideways swipe zooms nothing mid-gesture as outside one)
   (`tests/unit/horizontalWheel.cpp`, `inputCapture.cpp`).
 - **The board: columns that scroll on their own.** `controls::Board` is a ScrollControl
-  scrolling horizontally only, whose inner panel is the viewport's height through
-  `setVirtualContentHeight(0)` (the path a VirtualList keeps its panel's height with), so
-  no column's content asks the board for height. Its `BoardColumn`s are Owner-placed
+  scrolling horizontally only, whose inner panel is the viewport's height because its
+  `contentSize()` is 0 high, so no column's content asks the board for height. Its `BoardColumn`s are Owner-placed
   (`addChild` sets it, `removeChild` gives `Placement::Parent` back): `contentSize()` is
   the shown columns' `getColumnWidth()` (240) each with `getGap()` (12) between them, and
   `contentsPlaced()` puts each at its x, `columnWidth` wide and the viewport's height,
@@ -4328,7 +4328,10 @@ and every device px hits the same control (`controltest_zoom_panel`).
   the press and the release are given to the canvas as they would have been, so a
   right click opens the control's context menu and a click presses. The press that
   starts a pan closes the open menus and the popup as any press there does
-  (`closeMenus`, `popupPressed`). A wheel notch during a pan zooms about the cursor
+  (`closeMenus`, `popupPressed`). The horizontal wheel, and so Shift+wheel (which the
+  canvas makes horizontal), zooms nothing: the panel takes it (`onMouseWheeledH`) so
+  nothing above it scrolls sideways instead, and a pan's capture drops it. A wheel
+  notch during a pan zooms about the cursor
   and the drag goes on from there (the gesture takes the mouse and the pan anew),
   so the content point under the cursor stays under it. The release moves the
   canvas to where the mouse is; keys during a pan go to the capture. A disabled

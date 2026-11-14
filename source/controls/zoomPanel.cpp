@@ -76,9 +76,10 @@ public:
 
     // A zoom mid-drag moves the pan about the cursor, so the drag goes on
     // from there: from where the mouse and the pan are now.
-    void captureMouseWheel(int delta, Dim /*dim*/) override
+    void captureMouseWheel(int delta, Dim dim) override
     {
-        if(!m_panel->visible() || m_panel->isDisabled())
+        // the horizontal wheel zooms nothing, mid-pan as outside one
+        if((dim == Dim::X) || !m_panel->visible() || m_panel->isDisabled())
             return;
 
         m_panel->wheelAt(delta, m_mouse);
@@ -203,6 +204,13 @@ bool ZoomPanel::onMouseWheeled(int delta)
 
     wheelAt(delta, input::getMousePosition());
     return true;
+}
+
+// The horizontal wheel (and Shift+wheel) zooms nothing, but the panel takes it
+// as it takes the vertical one, so nothing above it scrolls sideways instead.
+bool ZoomPanel::onMouseWheeledH(int /*delta*/)
+{
+    return !isDisabled();
 }
 
 InputCapture *ZoomPanel::pressGesture(int button)

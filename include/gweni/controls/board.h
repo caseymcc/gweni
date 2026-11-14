@@ -39,6 +39,10 @@ protected:
     void contentsPlaced(skin::Base *skin) override;
 
 private:
+    //! Whether \p child is a column the board lays out: a shown BoardColumn
+    //! that is not attached.
+    static bool laidOutColumn(Base *child);
+
     int m_columnWidth=240;
     int m_gap=12;
 };

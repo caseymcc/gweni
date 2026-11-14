@@ -922,9 +922,10 @@ public:
             canvas->inputMouseMoved(mouse.x, mouse.y, mouse.x-at.x, mouse.y-at.y);
     }
 
-    void captureMouseWheel(int delta, Dim /*dim*/) override
+    void captureMouseWheel(int delta, Dim dim) override
     {
-        if(m_graph->isDisabled())
+        // the horizontal wheel zooms nothing, as outside a gesture
+        if((dim == Dim::X) || m_graph->isDisabled())
             return;
 
         m_graph->wheelAt(delta, m_mouse);
@@ -1053,9 +1054,10 @@ public:
             canvas->inputMouseMoved(mouse.x, mouse.y, mouse.x-at.x, mouse.y-at.y);
     }
 
-    void captureMouseWheel(int delta, Dim /*dim*/) override
+    void captureMouseWheel(int delta, Dim dim) override
     {
-        if(m_graph->isDisabled())
+        // the horizontal wheel zooms nothing, as outside a gesture
+        if((dim == Dim::X) || m_graph->isDisabled())
             return;
 
         // the press stays at its graph point, the mouse's moves with the zoom

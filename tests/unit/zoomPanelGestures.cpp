@@ -7,8 +7,9 @@
  *  about the cursor: the content point under it stays under it, at every
  *  notch, and the zoom stops at the range's ends (the wheel still taken
  *  there); over a ScrollControl that can scroll, the wheel scrolls it and the
- *  zoom stays. A right or middle press, or a left one with Space held, is a
- *  pan once the mouse is PanThreshold units from it: the content follows the
+ *  zoom stays. The horizontal wheel and Shift+wheel are taken by the panel
+ *  and zoom nothing, in a pan or not. A right or middle press, or a left
+ *  one with Space held, is a pan once the mouse is PanThreshold units from it: the content follows the
  *  mouse unit for unit (in the panel's units), the control under the press
  *  gets no press and no context menu opens; let go sooner, the press and the
  *  release reach that control as a click (a right click opens its context
@@ -643,4 +644,55 @@ TEST_CASE("ZoomPanel gestures: a Dragger moving a child of the panel itself keep
         scene.press(0, false);
         scene.frame();
     }
+}
+
+TEST_CASE("ZoomPanel gestures: the horizontal wheel and Shift+wheel are taken and zoom nothing")
+{
+    Scene scene;
+
+    scene.move(250, 200);
+    scene.frame();
+    CHECK(scene.canvas->inputMouseWheelH(60));
+    CHECK(scene.canvas->inputMouseWheelH(-60));
+    CHECK(scene.panel->zoom() == 1.0f);
+
+    scene.canvas->inputModifierKey(keys::Shift, true);
+    REQUIRE(input::isShiftDown());
+    CHECK(scene.canvas->inputMouseWheel(60));
+    scene.canvas->inputModifierKey(keys::Shift, false);
+    CHECK(scene.panel->zoom() == 1.0f);
+    CHECK(scene.frame().passes == 0);
+
+    // disabled, it takes neither axis
+    scene.panel->setDisabled(true);
+    CHECK_FALSE(scene.canvas->inputMouseWheelH(60));
+}
+
+TEST_CASE("ZoomPanel gestures: a horizontal wheel mid-pan zooms nothing")
+{
+    Scene scene;
+
+    scene.move(250, 200);
+    scene.frame();
+    scene.press(1, true);
+    scene.move(270, 210);
+    REQUIRE(scene.panel->panning());
+    scene.frame();
+
+    const PointF under=scene.contentAt(270, 210);
+
+    CHECK(scene.canvas->inputMouseWheelH(60));
+    scene.frame();
+    CHECK(scene.panel->zoom() == 1.0f);
+
+    // the pan goes on as before
+    scene.move(290, 230);
+    scene.frame();
+    const PointF at=scene.canvasOf(under);
+
+    CHECK(at.x == doctest::Approx(290.0f).epsilon(1e-4));
+    CHECK(at.y == doctest::Approx(230.0f).epsilon(1e-4));
+
+    scene.press(1, false);
+    scene.frame();
 }

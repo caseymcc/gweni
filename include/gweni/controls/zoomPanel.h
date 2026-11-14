@@ -97,6 +97,8 @@ public:
     void arrange(skin::Base *skin, Dim dim) override;
 
     bool onMouseWheeled(int delta) override;
+    //! Taken and ignored: the horizontal wheel and Shift+wheel zoom nothing.
+    bool onMouseWheeledH(int delta) override;
     InputCapture *pressGesture(int button) override;
 
 protected:

@@ -863,8 +863,8 @@ three.
 scrolls its cards vertically on its own.
 
 * **The board's height is its viewport's.** A Board is a ScrollControl with no
-  vertical scrolling whose inner panel is held at the viewport's height
-  (`setVirtualContentHeight(0)`), so nothing in a column asks it to grow. Its
+  vertical scrolling whose inner panel is held at the viewport's height (its
+  `contentSize()` is 0 high), so nothing in a column asks it to grow. Its
   columns are Owner (set as they are added, given back as `Parent` when removed):
   its content is the shown columns' `getColumnWidth()` each and `getGap()` between
   them, and it places each one in `contentsPlaced()` at its x, the column width

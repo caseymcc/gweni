@@ -93,7 +93,9 @@
  *  - context menus: a right click on empty space opens the graph's menu,
  *    getContextMenuPosition() the click's graph point, on a node (its body
  *    included) the node's, on a link the link's; a right drag pans and opens
- *    none; openContextMenuAt() opens the graph's at a graph point.
+ *    none; openContextMenuAt() opens the graph's at a graph point;
+ *  - the horizontal wheel during a link drag or a marquee zooms nothing,
+ *    while the vertical one still zooms.
  */
 #include "headlessFixture.h"
 
@@ -2230,4 +2232,44 @@ TEST_CASE("NodeGraph: a right click opens the menu of what it is on, with its gr
     scene.frame();
     CHECK(scene.canvas->shownContextMenu() == graphMenu);
     CHECK(scene.graph->getContextMenuPosition().x == 123.0f);
+}
+
+TEST_CASE("NodeGraph: a horizontal wheel during a link drag or a marquee zooms nothing")
+{
+    SUBCASE("a link drag")
+    {
+        LinkDragScene scene;
+
+        scene.dragFrom(scene.out, scene.canvasOf(PointF(200.0f, 150.0f)));
+        REQUIRE(scene.graph->draggingLink());
+        CHECK(scene.canvas->inputMouseWheelH(60));
+        scene.frame();
+        CHECK(scene.graph->zoom() == 1.0f);
+        scene.canvas->inputMouseWheel(60);
+        scene.frame();
+        CHECK(scene.graph->zoom() == doctest::Approx(controls::ZoomPanel::WheelStep));
+        scene.release();
+    }
+    SUBCASE("a marquee")
+    {
+        SelectScene scene;
+        PointF frameMin, frameMax;
+
+        scene.nodes[1]->getGraphFrame(frameMin, frameMax);
+        const PointF from(frameMin.x-15.0f, frameMin.y-15.0f);
+
+        scene.move(scene.at(from));
+        scene.frame();
+        scene.press(scene.at(from));
+        scene.frame();
+        REQUIRE(scene.graph->marqueeActive());
+        CHECK(scene.canvas->inputMouseWheelH(60));
+        scene.frame();
+        CHECK(scene.graph->zoom() == 1.0f);
+        scene.canvas->inputMouseWheel(60);
+        scene.frame();
+        CHECK(scene.graph->zoom() == doctest::Approx(controls::ZoomPanel::WheelStep));
+        scene.release();
+        scene.frame();
+    }
 }
