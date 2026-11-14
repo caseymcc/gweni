@@ -411,7 +411,10 @@ public:
     //! are its), so its rules, group and handler are set again after it.
     //! setRowsReorderable(false) turns reordering off in either mode (the way
     //! off for setItemsReorderable too); setRowsReorderable(true) in source
-    //! mode does nothing and returns null.
+    //! mode does nothing and returns null. Entering source mode (setItemCount,
+    //! setRowBinder, setItemsReorderable) deletes the row-mode body and with it
+    //! the Reorderable setRowsReorderable(true) returned: a pointer kept to it
+    //! dangles then, and any live drag of its rows is cancelled.
     Reorderable *setRowsReorderable(bool reorderable);
     Reorderable *setItemsReorderable(VirtualListReorder::KeyOf keyOf, VirtualListReorder::IndexOf indexOf);
     Reorderable *getReorderable() const;

@@ -5133,8 +5133,12 @@ then starts no drag. `draganddrop::currentCursor()` is the cursor the core asked
 for, since natively `platform::setCursor` does nothing (`platform::setCursorHandler`
 replaces what it does, for an app's own window or a test). A drag sets the Normal
 cursor as it starts, over whatever cursor the pressed control had set, and a
-target hidden under the cursor stops being the target at the next update, so a
-release before the next move drops nothing into it.
+target hidden under the cursor (itself, or its page as a TabControl leaves it)
+stops being the target, and a hidden source list cancels the drag, in the update
+phase before the layout (`draganddrop::beforeLayout`), so the looks this hides or
+parks are laid out in that frame's one pass; one the layout itself hides is found
+after it and left for the next update phase (the canvas has work until then),
+and a release before then drops nothing into it.
 
 **`Reorderable`, the part a list owns.** `ScrollControl::setReorderable` gives a
 `ScrollControl` (every list is one) a Reorderable, to which it forwards its

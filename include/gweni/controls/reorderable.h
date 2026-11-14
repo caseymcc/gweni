@@ -487,6 +487,14 @@ class VirtualList;
 //! rows: the veil is over whichever row shows the dragged item, follows it
 //! as rows are bound to other items, and is hidden while it is out of view.
 //! A move or a scroll frame calls neither function.
+//!
+//! A null keyOf or indexOf keys each item by its index (key i is item i),
+//! which is no stable key: it holds only while no item is inserted or removed
+//! above the dragged one. After such an edit the dragged index is moved by
+//! arithmetic (insertItems/removeItems) but a list change that asks indexOf
+//! (setItemCount, refresh) and the drop find the item now at the old index,
+//! so the drop reports another item. Pass both for a list that changes while
+//! a drag is live.
 class GWENI_EXPORT VirtualListReorder: public Reorderable
 {
 public:
