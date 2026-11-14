@@ -56,7 +56,9 @@
  *  page toward it puts the cursor on it. A disabled calendar binds every
  *  cell, the title and both buttons disabled, so a click, a key or focus()
  *  does nothing; it drops the focus at once and leaves the Tab order, and
- *  enabled again it takes them back.
+ *  enabled again it takes them back. A cell or header button a rebind
+ *  disables while it holds the press (a page past the limits) lets it go, so
+ *  the next click is the calendar's.
  */
 #include "headlessFixture.h"
 
@@ -1060,4 +1062,62 @@ TEST_CASE("Calendar: a disabled calendar takes no press, hover, key or focus")
     scene.click(cellOf(calendar, Date(2026, 11, 11)));
     CHECK(calendar->getRangeStart().has_value());
     CHECK(events.selections == 1);
+}
+
+TEST_CASE("Calendar: a part a rebind disables while it is held gives up the press")
+{
+    Scene scene;
+    Calendar *calendar=scene.calendar(2026, 11);
+    Events events;
+
+    events.attach(calendar);
+    calendar->setDateLimits(Date(2026, 11, 5), Date(2026, 12, 18));
+    calendar->focus();
+    scene.frame();
+
+    // Nov 25 held, PageDown shows December: the held cell is now Dec 30,
+    // past the maximum, and the release lets it go
+    auto press=[&scene](controls::Base *control)
+    {
+        const Point at=control->localPosToCanvas();
+
+        scene.canvas->inputMouseMoved(at.x+control->getWidth()/2, at.y+control->getHeight()/2, 0, 0);
+        input::onMouseClicked(scene.canvas, 0, true);
+        scene.frame();
+    };
+    CalendarCell *held=cellOf(calendar, Date(2026, 11, 25));
+
+    press(held);
+    REQUIRE(MouseFocus == held);
+    scene.key(keys::PageDown);
+    REQUIRE(calendar->getDisplayedMonth() == 12);
+    REQUIRE(held->getDate().toIso() == "2026-12-30");
+    CHECK(held->isDisabled());
+    CHECK(MouseFocus != held);
+    CHECK_FALSE(held->isDepressed());
+    input::onMouseClicked(scene.canvas, 0, false);
+    scene.frame();
+    CHECK(MouseFocus == nullptr);
+    // the next click is the calendar's again
+    scene.click(cellOf(calendar, Date(2026, 12, 9)));
+    CHECK(calendar->getSelectedDate().value_or(Date()).toIso() == "2026-12-09");
+    CHECK(events.selections == 1);
+
+    // the next button held while PageDown reaches the maximum's month
+    calendar->setDisplayedMonth(2026, 11);
+    calendar->setCursor(Date(2026, 11, 11));
+    calendar->focus();
+    scene.frame();
+    press(calendar->getNextButton());
+    REQUIRE(MouseFocus == calendar->getNextButton());
+    scene.key(keys::PageDown);
+    REQUIRE(calendar->getDisplayedMonth() == 12);
+    CHECK(calendar->getNextButton()->isDisabled());
+    CHECK(MouseFocus != calendar->getNextButton());
+    CHECK_FALSE(calendar->getNextButton()->isDepressed());
+    input::onMouseClicked(scene.canvas, 0, false);
+    scene.frame();
+    CHECK(MouseFocus == nullptr);
+    scene.click(cellOf(calendar, Date(2026, 12, 10)));
+    CHECK(calendar->getSelectedDate().value_or(Date()).toIso() == "2026-12-10");
 }
