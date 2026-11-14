@@ -80,6 +80,7 @@ GWENI_DEMO_TRANSPARENT(DragNumberDemo)
 GWENI_DEMO_TRANSPARENT(VectorFieldDemo)
 GWENI_DEMO_TRANSPARENT(ChipBadgeDemo)
 GWENI_DEMO_TRANSPARENT(SwitchDemo)
+GWENI_DEMO_TRANSPARENT(SpinnerDemo)
 GWENI_DEMO_TRANSPARENT(FieldValidationDemo)
 GWENI_DEMO_TRANSPARENT(SegmentedButtonsDemo)
 GWENI_DEMO_TRANSPARENT(ZoomPanelDemo)
@@ -216,6 +217,7 @@ template class ControlRegister<DragNumberDemo>;
 template class ControlRegister<VectorFieldDemo>;
 template class ControlRegister<ChipBadgeDemo>;
 template class ControlRegister<SwitchDemo>;
+template class ControlRegister<SpinnerDemo>;
 template class ControlRegister<NavigationRailDemo>;
 template class ControlRegister<FieldValidationDemo>;
 template class ControlRegister<SegmentedButtonsDemo>;

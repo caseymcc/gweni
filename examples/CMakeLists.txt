@@ -101,6 +101,8 @@ set(GWENI_DEMO_SOURCES
     demo/vectorField.cpp
     demo/vectorField.h
     demo/chipBadge.cpp
+    demo/spinner.cpp
+    demo/spinner.h
     demo/switch.cpp
     demo/switch.h
     demo/fieldValidation.cpp

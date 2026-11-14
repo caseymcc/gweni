@@ -170,7 +170,7 @@
  *                       stats-overlay | depth-view | zoom-panel |
  *                       node-graph | code-editor | log-view |
  *                       chip-badge | navigation-rail | flow | board |
- *                       switch | image-grid | segmented (see below)
+ *                       switch | spinner | image-grid | segmented (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -986,6 +986,25 @@
  *                 the hide runs no animation, the thumb at its end; settled
  *                 frames write nothing; the demo gives every id back. Exits
  *                 non-zero if any check is no.
+ *    spinner      SpinnerDemo, the clock stepping and the mouse off the
+ *                 canvas between clicks (spinner.png, spinner-stopped.png):
+ *                 20 frames of every spinner turning; a click on Stop and 10
+ *                 frames; a click on Start and 10; a click on "Hide spinner",
+ *                 10 frames, and a second click; the demo hidden and shown;
+ *                 every spinner stopped. One line
+ *                   spinner spinning=yes|no stop=yes|no ... ids_back=yes|no
+ *                 reports the checks: a spinning frame writes arc slots alone,
+ *                 each of a spinner whose arc's bits changed, lays nothing
+ *                 out and changes no pixel outside the spinners, with
+ *                 anims_run the turning spinners' count; after Stop the card's
+ *                 spinner is a still ring, writes nothing and anims_run is
+ *                 one fewer, and Start turns it from the clock's arc again;
+ *                 the frame after the hide runs one animation fewer and the
+ *                 show resumes it from the clock's arc; with the demo hidden
+ *                 the next frame runs none and settled frames write nothing,
+ *                 and shown every spinner turns again; every spinner stopped,
+ *                 settled frames write nothing and run no animation; the demo
+ *                 gives every id back. Exits non-zero if any check is no.
  *    field-validation
  *                 FieldValidationDemo, the clock frozen and the mouse off
  *                 the canvas between inputs (field-validation.png,
@@ -1298,8 +1317,10 @@
 #include <demo/contextMenu.h>
 #include <demo/popup.h>
 #include <demo/chipBadge.h>
+#include <demo/spinner.h>
 #include <demo/switch.h>
 #include <demo/fieldValidation.h>
+#include <gweni/controls/spinner.h>
 #include <gweni/controls/switch.h>
 #include <demo/navigationRail.h>
 #include <gweni/controls/navigationRail.h>
@@ -1468,7 +1489,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(ChartAreasDemo) X(TimelineDemo) X(ComboBoxDemo) \
     X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(NavigationRailDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(SegmentedButtonsDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
-    X(CheckBoxDemo) X(SwitchDemo) X(FieldValidationDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
+    X(CheckBoxDemo) X(SwitchDemo) X(SpinnerDemo) X(FieldValidationDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
     X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo) X(InspectorDemo) X(ThemeEditorDemo) \
@@ -1566,7 +1587,7 @@ static void printUsage(std::ostream &out)
          "                     | inspector\n"
          "                     | stats-overlay | depth-view | zoom-panel\n"
          "                     | node-graph | code-editor | log-view | chip-badge\n"
-         "                     | navigation-rail | flow | board | switch\n"
+         "                     | navigation-rail | flow | board | switch | spinner\n"
          "                     | image-grid | segmented;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
@@ -2618,7 +2639,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
-    ChipBadge, NavigationRail, Flow, Board, Switch, FieldValidation, ImageGrid, Segmented };
+    ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2658,6 +2679,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "flow") scenario=Scenario::Flow;
     else if(name == "board") scenario=Scenario::Board;
     else if(name == "switch") scenario=Scenario::Switch;
+    else if(name == "spinner") scenario=Scenario::Spinner;
     else if(name == "field-validation") scenario=Scenario::FieldValidation;
     else if(name == "image-grid") scenario=Scenario::ImageGrid;
     else if(name == "segmented") scenario=Scenario::Segmented;
@@ -13012,6 +13034,291 @@ static bool runNavigationRailScenario(Session &s, const std::string &shotDir, bo
 }
 
 //-----------------------------------------------------------------------------
+// --scenario spinner: SpinnerDemo's spinners, the clock stepping
+//
+// A Spinner draws its arc in one slot (and a track ring in another), turned
+// by an animation registered only while it spins and is visible(); a step
+// marks it only when the arc's slot bits change. So a spinning frame writes
+// arc slots alone, lays nothing out and changes no pixel outside the
+// spinners; a stopped, hidden or hidden-under-a-hidden-host spinner runs no
+// animation from the next frame, and one shown or started again turns from
+// where the clock says. The mouse is off the canvas but for the clicks.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+// What a run of spinning frames did.
+struct SpinnerRun
+{
+    size_t frames=0;
+    size_t arcFrames=0;         // frames that wrote some arc slot
+    bool arcsOnly=true;         // every frame wrote arc slots alone, no text
+    bool changedOnly=true;      // and each arc slot written was a spinner whose bits changed
+    bool noLayout=true;         // no layout pass
+    size_t outside=0;           // pixels changed outside the spinners, from the first frame
+    std::set<size_t> anims;     // animsRun of each frame
+};
+
+SpinnerRun spinnerFrames(Session &s, const std::vector<gweni::controls::Spinner *> &spinners,
+    const std::vector<uint8_t> &reference, int count)
+{
+    SpinnerRun run;
+    std::vector<gweni::Rect> rects;
+    std::set<size_t> arcs;
+
+    for(gweni::controls::Spinner *spinner : spinners)
+    {
+        rects.push_back(spinner->getCanvasBounds());
+        arcs.insert(spinner->getSkinControl()->getPrimitives().at(1));
+    }
+
+    for(int i=0; i < count; ++i)
+    {
+        std::vector<uint32_t> bits;
+
+        for(gweni::controls::Spinner *spinner : spinners)
+            bits.push_back((uint32_t(spinner->getStartBits())<<16)|spinner->getSweepBits());
+
+        const CodeEditorFrame frame=codeEditorFrame(s);
+
+        ++run.frames;
+        run.anims.insert(s.canvas->getUpdateStats().animsRun);
+        if(!frame.primitives.empty())
+            ++run.arcFrames;
+        if(!idsWithin(frame.primitives, arcs) || !frame.texts.empty())
+            run.arcsOnly=false;
+        for(size_t j=0; j < spinners.size(); ++j)
+        {
+            const uint32_t now=(uint32_t(spinners[j]->getStartBits())<<16)|spinners[j]->getSweepBits();
+
+            if(frame.primitives.count(spinners[j]->getSkinControl()->getPrimitives().at(1)) && (now == bits[j]))
+                run.changedOnly=false;
+        }
+        if(frame.passes != 0)
+            run.noLayout=false;
+        run.outside+=differencesOutsideRects(s, reference, frame.pixels, rects);
+    }
+    return run;
+}
+
+std::string spinnerRunReport(const SpinnerRun &run)
+{
+    std::string anims;
+
+    for(size_t n : run.anims)
+        anims+=(anims.empty()?"":",")+std::to_string(n);
+    return std::to_string(run.frames)+" frames, "+std::to_string(run.arcFrames)+" writing arcs; arc slots alone: "
+        +(run.arcsOnly?"yes":"no")+", only changed arcs: "+(run.changedOnly?"yes":"no")+", no layout: "
+        +(run.noLayout?"yes":"no")+"; "+std::to_string(run.outside)+" pixels changed outside the spinners; anims_run "
+        +anims;
+}
+
+bool spinnerRunGood(const SpinnerRun &run, size_t anims)
+{
+    return run.arcsOnly && run.changedOnly && run.noLayout && run.outside == 0 && run.arcFrames > 0
+        && run.anims == std::set<size_t>{anims};
+}
+
+gweni::Point controlCentre(gweni::controls::Base *control)
+{
+    const gweni::Rect r=control->getCanvasBounds();
+
+    return gweni::Point(r.x+r.w/2, r.y+r.h/2);
+}
+
+// The arc of the last frame drawn: renderFrames() steps the clock after it.
+bool spinnerAtClock(gweni::controls::Spinner *spinner)
+{
+    const gweni::controls::Spinner::Arc arc=gweni::controls::Spinner::arcAt(
+        double(g_clockSteps-1)*g_frameStep, spinner->getSpeed());
+
+    return spinner->getStartBits() == gweni::renderer::arcStartBits(float(arc.start))
+        && spinner->getSweepBits() == gweni::renderer::arcSweepBits(float(arc.sweep));
+}
+
+}//namespace
+
+static bool runSpinnerScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=false;
+    s.statsClockSteps=true;
+
+    InteractionChecks checks;
+    checks.scenario="spinner";
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    gweni::controls::Base *control=addControl(s, "SpinnerDemo");
+    auto *demo=gweni::gweni_cast<gweni::SpinnerDemo>(control);
+
+    if(!demo || demo->spinners().empty() || !demo->cardSpinner() || !demo->hideTarget())
+    {
+        std::cerr<<"ControlTest: spinner: SpinnerDemo was not built\n";
+        return false;
+    }
+
+    s.label="spinner";
+    renderFrames(s, s.frames);
+
+    const std::vector<gweni::controls::Spinner *> &all=demo->spinners();
+    const size_t count=all.size();
+    gweni::controls::Spinner *card=demo->cardSpinner();
+    gweni::controls::Spinner *target=demo->hideTarget();
+    std::vector<gweni::controls::Spinner *> others;
+
+    for(gweni::controls::Spinner *spinner : all)
+    {
+        if(spinner != card)
+            others.push_back(spinner);
+    }
+
+    // (1) every spinner spinning: arc slots alone, only those whose bits moved
+    std::vector<uint8_t> reference=framePixels(s);
+    bool ok=shoot(s, shotDir+"/spinner.png");
+    const SpinnerRun spinning=spinnerFrames(s, all, reference, 20);
+
+    checks.check("spinning", spinnerRunGood(spinning, count), spinnerRunReport(spinning)
+        +" ("+std::to_string(count)+" wanted)");
+
+    // (2) Stop: the card's spinner stands still as its ring, writes nothing more
+    const gweni::Point off(s.size.x-4, s.size.y-4);
+    const gweni::Point stop=controlCentre(demo->stopButton());
+
+    clickMouse(s, stop.x, stop.y);
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, 2);     // the press, the release and the leave drawn
+
+    const bool stopped=!card->isSpinning() && !card->isTurning() && card->visible();
+    std::set<size_t> cardPrims, cardTexts;
+
+    subtreeIds(card, cardPrims, cardTexts);
+
+    std::vector<uint8_t> stoppedLook=framePixels(s);
+    const SpinnerRun afterStop=spinnerFrames(s, others, stoppedLook, 10);
+
+    // the card's spinner is one of the "outside" ones now: nothing of it moves
+    checks.check("stop", stopped && spinnerRunGood(afterStop, count-1),
+        std::string(stopped?"":"the card's spinner still spins, turns or is hidden; ")+spinnerRunReport(afterStop)
+        +" ("+std::to_string(count-1)+" wanted)");
+    ok=shoot(s, shotDir+"/spinner-stopped.png") && ok;
+
+    const gweni::Point start=controlCentre(demo->startButton());
+
+    clickMouse(s, start.x, start.y);
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, 2);
+
+    const SpinnerRun afterStart=spinnerFrames(s, all, framePixels(s), 10);
+
+    checks.check("start", card->isSpinning() && card->isTurning() && spinnerAtClock(card)
+        && spinnerRunGood(afterStart, count), spinnerRunReport(afterStart));
+
+    // (3) the Hide button: the next frame runs no animation for it; Show
+    // resumes it where the clock says
+    const gweni::Point hide=controlCentre(demo->hideButton());
+
+    clickMouse(s, hide.x, hide.y);
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, 1);
+
+    const bool hidden=!target->visible() && !target->isTurning();
+
+    renderFrames(s, 1);
+
+    const size_t hiddenAnims=s.canvas->getUpdateStats().animsRun;
+    std::vector<gweni::controls::Spinner *> shown;
+
+    for(gweni::controls::Spinner *spinner : all)
+    {
+        if(spinner != target)
+            shown.push_back(spinner);
+    }
+
+    const SpinnerRun whileHidden=spinnerFrames(s, shown, framePixels(s), 10);
+
+    checks.check("hide", hidden && hiddenAnims == count-1 && spinnerRunGood(whileHidden, count-1),
+        std::string(hidden?"":"the spinner is still visible or turning; ")+"the frame after the hide ran "
+        +std::to_string(hiddenAnims)+" animations; "+spinnerRunReport(whileHidden));
+
+    // the row lays out without the hidden spinner: the button moved
+    const gweni::Point show=controlCentre(demo->hideButton());
+
+    clickMouse(s, show.x, show.y);
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, 1);
+
+    const bool resumed=target->visible() && target->isTurning() && spinnerAtClock(target);
+
+    const size_t shownAnims=s.canvas->getUpdateStats().animsRun;
+    const SpinnerRun afterShow=spinnerFrames(s, all, framePixels(s), 10);
+
+    checks.check("show", resumed && shownAnims == count && spinnerRunGood(afterShow, count),
+        std::string(resumed?"":"the shown spinner does not turn from the clock's arc; ")+"the show frame ran "
+        +std::to_string(shownAnims)+" animations; "+spinnerRunReport(afterShow));
+
+    // (4) the demo's host hidden: the next frame runs none; shown, all again
+    control->setHidden(true);
+    renderFrames(s, 1);
+    renderFrames(s, 1);
+
+    const size_t hostHiddenAnims=s.canvas->getUpdateStats().animsRun;
+    bool noneTurning=true;
+
+    for(gweni::controls::Spinner *spinner : all)
+        noneTurning=noneTurning && !spinner->isTurning();
+
+    std::vector<uint8_t> hostHidden;
+    const size_t hostHiddenWork=settleCodeEditor(s, hostHidden);
+    const size_t hostSettledAnims=s.canvas->getUpdateStats().animsRun;
+
+    control->setHidden(false);
+    renderFrames(s, 1);
+
+    const size_t hostShownAnims=s.canvas->getUpdateStats().animsRun;
+    bool allAtClock=true;
+
+    for(gweni::controls::Spinner *spinner : all)
+        allAtClock=allAtClock && spinner->isTurning() && spinnerAtClock(spinner);
+
+    checks.check("host_hidden", hostHiddenAnims == 0 && noneTurning && hostHiddenWork == 0
+        && hostSettledAnims == 0,
+        "with the demo hidden the next frame ran "+std::to_string(hostHiddenAnims)+" animations"
+        +(noneTurning?"":", a spinner kept its animation")+", settled frames wrote or changed "
+        +std::to_string(hostHiddenWork));
+    checks.check("host_shown", hostShownAnims == count && allAtClock,
+        "shown again the frame ran "+std::to_string(hostShownAnims)+" animations ("+std::to_string(count)
+        +" wanted)"+(allAtClock?"":", a spinner is not turning from the clock's arc"));
+
+    // (5) every spinner stopped (the card's as its ring, the rest hidden)
+    // or hidden: settled frames write nothing and run no animation
+    for(gweni::controls::Spinner *spinner : all)
+        spinner->stop();
+    renderFrames(s, 1);
+
+    std::vector<uint8_t> still;
+    const size_t stillWork=settleCodeEditor(s, still);
+    const size_t stillAnims=s.canvas->getUpdateStats().animsRun;
+
+    checks.check("all_stopped", stillWork == 0 && stillAnims == 0 && card->visible() && !target->visible(),
+        "with every spinner stopped settled frames wrote or changed "+std::to_string(stillWork)+" and ran "
+        +std::to_string(stillAnims)+" animations");
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()+liveTextIds()-idsBefore;
+
+    checks.check("ids_back", idsLeft == 0, std::to_string(idsLeft)+" ids not given back");
+
+    passed=checks.allPassed();
+    std::cout<<"spinner";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<" spinners="<<count<<" arc_frames="<<spinning.arcFrames<<"/"<<spinning.frames<<"\n";
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // --scenario field-validation: FieldValidationDemo's fields, the clock frozen
 //
 // A TextBox's message line is a Text of its own under the field part, its
@@ -17879,6 +18186,15 @@ int main(int argc, char *argv[])
             ok=runSwitchScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a hover, a slide or a disabled switch did more than its part
+            break;
+        }
+
+        case Scenario::Spinner:
+        {
+            bool passed=false;
+            ok=runSpinnerScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a turn, a stop or a hide did more than its part, or ran on
             break;
         }
 

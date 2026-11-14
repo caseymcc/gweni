@@ -37,6 +37,7 @@
 #include "demo/vectorField.h"
 #include "demo/popup.h"
 #include "demo/chipBadge.h"
+#include "demo/spinner.h"
 #include "demo/switch.h"
 #include "demo/fieldValidation.h"
 #include "demo/segmentedButtons.h"
@@ -249,6 +250,7 @@ void Demo::init(const String &name)
         addDemo<SegmentedButtonsDemo>(cat, "SegmentedButtonsDemo", "Segment buttons");
         addDemo<CheckBoxDemo>(cat, "CheckBoxDemo", "Check box");
         addDemo<SwitchDemo>(cat, "SwitchDemo", "Switch");
+        addDemo<SpinnerDemo>(cat, "SpinnerDemo", "Spinner");
         addDemo<FieldValidationDemo>(cat, "FieldValidationDemo", "Field validation");
         addDemo<NumericDemo>(cat, "NumericDemo", "Numeric");
         addDemo<SliderDemo>(cat, "SliderDemo", "Slider");

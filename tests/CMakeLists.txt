@@ -227,12 +227,12 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # stats overlay, the depth view, the zoom panel, the node graph and a
     # variable-height VirtualList, the code editor, the log view, the
     # badges' counts and anchor moves, the dialogs, the toasts, a Flow's
-    # resizes and rebuilds, the switches' toggles, the navigation rail's
-    # collapse/selection, the board's wheels and edits, the fields' messages
-    # and the segmented buttons' selections
+    # resizes and rebuilds, the switches' toggles, the spinners' stops and
+    # hides, the navigation rail's collapse/selection, the board's wheels and
+    # edits, the fields' messages and the segmented buttons' selections
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
-            dialog toast flow switch navigation-rail board field-validation segmented)
+            dialog toast flow switch spinner navigation-rail board field-validation segmented)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail")
@@ -575,6 +575,17 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_switch 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario switch --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/switch@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # SpinnerDemo, the clock stepping: a spinning frame writes the arc slots
+    # of the spinners whose arcs moved alone, lays nothing out and changes no
+    # pixel outside them; Stop, a hidden spinner and the demo hidden leave
+    # anims_run without them from the next frame, and Start and a show turn
+    # them again from the clock's arc; every spinner stopped, settled frames
+    # write nothing and run no animation
+    gweni_whole_app_test(controltest_spinner 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario spinner --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/spinner@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # NavigationRailDemo: bounded hover/selection, keyboard/footer, isolated
