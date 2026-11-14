@@ -32,7 +32,8 @@
  *  drop reported once, with nothing read of the freed Reorderable (a real
  *  check in the ASAN tree).
  *  A drag sets the Normal cursor as it starts, whatever cursor the pressed
- *  control had set. A target column hidden during the drag stops being the
+ *  control had set, and the canvas deleted mid-drag sets it back to Normal
+ *  from No. A target column hidden during the drag stops being the
  *  target at the next update (the No cursor; a release drops nothing into
  *  it). A card the app adds in the same input phase as a move that changes
  *  the gap is seen: the dragged index and the veil follow it.
@@ -721,6 +722,36 @@ TEST_CASE("CardReorder: a drag sets the Normal cursor as it starts, over a curso
     CHECK_FALSE(asked.empty());
     CHECK((asked.empty() ? -1 : asked.back()) == cursor::Normal);
     scene.release();
+}
+
+// The canvas deleted mid-drag ends it with nothing of it called; the platform
+// cursor the drag set (a page's CSS cursor) goes back to Normal with it.
+TEST_CASE("CardReorder: the canvas deleted mid-drag sets the platform cursor back to Normal")
+{
+    Scene scene;
+    std::vector<int> asked;
+    struct ResetCursorHandler
+    {
+        ~ResetCursorHandler() { platform::setCursorHandler(nullptr); }
+    } resetCursorHandler;
+    platform::setCursorHandler([&asked](unsigned char cursor) { asked.push_back(cursor); });
+
+    scene.startDrag(scene.todo.cards[1]);
+    REQUIRE(draganddrop::isDragging());
+    // between the columns: nothing takes the card
+    scene.move(Point(200, 100));
+    REQUIRE(draganddrop::currentCursor() == cursor::No);
+    REQUIRE((asked.empty() ? -1 : asked.back()) == cursor::No);
+
+    asked.clear();
+    delete scene.canvas;
+    CHECK_FALSE(draganddrop::isDragging());
+    CHECK(draganddrop::currentCursor() == cursor::Normal);
+    CHECK((asked.empty() ? -1 : asked.back()) == cursor::Normal);
+
+    scene.canvas=new controls::Canvas(&scene.skin);
+    scene.canvas->setSize(400, 300);
+    scene.frame();
 }
 
 TEST_CASE("CardReorder: a target column hidden during the drag is the target no more")
