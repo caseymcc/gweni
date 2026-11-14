@@ -15,6 +15,7 @@
 #include "gweni/controls/collapsibleCategory.h"
 #include "gweni/controls/listBox.h"
 #include "gweni/controls/slider.h"
+#include "gweni/controls/spinner.h"
 #include "gweni/controls/plotHistogram.h"
 #include "gweni/controls/plotLines.h"
 #include "gweni/controls/chart.h"
@@ -3961,6 +3962,38 @@ void Switch::update(renderer::Base *renderer, controls::Base *baseControl)
 
 
 ///////////////////////////////////////////////////////////////////////////
+//Spinner
+void Spinner::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.size() < 2)
+        return;
+
+    if(!baseControl->visible())
+    {
+        renderer->hidePrimitive(m_primitives[0]);
+        renderer->hidePrimitive(m_primitives[1]);
+        return;
+    }
+
+    controls::Spinner *control=static_cast<controls::Spinner *>(baseControl);
+    const Rect &bounds=control->getRenderBounds();
+    const float thickness=control->getThickness();
+    const int z=baseControl->getZIndex();
+
+    if(control->showsTrack())
+        renderer->drawArc(m_primitives[0], bounds, 0.0f, 1.0f, thickness, tokyonight::SpinnerTrack.top, z);
+    else
+        renderer->hidePrimitive(m_primitives[0]);
+
+    if(control->isSpinning())
+        renderer->drawArc(m_primitives[1], bounds, control->getArcStart(), control->getArcSweep(), thickness,
+            tokyonight::SpinnerArc.top, z+1);
+    else
+        renderer->drawArc(m_primitives[1], bounds, 0.0f, 1.0f, thickness, tokyonight::SpinnerStopped.top, z+1);
+}
+
+
+///////////////////////////////////////////////////////////////////////////
 //Badge
 void Badge::generate(renderer::Base *renderer, controls::Base *baseControl)
 {
@@ -4992,6 +5025,7 @@ template class ControlRegister<VectorFieldTag>;
 template class ControlRegister<Badge>;
 template class ControlRegister<Chip>;
 template class ControlRegister<Switch>;
+template class ControlRegister<Spinner>;
 template class ControlRegister<StatusBar>;
 // NOTE: TabItem<_Type> is itself a class template (TabItem<TabTop>, <TabBottom>,
 // <TabLeft>, <TabRight>); register those specializations here if/when their

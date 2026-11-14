@@ -1777,6 +1777,26 @@ public:
     inline static const std::string_view name="Switch";
 };
 
+// controls::Spinner: its arc (SpinnerArc's top colour, or SpinnerStopped's as a
+// whole still ring while stopped) at getZIndex()+1, and its track
+// (setShowTrack: a whole ring in SpinnerTrack's top colour) at getZIndex(),
+// each one drawArc slot on the largest circle in its bounds, the stroke its
+// getThickness(). Without a track that slot is hidden, so a spinning frame
+// writes the arc's slot alone.
+class Spinner:public textured::ControlRegister<Spinner>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    // the arc is drawn at getZIndex()+1, over the track
+    size_t depthLayers() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="Spinner";
+};
+
 class Badge:public textured::ControlRegister<Badge>
 {
 public:

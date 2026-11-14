@@ -312,6 +312,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/separator.cpp
     include/gweni/controls/slider.h
     source/controls/slider.cpp
+    include/gweni/controls/spinner.h
+    source/controls/spinner.cpp
     include/gweni/controls/splitterBar.h
     source/controls/splitterBar.cpp
     include/gweni/controls/statusBar.h

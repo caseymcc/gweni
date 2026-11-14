@@ -88,6 +88,7 @@
 #include <gweni/controls/selectable.h>
 #include <gweni/controls/separator.h>
 #include <gweni/controls/slider.h>
+#include <gweni/controls/spinner.h>
 #include <gweni/controls/splitterBar.h>
 #include <gweni/controls/statusBar.h>
 #include <gweni/controls/switch.h>

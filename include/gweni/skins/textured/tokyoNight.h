@@ -211,6 +211,13 @@ inline Surface SwitchThumbOff        { FgDark,                Color(0x8f,0x97,0x
 inline Surface SwitchThumbOn         { Fg,                    Color(0xe4,0xe9,0xff), Color(0xe4,0xe9,0xff), SwitchRadius, 0.0f };
 inline Surface SwitchThumbDisabled   { Muted,                 Color(0x4a,0x51,0x75), Color(0x4a,0x51,0x75), SwitchRadius, 0.0f };
 
+// A Spinner: its arc in SpinnerArc's top colour, its track ring (setShowTrack)
+// in SpinnerTrack's, and the still ring a stopped one that stays shows in
+// SpinnerStopped's (dimmed). Only the top colour is read: an arc is a stroke.
+inline Surface SpinnerArc     { Blue,                  Blue,                  Blue,        0.0f, 0.0f };
+inline Surface SpinnerTrack   { BgHighlight,           BgHighlight,           BgHighlight, 0.0f, 0.0f };
+inline Surface SpinnerStopped { Muted,                 Muted,                 Muted,       0.0f, 0.0f };
+
 // Colour picker: the SV box's frame (its fill is the bilinear hue blend, so
 // only border/radius are read) and the opaque cursor/selection markers
 inline Surface ColorField     { Bg,                    Bg,                    Line,  RadiusSm, BorderW };
@@ -475,6 +482,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"SwitchTrackDisabled",&SwitchTrackDisabled},{"SwitchTrackOnDisabled",&SwitchTrackOnDisabled},
         {"SwitchFocus",&SwitchFocus},
         {"SwitchThumbOff",&SwitchThumbOff},{"SwitchThumbOn",&SwitchThumbOn},{"SwitchThumbDisabled",&SwitchThumbDisabled},
+        {"SpinnerArc",&SpinnerArc},{"SpinnerTrack",&SpinnerTrack},{"SpinnerStopped",&SpinnerStopped},
         {"ColorField",&ColorField},{"ColorMarker",&ColorMarker},{"ColorSwatch",&ColorSwatch},{"ColorChecker",&ColorChecker},
         {"ColorButtonHover",&ColorButtonHover},{"ColorButtonDown",&ColorButtonDown},{"ColorButtonDisabled",&ColorButtonDisabled},
         {"Separator",&Separator},
