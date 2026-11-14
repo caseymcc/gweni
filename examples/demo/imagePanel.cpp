@@ -1,30 +1,50 @@
 #include "demo/imagePanel.h"
+#include <gweni/controls/groupBox.h>
 #include <gweni/controls/layout/layout.h>
 #include "gweni/controls/imagePanel.h"
 
 namespace gweni
 {
 
-//ImagePanelDemo::ImagePanelDemo(const String &name):
-//    Base()
+// gwen.png (896x896) in each scale mode, each in a 150x110 GroupBox filled by
+// the panel, so the box shows the bounds the image is placed in, and an empty
+// panel, which draws nothing.
 GWENI_CONTROL_CONSTRUCTOR(ImagePanelDemo)
 {
-    setLayout(new controls::VerticalLayout());
+    setDock(DockPosition::Center);
 
-    // Normal
+    struct Mode
     {
-        controls::ImagePanel *img=newChild<controls::ImagePanel>();
-
-        img->setImage("gwen.png");
-        img->setBounds(10, 10, 100, 100);
-    }
-    // Missing
+        const char *caption;
+        controls::ImageScaleMode mode;
+        bool image;
+    };
+    const Mode modes[]=
     {
-        controls::ImagePanel *img=newChild<controls::ImagePanel>();
+        { "Stretch", controls::ImageScaleMode::Stretch, true },
+        { "Fit", controls::ImageScaleMode::Fit, true },
+        { "Fill", controls::ImageScaleMode::Fill, true },
+        { "None", controls::ImageScaleMode::None, true },
+        { "Empty", controls::ImageScaleMode::Fit, false },
+    };
 
-        // no image is set, so it draws the missing-image placeholder; a file
-        // that does not exist would draw the same but log an error
-        img->setBounds(120, 10, 100, 100);
+    int index=0;
+
+    for(const Mode &mode:modes)
+    {
+        controls::GroupBox *box=newChild<controls::GroupBox>();
+
+        box->setText(mode.caption);
+        box->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+        box->setBounds(10+(index%4)*155, 10+(index/4)*120, 150, 110);
+
+        controls::ImagePanel *img=box->newChild<controls::ImagePanel>();
+
+        img->setDock(DockPosition::Center);
+        img->setScaleMode(mode.mode);
+        if(mode.image)
+            img->setImage("gwen.png");
+        ++index;
     }
 }
 
