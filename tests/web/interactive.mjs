@@ -92,8 +92,10 @@
 //    codeview   CodeViewDemo with clipboard-read and clipboard-write granted:
 //               the mouse over the install command's view shows its copy
 //               button (internal::CodeViewCopyButton, visible in the listing
-//               inside the view), and a click on it (platform::setClipboardText
-//               from its press) puts the whole command on the browser's
+//               inside the view); with the mouse moved off, one move straight
+//               onto the button and a press and release with no move between
+//               (platform::setClipboardText from its press) put the whole
+//               command on the browser's
 //               clipboard (navigator.clipboard.readText()), with no line on
 //               the page's stderr
 //    image      ControlTest.html?control=ImageGridDemo: the page fetch()es a
@@ -869,9 +871,18 @@ async function checkCodeViewCopy(s)
     if(!button)
         return fail('codeview', 'the mouse over the install command showed no copy button inside it');
 
+    // off the view, then one move straight onto where the button shows and a
+    // press with no move between: the browser sends no move for a mouse at
+    // rest, so the hover must be the button's once it has shown under it
+    await page.mouse.move(2, 2);
+    await s.frames(page);
     await page.evaluate(() => navigator.clipboard.writeText('not the command'));
     const press = centre(cssRect(button));
-    await page.mouse.click(press.x, press.y);
+    await page.mouse.move(press.x, press.y, { steps: 1 });
+    await s.frames(page);
+    await page.mouse.down();
+    await s.frames(page);
+    await page.mouse.up();
     await s.frames(page);
     const copied = await page.evaluate(() => navigator.clipboard.readText());
     if(copied !== expected)

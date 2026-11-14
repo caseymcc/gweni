@@ -139,6 +139,7 @@ private:
     //! The hovered control is this view or in it.
     bool hoverInside() const;
     void endCopied();
+    void copyButtonMoved();
 
     internal::CodeViewCopyButton *m_copyButton=nullptr;
     bool m_copyButtonOn=false;

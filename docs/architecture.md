@@ -3031,7 +3031,12 @@ two programs and the draws. What follows describes both together:
   `onDescendantInteraction`; those two no longer `redraw()` the view, whose look does
   not follow the hover, which saves rendering it (a redraw would re-emit its slots'
   bytes unchanged, writing none), and showing or hiding the button writes its slots
-  alone. A click
+  alone. Turned off while it has the focus, it gives the focus back to the view. Each
+  time it shows, hides or changes size (`Copy` and `Copied` differ in width) it calls
+  `Canvas::hoverMayHaveMoved()`, so the hover is hit-tested again after the next layout:
+  GLFW and the browser send no move for a mouse at rest, and without it one move
+  straight onto where the button shows left the row under it hovered, so the press
+  went to the row (clearing a selection) and only a second click copied. A click
   is `copy()`: `copyText()`, the selection or else the whole text, to
   `platform::setClipboardText()` (on the web a click's handler, so the browser takes the
   write), and the button reads `CopiedLabel` for `CopiedSeconds` (1.5) on the canvas
@@ -3039,8 +3044,8 @@ two programs and the draws. What follows describes both together:
   `controltest_code_view` (and `_vulkan`, and `controltest_verify_layout_code_view`) runs
   `--scenario code-view` on CodeViewDemo (a prompt template's diff filling the left
   column, an agent's YAML config with line numbers and a one-line command, each with a
-  copy button); `web_input`'s `codeview` check clicks the command's button in a page and
-  reads Chromium's clipboard.
+  copy button); `web_input`'s `codeview` check moves straight onto the command's button
+  in a page, presses it with no move after and reads Chromium's clipboard.
 - **The log view: an append-only log the view owns.** `controls::LogView`
   (`include/gweni/controls/logView.h`) is a variable-mode `VirtualList` (see "The
   virtual list's variable mode") over a row store it owns: a `std::deque` of

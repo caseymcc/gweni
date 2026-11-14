@@ -23,7 +23,11 @@
  *  clipboard, or the selection when there is one, and the button shows
  *  "Copied" for CopiedSeconds on the canvas clock, then "Copy" again; a
  *  second click meanwhile starts the time again. setCopyButton(false) hides
- *  it for good, hovered or not.
+ *  it for good, hovered or not, and gives a focus it held back to the view.
+ *  Its showing, hiding or resizing under a mouse at rest hit-tests the hover
+ *  again: one move straight onto it and a press with no move copies (and
+ *  keeps the selection), and Copied shrinking back to Copy under the mouse
+ *  gives the hover back to what is under it.
  */
 #include "headlessFixture.h"
 
@@ -507,4 +511,84 @@ TEST_CASE("CodeView copy button: on a one-line view narrower than its line, insi
     REQUIRE(button->visible());
     REQUIRE(scene.view->getWidth() == 20);
     CHECK(scene.buttonRect().x == 0);
+}
+
+TEST_CASE("CodeView copy button: one move straight onto it and a press with no move copies, keeping the selection")
+{
+    const String text="pip install gweni\n# then\ngweni --demo";
+    Scene scene(text);
+    controls::Base *button=scene.view->getCopyButton();
+
+    // where it shows, from a hover elsewhere in the view
+    scene.move(scene.view, 2, scene.view->getHeight()-2);
+    REQUIRE(button->visible());
+
+    const Rect rect=button->getBounds();
+    const Point centre=scene.view->localPosToCanvas(Point(rect.x+rect.w/2, rect.y+rect.h/2));
+
+    scene.moveOff();
+    REQUIRE(button->hidden());
+
+    scene.view->setCaret(text::Position{0, 4});
+    scene.view->setCaret(text::Position{0, 17}, true);
+    scene.frame();
+    REQUIRE(scene.view->getSelectedText() == "install gweni");
+
+    // one move from off the view onto where the button shows: the row under
+    // it is hovered first, the button once it has shown
+    scene.moveCanvas(centre.x, centre.y);
+    scene.frame();
+    REQUIRE(button->visible());
+    CHECK(HoveredControl == button);
+
+    // the press and release with no move between
+    scene.canvas->inputMouseButton(0, true);
+    scene.frame();
+    scene.canvas->inputMouseButton(0, false);
+    scene.frame();
+    CHECK(scene.clipboardWrites == 1);
+    CHECK(scene.clipboard == "install gweni");
+    CHECK(scene.view->getSelectedText() == "install gweni");
+}
+
+TEST_CASE("CodeView copy button: Copied shrinking back to Copy under a resting mouse gives the hover back to the row")
+{
+    Scene scene(numberedLines(3));
+    controls::Base *button=scene.view->getCopyButton();
+
+    scene.clickButton();
+    REQUIRE(scene.view->isCopied());
+    scene.frame();
+
+    // the mouse inside Copied's rect but left of where Copy's will be (the
+    // button is right-aligned, and Copied is the wider)
+    const Rect copied=button->getBounds();
+
+    scene.move(button, 1, copied.h/2);
+    REQUIRE(HoveredControl == button);
+
+    scene.wait(CodeView::CopiedSeconds+0.25);
+    scene.frame();
+    REQUIRE(!scene.view->isCopied());
+
+    const Rect copy=button->getBounds();
+
+    REQUIRE(copy.x > copied.x);
+    CHECK(HoveredControl != button);
+    CHECK(button->visible());
+}
+
+TEST_CASE("CodeView copy button: turned off while it has the focus gives the focus back to the view")
+{
+    Scene scene(numberedLines(3));
+    controls::Base *button=scene.view->getCopyButton();
+
+    scene.view->focus();
+    scene.key(GLFW_KEY_TAB);
+    REQUIRE(KeyboardFocus == button);
+
+    scene.view->setCopyButton(false);
+    scene.frame();
+    CHECK(button->hidden());
+    CHECK(KeyboardFocus == scene.view);
 }

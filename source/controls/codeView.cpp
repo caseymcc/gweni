@@ -162,13 +162,27 @@ void CodeView::copy()
         canvas->cancel(m_copied);
     m_copied=canvas->after(CopiedSeconds, [this]() { endCopied(); }, this);
     m_copyButton->setText(CopiedLabel);
+    copyButtonMoved();
 }
 
 void CodeView::endCopied()
 {
     m_copied=TimerHandle();
-    if(m_copyButton)
-        m_copyButton->setText(CopyLabel);
+    if(!m_copyButton)
+        return;
+
+    m_copyButton->setText(CopyLabel);
+    copyButtonMoved();
+}
+
+// The button showed, hid or changed size under a mouse that need not move
+// again (GLFW and the browser send no move for one at rest): the hover is
+// hit-tested again after the next layout, so a press goes to what is under
+// the mouse then, the button that just showed or the row it left.
+void CodeView::copyButtonMoved()
+{
+    if(Canvas *canvas=getCanvas())
+        canvas->hoverMayHaveMoved();
 }
 
 // A forward Tab from the view goes to its button, which a hover need not
@@ -178,6 +192,7 @@ bool CodeView::onKeyTab(bool down)
     if(down && !input::isShiftDown() && m_copyButtonOn && m_copyButton && m_copyButton->hidden())
     {
         m_copyButton->setHidden(false);
+        copyButtonMoved();
         m_copyButton->focus();
         return true;
     }
@@ -209,7 +224,12 @@ void CodeView::updateCopyButton()
     if(m_copyButton->hidden() == !show)
         return;
 
+    // turned off while it has the focus: the focus goes back to the view, as
+    // Shift+Tab from it gives it
+    if(!show && m_copyButton->isFocussed())
+        focus();
     m_copyButton->setHidden(!show);
+    copyButtonMoved();
 }
 
 // Base's, but no redraw: the view's look does not follow the hover, so there
