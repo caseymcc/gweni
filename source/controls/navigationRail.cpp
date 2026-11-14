@@ -12,7 +12,6 @@
 #include <gweni/skin.h>
 
 #include <algorithm>
-#include <limits>
 
 namespace gweni
 {
@@ -21,37 +20,14 @@ namespace controls
 namespace internal
 {
 
-//! A badge may need a visible anchor even when no image was supplied. Keep
-//! ImagePanel's resource loading and slot handling for images, but paint
-//! nothing for that blank anchor rather than a missing-image placeholder.
+//! The item's icon. Its own type name keeps it apart from an app's
+//! ImagePanel; ImagePanel itself hides the slot of an empty panel, so a blank
+//! anchor shown for a badge draws nothing, not a missing-image placeholder.
 class NavigationIcon: public ImagePanel
 {
 public:
     GWENI_CONTROL_INLINE(NavigationIcon, ImagePanel) {}
     GWENI_DRAWS_NOTHING
-
-    void setImage(const String &name) override
-    {
-        if(name.empty())
-        {
-            m_texture.name.clear();
-            redraw();
-        }
-        else
-            ParentClass::setImage(name);
-    }
-
-    void render(skin::Base *skin) override
-    {
-        if(!getImageName().empty())
-            ParentClass::render(skin);
-        else if(getStateChange() != StateChange_Nothing)
-        {
-            Base::render(skin);
-            if(m_primitiveId != std::numeric_limits<size_t>::max())
-                skin->getRenderer()->hidePrimitive(m_primitiveId);
-        }
-    }
 };
 
 //! Both item containers enrol their rows as children are added, including a

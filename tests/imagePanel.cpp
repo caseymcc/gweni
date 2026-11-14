@@ -18,7 +18,10 @@
  *    drawn pixels' bounding box is the expected logical rect with its edges
  *    snapped to device px, and the red/green edge lands within a pixel of
  *    where the mode puts texel 10 (Fill and None crop through the UVs, so the
- *    edge moves with the crop).
+ *    edge moves with the crop);
+ *  - a NavigationItem's icon (an ImagePanel subclass) given pixels through
+ *    getIcon() draws them, and setImage(name) then setImage("") on the item
+ *    gives the texture back.
  */
 #include <doctest/doctest.h>
 
@@ -26,6 +29,7 @@
 
 #include <gweni/controls/canvas.h>
 #include <gweni/controls/imagePanel.h>
+#include <gweni/controls/navigationRail.h>
 #include <gweni/skins/textured/texturedSkin.h>
 
 #include <cmath>
@@ -375,4 +379,40 @@ TEST_CASE("ImagePanel: each scale mode draws its rect, edges on device px, at sc
             CHECK(std::fabs(edge-expectedEdge) <= 1.0f);
         }
     }
+}
+
+TEST_CASE("ImagePanel: a NavigationItem's icon draws an image from pixels and gives a file image back")
+{
+    Scene scene;
+    SlotRenderer &renderer=scene.renderer;
+    const size_t baseline=renderer.loadedTextureCount();
+
+    scene.panel->hide();
+
+    auto *rail=scene.canvas->newChild<gweni::controls::NavigationRail>();
+    gweni::controls::NavigationItem *item=rail->addItem("Home");
+    ImagePanel *icon=item->getIcon();
+    const Color red(255, 0, 0, 255);
+    const std::vector<uint8_t> pixels=testPixels(red, red);
+
+    // pixels set on the icon itself: it has no name, and it still draws
+    icon->setImagePixels(ImageW, ImageH, ImageW*4, pixels.data());
+    icon->show();
+    scene.frame();
+
+    std::vector<uint8_t> frame=scene.frame();
+    const gweni::Point centre=icon->localPosToCanvas(
+        gweni::Point(icon->getWidth()/2, icon->getHeight()/2));
+
+    CHECK(renderer.loadedTextureCount() == baseline+1);
+    CHECK(isRed(scene.at(frame, centre.x, centre.y)));
+
+    // a file image through the item, then none: the texture is given back
+    item->setImage("test16.png");
+    scene.frame();
+    CHECK(renderer.loadedTextureCount() == baseline+1);
+    item->setImage("");
+    scene.frame();
+    CHECK(icon->isEmpty());
+    CHECK(renderer.loadedTextureCount() == baseline);
 }
