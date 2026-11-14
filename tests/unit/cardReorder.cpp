@@ -7,74 +7,74 @@
  *  Buttons docked Top, the second one's first card holding a Label), driven
  *  through the input handler.
  *
- *  A press on a card, or on a part of it (the Label), moved 5 units starts the
- *  column's drag of that card, keyed by its control id: the pressed Button is
- *  let go without a click (not toggled, not depressed). A press moved less is
- *  a plain click. A press that a part of the card takes for a drag of its
- *  own (a Slider's thumb, a TextBox's selection) starts no card drag: the
- *  part keeps the mouse to its release. A press on the column's scroll bar
- *  starts no drag. The card dragged is the one pressed, keyed at the press:
- *  a card added above it or a scroll between the press and the 5-unit move
- *  drags it, not the card then under the press point, and one deleted
- *  before the move starts no drag. The gap
- *  is the half-height rule over the cards' bounds and its bar is centred in
- *  the space between two cards, or at the viewport's edge, wholly inside it,
- *  when that space is scrolled past it (tall cards, the one under the cursor
- *  partly out, the cursor in its outer half clear of the auto-scroll band). A drop within the column and one on another
- *  member of the group report the card's key and indexes, and gweni moves no
- *  card. A card the app adds above the gap during the drag keeps the gap
- *  before the card it was before, the bar following it, in one layout pass,
- *  and the drop reports the indexes as they are then. Cards added or
- *  removed in the input phase of the release, with no update between, drop
- *  before the card the gap was before (or at the end), the drop rule asked
- *  again for that index. The dragged card
- *  deleted cancels the drag with nothing reported. Escape cancels, hiding the
- *  looks. The release of the button after a cancel it did not make (Escape,
- *  the dragged card deleted, the source column hidden) reaches no control:
- *  not the column's scroll bar track, not another card's Button; the next
- *  press and release are a click, also when that release was lost. A drop handler on the other column that takes reordering off the
- *  source column (setReorderable(nullptr)) or deletes it ends the drag, the
- *  drop reported once, with nothing read of the freed Reorderable (a real
- *  check in the ASAN tree).
- *  A drag sets the Normal cursor as it starts, whatever cursor the pressed
- *  control had set, and the canvas deleted mid-drag sets it back to Normal
- *  from No. A target column hidden during the drag stops being the
+ *  A press on a card, or on a part of it (the Label), moved 5 units starts
+ *  the column's drag of that card, keyed by its control id: the pressed
+ *  Button is let go without a click (not toggled, not depressed). A press
+ *  moved less is a plain click. A press that a part of the card takes for a
+ *  drag of its own (a Slider's thumb, a TextBox's selection) starts no card
+ *  drag: the part keeps the mouse to its release. A press on the column's
+ *  scroll bar starts no drag. The card dragged is the one pressed, keyed at
+ *  the press: a card added above it or a scroll between the press and the
+ *  5-unit move drags it, not the card then under the press point, and one
+ *  deleted before the move starts no drag. The gap is the half-height rule
+ *  over the cards' bounds and its bar is centred in the space between two
+ *  cards, or at the viewport's edge, wholly inside it, when that space is
+ *  scrolled past it (tall cards, the one under the cursor partly out, the
+ *  cursor in its outer half clear of the auto-scroll band). A drop within the
+ *  column and one on another member of the group report the card's key and
+ *  indexes, and gweni moves no card. A card the app adds above the gap during
+ *  the drag keeps the gap before the card it was before, the bar following
+ *  it, in one layout pass, and the drop reports the indexes as they are then.
+ *  Cards added or removed in the input phase of the release, with no update
+ *  between, drop before the card the gap was before (or at the end), the drop
+ *  rule asked again for that index. The dragged card deleted cancels the drag
+ *  with nothing reported. Escape cancels, hiding the looks. The release of
+ *  the button after a cancel it did not make (Escape, the dragged card
+ *  deleted, the source column hidden) reaches no control: not the column's
+ *  scroll bar track, not another card's Button; the next press and release
+ *  are a click, also when that release was lost. A drop handler on the other
+ *  column that takes reordering off the source column
+ *  (setReorderable(nullptr)) or deletes it ends the drag, the drop reported
+ *  once, with nothing read of the freed Reorderable (a real check in the ASAN
+ *  tree). A drag sets the Normal cursor as it starts, whatever cursor the
+ *  pressed control had set, and the canvas deleted mid-drag sets it back to
+ *  Normal from No. A target column hidden during the drag stops being the
  *  target at the next update (the No cursor; a release drops nothing into
  *  it). A source or target column hidden mid-drag (itself, or the target's
  *  page) is dropped before that frame's layout, in its one pass: the source
  *  cancels the drag, the target is the target no more. One the layout itself
  *  hides is dropped in the next update phase, the canvas having work until
- *  then, and a release before it drops nothing. A card the app adds in the same input phase as a move that changes
- *  the gap is seen: the dragged index and the veil follow it.
- *  Hiding or showing a card during the drag re-resolves the dragged index
- *  and the gap before its card, re-checks the drop rule and places the veil
- *  on the dragged card in one pass. This includes a hide/show pair with no
- *  change in visible card count. Hiding the dragged card cancels.
- *  A wheel during the drag scrolls the column under the pointer, leaving the
- *  source column and hover alone. The gap follows the scrolled cards and the
- *  drop reports the dragged key and that new gap. A wheel that scrolls the
- *  page holding the columns finds the target and gap again at the resting
- *  cursor in the next frame, each in one pass: the gap among the cards now
- *  under it, no target once the columns have gone from under it (a release
- *  then cancels), the other column once it is there.
+ *  then, and a release before it drops nothing. A card the app adds in the
+ *  same input phase as a move that changes the gap is seen: the dragged index
+ *  and the veil follow it. Hiding or showing a card during the drag
+ *  re-resolves the dragged index and the gap before its card, re-checks the
+ *  drop rule and places the veil on the dragged card in one pass. This
+ *  includes a hide/show pair with no change in visible card count. Hiding the
+ *  dragged card cancels. A wheel during the drag scrolls the column under the
+ *  pointer, leaving the source column and hover alone. The gap follows the
+ *  scrolled cards and the drop reports the dragged key and that new gap. A
+ *  wheel that scrolls the page holding the columns finds the target and gap
+ *  again at the resting cursor in the next frame, each in one pass: the gap
+ *  among the cards now under it, no target once the columns have gone from
+ *  under it (a release then cancels), the other column once it is there.
  *
  *  Auto-scroll, on the stepped canvas clock (1/60 s a frame): the cursor
  *  resting in the bottom band of an overflowing column's viewport scrolls it
  *  every frame after the first, by the band depth's share of the speed (a
- *  deeper cursor scrolls faster), the gap following the content under it, with
- *  one animation registered on the column; at the content's end it stops and a
- *  frame runs no animation; it stops too when the cursor leaves the band, when
- *  the drag ends and over a list that does not take the item; the top band
- *  scrolls back up, and at offset 0 does nothing.
- *  A refused gap first allowed by auto-scroll or a card insert shows its bar
- *  in that layout pass, with no second pass or render-phase layout, both on
- *  the first drag and when the indicator is reused from an earlier drag.
- *  A card the app appends to the source or the target column while the drag
- *  rests over it leaves the looks the panel's last children, numbered over
- *  it, in one layout pass. The target column's Reorderable replaced
- *  mid-drag is the target in the next frame, the cursor resting (its gap,
- *  bar and drop) or moved; taken off, the column is no target (the No
- *  cursor, nothing dropped).
+ *  deeper cursor scrolls faster), the gap following the content under it,
+ *  with one animation registered on the column; at the content's end it stops
+ *  and a frame runs no animation; it stops too when the cursor leaves the
+ *  band, when the drag ends and over a list that does not take the item; the
+ *  top band scrolls back up, and at offset 0 does nothing. A refused gap
+ *  first allowed by auto-scroll or a card insert shows its bar in that layout
+ *  pass, with no second pass or render-phase layout, both on the first drag
+ *  and when the indicator is reused from an earlier drag. A card the app
+ *  appends to the source or the target column while the drag rests over it
+ *  leaves the looks the panel's last children, numbered over it, in one
+ *  layout pass. The target column's Reorderable replaced mid-drag is the
+ *  target in the next frame, the cursor resting (its gap, bar and drop) or
+ *  moved; taken off, the column is no target (the No cursor, nothing
+ *  dropped).
  */
 #include "headlessFixture.h"
 

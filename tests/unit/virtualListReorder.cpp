@@ -3,38 +3,38 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  controls::VirtualListReorder on a real VirtualList of 1 000 items, 20 units
- *  a row, 200 high (10 rows on screen), each item keyed by the app's own
- *  vector of keys (key(index), indexOf(key), counting their calls), driven
- *  through the input handler with the clock stepped 1/60 s a frame.
+ *  controls::VirtualListReorder on a real VirtualList of 1 000 items, 20
+ *  units a row, 200 high (10 rows on screen), each item keyed by the app's
+ *  own vector of keys (key(index), indexOf(key), counting their calls),
+ *  driven through the input handler with the clock stepped 1/60 s a frame.
  *
  *  A press on a pooled row moved 5 units drags the item it shows, keyed by
  *  the app's key, taken at the press: items inserted above it between the
  *  press and the move leave it the one dragged, and the pressed item removed
- *  before the move starts no drag. The gap is the half-height rule over index*rowHeight less
- *  the offset, its bar at that boundary, wholly inside the viewport where the
- *  boundary is at or past its top or bottom edge (the item under the cursor
- *  partly scrolled out, the cursor in its outer half). Moves across gaps and scroll frames
- *  call neither key function. The veil is over the row that shows the dragged
- *  item, follows it as the pool's rows are bound to other items, hides while
- *  it is out of view and comes back with it, in one layout pass also when the
- *  drag started with the item out of view (a fresh veil or one hidden after an
- *  earlier drag). The cursor resting in the bottom
- *  band auto-scrolls the list, binding rows, the drag keeping its item, and
- *  an auto-scroll frame costs a plain scroll of the same distance plus the
- *  looks' two controls, and no row looks hovered (the drag took the hover from
- *  the pressed row, which shows other items as it scrolls). A drop reports the item's key and indexes. Inserts and
- *  removals during the drag keep the gap before its item, a refresh() after
- *  the app reordered its items looks the dragged one up again, and the item
- *  removed cancels the drag. An insert or removal that moves the gap asks
- *  canDrop again: onto a refused index the bar goes, the cursor is No and a
- *  release reports nothing; off one it comes back and the drop is reported.
- *  Wheel input at a resting cursor during the drag scrolls and rebinds rows
- *  without hover or key lookups; the drag keeps its key after its row is
- *  recycled, and the drop uses the gap under the cursor after scrolling.
- *  The list made taller during the drag grows its pool in the layout pass,
- *  and the looks stay the panel's last children, numbered over every row, in
- *  that one pass.
+ *  before the move starts no drag. The gap is the half-height rule over
+ *  index*rowHeight less the offset, its bar at that boundary, wholly inside
+ *  the viewport where the boundary is at or past its top or bottom edge (the
+ *  item under the cursor partly scrolled out, the cursor in its outer half).
+ *  Moves across gaps and scroll frames call neither key function. The veil is
+ *  over the row that shows the dragged item, follows it as the pool's rows
+ *  are bound to other items, hides while it is out of view and comes back
+ *  with it, in one layout pass also when the drag started with the item out
+ *  of view (a fresh veil or one hidden after an earlier drag). The cursor
+ *  resting in the bottom band auto-scrolls the list, binding rows, the drag
+ *  keeping its item, and an auto-scroll frame costs a plain scroll of the
+ *  same distance plus the looks' two controls, and no row looks hovered (the
+ *  drag took the hover from the pressed row, which shows other items as it
+ *  scrolls). A drop reports the item's key and indexes. Inserts and removals
+ *  during the drag keep the gap before its item, a refresh() after the app
+ *  reordered its items looks the dragged one up again, and the item removed
+ *  cancels the drag. An insert or removal that moves the gap asks canDrop
+ *  again: onto a refused index the bar goes, the cursor is No and a release
+ *  reports nothing; off one it comes back and the drop is reported. Wheel
+ *  input at a resting cursor during the drag scrolls and rebinds rows without
+ *  hover or key lookups; the drag keeps its key after its row is recycled,
+ *  and the drop uses the gap under the cursor after scrolling. The list made
+ *  taller during the drag grows its pool in the layout pass, and the looks
+ *  stay the panel's last children, numbered over every row, in that one pass.
  */
 #include "headlessFixture.h"
 
