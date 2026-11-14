@@ -469,6 +469,7 @@ public:
             gweni::Color Selected{0xff, 0xff, 0xff};
             gweni::Color Disabled{0x80, 0x80, 0x80};
         } NavigationItem;
+
         //! A SegmentedButtons segment's text by its state, and its check
         //! icon's colour (Disabled's while it is disabled).
         struct SegmentedButton_t
