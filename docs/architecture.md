@@ -3964,6 +3964,85 @@ two programs and the draws. What follows describes both together:
     `tests/unit/segmentedButtons.cpp` pins the selection, the events, the widths and
     joints, the removal and the keyboard, `tests/unit/segmentedLook.cpp` the
     renderer; SegmentedButtonsDemo shows each kind of row.
+- **The calendar.** `controls::Calendar` (`include/gweni/controls/calendar.h`) is a
+  month calendar (QCalendarWidget, WinUI CalendarView, Material's date picker) over
+  `gweni::Date` (`include/gweni/date.h`): a plain proleptic-Gregorian year, month and
+  day, with no clock and no time zone, whose arithmetic goes through the day number
+  (days since 1970-01-01, Howard Hinnant's days_from_civil and civil_from_days),
+  `addMonths`/`addYears` clamping the day (January 31 plus a month is February 28 or
+  29), and ISO text both ways (`tests/unit/date.cpp`). Nothing in it reads the
+  system's date: "today" is `setToday`'s, since which day it is depends on a time zone.
+  - *The fixed grid.* The header's previous and next buttons (`internal::ScrollBarButton`,
+    the scroll bars' chevrons) around the title (`internal::CalendarTitle`, a flat
+    Button), a weekday row of 7 Labels and 42 `internal::CalendarCell`s, 7 by 6, all
+    made in the constructor and owner-placed in the calendar's `arrange()` at constant
+    sizes (`CellWidth` x `CellHeight`, 218 x 196 units in all), so its size never
+    depends on the month, the view or the selection. The grid's first cell is the first
+    day of the week (`setFirstDayOfWeek`, Monday by default, ISO 8601's) on or before
+    the month's first day, so the month starts in the first row and the days either
+    side fill the rest, dimmed (`CalendarOtherMonthText`). A cell is a Button bound to
+    a date, its number and a `CalendarCellLook` (in the month, today, selected, in the
+    range and its ends, disabled, the cursor); `CalendarCell::bind` writes the text only
+    when it changes and repaints only when the look or the column changes. Showing
+    another month (`setDisplayedMonth`, the buttons, a key) binds all 42 again, making
+    and deleting nothing, so it writes only the cells whose number or look changed and
+    the title. A number of another width (9 to 10) resizes its Text, whose invalidation
+    walks up to the canvas: the month change is one layout pass entering the way down to
+    the calendar and its parts, nothing beside it. Dates outside `setDateLimits()` or
+    refused by `setDateFilter()` are disabled (the cell's `setDisabled`, so no press);
+    the header's buttons stop at the limits' months.
+  - *The look.* One slot a cell (the textured `CalendarCell`), hidden while it is idle
+    (no hover, press, selection, range, today or cursor), as a Selectable's: a
+    transparent rect would still write depth. Otherwise the surface its look picks
+    (`CalendarCellHover`, `CalendarCellDown`, `CalendarCellSelected` and its hover,
+    `CalendarCellInRange` and its hover, `CalendarCellToday`, `CalendarCellFocus`,
+    `CalendarCellDisabled` for a selected or ranged disabled date), inset a unit from
+    the cell's edges. Today's ring and the cursor's are that slot's border over
+    whatever fill it has, so every look is one slot and a hover writes the hovered cell
+    and the one the mouse left. A range is one strip along each row: a cell inside it
+    joined to its left or right neighbour is square on that side through the edge mask
+    (`renderer::SquareTopLeft` ...) and reaches the cell's edge there, the ends (drawn as
+    the selection) rounded on their outside, and a row's first and last column rounded
+    where the strip wraps. The text colours are `Colors.Calendar` (`CalendarDayText`,
+    `CalendarOtherMonthText`, `CalendarDisabledText`, `CalendarSelectedText`,
+    `CalendarTodayText`, `CalendarWeekdayText`, `CalendarTitleText`); a hover keeps the
+    colour, so it writes no glyph. The frame is the `Calendar` surface, the title's
+    hover and press `CalendarTitleHover`/`CalendarTitleDown` (nothing at rest).
+  - *Selection.* Single (the default) selects the clicked date; Range takes a start,
+    then an end (the two swapped when the end is earlier; a click after a whole range
+    starts a new one), and while only the start is set the hovered date, or the cursor
+    when the keys moved it last, is the drawn end, so the range previews; None selects
+    nothing. A click on a day of the month either side selects it and shows its month.
+    `onSelectionChanged` fires once per real change by the user (a range's start and
+    its end each are one), never from `setSelectedDate`, `setRange` or any other set.
+  - *The cursor.* The calendar takes the focus (its cells take none) and has a cursor
+    date of its own, ringed while it has the focus. Left/Right move it a day, Up/Down a
+    week, Home/End to the month's first and last enabled day, PageUp/PageDown a month,
+    with Shift a year; a move into another month shows it, and a month shown by the
+    header or `setDisplayedMonth` takes the cursor in. A move onto a disabled date goes
+    on in its direction a day at a time to the first enabled one; an arrow that would
+    leave the limits does nothing, while Home, End and a page past a limit stop at the
+    nearest enabled date inside it (QCalendarWidget's page), so a page at the limit
+    does nothing. Space and Return select at the cursor. A press on a cell gives the
+    calendar the focus before the cell hears of the press (the input handler focuses
+    the nearest keyboard-enabled ancestor on the press), so `onKeyboardFocus` moves the
+    cursor to the pressed cell itself: otherwise the focus would ring the old cursor
+    date for one frame and the click would mark that cell too. The ring goes in
+    `onLostKeyboardFocus`, which `Base::focus()` calls while the focus is still the
+    calendar's, so the calendar takes it off by hand there.
+  - *The views (WinUI's zoom-out).* A press on the title shows the year's months
+    (`View::Year`, the short month names), a second one twelve years (`View::Decade`:
+    the decade and a year either side, dimmed, titled "2020 – 2029"); a press on a
+    month or a year, or Space, zooms back in. They reuse the first 12 cells, 4 to a row
+    over the weekday row's and the grid's room, the weekday row and the other 30 cells
+    hidden, so the calendar keeps its size; there the arrows move a month or a year
+    (Up/Down four), PageUp/PageDown a year or a decade, and a month or a year with no
+    date inside the limits is disabled (the filter is not asked). Zooming out and back
+    in gives the month's frame back, byte for byte.
+  `tests/unit/calendar.cpp` pins the grid for every first weekday, the month change,
+  the limits and the filter, every key, both selections and the views headless;
+  `--scenario calendar` holds the costs and pixels on CalendarDemo, whose four
+  calendars show single, range, limited weekday-only and Sunday-first selection.
 - **Scale and the device-pixel grid.** Controls lay out in logical units (integers);
   `renderer::Base::translate()` turns them into device pixels at `scale()` (set by
   `Canvas::setScale`). It snaps **edges**, not origin and size apart: a point is
@@ -4908,12 +4987,12 @@ set by its bare name and one with some of them as `Name.field` per missing field
 the shipped theme with `"strict": true` added):
 
 ```
-theme strict: 188 of 192 surfaces not set: Badge, ButtonDisabled, ButtonDown, ...
-theme strict: 65 of 67 text colors not set: AxisTagText, BadgeText, ButtonDisabled, ...
+theme strict: 200 of 204 surfaces not set: Badge, ButtonDisabled, ButtonDown, ...
+theme strict: 72 of 74 text colors not set: AxisTagText, BadgeText, ButtonDisabled, ...
 ```
 
-(`theme strict: all 192 surfaces set` for a kind with no gaps, and a single
-`theme strict: all 192 surfaces and 67 text colors set` when there are none at all). A
+(`theme strict: all 204 surfaces set` for a kind with no gaps, and a single
+`theme strict: all 204 surfaces and 74 text colors set` when there are none at all). A
 rejected value counts as not set. A surface that is transparent at rest on purpose
 (`WindowButton`, `SelectableHover`: a transparent fill hides the slot) is magenta too
 until the theme sets it to `[0,0,0,0]`; the theme has not said what it looks like. The
