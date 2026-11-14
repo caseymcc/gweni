@@ -4,6 +4,7 @@
 #include <jerror.h>
 
 #include <vector>
+#include <cstdint>
 #include <cassert>
 #include <csetjmp>
 #include <cstdio>
@@ -203,7 +204,7 @@ bool loadJpegBuffer(ImageWrapper image, const uint8_t *buffer, size_t bufferSize
 
         Format format=getFormat(jpegDecompress.out_color_space);
         Depth depth=Depth::Bit8;
-        const size_t pixels=(size_t)jpegDecompress.output_width*jpegDecompress.output_height;
+        const uint64_t pixels=(uint64_t)jpegDecompress.output_width*jpegDecompress.output_height;
 
         if((format!=Format::Unknown)&&((maxPixels==0)||(pixels<=maxPixels))&&!jerr.truncated)
         {

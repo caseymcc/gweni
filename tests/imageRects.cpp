@@ -391,23 +391,29 @@ size_t textureLayer(const Texture &texture)
 TEST_CASE("Image (style 2): 50 distinct textures in one frame each draw their own texels, the full page growing")
 {
     SlotRenderer &renderer=gweni::test::gpuRenderer();
-    // 16x16 images: the smallest class, whose page starts at 8 layers, so 50 of
-    // them grow it (each growth copying the layers in use) at least twice
+    // 16x16 images: the smallest class, whose page starts at 8 layers. More
+    // than twice the layers it has now (an earlier case may have grown it and
+    // freed them), and at least 50, grow it (each growth copying the layers in
+    // use) at least twice whatever ran before
     const size_t layersBefore=renderer.imagePageLayers(0);
-    constexpr int count=50;
+    const int count=std::max(50, 2*(int)std::max<size_t>(layersBefore, 8)+1);
     std::vector<std::unique_ptr<GeneratedTexture>> textures;
 
     for(int i=0; i<count; ++i)
     {
-        textures.emplace_back(new GeneratedTexture(i*5, 16));
+        // 5 is coprime to 256: a distinct seed for each of up to 256
+        textures.emplace_back(new GeneratedTexture((i*5) & 0xff, 16));
         REQUIRE(textures.back()->loaded());
     }
     CHECK(renderer.imagePageLayers(0) >= (size_t)count);
     CHECK(renderer.imagePageLayers(0) >= std::max<size_t>(layersBefore, 8)*4);
 
-    Primitives prims(count);
-    const auto rectOf=[](int i) { return Rect(8+(i%10)*20, 8+(i/10)*20, 16, 16); };
+    Primitives prims((size_t)count);
+    // 20 a row: up to 140 in the 448x160 view
+    const auto rectOf=[](int i) { return Rect(8+(i%20)*20, 8+(i/20)*20, 16, 16); };
     size_t regrows=0;
+
+    REQUIRE(count <= 140);
 
     const Frame frame=drawFrame([&](SlotRenderer &r)
         {

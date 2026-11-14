@@ -59,8 +59,6 @@ HERO_OUT=demo.png
 # Every other page of one control is left out (ControlTest --control still
 # shows each). Left off the showcase pages because they do not look right on
 # one today:
-#   ImagePanel (ImagePanelDemo) - its VerticalLayout stacks the two images
-#     down the left edge, not side by side where they ask to be
 #   Popup (PopupDemo) - the canvas shows one popup at a time, and the Windows &
 #     menus page's capture opens its context menu
 SAMPLES=(

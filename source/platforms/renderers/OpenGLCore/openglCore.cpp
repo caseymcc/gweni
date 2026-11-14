@@ -253,6 +253,8 @@ bool OpenGLCore::allocateImagePage(size_t imageClass, size_t layers, size_t kept
     const GLint levels=(GLint)imageClassLevels(imageClass);
     GLuint texture=0;
 
+    // an error from before is not this allocation's
+    deviceError();
     glGenTextures(1, &texture);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D_ARRAY, texture);
@@ -271,6 +273,13 @@ bool OpenGLCore::allocateImagePage(size_t imageClass, size_t layers, size_t kept
     for(GLint level=0; level<levels; ++level)
         glTexImage3D(GL_TEXTURE_2D_ARRAY, level, GL_RGBA8, std::max(side >> level, 1), std::max(side >> level, 1),
             (GLsizei)layers, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    // out of memory (or past a limit): the old page stays as it was
+    if(deviceError())
+    {
+        glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+        glDeleteTextures(1, &texture);
+        return false;
+    }
 
     GLuint &old=m_imagePages[imageClass];
 
@@ -301,6 +310,13 @@ bool OpenGLCore::allocateImagePage(size_t imageClass, size_t layers, size_t kept
         glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)readFramebuffer);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)drawFramebuffer);
         glDeleteFramebuffers(2, framebuffers);
+        // a copy that failed leaves the new page without the old layers
+        if(deviceError())
+        {
+            glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+            glDeleteTextures(1, &texture);
+            return false;
+        }
     }
     if(old != 0)
         glDeleteTextures(1, &old);

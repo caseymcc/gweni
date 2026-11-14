@@ -14,7 +14,8 @@
  *    at 512 keeps 500x375, a JPEG decoded at 1/4 (1000x750, lastDecodedSize)
  *    so its full size is never allocated, a PNG decoded whole;
  *  - the decode limits, from the header before anything is decoded: a header
- *    over 64 megapixels fails (lastDecodedSize untouched), and so does an
+ *    over 64 megapixels fails (lastDecodedSize untouched), 65537x65537 too
+ *    (a product a 32-bit size_t wraps under the limit), and so does an
  *    image larger than the largest image page with no maxSize, which loads
  *    with one;
  *  - loadedTextureCount() counts the loads not freed, back at its baseline
@@ -401,6 +402,20 @@ TEST_CASE("Image bytes: over 64 megapixels, or past the largest page without a m
         Loaded image;
         LogCount log;
 
+        image.status=renderer.loadTexture(image.texture, png.data(), png.size(), 512);
+        CHECK((image.status == Texture::Status::ErrorBadData));
+        CHECK(LogCount::lines() == 1);
+        CHECK(LogCount::last().find("64 megapixel") != std::string::npos);
+        CHECK(decodedAt(8, 8));
+    }
+    // 65537x65537 is 2^32+131073 pixels, which a 32-bit size_t (wasm32)
+    // wraps to 131073: the limit is checked in 64 bits
+    {
+        const uint8_t wraps[8]={ 0, 1, 0, 1, 0, 1, 0, 1 };
+        Loaded image;
+        LogCount log;
+
+        memcpy(&png[16], wraps, 8);
         image.status=renderer.loadTexture(image.texture, png.data(), png.size(), 512);
         CHECK((image.status == Texture::Status::ErrorBadData));
         CHECK(LogCount::lines() == 1);

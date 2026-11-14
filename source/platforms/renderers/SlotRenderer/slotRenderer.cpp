@@ -737,11 +737,12 @@ std::vector<ImageMipLevel> imageMipChain(const uint8_t *texels, int width, int h
 namespace
 {
 
-//! The pixels a load decodes at most, before any reduction (kMaxImagePixels)
+//! The pixels a load decodes at most, before any reduction (kMaxImagePixels);
+//! the product in 64 bits, as size_t is 32 on wasm32
 bool overPixelLimit(size_t width, size_t height)
 {
     return (width > SlotRenderer::kMaxImagePixels) || (height > SlotRenderer::kMaxImagePixels) ||
-        (width*height > SlotRenderer::kMaxImagePixels);
+        ((uint64_t)width*height > SlotRenderer::kMaxImagePixels);
 }
 
 //! The longest side a load keeps: maxSize, at most the largest image page's side

@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <cstring>
+#include <cstdint>
 #include <cstdio>
 
 namespace imglib
@@ -285,7 +286,7 @@ bool loadPngBuffer(ImageWrapper image, const uint8_t *buffer, size_t bufferSize,
             png_set_sig_bytes(png_ptr, 8);
             png_read_info(png_ptr, info_ptr);
 
-            const size_t pixels=(size_t)png_get_image_width(png_ptr, info_ptr)*png_get_image_height(png_ptr, info_ptr);
+            const uint64_t pixels=(uint64_t)png_get_image_width(png_ptr, info_ptr)*png_get_image_height(png_ptr, info_ptr);
 
             if(((maxPixels==0)||(pixels<=maxPixels))&&setupPngRead(png_ptr, info_ptr, image))
             {

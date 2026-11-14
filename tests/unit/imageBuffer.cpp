@@ -19,7 +19,11 @@
  *    before its last IDAT;
  *  - the fuzz: each byte of both files changed in turn (XOR 0xFF and 0x01)
  *    loads or fails but never aborts, and a load gives a non-empty image
- *    within the pixel limit.
+ *    within the pixel limit;
+ *  - a PNG whose IHDR says 65537x65537 (a valid one: its CRC right, rows of
+ *    data after it) fails under a 64 MP maxPixels with nothing allocated: the
+ *    product is 2^32+131073 pixels, which a 32-bit size_t (wasm32) wraps to
+ *    131073, so this is a real check in the web tree.
  *  Every buffer is copied into an allocation of exactly its size, so in the
  *  ASAN tree a read past its end is a reported over-read.
  */
@@ -33,6 +37,8 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -163,6 +169,83 @@ size_t lastIdatEnd(const std::vector<uint8_t> &png)
         pos+=12+length;
     }
     return end;
+}
+
+//! The CRC-32 of a PNG chunk's type and data (the PNG/zlib polynomial)
+uint32_t crc32(const uint8_t *data, size_t size, uint32_t crc=0)
+{
+    crc=~crc;
+    for(size_t i=0; i<size; ++i)
+    {
+        crc^=data[i];
+        for(int bit=0; bit<8; ++bit)
+            crc=(crc >> 1)^(0xedb88320u & (0u-(crc & 1u)));
+    }
+    return ~crc;
+}
+
+void putBig32(std::vector<uint8_t> &out, uint32_t value)
+{
+    for(int shift=24; shift>=0; shift-=8)
+        out.push_back((uint8_t)(value >> shift));
+}
+
+void putChunk(std::vector<uint8_t> &out, const char *type, const std::vector<uint8_t> &data)
+{
+    std::vector<uint8_t> body(type, type+4);
+
+    body.insert(body.end(), data.begin(), data.end());
+    putBig32(out, (uint32_t)data.size());
+    out.insert(out.end(), body.begin(), body.end());
+    putBig32(out, crc32(body.data(), body.size()));
+}
+
+//! A well-formed RGBA PNG whose IHDR says width x height, holding the first
+//! rows rows of it (filter 0, every byte 0x7f) in stored deflate blocks.
+std::vector<uint8_t> craftedPng(uint32_t width, uint32_t height, size_t rows)
+{
+    std::vector<uint8_t> raw;
+
+    for(size_t row=0; row<rows; ++row)
+    {
+        raw.push_back(0);
+        raw.insert(raw.end(), (size_t)width*4, 0x7f);
+    }
+
+    std::vector<uint8_t> zlib={ 0x78, 0x01 };
+    uint32_t a=1;
+    uint32_t b=0;
+
+    for(size_t pos=0; pos < raw.size(); pos+=65535)
+    {
+        const size_t length=std::min<size_t>(65535, raw.size()-pos);
+
+        zlib.push_back((pos+length == raw.size())?1:0);
+        zlib.push_back((uint8_t)length);
+        zlib.push_back((uint8_t)(length >> 8));
+        zlib.push_back((uint8_t)~length);
+        zlib.push_back((uint8_t)(~length >> 8));
+        zlib.insert(zlib.end(), raw.begin()+pos, raw.begin()+pos+length);
+    }
+    for(uint8_t byte:raw)
+    {
+        a=(a+byte)%65521;
+        b=(b+a)%65521;
+    }
+    putBig32(zlib, (b << 16)|a);
+
+    std::vector<uint8_t> ihdr;
+
+    putBig32(ihdr, width);
+    putBig32(ihdr, height);
+    ihdr.insert(ihdr.end(), { 8, 6, 0, 0, 0 });
+
+    std::vector<uint8_t> png={ 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n' };
+
+    putChunk(png, "IHDR", ihdr);
+    putChunk(png, "IDAT", zlib);
+    putChunk(png, "IEND", {});
+    return png;
 }
 
 double meanDifference(const imglib::SimpleImage &a, const imglib::SimpleImage &b)
@@ -316,6 +399,34 @@ TEST_CASE("imageBuffer: an image of more pixels than maxPixels fails, and a JPEG
     CHECK(image.width == 29);
     options.maxPixels=29*21-1;
     CHECK_FALSE(loadPrefix(files.jpeg, files.jpeg.size(), image, options));
+}
+
+TEST_CASE("imageBuffer: a 65537x65537 PNG header fails a 64 MP maxPixels with nothing allocated, in 32 bits too")
+{
+    // the crafted file is a real PNG: at a size within the limit it loads
+    {
+        const std::vector<uint8_t> png=craftedPng(16, 4, 4);
+        imglib::SimpleImage image;
+
+        REQUIRE(loadPrefix(png, png.size(), image));
+        CHECK(image.width == 16);
+        CHECK(image.height == 4);
+    }
+
+    const std::vector<uint8_t> png=craftedPng(65537, 65537, 4);
+    imglib::BufferLoadOptions options;
+    imglib::SimpleImage image;
+
+    options.maxPixels=size_t(64) << 20;
+    CHECK_FALSE(loadPrefix(png, png.size(), image, options));
+    CHECK(image.dataSize == 0);
+    CHECK(image.data == nullptr);
+
+    imglib::ImageHeader header;
+
+    REQUIRE(probePrefix(png, png.size(), header));
+    CHECK(header.width == 65537);
+    CHECK(header.height == 65537);
 }
 
 TEST_CASE("imageBuffer: every truncated JPEG, and every PNG cut before its last IDAT ends, fails")

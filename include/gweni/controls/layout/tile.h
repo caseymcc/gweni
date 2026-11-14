@@ -77,14 +77,17 @@ public:
     {
         const Padding &padding=getPadding();
 
-        ParentClass::calculateSize(skin, dim);
         if(dim == Dim::X)
         {
+            ParentClass::calculateSize(skin, dim);
             m_preferredSize.width=preferredFromContent(m_tileSize.x+padding.left+padding.right, Dim::X);
             return;
         }
+        // before the parent's measure, which would set the height to the
+        // padding alone (as Flow)
         if(inLayoutPass() && !laidOutThisPass(Dim::X))
             return;
+        ParentClass::calculateSize(skin, dim);
 
         int shown=0;
 

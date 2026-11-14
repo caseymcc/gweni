@@ -11,7 +11,10 @@
  *  scroll to the bottom brings into the viewport), a cell added after the
  *  canvas settled lays out in one pass and lengthens the range by a row when
  *  it starts one, and a canvas resized to fewer columns re-rows it in one
- *  pass, as a canvas built at that size lays it out.
+ *  pass, as a canvas built at that size lays it out. A Y measure before the
+ *  pass's X arrange (the ScrollControl's, at the old width) keeps the tile's
+ *  last height: no measure in a build, an added cell or a resize ever reads
+ *  the padding alone.
  */
 #include "headlessFixture.h"
 
@@ -224,4 +227,89 @@ TEST_CASE("Tile: a resize to fewer columns re-rows it in one pass, as a canvas b
 
     built.settle();
     CHECK(resized.bounds() == built.bounds());
+}
+
+namespace
+{
+
+//! A Tile recording the preferred height each Y measure leaves.
+class MeasuredTile: public Tile
+{
+public:
+    GWENI_CONTROL_INLINE(MeasuredTile, Tile)
+    {
+    }
+
+    void calculateSize(skin::Base *skin, Dim dim) override
+    {
+        Tile::calculateSize(skin, dim);
+        if(dim == Dim::Y)
+            heights.push_back(getPreferredSize().height);
+    }
+
+    std::vector<int> heights;
+};
+
+}//namespace
+
+TEST_CASE("Tile: a Y measure before its X arrange keeps the last height, never the padding alone")
+{
+    test::StubRenderer renderer;
+    test::StubSkin skin{&renderer};
+    controls::Canvas *canvas=new controls::Canvas(&skin);
+
+    canvas->setSize(300, 200);
+
+    controls::ScrollControl *scroll=canvas->newChild<controls::ScrollControl>();
+
+    scroll->setDock(DockPosition::Center);
+    scroll->setScroll(false, true);
+    scroll->setAutoHideBars(false);
+
+    MeasuredTile *tile=scroll->newChild<MeasuredTile>();
+
+    tile->setDock(DockPosition::Top);
+    tile->setTileSize(TileW, TileH);
+    tile->setPadding(Padding(4, 4, 4, 4));
+
+    auto addCell=[tile]()
+    {
+        tile->newChild<controls::Base>()->setSize(TileW-4, TileH-4);
+    };
+    auto settle=[canvas]()
+    {
+        for(int i=0; i < 10; ++i)
+        {
+            canvas->updateCanvas();
+            canvas->renderCanvas();
+            if(canvas->getLayoutStats().passes == 0)
+                break;
+        }
+    };
+    auto checkHeights=[tile](const char *step)
+    {
+        INFO(step);
+        REQUIRE_FALSE(tile->heights.empty());
+        for(int height:tile->heights)
+            CHECK(height >= TileH+8);
+        tile->heights.clear();
+    };
+
+    for(int i=0; i < 10; ++i)
+        addCell();
+    settle();
+    // the first measure of all, before any arrange, is the padding: the
+    // heights from the first settled one on
+    tile->heights.erase(tile->heights.begin(), tile->heights.end()-1);
+    checkHeights("build");
+
+    addCell();
+    settle();
+    checkHeights("a cell added");
+
+    canvas->setSize(200, 200);
+    settle();
+    checkHeights("a resize");
+
+    delete canvas;
 }
