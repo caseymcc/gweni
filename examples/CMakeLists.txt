@@ -112,6 +112,8 @@ set(GWENI_DEMO_SOURCES
     demo/navigationRail.h
     demo/segmentedButtons.cpp
     demo/segmentedButtons.h
+    demo/calendar.cpp
+    demo/calendar.h
     demo/nodeGraph.cpp
     demo/nodeGraph.h
     demo/flow.cpp

@@ -1421,11 +1421,12 @@ void TexturedSkin::setThemeColors()
     Colors.SegmentedButton.Selected=White;
     Colors.SegmentedButton.Disabled=Muted;
     Colors.SegmentedButton.Check=Blue;
-    // a calendar's days as a list's text, the other months' and the weekday
-    // row secondary, a disabled date muted, today in the accent
+    // a calendar's days as a list's text, the other months' muted, a disabled
+    // date dimmer still (the strong border's colour), the weekday row
+    // secondary, today in the accent
     Colors.Calendar.Day=Fg;
-    Colors.Calendar.OtherMonth=FgDark;
-    Colors.Calendar.Disabled=Muted;
+    Colors.Calendar.OtherMonth=Muted;
+    Colors.Calendar.Disabled=Line;
     Colors.Calendar.Selected=White;
     Colors.Calendar.Today=Blue;
     Colors.Calendar.Weekday=FgDark;

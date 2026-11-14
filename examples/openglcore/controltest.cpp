@@ -170,7 +170,8 @@
  *                       stats-overlay | depth-view | zoom-panel |
  *                       node-graph | code-editor | log-view |
  *                       chip-badge | navigation-rail | flow | board |
- *                       switch | spinner | image-grid | segmented (see below)
+ *                       switch | spinner | image-grid | segmented |
+ *                       calendar (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -1068,6 +1069,34 @@
  *                 first frame back; the label names the view chosen; settled
  *                 frames write nothing; the demo gives every id back. Exits
  *                 non-zero if any check is no.
+ *    calendar     CalendarDemo, the clock frozen (calendar.png, calendar_year.png),
+ *                 the demo's selection label not updating: the mouse onto the
+ *                 single calendar's 18th, on to the 19th and off, a click on
+ *                 the 18th (the 11th selected before), showNext() and
+ *                 showPrevious(), the range calendar's 17th clicked, the mouse
+ *                 onto the 26th and a click on it, the limited calendar's
+ *                 12th clicked and Right, Right, Down, Left, PageDown, Home,
+ *                 PageDown and PageDown, the Sunday calendar's title clicked
+ *                 twice and its 2026 and November clicked; last the label
+ *                 updating again and a click on the 25th. One line
+ *                   calendar hover=yes|no ... ids_back=yes|no hover_prims=N ...
+ *                 reports the checks: the hover writes the cell's one slot, no
+ *                 glyph, moving on the two cells' slots, no pixel outside
+ *                 them, and moving off gives the frame back; the selection
+ *                 writes the two cells' slots and glyphs alone, lays nothing
+ *                 out and changes no pixel outside them; the month change
+ *                 writes only the 42 cells' and the title's slots and glyphs,
+ *                 makes no control, keeps the live ids, lays out in at most
+ *                 one pass entering no more than the way down to the calendar
+ *                 and its parts, changes no pixel outside the calendar, and
+ *                 the month before gives the frame back; the range's second
+ *                 click writes only the cells whose look changed and the
+ *                 clicked one; the keys move the cursor over the weekend and
+ *                 to the maximum, and PageDown at the limit writes and changes
+ *                 nothing; zooming out and back in gives the month's frame
+ *                 back; the label names the selection; settled frames write
+ *                 nothing; the demo gives every id back. Exits non-zero if any
+ *                 check is no.
  *    virtual-list VirtualListDemo with its list at 1 000 and then 100 000
  *                 items, the clock frozen: a settled frame, a one-row scroll
  *                 from the top (scrollByRows) and a wheel notch over the list
@@ -1262,6 +1291,7 @@
 #include <gweni/controls/menu.h>
 #include <gweni/controls/button.h>
 #include <gweni/controls/segmentedButtons.h>
+#include <gweni/controls/calendar.h>
 #include <gweni/controls/selectable.h>
 #include <gweni/controls/toolTip.h>
 #include <gweni/controls/popup.h>
@@ -1325,6 +1355,7 @@
 #include <demo/navigationRail.h>
 #include <gweni/controls/navigationRail.h>
 #include <demo/segmentedButtons.h>
+#include <demo/calendar.h>
 #include <gweni/controls/badge.h>
 #include <gweni/controls/chip.h>
 #include <demo/dialog.h>
@@ -1488,7 +1519,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(ChartAreasDemo) X(TimelineDemo) X(ComboBoxDemo) \
-    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(NavigationRailDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(SegmentedButtonsDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
+    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(NavigationRailDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(SegmentedButtonsDemo) X(CalendarDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(SwitchDemo) X(SpinnerDemo) X(FieldValidationDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
@@ -1588,7 +1619,7 @@ static void printUsage(std::ostream &out)
          "                     | stats-overlay | depth-view | zoom-panel\n"
          "                     | node-graph | code-editor | log-view | chip-badge\n"
          "                     | navigation-rail | flow | board | switch | spinner\n"
-         "                     | image-grid | segmented;\n"
+         "                     | image-grid | segmented | calendar;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -2639,7 +2670,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
-    ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented };
+    ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented, Calendar };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2683,6 +2714,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "field-validation") scenario=Scenario::FieldValidation;
     else if(name == "image-grid") scenario=Scenario::ImageGrid;
     else if(name == "segmented") scenario=Scenario::Segmented;
+    else if(name == "calendar") scenario=Scenario::Calendar;
     else return false;
     return true;
 }
@@ -12762,6 +12794,364 @@ static bool runSegmentedScenario(Session &s, const std::string &shotDir, bool &p
 }
 
 //-----------------------------------------------------------------------------
+// --scenario calendar: CalendarDemo's calendars, the clock frozen
+//
+// A calendar is 42 cells made once, each one slot and its number's glyphs, so
+// a hover writes the hovered cell (and the one the mouse left), a selection
+// the cell it leaves and the one it reaches, a range's second click the cells
+// whose look it changes, and a month change the cells and the title alone,
+// making no control. The demo's selection label is the app's reply to
+// onSelectionChanged: its new text is laid out, so the cost checks are made
+// with its updates off and the label is checked on its own at the end.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+// Every cell's look, in cell order.
+std::vector<gweni::controls::internal::CalendarCellLook> calendarLooks(gweni::controls::Calendar *calendar)
+{
+    std::vector<gweni::controls::internal::CalendarCellLook> looks;
+
+    for(int i=0; i < gweni::controls::Calendar::CellCount; ++i)
+        looks.push_back(calendar->getCell(i)->getLook());
+    return looks;
+}
+
+// The cell showing `date` in the month view.
+gweni::controls::internal::CalendarCell *calendarCell(gweni::controls::Calendar *calendar, const gweni::Date &date)
+{
+    return calendar->getCell(calendar->cellIndex(date));
+}
+
+}//namespace
+
+static bool runCalendarScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    using gweni::Date;
+    using gweni::controls::Calendar;
+    using gweni::controls::internal::CalendarCell;
+
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    checks.scenario="calendar";
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    gweni::controls::Base *control=addControl(s, "CalendarDemo");
+    auto *demo=gweni::gweni_cast<gweni::CalendarDemo>(control);
+
+    if(!demo)
+    {
+        std::cerr<<"ControlTest: calendar: CalendarDemo was not built\n";
+        return false;
+    }
+
+    s.label="calendar";
+    renderFrames(s, s.frames);
+
+    bool ok=shoot(s, shotDir+"/calendar.png");
+    std::vector<uint8_t> pixels;
+    size_t idleWork=settleCodeEditor(s, pixels);
+    auto idsOf=[](std::initializer_list<gweni::controls::Base *> controls, std::set<size_t> &primitives,
+        std::set<size_t> &texts) {
+        for(gweni::controls::Base *part : controls)
+            subtreeIds(part, primitives, texts);
+    };
+    auto centre=[](gweni::controls::Base *part) {
+        const gweni::Rect r=part->getCanvasBounds();
+
+        return gweni::Point(r.x+r.w/2, r.y+r.h/2);
+    };
+
+    demo->setLabelUpdates(false);
+
+    // (1) a hover: the hovered cell's slot alone, then moving on to the next
+    // one the two cells', no pixel outside them, and moving off gives the
+    // frame back
+    Calendar *single=demo->singleCalendar();
+    CalendarCell *first=calendarCell(single, Date(2026, 11, 18));
+    CalendarCell *second=calendarCell(single, Date(2026, 11, 19));
+    std::set<size_t> firstPrims, firstTexts, pairPrims, pairTexts;
+
+    idsOf({first}, firstPrims, firstTexts);
+    idsOf({first, second}, pairPrims, pairTexts);
+    moveMouse(s, centre(first).x, centre(first).y);
+
+    const CodeEditorFrame hoverOn=codeEditorFrame(s);
+    const size_t hoverOnOutside=differencesOutsideRects(s, pixels, hoverOn.pixels, {first->getCanvasBounds()});
+
+    moveMouse(s, centre(second).x, centre(second).y);
+
+    const CodeEditorFrame hoverNext=codeEditorFrame(s);
+    const size_t hoverNextOutside=differencesOutsideRects(s, pixels, hoverNext.pixels,
+        {first->getCanvasBounds(), second->getCanvasBounds()});
+
+    forgetMouse(s);
+
+    const CodeEditorFrame hoverOff=codeEditorFrame(s);
+
+    checks.check("hover",
+        hoverOn.primitives.size() == 1 && idsWithin(hoverOn.primitives, firstPrims) && hoverOn.texts.empty()
+            && !hoverNext.primitives.empty() && idsWithin(hoverNext.primitives, pairPrims) && hoverNext.texts.empty()
+            && hoverOn.changed <= subtreeControls(first)
+            && hoverNext.changed <= subtreeControls(first)+subtreeControls(second)
+            && hoverOn.passes == 0 && hoverNext.passes == 0 && hoverOnOutside == 0 && hoverNextOutside == 0
+            && hoverOff.pixels == pixels,
+        "a hover wrote "+std::to_string(hoverOn.primitives.size())+" primitive ids (the cell's one allowed) and "
+        +std::to_string(hoverOn.texts.size())+" text ids, the next one "+std::to_string(hoverNext.primitives.size())
+        +" outside the two cells or text ids, changed "+std::to_string(hoverOn.changed)+"+"
+        +std::to_string(hoverNext.changed)+" controls, ran "+std::to_string(hoverOn.passes+hoverNext.passes)
+        +" layout passes, changed "+std::to_string(hoverOnOutside+hoverNextOutside)
+        +" pixels outside the cells, or moving off did not give the frame back");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (2) a selection from the 11th to the 18th: the two cells' slots and
+    // glyphs alone (the press, the focus's cursor ring and the hover are the
+    // new cell's), no layout, no pixel outside them
+    CalendarCell *old=calendarCell(single, Date(2026, 11, 11));
+    std::set<size_t> selectPrims, selectTexts;
+
+    idsOf({old, first}, selectPrims, selectTexts);
+
+    const bool wasSelected=old->getLook().selected;
+
+    clickMouse(s, centre(first).x, centre(first).y);
+
+    const CodeEditorFrame select=codeEditorFrame(s);
+    const size_t selectOutside=differencesOutsideRects(s, pixels, select.pixels,
+        {old->getCanvasBounds(), first->getCanvasBounds()});
+    const bool selected=single->getSelectedDate() && (*single->getSelectedDate() == Date(2026, 11, 18));
+
+    checks.check("select",
+        wasSelected && selected && !select.primitives.empty() && idsWithin(select.primitives, selectPrims)
+            && idsWithin(select.texts, selectTexts) && select.passes == 0 && selectOutside == 0
+            && select.changed <= 1+subtreeControls(old)+subtreeControls(first),  // the calendar takes the focus
+        "the click selected "+(single->getSelectedDate()?single->getSelectedDate()->toIso():std::string("nothing"))
+        +" (2026-11-18 expected), wrote "+std::to_string(select.primitives.size())+" primitive and "
+        +std::to_string(select.texts.size())+" text ids (the two cells' allowed), changed "
+        +std::to_string(select.changed)+" controls, ran "+std::to_string(select.passes)+" layout passes and changed "
+        +std::to_string(selectOutside)+" pixels outside the two cells");
+    forgetMouse(s);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (3) the next month (the header's own call): the 42 cells' and the
+    // title's slots and glyphs alone, no control made, the live ids kept, at
+    // most one layout pass entering no more than the way down to the calendar
+    // and its own parts (a day's number of another width lays out its cell),
+    // no pixel outside the calendar; the month before gives the frame back
+    std::set<size_t> monthPrims, monthTexts;
+
+    for(int i=0; i < Calendar::CellCount; ++i)
+        idsOf({single->getCell(i)}, monthPrims, monthTexts);
+    idsOf({single->getTitle()}, monthPrims, monthTexts);
+
+    const size_t controlsBefore=subtreeControls(control);
+    const size_t liveBefore=livePrimitiveIds()+liveTextIds();
+    const std::vector<uint8_t> novemberPixels=pixels;
+
+    single->showNext();
+
+    const CodeEditorFrame next=codeEditorFrame(s);
+    const size_t nextOutside=differencesOutsideRects(s, pixels, next.pixels, {single->getCanvasBounds()});
+    const size_t controlsAfter=subtreeControls(control);
+    const size_t liveAfter=livePrimitiveIds()+liveTextIds();
+    const size_t nextBudget=4*(pathLength(single)+subtreeControls(single)-1);
+    const bool december=(single->getDisplayedMonth() == 12) && (single->getTitle()->getText() == "December 2026");
+
+    single->showPrevious();
+
+    const CodeEditorFrame previous=codeEditorFrame(s);
+
+    checks.check("next_month",
+        december && !next.primitives.empty() && idsWithin(next.primitives, monthPrims)
+            && idsWithin(next.texts, monthTexts) && controlsAfter == controlsBefore && liveAfter == liveBefore
+            && next.passes <= 1 && next.visited <= nextBudget && nextOutside == 0
+            && previous.pixels == novemberPixels,
+        "the next month ("+single->getTitle()->getText()+") wrote "+std::to_string(next.primitives.size())
+        +" primitive and "+std::to_string(next.texts.size())+" text ids (the cells' and the title's allowed), made "
+        +std::to_string(int(controlsAfter)-int(controlsBefore))+" controls, changed the live ids by "
+        +std::to_string(int(liveAfter)-int(liveBefore))+", ran "+std::to_string(next.passes)+" passes entering "
+        +std::to_string(next.visited)+" ("+std::to_string(nextBudget)+" allowed), changed "
+        +std::to_string(nextOutside)+" pixels outside the calendar, or the month before did not give the frame back");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (4) a range's second click: the cells whose look it changed alone
+    Calendar *range=demo->rangeCalendar();
+    CalendarCell *start=calendarCell(range, Date(2026, 11, 17));
+    CalendarCell *end=calendarCell(range, Date(2026, 11, 26));
+
+    clickMouse(s, centre(start).x, centre(start).y);
+    renderFrames(s, 1);
+    // the preview on the way to the end: the hover makes it, so the click
+    // that ends the range changes no look but its own cell's
+    moveMouse(s, centre(end).x, centre(end).y);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    const std::vector<gweni::controls::internal::CalendarCellLook> beforeEnd=calendarLooks(range);
+
+    clickMouse(s, centre(end).x, centre(end).y);
+
+    const CodeEditorFrame endClick=codeEditorFrame(s);
+    const std::vector<gweni::controls::internal::CalendarCellLook> afterEnd=calendarLooks(range);
+    std::set<size_t> endPrims, endTexts;
+    std::vector<gweni::Rect> endRects={end->getCanvasBounds()};
+    int lookChanges=0;
+
+    idsOf({end}, endPrims, endTexts);
+    for(int i=0; i < Calendar::CellCount; ++i)
+    {
+        if(beforeEnd[static_cast<size_t>(i)] != afterEnd[static_cast<size_t>(i)])
+        {
+            ++lookChanges;
+            idsOf({range->getCell(i)}, endPrims, endTexts);
+            endRects.push_back(range->getCell(i)->getCanvasBounds());
+        }
+    }
+
+    const size_t endOutside=differencesOutsideRects(s, pixels, endClick.pixels, endRects);
+    const bool rangeSet=range->getRangeStart() && range->getRangeEnd()
+        && (*range->getRangeStart() == Date(2026, 11, 17)) && (*range->getRangeEnd() == Date(2026, 11, 26));
+
+    checks.check("range_end",
+        rangeSet && idsWithin(endClick.primitives, endPrims) && idsWithin(endClick.texts, endTexts)
+            && endClick.passes == 0 && endOutside == 0,
+        "the range is "+(range->getRangeStart()?range->getRangeStart()->toIso():std::string("-"))+" to "
+        +(range->getRangeEnd()?range->getRangeEnd()->toIso():std::string("-"))
+        +" (2026-11-17 to 2026-11-26 expected), or its second click wrote "
+        +std::to_string(endClick.primitives.size())+" primitive and "+std::to_string(endClick.texts.size())
+        +" text ids outside the "+std::to_string(lookChanges)+" cells whose look changed and the clicked one, ran "
+        +std::to_string(endClick.passes)+" layout passes or changed "+std::to_string(endOutside)
+        +" pixels outside them");
+    forgetMouse(s);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (5) the keys on the limited calendar (Nov 5 to Dec 18, weekdays): the
+    // cursor over the weekend and a month on, and PageDown at the limit does
+    // nothing at all
+    Calendar *limited=demo->limitedCalendar();
+
+    clickMouse(s, centre(calendarCell(limited, Date(2026, 11, 12))).x,
+        centre(calendarCell(limited, Date(2026, 11, 12))).y);
+    forgetMouse(s);
+    renderFrames(s, 1);
+
+    std::string cursors;
+    bool keysOk=limited->isFocussed();
+
+    for(const auto &step : std::vector<std::pair<const char *, Date>>{{"right", Date(2026, 11, 13)},
+            {"right", Date(2026, 11, 16)}, {"down", Date(2026, 11, 23)}, {"left", Date(2026, 11, 20)},
+            {"pagedown", Date(2026, 12, 18)}, {"home", Date(2026, 12, 1)}, {"end", Date(2026, 12, 18)}})
+    {
+        sendKey(s, step.first);
+        renderFrames(s, 1);
+        cursors+=std::string(cursors.empty()?"":",")+limited->getCursor().toIso();
+        keysOk=keysOk && (limited->getCursor() == step.second);
+    }
+    idleWork+=settleCodeEditor(s, pixels);
+    sendKey(s, "pagedown");
+
+    const CodeEditorFrame atLimit=codeEditorFrame(s);
+
+    checks.check("keys",
+        keysOk && (limited->getCursor() == Date(2026, 12, 18)) && (limited->getDisplayedMonth() == 12)
+            && atLimit.written == 0 && atLimit.changed == 0 && atLimit.pixels == pixels,
+        "the cursor went "+cursors+" (2026-11-13,2026-11-16,2026-11-23,2026-11-20,2026-12-18,2026-12-01,"
+        "2026-12-18 expected), or PageDown at the limit wrote "+std::to_string(atLimit.written)+" slots or changed "
+        +std::to_string(atLimit.changed)+" controls");
+    if(gweni::KeyboardFocus)
+        gweni::KeyboardFocus->unfocus();
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (6) the Sunday calendar zoomed out to its year and its decade and back
+    // in on 2026 and November: the month's frame again, once the focus the
+    // cells' clicks gave it is dropped
+    Calendar *sunday=demo->sundayCalendar();
+    const std::vector<uint8_t> monthPixels=pixels;
+    const gweni::Point title=centre(sunday->getTitle());
+
+    clickMouse(s, title.x, title.y);
+    renderFrames(s, 1);
+
+    const bool yearView=(sunday->getView() == Calendar::View::Year) && (sunday->getTitle()->getText() == "2026");
+
+    forgetMouse(s);
+    renderFrames(s, 1);
+    ok=shoot(s, shotDir+"/calendar_year.png") && ok;
+    clickMouse(s, title.x, title.y);
+    renderFrames(s, 1);
+
+    const bool decadeView=(sunday->getView() == Calendar::View::Decade);
+    // 2026 in the decade 2020-2029, shown from 2019
+    gweni::controls::Base *year=sunday->getCell(2026-sunday->decadeFirstYear());
+
+    clickMouse(s, centre(year).x, centre(year).y);
+    renderFrames(s, 1);
+
+    gweni::controls::Base *november=sunday->getCell(10);
+
+    clickMouse(s, centre(november).x, centre(november).y);
+    renderFrames(s, 1);
+    forgetMouse(s);
+    if(gweni::KeyboardFocus)
+        gweni::KeyboardFocus->unfocus();
+    renderFrames(s, 1);
+
+    const CodeEditorFrame zoomedBack=codeEditorFrame(s);
+    const bool backInMonth=(sunday->getView() == Calendar::View::Month) && (sunday->getDisplayedMonth() == 11)
+        && (sunday->getDisplayedYear() == 2026);
+
+    checks.check("zoom",
+        yearView && decadeView && backInMonth && zoomedBack.pixels == monthPixels,
+        std::string("the title did not zoom out to the year (")+(yearView?"yes":"no")+") and the decade ("
+        +(decadeView?"yes":"no")+"), a year and a month did not zoom back in to November 2026 ("
+        +(backInMonth?"yes":"no")+"), or the month's frame did not come back");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (7) the label names the selection once it follows it again
+    demo->setLabelUpdates(true);
+    renderFrames(s, 1);
+    clickMouse(s, centre(calendarCell(single, Date(2026, 11, 25))).x,
+        centre(calendarCell(single, Date(2026, 11, 25))).y);
+    renderFrames(s, 1);
+
+    const std::string label=demo->selectionLabel()->getText();
+
+    checks.check("label", label.find("Single: 2026-11-25") != std::string::npos,
+        "the selection label says \""+label+"\"");
+
+    forgetMouse(s);
+    if(gweni::KeyboardFocus)
+        gweni::KeyboardFocus->unfocus();
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+    checks.check("settled", idleWork == 0, "settled frames wrote or changed "+std::to_string(idleWork));
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()+liveTextIds()-idsBefore;
+
+    checks.check("ids_back", idsLeft == 0, std::to_string(idsLeft)+" ids not given back");
+
+    passed=checks.allPassed();
+    std::cout<<"calendar";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<" hover_prims="<<hoverOn.primitives.size()<<" select_prims="<<select.primitives.size()
+             <<" select_texts="<<select.texts.size()<<" next_prims="<<next.primitives.size()
+             <<" next_texts="<<next.texts.size()<<" next_glyphs="<<next.glyphSlots
+             <<" next_passes="<<next.passes<<" next_visited="<<next.visited<<"/"<<nextBudget
+             <<" range_end_prims="<<endClick.primitives.size()<<" range_end_looks="<<lookChanges
+             <<" cursors="<<cursors<<"\n";
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // NavigationRailDemo: app callbacks first, then the rail alone. Updating a
 // page is the app's work, so detach its callback before bounding selection to
 // two rows and their glyphs. Counts are frozen; only tooltip waits step time.
@@ -18159,6 +18549,15 @@ int main(int argc, char *argv[])
             ok=runZoomPanelScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a zoomed panel did not draw as a scaled canvas
+            break;
+        }
+
+        case Scenario::Calendar:
+        {
+            bool passed=false;
+            ok=runCalendarScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a hover, a selection, a month change, a range end or a key did more than its cells
             break;
         }
 

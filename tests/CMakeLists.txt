@@ -229,10 +229,12 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # badges' counts and anchor moves, the dialogs, the toasts, a Flow's
     # resizes and rebuilds, the switches' toggles, the spinners' stops and
     # hides, the navigation rail's collapse/selection, the board's wheels and
-    # edits, the fields' messages and the segmented buttons' selections
+    # edits, the fields' messages, the segmented buttons' selections and the
+    # calendar's months and views
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
-            dialog toast flow switch spinner navigation-rail board field-validation segmented)
+            dialog toast flow switch spinner navigation-rail board field-validation segmented
+            calendar)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail")
@@ -626,6 +628,16 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_segmented_scale150 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario segmented --require-one-pass --scale 1.5
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/segmented_scale150@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # CalendarDemo: a hover writes its cell (and the one the mouse left), a
+    # selection the two cells, a month change the 42 cells and the title with
+    # no control made, a range's second click the cells whose look changed,
+    # the keys move the cursor and PageDown at the limit does nothing, and the
+    # zoomed-out views give the month's frame back
+    gweni_whole_app_test(controltest_calendar 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario calendar --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/calendar@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # gweni::tools::Inspector over the settled Demo, opened and closed by F12:
