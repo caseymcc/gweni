@@ -1,3 +1,9 @@
+/*
+  * Gweni
+  * Copyright (c) 2010 Facepunch Studios
+  * See license in gweni.h
+ */
+
 #include "demo/segmentedButtons.h"
 #include "gweni/controls/label.h"
 #include "gweni/controls/segmentedButtons.h"
