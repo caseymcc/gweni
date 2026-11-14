@@ -377,7 +377,7 @@ public:
     //! The tooltip's text for a hover; without one the chart's own: the x's
     //! label and each series' value there ("Nov 14 12:00  cpu: 42  mem: 7").
     typedef std::function<String(const Chart &chart, const ChartHover &hover)> HoverText;
-    //! Fills a control (a RichLabel, a Base of Labels) for a hover, shown in
+    //! Fills a control (a RichText, a Base of Labels) for a hover, shown in
     //! the canvas's ToolTip box in place of the text.
     typedef std::function<void(const Chart &chart, const ChartHover &hover, Base *control)> HoverFill;
 

@@ -272,7 +272,7 @@ public:
     //! The tooltip's text for the bar under the mouse; without one the
     //! timeline's own (defaultHoverText()).
     typedef std::function<String(const Timeline &timeline, size_t lane, size_t index)> HoverText;
-    //! Fills a control (a RichLabel, a Base of Labels) for the bar under the
+    //! Fills a control (a RichText, a Base of Labels) for the bar under the
     //! mouse, shown in the canvas's ToolTip box in place of the text.
     typedef std::function<void(const Timeline &timeline, size_t lane, size_t index, Base *control)> HoverFill;
 

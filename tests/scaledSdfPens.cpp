@@ -13,8 +13,8 @@
  *  which drift off the measured ones along the line, so a TextBox's caret and
  *  selection would leave the glyphs.
  *
- *  The setups are OpenSans 20 and 24 px, regular and bold (a font of its own,
- *  drawn from the same face), at scales 0.75, 0.8, 0.7 and 0.5 (a ZoomPanel
+ *  The setups are OpenSans 20 and 24 px, regular and bold (the family's own
+ *  bold face, OpenSans-Bold.ttf), at scales 0.75, 0.8, 0.7 and 0.5 (a ZoomPanel
  *  zoomed out); one whose sizes are not in those modes here is skipped: 24 px
  *  at 0.75 and 0.8 is 18 and 19.2 px, drawn as SDF, and GWENI_SDF_TEXT_MIN or
  *  GWENI_TEXT_AA can move the others. The measured pens are
