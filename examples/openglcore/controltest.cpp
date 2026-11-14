@@ -12521,7 +12521,7 @@ void checkRangeFrame(Session &s, gweni::controls::RangeSlider *slider, int thumb
     if(frame.passes != 0 && !(resized && frame.passes == 1 && frame.visited <= RangeResizeEntries))
         bad+=" ran "+std::to_string(frame.passes)+" layout passes entering "+std::to_string(frame.visited)
             +(resized?"":", its strings' widths the same")+";";
-    if(!resized && frame.changed > 3)
+    if(frame.changed > 3)
         bad+=" changed "+std::to_string(frame.changed)+" controls (the thumb, the slider and its text wanted);";
     if(outside != 0)
         bad+=" changed "+std::to_string(outside)+" pixels outside the slider;";

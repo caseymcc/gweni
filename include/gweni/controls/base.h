@@ -586,6 +586,10 @@ protected:
     //! checks, every child in reverse child order, then this control.
     controls::Base *getControlAtWalk(int x, int y, bool bOnlyIfMouseEnabled);
 
+    //! The control's own depth range moved during z numbering. Controls
+    //! whose children draw in that range mark those children here; their
+    //! own depth ranges may keep their labels.
+    virtual void onZIndexChanged() {}
     virtual void onBoundsChanged(gweni::Rect oldBounds);
     //! Whether the bounds' change from \p oldBounds changes what this
     //! control's subtree renders at: a move (every absolute position), or a

@@ -342,11 +342,8 @@ int RangeSlider::positionOf(double value) const
 
 Rect RangeSlider::getTrackBounds() const
 {
-    Rect r=getRenderBounds();
-
-    if(m_valueTexts[0] && !m_horizontal)
-        r.w=std::max(0, r.w-ValueTextGap-m_valueColumn);
-    return r;
+    return Slider::valueTextTrackBounds(getRenderBounds(), m_horizontal, m_valueTexts[0] != nullptr,
+        m_valueColumn);
 }
 
 Rect RangeSlider::getFillBounds() const
@@ -387,8 +384,23 @@ Rect RangeSlider::getThumbRect(int thumb) const
 // would lay the way down to it out again).
 void RangeSlider::placeThumb(int thumb)
 {
+    const Rect rect=getThumbRect(thumb);
+
     placeChild(m_thumbs[thumb], 0, 0, getTrackBounds().w, getHeight());
-    m_thumbs[thumb]->redraw();
+    if(!(rect == m_placedThumbRects[thumb]))
+    {
+        m_placedThumbRects[thumb]=rect;
+        m_thumbs[thumb]->redraw();
+    }
+}
+
+void RangeSlider::onZIndexChanged()
+{
+    // The thumbs draw in our reserved layers, even when a gapped renumber
+    // keeps their own labels. Mark them before the render phase.
+    for(auto *thumb:m_thumbs)
+        if(thumb)
+            thumb->addStateChange(StateChange_Geometry);
 }
 
 void RangeSlider::placeThumbs()
@@ -437,40 +449,13 @@ void RangeSlider::calculateSize(skin::Base *skin, Dim dim)
 {
     ParentClass::calculateSize(skin, dim);
 
-    if(!m_valueTexts[0])
-    {
-        m_valueColumn=0;
-        return;
-    }
+    const int content=Slider::valueTextSize(dim, m_horizontal, m_valueTexts[0], m_valueFormat, m_min, m_max,
+        dim == Dim::X?m_requestedBounds.w:m_requestedBounds.h, m_valueColumn,
+        [this](const Font &font, const String &text) { return measureText(font, text); },
+        m_textMode == ValueTextMode::Joined?JoinedSeparator:nullptr);
 
-    if(m_horizontal)
-    {
-        // the text's line inside the track's 1-unit border, as a Slider's
-        if(dim == Dim::Y)
-            m_preferredSize.height=preferredFromContent(std::max(m_requestedBounds.h,
-                m_valueTexts[0]->getPreferredSize().height+2), Dim::Y);
-        return;
-    }
-
-    if(dim != Dim::X)
-        return;
-
-    // From the range, not the values shown, so a drag never changes it.
-    const Font &font=m_valueTexts[0]->getFont();
-    const String low=Slider::formatValue(m_valueFormat, m_min);
-    const String high=Slider::formatValue(m_valueFormat, m_max);
-    const int lowWidth=measureText(font, low).x;
-    const int highWidth=measureText(font, high).x;
-
-    if(m_textMode == ValueTextMode::Joined)
-    {
-        const String &widest=(lowWidth >= highWidth)?low:high;
-
-        m_valueColumn=measureText(font, widest+JoinedSeparator+widest).x;
-    }
-    else
-        m_valueColumn=std::max(lowWidth, highWidth);
-    m_preferredSize.width=preferredFromContent(m_requestedBounds.w+ValueTextGap+m_valueColumn, Dim::X);
+    if(m_valueTexts[0])
+        m_preferredSize.value[int(dim)]=preferredFromContent(content, dim);
 }
 
 void RangeSlider::placeValueText()
@@ -483,13 +468,9 @@ void RangeSlider::placeValueText()
     if(m_textMode == ValueTextMode::Joined)
     {
         internal::Text *text=m_valueTexts[0];
-        const Size &size=text->getPreferredSize();
-        const int y=(getHeight()-size.height)/2;
 
-        if(m_horizontal)
-            placeChild(text, (getWidth()-size.width)/2, y, size.width, size.height);
-        else
-            placeChild(text, track.w+ValueTextGap, y, size.width, size.height);
+        placeChild(text, Slider::valueTextBounds(getWidth(), getHeight(), track.w, m_horizontal,
+            text->getPreferredSize()));
         return;
     }
 
@@ -501,9 +482,10 @@ void RangeSlider::placeValueText()
         // each centred in its half of the field
         const int half=getWidth()/2;
 
-        placeChild(m_valueTexts[0], (half-low.width)/2, (getHeight()-low.height)/2, low.width, low.height);
-        placeChild(m_valueTexts[1], half+(getWidth()-half-high.width)/2, (getHeight()-high.height)/2,
-            high.width, high.height);
+        placeChild(m_valueTexts[0], Slider::valueTextBounds(half, getHeight(), track.w, true, low));
+        Rect highBounds=Slider::valueTextBounds(getWidth()-half, getHeight(), track.w, true, high);
+        highBounds.x+=half;
+        placeChild(m_valueTexts[1], highBounds);
         return;
     }
 
@@ -632,14 +614,7 @@ void RangeSlider::setDisabled(bool disabled)
 void RangeSlider::updateColors()
 {
     for(internal::Text *text:m_valueTexts)
-    {
-        if(!text)
-            continue;
-        if(isDisabled())
-            text->setTextColor(getSkin()->Colors.Button.Disabled);
-        else
-            text->setSkinTextColor(internal::SkinTextColor::LabelDefault);
-    }
+        Slider::updateValueTextColor(text, this);
 }
 
 void RangeSlider::setFront(int thumb)
@@ -687,7 +662,7 @@ void RangeSlider::thumbPressed(int thumb, Point local, bool down)
 
 void RangeSlider::thumbMoved(int thumb, Point local)
 {
-    if((m_dragged < 0) || (thumb != m_dragged))
+    if(isDisabled() || (m_dragged < 0) || (thumb != m_dragged))
         return;
 
     const int at=along(local);
@@ -756,10 +731,12 @@ void RangeSlider::onMouseClickLeft(int x, int y, bool down)
         pick=(value <= getUpperLimit(0))?0:1;
 
     m_pending=false;
-    moveThumb(pick, value);
     m_pressAt=at;
     startDrag(pick, ThumbLength/2);
     m_thumbs[pick]->focus();
+    // A value callback can disable the slider and cancel this drag.
+    if(!isDisabled())
+        moveThumb(pick, value);
 }
 
 void RangeSlider::thumbStepped(int thumb, int steps)

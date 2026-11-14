@@ -137,6 +137,7 @@ public:
     void setValues(double low, double high);
     double getLow() const { return m_values[0]; }
     double getHigh() const { return m_values[1]; }
+    using Base::getValue;
     //! 0 the low value, 1 the high one.
     double getValue(int thumb) const { return m_values[thumb?1:0]; }
 
@@ -249,6 +250,7 @@ public:
     gweni::event::Caller onHighChanged;
 
 protected:
+    void onZIndexChanged() override;
     //! The axis coordinate of `local`.
     int along(Point local) const { return m_horizontal?local.x:local.y; }
     //! `value` on the grid, within the range.
@@ -270,6 +272,9 @@ protected:
     void startDrag(int thumb, int hold);
 
     internal::RangeSliderThumb *m_thumbs[2]={nullptr, nullptr};
+    //! Drawn/hit rects from the last placement. Layout does not redraw a
+    //! thumb whose geometry stayed the same.
+    Rect m_placedThumbRects[2];
     double m_values[2]={0.0, 1.0};
     double m_min=0.0;
     double m_max=1.0;

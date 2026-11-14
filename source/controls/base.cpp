@@ -2317,6 +2317,9 @@ void Base::renumberZRecursive(ZNumbering &numbering, bool moved)
     const int layers=m_skinControl?(int)m_skinControl->depthLayersOf(this):1;
     bool changed=placeZRange(numbering, m_zIndex, layers, moved);
 
+    if(changed)
+        onZIndexChanged();
+
     // a child is an anchor: this control may reserve z for its attached ones
     bool anchorsBelow=m_anchorsAttached;
 

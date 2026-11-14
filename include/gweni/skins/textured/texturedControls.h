@@ -17,6 +17,10 @@ namespace gweni
 namespace controls
 {
 class MenuItem;
+namespace internal
+{
+class SliderBar;
+}
 }
 
 namespace skin
@@ -1636,6 +1640,10 @@ public:
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
     inline static const std::string_view name="SliderBar";
+
+    //! Shared Slider/RangeSlider thumb look and cross-axis centring.
+    static const tokyonight::Surface &thumbSurface(controls::internal::SliderBar *bar);
+    static Rect thumbRect(Rect bounds, bool horizontal);
 };
 
 // controls::RangeSlider: a Slider's track (a field with a value text, as a

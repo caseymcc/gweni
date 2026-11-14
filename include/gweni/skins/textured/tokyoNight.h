@@ -556,9 +556,10 @@ inline void setAllSurfacesMissing()
 // The overload taking a rect paints it in place of the control's render bounds,
 // with an edge mask (renderer::RoundedEdge: the corners it names square, the
 // sides it names without a border) and the reach of those sides over a
-// neighbour's border (renderer::Base::drawRoundedRect) when given.
+// neighbour's border (renderer::Base::drawRoundedRect) when given. `depthOffset`
+// draws in a reserved layer relative to the control's own z.
 inline void paintSurface(renderer::Base *render, size_t *ids, controls::Base *c, const Surface &s,
-    const Rect &rect, uint8_t edges=0, float reach=0.0f)
+    const Rect &rect, uint8_t edges=0, float reach=0.0f, int depthOffset=0)
 {
     if(!ids)
         return;
@@ -569,10 +570,10 @@ inline void paintSurface(renderer::Base *render, size_t *ids, controls::Base *c,
     {
         if(edges || (reach > 0.0f))
             render->drawRoundedRect(ids[0], rect, s.radius, s.borderWidth,
-                s.top, s.bottom, s.border, c->getZIndex(), edges, reach);
+                s.top, s.bottom, s.border, c->getZIndex()+depthOffset, edges, reach);
         else
             render->drawRoundedRect(ids[0], rect, s.radius, s.borderWidth,
-                s.top, s.bottom, s.border, c->getZIndex());
+                s.top, s.bottom, s.border, c->getZIndex()+depthOffset);
     }
 
     const unsigned int sc=c->getStateChange();

@@ -3059,7 +3059,11 @@ two programs and the draws. What follows describes both together:
   the low one at its bottom) or one `"lo – hi"` (`Joined`), set only when its string
   changes and with `setSameSizeKeepsLayout`, so a frame keeping the string writes no glyph
   and a new string of the same width lays nothing out; one of another width ("-10" to
-  "-9") lays out the way down to the slider in one pass. The vertical column is measured
+  "-9") lays out the way down to the slider in one pass, still marking only the moved
+  thumb, the slider and that text. `placeThumb` keeps the last drawn/hit rect and marks
+  the thumb only when that rect changes, so text placement never redraws the other
+  thumb. Text sizing, column measurement, track bounds, centred placement and text
+  colours share `Slider`'s value-text helpers. The vertical column is measured
   from the range (the wider of the formatted min and max, or the joined string of the
   wider one twice), so it never changes in a drag. **Renderer:** the textured
   `RangeSlider` draws a Slider's track and ticks (`Slider::trackRect`, `paintTicks`,
@@ -3069,7 +3073,11 @@ two programs and the draws. What follows describes both together:
   4): `RangeSliderThumb` draws in its slider's z+2, or z+3 while it is the front thumb
   (`getFrontThumb()`, the one dragged or focused last), in the SliderThumb surfaces, the
   focused one with `RangeSliderThumbFocus`'s border colour and width; the texts, children
-  after the thumbs, draw over them. So a hover writes the hovered thumb's slot, a drag
+  after the thumbs, draw over them. `Base::onZIndexChanged` runs when numbering moves a
+  control's own depth range; the range slider marks both thumbs there because they
+  draw in its reserved layers even when their own depth labels stay. The skin shares
+  `SliderBar::thumbSurface` and `thumbRect`, and `tokyonight::paintSurface` takes a depth
+  offset for those reserved layers. So a hover writes the hovered thumb's slot, a drag
   frame that thumb's slot, the fill's and its text's glyphs, and a change of the front
   thumb both thumbs' slots. **Dragging the range itself** (both thumbs at once, by a press
   on the fill) is not done: it would be a third drag target picked in

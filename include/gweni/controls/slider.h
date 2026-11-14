@@ -88,6 +88,47 @@ public:
     //! `value` formatted by a valid `format` (validValueFormat()), else "".
     static String formatValue(const String &format, double value);
 
+    //! Shared value-text sizing for Slider and RangeSlider. `measure` goes
+    //! through the owner's Base::measureText so the work stays counted.
+    //! A joined range reserves two copies of its widest endpoint plus the
+    //! separator; a drag cannot resize the vertical column.
+    template<class Measure>
+    static int valueTextSize(Dim dim, bool horizontal, const internal::Text *text,
+        const String &format, double min, double max, int request, int &column, Measure measure,
+        const char *separator=nullptr)
+    {
+        if(!text || horizontal)
+            column=0;
+        if(!text)
+            return request;
+        if(horizontal)
+            return dim == Dim::Y?std::max(request, text->getPreferredSize().height+2):request;
+        if(dim != Dim::X)
+            return request;
+
+        const Font &font=text->getFont();
+        const String low=formatValue(format, min);
+        const String high=formatValue(format, max);
+        const int lowWidth=measure(font, low).x;
+        const int highWidth=measure(font, high).x;
+
+        if(separator)
+        {
+            const String &widest=(lowWidth >= highWidth)?low:high;
+            column=measure(font, widest+separator+widest).x;
+        }
+        else
+            column=std::max(lowWidth, highWidth);
+        return request+ValueTextGap+column;
+    }
+
+    //! The render bounds minus a vertical value-text column.
+    static Rect valueTextTrackBounds(Rect bounds, bool horizontal, bool hasText, int column);
+    //! Centred over a horizontal field, or vertically in the right column.
+    static Rect valueTextBounds(int width, int height, int trackWidth, bool horizontal, const Size &size);
+    //! Label text, or disabled button text; follows live theme changes.
+    static void updateValueTextColor(internal::Text *text, Base *owner);
+
     //! Where the track and thumb are, in this control's own coordinates: the
     //! whole control, but for a vertical slider with a value text the column
     //! left of the text (getWidth() less ValueTextGap and the text's column).

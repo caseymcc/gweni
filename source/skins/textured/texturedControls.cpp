@@ -1835,23 +1835,6 @@ void Slider::update(renderer::Base *renderer, controls::Base *baseControl)
 //RangeSlider
 static void resizePlotPrimitives(renderer::Base *renderer, std::vector<size_t> &primitives, size_t count);
 
-// A surface at `z` in `id`, shown or hidden on the control's visibility, as
-// tokyonight::paintSurface does at the control's own z.
-static void paintSurfaceAt(renderer::Base *renderer, size_t id, controls::Base *control,
-    const tokyonight::Surface &surface, const gweni::Rect &rect, int z)
-{
-    const bool visible=control->visible();
-
-    if(visible)
-        renderer->drawRoundedRect(id, rect, surface.radius, surface.borderWidth,
-            surface.top, surface.bottom, surface.border, z);
-
-    const unsigned int sc=control->getStateChange();
-
-    if((sc&controls::StateChange_Visibility) || (sc&controls::StateChange_Created))
-        renderer->showPrimitive(visible?4:0, id);
-}
-
 void RangeSlider::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     controls::RangeSlider *slider=static_cast<controls::RangeSlider *>(baseControl);
@@ -1880,9 +1863,9 @@ void RangeSlider::update(renderer::Base *renderer, controls::Base *baseControl)
     else
         fill=gweni::Rect(track.x, between.y, track.w, between.h);
 
-    paintSurfaceAt(renderer, m_primitives[1], baseControl,
+    tokyonight::paintSurface(renderer, &m_primitives[1], baseControl,
         slider->isDisabled()?tokyonight::RangeSliderFillDisabled:tokyonight::RangeSliderFill, fill,
-        baseControl->getZIndex()+1);
+        0, 0.0f, 1);
 
     Slider::paintTicks(renderer, m_primitives.data()+2, baseControl, r, track, bar, horizontal, field, notches,
         ticks);
@@ -1895,16 +1878,7 @@ void RangeSliderThumb::update(renderer::Base *renderer, controls::Base *baseCont
 {
     controls::internal::RangeSliderThumb *bar=static_cast<controls::internal::RangeSliderThumb *>(baseControl);
     controls::RangeSlider *slider=bar->getRangeSlider();
-    tokyonight::Surface surface;
-
-    if(bar->isDisabled())
-        surface=tokyonight::SliderThumbDisabled;
-    else if(bar->isDepressed())
-        surface=tokyonight::SliderThumbDown;
-    else if(bar->isHovered())
-        surface=tokyonight::SliderThumbHover;
-    else
-        surface=tokyonight::SliderThumb;
+    tokyonight::Surface surface=SliderBar::thumbSurface(bar);
 
     if(!bar->isDisabled() && bar->isFocussed())
     {
@@ -1915,25 +1889,14 @@ void RangeSliderThumb::update(renderer::Base *renderer, controls::Base *baseCont
     // At its rect in its slider (the thumb control is the track's column, at
     // the slider's origin), as a SliderBar at most Slider::ThumbThickness
     // thick, centred.
-    gweni::Rect thumb=slider?slider->getThumbRect(bar->getIndex()):baseControl->getRenderBounds();
-
-    if(bar->isHorizontal())
-    {
-        const int h=std::min(thumb.h, Slider::ThumbThickness);
-        thumb.y+=(thumb.h-h)/2;
-        thumb.h=h;
-    }
-    else
-    {
-        const int w=std::min(thumb.w, Slider::ThumbThickness);
-        thumb.x+=(thumb.w-w)/2;
-        thumb.w=w;
-    }
+    const gweni::Rect thumb=SliderBar::thumbRect(
+        slider?slider->getThumbRect(bar->getIndex()):baseControl->getRenderBounds(), bar->isHorizontal());
 
     const int z=slider?slider->getZIndex()+2+(slider->getFrontThumb() == bar->getIndex()?1:0)
         :baseControl->getZIndex();
 
-    paintSurfaceAt(renderer, m_primitives[0], baseControl, surface, thumb, z);
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, surface, thumb, 0, 0.0f,
+        z-baseControl->getZIndex());
 }
 
 
@@ -3713,22 +3676,27 @@ void Pin::update(renderer::Base *renderer, controls::Base *baseControl)
 void SliderBar::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     controls::internal::SliderBar *bar=static_cast<controls::internal::SliderBar *>(baseControl);
-    const tokyonight::Surface *surface;
 
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, thumbSurface(bar),
+        thumbRect(baseControl->getRenderBounds(), bar->isHorizontal()));
+}
+
+const tokyonight::Surface &SliderBar::thumbSurface(controls::internal::SliderBar *bar)
+{
     if(bar->isDisabled())
-        surface=&tokyonight::SliderThumbDisabled;
-    else if(bar->isDepressed())
-        surface=&tokyonight::SliderThumbDown;
-    else if(bar->isHovered())
-        surface=&tokyonight::SliderThumbHover;
-    else
-        surface=&tokyonight::SliderThumb;
+        return tokyonight::SliderThumbDisabled;
+    if(bar->isDepressed())
+        return tokyonight::SliderThumbDown;
+    if(bar->isHovered())
+        return tokyonight::SliderThumbHover;
+    return tokyonight::SliderThumb;
+}
 
+Rect SliderBar::thumbRect(Rect thumb, bool horizontal)
+{
     // The bar spans the whole slider across its axis (that is its hit area);
     // the thumb drawn in it is at most Slider::ThumbThickness thick, centred.
-    gweni::Rect thumb=baseControl->getRenderBounds();
-
-    if(bar->isHorizontal())
+    if(horizontal)
     {
         const int h=std::min(thumb.h, Slider::ThumbThickness);
         thumb.y+=(thumb.h-h)/2;
@@ -3741,7 +3709,7 @@ void SliderBar::update(renderer::Base *renderer, controls::Base *baseControl)
         thumb.w=w;
     }
 
-    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, *surface, thumb);
+    return thumb;
 }
 
 
