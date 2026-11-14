@@ -16,6 +16,7 @@ namespace controls
 {
 
 class Badge;
+class NavigationRail;
 namespace internal { class NavigationRailItems; }
 
 //! A navigation row: a Selectable's press and selection handling, with an
@@ -49,8 +50,12 @@ public:
     void setBadgeCount(int count);
     void setBadgeDot(bool dot);
     Badge *getBadge() const { return m_badge; }
+    //! The rail's logical keyboard focus; moving it does not select a page.
+    bool isNavigationFocused() const;
 
     void setTextColor(const Color &color) override;
+    void updateColors() override;
+    void onPress(event::Info info) override;
     void calculateSize(skin::Base *skin, Dim dim) override;
     void arrange(skin::Base *skin, Dim dim) override;
 
@@ -64,12 +69,15 @@ private:
     Label *m_label=nullptr;
     Badge *m_badge=nullptr;
     bool m_collapsed=false;
+    NavigationRail *m_rail=nullptr;
 };
 
 //! A side rail whose main and footer items share one SelectableGroup.
 //! Docked Left by default, it fills its parent's height. Items dock Top in
 //! the space below the optional header and above the bottom-docked footer.
 //! The rail owns its header and containers, and their children.
+//! One Tab stop: enter at the selected enabled item, arrows/Home/End move
+//! focus across main/footer items, and Return/Space select (Material behaviour).
 class GWENI_EXPORT NavigationRail: public Base
 {
 public:
@@ -84,6 +92,18 @@ public:
     //! Only items belonging to this rail may be selected. Null clears it.
     void setSelected(NavigationItem *item);
     NavigationItem *getSelected() const;
+    //! The last eligible logical focus item, also retained while focus is
+    //! elsewhere. Focus entry resets it to the selected item.
+    NavigationItem *getFocused() const;
+
+    void onKeyboardFocus() override;
+    void onLostKeyboardFocus() override;
+    bool onKeyUp(bool down) override;
+    bool onKeyDown(bool down) override;
+    bool onKeyHome(bool down) override;
+    bool onKeyend(bool down) override;
+    bool onKeyReturn(bool down) override;
+    bool onKeySpace(bool down) override;
 
     //! Any controls may be placed here. NavigationItems made with newChild()
     //! automatically join the same group as the main items.
@@ -111,7 +131,12 @@ public:
 
 private:
 
+    friend class NavigationItem;
+    friend class internal::NavigationRailItems;
     void groupSelectionChanged(event::Info info);
+    void focusItem(NavigationItem *item);
+    bool moveFocus(bool down, int direction, bool end=false);
+    std::vector<NavigationItem *> keyboardItems() const;
 
     SelectableGroup m_selection;
     Base *m_items=nullptr;
@@ -119,6 +144,7 @@ private:
     Base *m_headerSlot=nullptr;
     bool m_collapsed=false;
     int m_expandedWidth=0;
+    size_t m_focusedId=size_t(-1);
 };
 
 }//namespace controls

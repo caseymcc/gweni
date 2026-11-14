@@ -458,6 +458,14 @@ public:
             gweni::Color Disabled{0x80, 0x80, 0x80};
         } Selectable;
 
+        //! Navigation item labels: hover keeps the normal/selected colour.
+        struct NavigationItem_t
+        {
+            gweni::Color Normal{0, 0, 0};
+            gweni::Color Selected{0xff, 0xff, 0xff};
+            gweni::Color Disabled{0x80, 0x80, 0x80};
+        } NavigationItem;
+
         //! A Chip's text, by its tone and by its palette entry.
         struct Chip_t
         {

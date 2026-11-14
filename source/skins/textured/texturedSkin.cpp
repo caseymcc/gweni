@@ -515,6 +515,9 @@ std::unordered_map<std::string, gweni::Color*> TexturedSkin::textColorRegistry()
         {"TimelineAxisText",&Colors.Timeline.AxisText},{"TimelineCaptionText",&Colors.Timeline.CaptionText},
         {"SelectableNormal",&Colors.Selectable.Normal},{"SelectableHover",&Colors.Selectable.Hover},
         {"SelectableSelected",&Colors.Selectable.Selected},{"SelectableDisabled",&Colors.Selectable.Disabled},
+        {"NavItemText",&Colors.NavigationItem.Normal},
+        {"NavItemSelectedText",&Colors.NavigationItem.Selected},
+        {"NavItemDisabledText",&Colors.NavigationItem.Disabled},
         {"ToastText",&Colors.Toast.Text},{"ToastInfo",&Colors.Toast.Info},
         {"ToastPositive",&Colors.Toast.Positive},{"ToastWarning",&Colors.Toast.Warning},
         {"ToastNegative",&Colors.Toast.Negative},
@@ -1397,6 +1400,9 @@ void TexturedSkin::setThemeColors()
     Colors.Selectable.Hover=Fg;
     Colors.Selectable.Selected=White;
     Colors.Selectable.Disabled=Muted;
+    Colors.NavigationItem.Normal=Fg;
+    Colors.NavigationItem.Selected=Cyan;
+    Colors.NavigationItem.Disabled=Muted;
 
     // Tokyo Night's sizes, set with its colours so a theme's "metrics" applies
     // over them.

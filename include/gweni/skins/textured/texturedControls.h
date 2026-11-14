@@ -1261,6 +1261,28 @@ public:
     inline static const std::string_view name="Selectable";
 };
 
+class NavigationRail:public textured::ControlRegister<NavigationRail>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    inline static const std::string_view name="NavigationRail";
+
+private:
+    tokyonight::Surface m_surface{};
+    bool m_surfaceCurrent=false;
+};
+
+//! One SDF slot for the row and leading selection border. Idle is hidden.
+//! The ImagePanel and Label are children, numbered above this background.
+class NavigationItem:public textured::ControlRegister<NavigationItem>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    inline static const std::string_view name="NavigationItem";
+};
+
 // A Chart's legend row: [0] its background as a Selectable's (hidden at rest,
 // SelectableHover and SelectableDown; a legend row is never selected), and [1]
 // its swatch at getZIndex()+1, ChartLegendRow::getSwatchRect() in its series'

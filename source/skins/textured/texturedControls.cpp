@@ -30,6 +30,7 @@
 #include "gweni/controls/textBox.h"
 #include "gweni/controls/separator.h"
 #include "gweni/controls/selectable.h"
+#include "gweni/controls/navigationRail.h"
 #include "gweni/controls/splitterBar.h"
 #include "gweni/controls/menuItem.h"
 #include "gweni/controls/bullet.h"
@@ -947,6 +948,57 @@ void Selectable::update(renderer::Base *renderer, controls::Base *baseControl)
     if(surface && baseControl->visible())
         renderer->drawRoundedRect(m_primitives[0], baseControl->getRenderBounds(), surface->radius,
             surface->borderWidth, surface->top, surface->bottom, surface->border, baseControl->getZIndex());
+    else
+        renderer->hidePrimitive(m_primitives[0]);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//NavigationRail / NavigationItem
+void NavigationRail::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+    const auto &surface=tokyonight::NavigationRail;
+    const bool same=m_surfaceCurrent && m_surface.top == surface.top && m_surface.bottom == surface.bottom
+        && m_surface.border == surface.border && m_surface.radius == surface.radius
+        && m_surface.borderWidth == surface.borderWidth;
+    if(same && !(baseControl->getStateChange()
+        &(controls::StateChange_Created|controls::StateChange_Geometry|controls::StateChange_Visibility)))
+        return;
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, surface);
+    m_surface=surface;
+    m_surfaceCurrent=true;
+}
+
+void NavigationItem::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+    auto *item=static_cast<controls::NavigationItem *>(baseControl);
+    const tokyonight::Surface *surface=nullptr;
+    const bool focused=item->isNavigationFocused();
+    if(item->isDisabled())
+    {
+        if(item->isSelected())
+            surface=&tokyonight::NavItemSelectedDisabled;
+    }
+    else if(item->isSelected())
+        surface=focused?(item->isHovered()?&tokyonight::NavItemSelectedFocusHover:&tokyonight::NavItemSelectedFocus):
+            (item->isHovered()?&tokyonight::NavItemSelectedHover:&tokyonight::NavItemSelected);
+    else if(item->isDepressed())
+        surface=&tokyonight::NavItemDown;
+    else if(focused)
+        surface=item->isHovered()?&tokyonight::NavItemFocusHover:&tokyonight::NavItemFocus;
+    else if(item->isHovered())
+        surface=&tokyonight::NavItemHover;
+
+    if(surface && item->visible())
+    {
+        const uint8_t edges=item->isSelected()?
+            renderer::SquareTopLeft|renderer::SquareBottomLeft
+                |renderer::NoBorderTop|renderer::NoBorderRight|renderer::NoBorderBottom:0;
+        tokyonight::paintSurface(renderer, m_primitives.data(), item, *surface, item->getRenderBounds(), edges);
+    }
     else
         renderer->hidePrimitive(m_primitives[0]);
 }
@@ -4828,6 +4880,8 @@ template class ControlRegister<LogView>;
 template class ControlRegister<LogViewChevron>;
 template class ControlRegister<LogViewRow>;
 template class ControlRegister<Selectable>;
+template class ControlRegister<NavigationRail>;
+template class ControlRegister<NavigationItem>;
 template class ControlRegister<Separator>;
 template class ControlRegister<Bullet>;
 template class ControlRegister<InspectorHighlight>;

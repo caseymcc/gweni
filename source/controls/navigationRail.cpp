@@ -67,6 +67,7 @@ public:
     GWENI_DRAWS_NOTHING
 
     SelectableGroup *selection=nullptr;
+    NavigationRail *rail=nullptr;
     bool collapsed=false;
 
     void setCollapsed(bool value)
@@ -84,6 +85,7 @@ public:
         {
             if(auto *item=gweni_cast<NavigationItem>(child))
             {
+                item->m_rail=rail;
                 selection->add(item);
                 item->setCollapsed(collapsed);
             }
@@ -97,6 +99,9 @@ public:
         {
             if(auto *item=gweni_cast<NavigationItem>(child))
             {
+                if(rail && rail->m_focusedId == item->getControlId())
+                    rail->m_focusedId=size_t(-1);
+                item->m_rail=nullptr;
                 selection->remove(item);
                 item->setToggleable(false);
             }
@@ -109,6 +114,8 @@ public:
 GWENI_CONTROL_CONSTRUCTOR(NavigationItem)
 {
     setToggleable(false);
+    setKeyboardInputEnabled(false);
+    setTabable(false);
     setPadding(Padding(PaddingX, PaddingY, PaddingX, PaddingY));
     setSize(0, 0);
 
@@ -190,6 +197,26 @@ void NavigationItem::setTextColor(const Color &color)
         m_label->setTextColor(color);
 }
 
+void NavigationItem::updateColors()
+{
+    const auto &colors=getSkin()->Colors.NavigationItem;
+    setTextColor(isDisabled()?colors.Disabled:isSelected()?colors.Selected:colors.Normal);
+}
+
+bool NavigationItem::isNavigationFocused() const
+{
+    return m_rail && KeyboardFocus == m_rail && m_rail->getFocused() == this;
+}
+
+void NavigationItem::onPress(event::Info info)
+{
+    if(isDisabled())
+        return;
+    if(m_rail && KeyboardFocus == m_rail)
+        m_rail->focusItem(this);
+    ParentClass::onPress(info);
+}
+
 // Measure the owned parts too (the icon may hold an attached badge), but only
 // the icon space and visible label contribute to the row's preferred size.
 void NavigationItem::calculateSize(skin::Base *skin, Dim dim)
@@ -230,6 +257,8 @@ GWENI_CONTROL_CONSTRUCTOR(NavigationRail)
 {
     setDock(DockPosition::Left);
     setSizeFlags({SizeFlag::Elastic, SizeFlag::Expand});
+    setKeyboardInputEnabled(true);
+    setTabable(true);
     m_selection.onSelectionChange.add(this, &NavigationRail::groupSelectionChanged);
 
     m_headerSlot=newChild<Base>();
@@ -238,11 +267,13 @@ GWENI_CONTROL_CONSTRUCTOR(NavigationRail)
 
     auto *footer=newChild<internal::NavigationRailItems>();
     footer->selection=&m_selection;
+    footer->rail=this;
     footer->setDock(DockPosition::Bottom);
     m_footer=footer;
 
     auto *items=newChild<internal::NavigationRailItems>();
     items->selection=&m_selection;
+    items->rail=this;
     items->setDock(DockPosition::Center);
     m_items=items;
     // newChild() on the rail also places a main item in the item container.
@@ -256,6 +287,9 @@ NavigationRail::~NavigationRail()
     // rows itself; the containers must not use it during the subsequent deletes.
     static_cast<internal::NavigationRailItems *>(m_items)->selection=nullptr;
     static_cast<internal::NavigationRailItems *>(m_footer)->selection=nullptr;
+    for(Selectable *member : m_selection.getMembers())
+        if(auto *item=gweni_cast<NavigationItem>(member))
+            item->m_rail=nullptr;
 }
 
 NavigationItem *NavigationRail::addItem(const String &label, const String &image, const String &name)
@@ -280,6 +314,89 @@ void NavigationRail::setSelected(NavigationItem *item)
 NavigationItem *NavigationRail::getSelected() const
 {
     return gweni_cast<NavigationItem>(m_selection.getSelected());
+}
+
+NavigationItem *NavigationRail::getFocused() const
+{
+    auto *item=gweni_cast<NavigationItem>(Base::getControlById(m_focusedId));
+    return item && item->m_rail == this && item->visible() && !item->isDisabled()?item:nullptr;
+}
+
+std::vector<NavigationItem *> NavigationRail::keyboardItems() const
+{
+    std::vector<NavigationItem *> items;
+    for(Base *container : {m_items, m_footer})
+        for(Base *child : container->getActualChildren())
+            if(auto *item=gweni_cast<NavigationItem>(child))
+                if(item->visible() && !item->isDisabled())
+                    items.push_back(item);
+    return items;
+}
+
+void NavigationRail::focusItem(NavigationItem *item)
+{
+    NavigationItem *previous=getFocused();
+    if(previous == item)
+        return;
+    m_focusedId=item?item->getControlId():size_t(-1);
+    if(previous)
+        previous->redraw();
+    if(item)
+        item->redraw();
+}
+
+void NavigationRail::onKeyboardFocus()
+{
+    const auto items=keyboardItems();
+    NavigationItem *selected=getSelected();
+    if(std::find(items.begin(), items.end(), selected) == items.end())
+        selected=items.empty()?nullptr:items.front();
+    focusItem(selected);
+    // The logical item may be the same one as on the previous focus entry.
+    if(selected)
+        selected->redraw();
+}
+
+void NavigationRail::onLostKeyboardFocus()
+{
+    if(NavigationItem *item=getFocused())
+        item->redraw();
+}
+
+bool NavigationRail::moveFocus(bool down, int direction, bool end)
+{
+    if(KeyboardFocus != this || isDisabled())
+        return false;
+    if(!down)
+        return true;
+    const auto items=keyboardItems();
+    if(items.empty())
+        return true;
+    if(end)
+        focusItem(direction > 0?items.back():items.front());
+    else
+    {
+        auto current=std::find(items.begin(), items.end(), getFocused());
+        const int index=current == items.end()?(direction > 0?-1:0):int(current-items.begin());
+        focusItem(items[(index+direction+int(items.size()))%items.size()]);
+    }
+    return true;
+}
+
+bool NavigationRail::onKeyUp(bool down) { return moveFocus(down, -1); }
+bool NavigationRail::onKeyDown(bool down) { return moveFocus(down, 1); }
+bool NavigationRail::onKeyHome(bool down) { return moveFocus(down, -1, true); }
+bool NavigationRail::onKeyend(bool down) { return moveFocus(down, 1, true); }
+bool NavigationRail::onKeyReturn(bool down) { return onKeySpace(down); }
+
+bool NavigationRail::onKeySpace(bool down)
+{
+    if(KeyboardFocus != this || isDisabled())
+        return false;
+    if(down)
+        if(NavigationItem *item=getFocused())
+            item->onPress(event::Info(item));
+    return true;
 }
 
 void NavigationRail::groupSelectionChanged(event::Info info)

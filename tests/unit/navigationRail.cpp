@@ -18,6 +18,12 @@
  *  New and reparented rows adopt the container's collapse state. Badges are
  *  lazy attached children of the icon, survive both states, and count changes
  *  write only their slots, entering only their layout path if the size changes.
+ *  The rail holds keyboard focus as one Tab stop: arrows/Home/End move its
+ *  logical focus (skipping disabled/hidden rows and including footer rows),
+ *  Return/Space select, and focus entry starts at the selected enabled row.
+ *  The textured renderer paints theme surfaces with a leading selection
+ *  border in the row's one slot, hides idle slots, and changes only the two
+ *  rows/runs involved in selection. Theme edits reach retained rail slots.
  */
 #include "headlessFixture.h"
 
@@ -38,6 +44,22 @@ namespace
 class RailRenderer: public test::StubRenderer
 {
 public:
+    struct Draw
+    {
+        size_t id;
+        Rect rect;
+        float borderWidth;
+        Color top, border;
+        int z;
+    };
+
+    void drawRoundedRect(size_t id, Rect rect, float radius, float borderWidth,
+        Color top, Color bottom, Color border, int z) override
+    {
+        draws.push_back({id, rect, borderWidth, top, border, z});
+        StubRenderer::drawRoundedRect(id, rect, radius, borderWidth, top, bottom, border, z);
+    }
+
     void drawTexturedRect(const Texture &texture, size_t id, Rect rect, int z,
         float u1, float v1, float u2, float v2) override
     {
@@ -48,23 +70,37 @@ public:
 
     void hidePrimitive(size_t id) override
     {
+        hidden.push_back(id);
         livePrimitives.insert(id);
         StubRenderer::hidePrimitive(id);
     }
 
     std::vector<String> drawnImages;
+    std::vector<Draw> draws;
+    std::vector<size_t> hidden;
 };
 
-//! Use the real retained Badge renderer to check its bubble and glyph slots.
+//! Real retained rail/row, Badge and text renderers for slot/glyph checks.
 class RailSkin: public test::StubSkin
 {
 public:
-    explicit RailSkin(test::StubRenderer *renderer): StubSkin(renderer) {}
+    explicit RailSkin(test::StubRenderer *renderer): StubSkin(renderer)
+    {
+        Colors.NavigationItem.Normal=skin::textured::tokyonight::Fg;
+        Colors.NavigationItem.Selected=skin::textured::tokyonight::Cyan;
+        Colors.NavigationItem.Disabled=skin::textured::tokyonight::Muted;
+    }
 
     std::unique_ptr<skin::Control> getControlRenderer(std::string typeName) override
     {
         if(typeName == "Badge")
             return std::make_unique<skin::textured::Badge>();
+        if(typeName == "NavigationRail")
+            return std::make_unique<skin::textured::NavigationRail>();
+        if(typeName == "NavigationItem")
+            return std::make_unique<skin::textured::NavigationItem>();
+        if(typeName == "Text")
+            return std::make_unique<skin::textured::Text>();
         return StubSkin::getControlRenderer(typeName);
     }
 };
@@ -109,6 +145,9 @@ struct Scene
     ~Scene()
     {
         input::onMouseClicked(canvas, 0, false);
+        for(int key : {keys::Tab, keys::Shift, keys::Space, keys::Return,
+            keys::Up, keys::Down, keys::Home, keys::End})
+            input::onKeyEvent(canvas, key, false);
         HoveredControl=nullptr;
         KeyboardFocus=nullptr;
         MouseFocus=nullptr;
@@ -119,6 +158,8 @@ struct Scene
     void frame()
     {
         renderer.drawnImages.clear();
+        renderer.draws.clear();
+        renderer.hidden.clear();
         controls::resetChangeStats();
         canvas->updateCanvas();
         canvas->renderCanvas();
@@ -144,6 +185,28 @@ struct Scene
         CHECK(renderer.frameStats().primitiveSlotsWritten == 0);
         CHECK(renderer.frameStats().textSlotsWritten == 0);
     }
+
+    void press(int key)
+    {
+        input::onKeyEvent(canvas, key, true);
+        input::onKeyEvent(canvas, key, false);
+        frame();
+    }
+
+    void hover(controls::Base *item)
+    {
+        const Point at=item?item->localPosToCanvas(Point(item->getWidth()/2, item->getHeight()/2)):
+            Point(450, 300);
+        canvas->inputMouseMoved(at.x, at.y, 0, 0);
+        frame();
+    }
+
+    std::vector<size_t> primitives(controls::Base *control)
+    {
+        std::vector<size_t> ids, texts;
+        control->getSkinControl()->appendIds(ids, texts);
+        return ids;
+    }
 };
 
 struct Counter: event::Handler
@@ -162,7 +225,301 @@ struct Counter: event::Handler
     int integer=0;
 };
 
+const RailRenderer::Draw *drawFor(const Scene &scene, size_t id)
+{
+    for(const auto &draw : scene.renderer.draws)
+        if(draw.id == id)
+            return &draw;
+    return nullptr;
+}
+
+bool has(const std::vector<size_t> &ids, size_t id)
+{
+    return std::find(ids.begin(), ids.end(), id) != ids.end();
+}
+
 }//namespace
+
+TEST_CASE("NavigationRail: one Tab stop enters at the selection and Material keys focus before selecting across main and footer items")
+{
+    Scene scene;
+    auto *home=scene.rail->addItem("Home");
+    auto *inbox=scene.rail->addItem("Inbox");
+    auto *disabled=scene.rail->addItem("Disabled");
+    auto *hidden=scene.rail->addItem("Hidden");
+    auto *settings=scene.rail->getFooter()->newChild<controls::NavigationItem>();
+    settings->setText("Settings");
+    disabled->setDisabled(true);
+    hidden->hide();
+    auto *outside=scene.canvas->newChild<controls::Button>();
+    auto *last=scene.canvas->newChild<controls::Button>();
+    outside->setTabable(true);
+    last->setTabable(true);
+    outside->setKeyboardInputEnabled(true);
+    last->setKeyboardInputEnabled(true);
+    Counter changes;
+    scene.rail->onSelectionChange.add(&changes, &Counter::changed);
+    scene.rail->setSelected(inbox);
+    scene.frame();
+
+    CHECK_FALSE(home->isTabable());
+    CHECK_FALSE(settings->isTabable());
+    last->focus();
+    scene.press(keys::Tab);
+    CHECK(KeyboardFocus == scene.rail);
+    CHECK(scene.rail->getFocused() == inbox);
+    CHECK(inbox->isNavigationFocused());
+    CHECK(changes.calls == 1);
+    CHECK(scene.canvas->getLayoutStats().passes == 0);
+    scene.press(keys::Down);
+    CHECK(scene.rail->getFocused() == settings);
+    CHECK(scene.rail->getSelected() == inbox);
+    CHECK(changes.calls == 1);
+    scene.press(keys::Return);
+    CHECK(scene.rail->getSelected() == settings);
+    CHECK(changes.calls == 2);
+    scene.press(keys::Return);
+    CHECK(changes.calls == 2);
+    scene.press(keys::Down); // wraps to first enabled item
+    CHECK(scene.rail->getFocused() == home);
+    CHECK(scene.rail->getSelected() == settings);
+    scene.press(keys::Space);
+    CHECK(scene.rail->getSelected() == home);
+    CHECK(changes.calls == 3);
+    scene.press(keys::End);
+    CHECK(scene.rail->getFocused() == settings);
+    scene.press(keys::Up);
+    CHECK(scene.rail->getFocused() == inbox);
+    scene.press(keys::Home);
+    CHECK(scene.rail->getFocused() == home);
+    CHECK(changes.calls == 3);
+    scene.press(keys::Tab);
+    CHECK(KeyboardFocus == outside);
+    CHECK_FALSE(home->isNavigationFocused());
+    input::onKeyEvent(scene.canvas, keys::Shift, true);
+    scene.press(keys::Tab);
+    input::onKeyEvent(scene.canvas, keys::Shift, false);
+    CHECK(KeyboardFocus == scene.rail);
+    CHECK(scene.rail->getFocused() == home);
+    scene.checkSettled();
+
+    scene.rail->setSelected(disabled);
+    outside->focus();
+    scene.frame();
+    scene.rail->focus();
+    scene.frame();
+    CHECK(scene.rail->getFocused() == home);
+    scene.click(settings);
+    CHECK(KeyboardFocus == scene.rail);
+    CHECK(scene.rail->getFocused() == settings);
+    CHECK(scene.rail->getSelected() == settings);
+    const int before=changes.calls;
+    scene.click(disabled);
+    CHECK(scene.rail->getSelected() == settings);
+    CHECK(changes.calls == before);
+
+    // A key from an arbitrary footer control must keep its own meaning.
+    auto *field=scene.rail->getFooter()->newChild<controls::TextBox>();
+    field->setText("Account");
+    field->focus();
+    scene.press(keys::Return);
+    CHECK(scene.rail->getSelected() == settings);
+    CHECK(changes.calls == before);
+    scene.rail->focus();
+    scene.frame();
+    delete settings;
+    CHECK(scene.rail->getFocused() == nullptr);
+    scene.press(keys::Home);
+    CHECK(scene.rail->getFocused() == home);
+}
+
+TEST_CASE("NavigationRail: disabled and hidden items are skipped by every navigation key and an empty rail does nothing")
+{
+    Scene scene;
+    auto *disabled=scene.rail->addItem("Disabled");
+    auto *home=scene.rail->addItem("Home");
+    auto *hidden=scene.rail->addItem("Hidden");
+    auto *inbox=scene.rail->addItem("Inbox");
+    auto *footer=scene.rail->getFooter()->newChild<controls::NavigationItem>();
+    footer->setText("Disabled footer");
+    disabled->setDisabled(true);
+    footer->setDisabled(true);
+    hidden->hide();
+    scene.frame();
+    scene.rail->focus();
+    scene.frame();
+    CHECK(scene.rail->getFocused() == home);
+    scene.press(keys::End);
+    CHECK(scene.rail->getFocused() == inbox);
+    scene.press(keys::Down);
+    CHECK(scene.rail->getFocused() == home);
+    scene.press(keys::Up);
+    CHECK(scene.rail->getFocused() == inbox);
+    scene.press(keys::Home);
+    CHECK(scene.rail->getFocused() == home);
+    home->setDisabled(true);
+    scene.frame();
+    scene.press(keys::Down);
+    CHECK(scene.rail->getFocused() == inbox);
+    scene.press(keys::Space);
+    CHECK(scene.rail->getSelected() == inbox);
+    inbox->setDisabled(true);
+    scene.frame();
+    const auto *selected=scene.rail->getSelected();
+    for(int key : {keys::Up, keys::Down, keys::Home, keys::End, keys::Return, keys::Space})
+    {
+        scene.press(key);
+        CHECK(scene.rail->getFocused() == nullptr);
+        CHECK(scene.rail->getSelected() == selected);
+    }
+    scene.checkSettled();
+    for(auto *item : {disabled, home, hidden, inbox, footer})
+        delete item;
+    scene.frame();
+    for(int key : {keys::Up, keys::Down, keys::Home, keys::End, keys::Return, keys::Space})
+        scene.press(key);
+    CHECK(scene.rail->getSelected() == nullptr);
+    CHECK(scene.rail->getFocused() == nullptr);
+    scene.checkSettled();
+}
+
+TEST_CASE("NavigationRail: textured row surfaces hide idle slots and paint hover focus and a leading selection bar without layout")
+{
+    using namespace skin::textured::tokyonight;
+    Scene scene;
+    auto *home=scene.rail->addItem("Home", "home.png");
+    auto *inbox=scene.rail->addItem("Inbox", "inbox.png");
+    scene.frame();
+    const auto homeIds=scene.primitives(home);
+    const auto inboxIds=scene.primitives(inbox);
+    const auto railIds=scene.primitives(scene.rail);
+    REQUIRE(homeIds.size() == 1);
+    REQUIRE(inboxIds.size() == 1);
+    REQUIRE(railIds.size() == 1);
+    CHECK(has(scene.renderer.hidden, homeIds[0]));
+    REQUIRE(drawFor(scene, railIds[0]) != nullptr);
+    CHECK((drawFor(scene, railIds[0])->top == NavigationRail.top));
+    CHECK(home->getIcon()->getZIndex() > home->getZIndex());
+    scene.checkSettled();
+
+    scene.hover(home);
+    REQUIRE(drawFor(scene, homeIds[0]) != nullptr);
+    CHECK((drawFor(scene, homeIds[0])->top == NavItemHover.top));
+    CHECK(scene.renderer.writtenPrimitiveIds() == homeIds);
+    CHECK(scene.renderer.frameStats().textSlotsWritten == 0);
+    CHECK(scene.canvas->getLayoutStats().passes == 0);
+    CHECK((home->getTextColor() == scene.skin.Colors.NavigationItem.Normal));
+    scene.hover(nullptr);
+    CHECK(has(scene.renderer.hidden, homeIds[0]));
+    scene.rail->setSelected(home);
+    scene.frame();
+    REQUIRE(drawFor(scene, homeIds[0]) != nullptr);
+    CHECK((drawFor(scene, homeIds[0])->top == NavItemSelected.top));
+    CHECK((drawFor(scene, homeIds[0])->border == NavItemSelected.border));
+    CHECK(drawFor(scene, homeIds[0])->borderWidth == NavItemSelected.borderWidth);
+    CHECK(drawFor(scene, homeIds[0])->z == home->getZIndex());
+    CHECK(scene.renderer.roundedEdges[homeIds[0]] == uint8_t(renderer::SquareTopLeft
+        |renderer::SquareBottomLeft|renderer::NoBorderTop|renderer::NoBorderRight|renderer::NoBorderBottom));
+    CHECK((home->getLabel()->getTextColor() == scene.skin.Colors.NavigationItem.Selected));
+    scene.hover(home);
+    REQUIRE(drawFor(scene, homeIds[0]) != nullptr);
+    CHECK((drawFor(scene, homeIds[0])->top == NavItemSelectedHover.top));
+    CHECK(scene.renderer.writtenPrimitiveIds() == homeIds);
+    CHECK(scene.renderer.frameStats().textSlotsWritten == 0);
+    scene.hover(nullptr);
+    scene.rail->focus();
+    scene.frame();
+    REQUIRE(drawFor(scene, homeIds[0]) != nullptr);
+    CHECK((drawFor(scene, homeIds[0])->border == NavItemSelectedFocus.border));
+    CHECK(scene.renderer.writtenPrimitiveIds() == homeIds);
+    CHECK(scene.canvas->getLayoutStats().passes == 0);
+    scene.press(keys::Down);
+    REQUIRE(drawFor(scene, inboxIds[0]) != nullptr);
+    CHECK((drawFor(scene, inboxIds[0])->top == NavItemFocus.top));
+    CHECK((drawFor(scene, inboxIds[0])->border == NavItemFocus.border));
+    CHECK(scene.rail->getSelected() == home);
+    CHECK(scene.renderer.frameStats().textSlotsWritten == 0);
+    scene.press(keys::Return);
+    std::vector<size_t> both{homeIds[0], inboxIds[0]};
+    std::sort(both.begin(), both.end());
+    CHECK(scene.renderer.writtenPrimitiveIds() == both);
+    CHECK(scene.renderer.frameStats().textSlotsWritten == home->getText().size()+inbox->getText().size());
+    CHECK(scene.canvas->getLayoutStats().passes == 0);
+    scene.checkSettled();
+
+    inbox->setDisabled(true);
+    scene.frame();
+    REQUIRE(drawFor(scene, inboxIds[0]) != nullptr);
+    CHECK((drawFor(scene, inboxIds[0])->top == NavItemSelectedDisabled.top));
+    CHECK((inbox->getLabel()->getTextColor() == scene.skin.Colors.NavigationItem.Disabled));
+    home->setDisabled(true);
+    scene.frame();
+    CHECK(has(scene.renderer.hidden, homeIds[0]));
+    scene.rail->hide();
+    scene.frame();
+    CHECK(has(scene.renderer.hidden, inboxIds[0]));
+    scene.checkSettled();
+}
+
+TEST_CASE("NavigationRail: selection rewrites label glyphs only when the theme text colour changes")
+{
+    Scene scene;
+    auto *home=scene.rail->addItem("Home");
+    auto *inbox=scene.rail->addItem("Inbox");
+    scene.skin.Colors.NavigationItem.Selected=scene.skin.Colors.NavigationItem.Normal;
+    scene.frame();
+    scene.rail->setSelected(home);
+    scene.frame();
+    CHECK(scene.renderer.frameStats().textSlotsWritten == 0);
+    scene.rail->setSelected(inbox);
+    scene.frame();
+    CHECK(scene.renderer.frameStats().primitiveSlotsWritten == 2);
+    CHECK(scene.renderer.frameStats().textSlotsWritten == 0);
+    CHECK(scene.canvas->getLayoutStats().passes == 0);
+    scene.skin.Colors.NavigationItem.Selected=skin::textured::tokyonight::Cyan;
+    inbox->redraw();
+    scene.frame();
+    CHECK(scene.renderer.frameStats().textSlotsWritten == inbox->getText().size());
+    CHECK((inbox->getLabel()->getTextColor() == scene.skin.Colors.NavigationItem.Selected));
+    scene.checkSettled();
+}
+
+TEST_CASE("NavigationRail: theme surfaces and text colours are registered and editing the rail surface repaints its retained slot")
+{
+    using namespace skin::textured;
+    Scene scene;
+    scene.frame();
+    for(const char *name : {"NavigationRail", "NavItemHover", "NavItemDown", "NavItemFocus",
+        "NavItemFocusHover", "NavItemSelected", "NavItemSelectedHover", "NavItemSelectedFocus",
+        "NavItemSelectedFocusHover", "NavItemSelectedDisabled"})
+        CHECK(tokyonight::surfaceRegistry().count(name) == 1);
+    TexturedSkin textured(&scene.renderer);
+    const auto colors=textured.textColorRegistry();
+    CHECK((colors.at("NavItemText") == &textured.Colors.NavigationItem.Normal));
+    CHECK((colors.at("NavItemSelectedText") == &textured.Colors.NavigationItem.Selected));
+    CHECK((colors.at("NavItemDisabledText") == &textured.Colors.NavigationItem.Disabled));
+    // Restore the global surface even if the assertion fails.
+    const auto original=tokyonight::NavigationRail;
+    struct RestoreSurface
+    {
+        tokyonight::Surface saved;
+        ~RestoreSurface() { tokyonight::NavigationRail=saved; }
+    } restore{original};
+    tokyonight::NavigationRail.top=tokyonight::Cyan;
+    scene.rail->redraw();
+    scene.frame();
+    const auto ids=scene.primitives(scene.rail);
+    REQUIRE(drawFor(scene, ids[0]) != nullptr);
+    CHECK((drawFor(scene, ids[0])->top == tokyonight::Cyan));
+    CHECK(scene.renderer.writtenPrimitiveIds() == ids);
+    CHECK(scene.canvas->getLayoutStats().passes == 0);
+    tokyonight::NavigationRail=original;
+    scene.rail->redraw();
+    scene.frame();
+    REQUIRE(drawFor(scene, ids[0]) != nullptr);
+    CHECK((drawFor(scene, ids[0])->top == original.top));
+    scene.checkSettled();
+}
 
 TEST_CASE("NavigationRail: clicks and setSelected notify once and selection lays nothing out")
 {

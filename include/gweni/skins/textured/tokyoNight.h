@@ -143,6 +143,19 @@ inline Surface ListItem       { Bg,                    Bg,                    Bg
 inline Surface ListItemSel    { SurfHi,                Surf,                  Blue,  RadiusSm, BorderW };
 inline Surface ListItemHover  { Color(0x24,0x28,0x3b), Color(0x24,0x28,0x3b), BgStorm, RadiusSm, 0.0f };
 
+// Navigation: the selection's leading bar is the row's left border, with
+// the other borders masked out. It shares the background's retained slot.
+inline Surface NavigationRail       { BgStorm, BgStorm, BgStorm, 0.0f, 0.0f };
+inline Surface NavItemHover         { SurfHi, SurfHi, Blue, RadiusSm, 0.0f };
+inline Surface NavItemDown          { SurfHover, SurfHover, Blue, RadiusSm, 0.0f };
+inline Surface NavItemFocus         { Surf, Surf, Cyan, RadiusSm, BorderW };
+inline Surface NavItemFocusHover    { SurfHi, SurfHi, Cyan, RadiusSm, BorderW };
+inline Surface NavItemSelected      { DarkBlue, DarkBlue, Blue, RadiusSm, 3.0f };
+inline Surface NavItemSelectedHover { SurfHi, SurfHi, Blue, RadiusSm, 3.0f };
+inline Surface NavItemSelectedFocus { DarkBlue, DarkBlue, Cyan, RadiusSm, 3.0f };
+inline Surface NavItemSelectedFocusHover { SurfHi, SurfHi, Cyan, RadiusSm, 3.0f };
+inline Surface NavItemSelectedDisabled { Surf, Surf, Muted, RadiusSm, 3.0f };
+
 // Scrollbars
 inline Surface ScrollTrack    { BgDark,                BgDark,                BgDark, RadiusSm, 0.0f };
 inline Surface ScrollThumb    { Line,                  Color(0x37,0x3d,0x5a), Line,  RadiusSm, 0.0f };
@@ -421,6 +434,11 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"TabActive",&TabActive},{"TabInactive",&TabInactive},{"TabHover",&TabHover},{"TabControl",&TabControl},
         {"CategoryList",&CategoryList},{"CategoryInner",&CategoryInner},{"CategoryHeader",&CategoryHeader},
         {"ListItem",&ListItem},{"ListItemSel",&ListItemSel},{"ListItemHover",&ListItemHover},
+        {"NavigationRail",&NavigationRail},{"NavItemHover",&NavItemHover},{"NavItemDown",&NavItemDown},
+        {"NavItemFocus",&NavItemFocus},{"NavItemFocusHover",&NavItemFocusHover},
+        {"NavItemSelected",&NavItemSelected},{"NavItemSelectedHover",&NavItemSelectedHover},
+        {"NavItemSelectedFocus",&NavItemSelectedFocus},{"NavItemSelectedFocusHover",&NavItemSelectedFocusHover},
+        {"NavItemSelectedDisabled",&NavItemSelectedDisabled},
         {"ScrollTrack",&ScrollTrack},{"ScrollThumb",&ScrollThumb},{"ScrollThumbHover",&ScrollThumbHover},{"ScrollThumbDown",&ScrollThumbDown},
         {"ProgressBack",&ProgressBack},{"ProgressFront",&ProgressFront},
         {"SliderTrack",&SliderTrack},{"SliderNotch",&SliderNotch},{"SliderThumb",&SliderThumb},
