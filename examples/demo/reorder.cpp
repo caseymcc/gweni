@@ -5,6 +5,7 @@
 #include "demo/reorder.h"
 
 #include <gweni/controls/checkBox.h>
+#include <gweni/controls/dataTable.h>
 #include <gweni/controls/label.h>
 #include <gweni/controls/scrollControl.h>
 #include <gweni/controls/tabControl.h>
@@ -159,10 +160,92 @@ GWENI_CONTROL_CONSTRUCTOR(ReorderDemo)
                 : static_cast<size_t>(found-m_listKeys.begin());
         });
     m_listReorder->setOnItemDropped([this](const controls::ItemDrop &drop) { applyListDrop(drop); });
+
+    // the jobs: a source-mode table keyed by job id
+    for(uint64_t job=0; job < TableJobs; ++job)
+        m_tableOrder.push_back(JobKeyBase+job);
+    m_tableShown=m_tableOrder;
+
+    m_table=lists->newChild<controls::DataTable>();
+    m_table->setDock(DockPosition::Center);
+    m_table->setColumnCount(2);
+    m_table->setColumnCaption(0, "Job");
+    m_table->setColumnCaption(1, "Priority");
+    m_table->setColumnWidth(0, 160);
+    m_table->setStriped(true);
+    m_table->setItemCount(m_tableShown.size());
+    m_table->setRowBinder([this](controls::DataTableRow *row, size_t item)
+        {
+            const uint64_t key=m_tableShown[item];
+            row->setCellText(0, taskText(key));
+            row->setCellText(1, std::to_string(jobPriority(key)));
+        });
+    m_table->onSortChanged.add(this, &ReorderDemo::onTableSorted);
+
+    controls::Reorderable *tableReorder=m_table->setItemsReorderable(
+        [this](size_t index) { return m_tableShown[index]; },
+        [this](uint64_t key) {
+            auto found=std::find(m_tableShown.begin(), m_tableShown.end(), key);
+            return (found == m_tableShown.end()) ? controls::DataTable::NoItem
+                : static_cast<size_t>(found-m_tableShown.begin());
+        });
+    tableReorder->setAcceptsFromGroup(false);
+    tableReorder->setOnItemDropped([this](const controls::ItemDrop &drop) { applyTableDrop(drop); });
+
+    // a job dragged out of the table goes into the task list
+    m_listGroup.add(m_listReorder);
+    m_listGroup.add(tableReorder);
+}
+
+int ReorderDemo::jobPriority(uint64_t key)
+{
+    return static_cast<int>(((key-JobKeyBase)*7919u)%100u);
+}
+
+void ReorderDemo::showTableOrder()
+{
+    m_tableShown=m_tableOrder;
+
+    const int column=m_table->getSortColumn();
+
+    if(column >= 0)
+    {
+        const bool ascending=(m_table->getSortDirection() == controls::SortDirection::Ascending);
+
+        std::stable_sort(m_tableShown.begin(), m_tableShown.end(), [column, ascending](uint64_t a, uint64_t b) {
+            const int64_t x=(column == 0) ? static_cast<int64_t>(a) : jobPriority(a);
+            const int64_t y=(column == 0) ? static_cast<int64_t>(b) : jobPriority(b);
+            return ascending ? (x < y) : (x > y);
+        });
+    }
+    m_table->rebind();
+}
+
+void ReorderDemo::onTableSorted(event::Info)
+{
+    showTableOrder();
+}
+
+// Within the table (only while unsorted): the job moved in the hand order.
+void ReorderDemo::applyTableDrop(const controls::ItemDrop &drop)
+{
+    m_drops.push_back(drop);
+
+    auto found=std::find(m_tableOrder.begin(), m_tableOrder.end(), drop.key);
+
+    if(found == m_tableOrder.end())
+        return;
+
+    m_tableOrder.erase(found);
+    m_tableOrder.insert(m_tableOrder.begin()+static_cast<std::ptrdiff_t>(std::min(drop.targetIndex,
+        m_tableOrder.size())), drop.key);
+    showTableOrder();
 }
 
 String ReorderDemo::taskText(uint64_t key)
 {
+    if(key >= JobKeyBase)
+        return "Job #"+std::to_string(key-JobKeyBase);
     return "Task #"+std::to_string(key);
 }
 
@@ -177,10 +260,29 @@ void ReorderDemo::showLists()
 }
 
 // Within the list: the task taken out at its index and put at the target
-// index, and the rows on screen bound again.
+// index, and the rows on screen bound again. From the table: the job taken
+// out of the table's orders and put in the list.
 void ReorderDemo::applyListDrop(const controls::ItemDrop &drop)
 {
     m_drops.push_back(drop);
+
+    if(drop.source != m_listReorder)
+    {
+        auto found=std::find(m_tableOrder.begin(), m_tableOrder.end(), drop.key);
+
+        if(found == m_tableOrder.end())
+            return;
+
+        m_tableOrder.erase(found);
+        m_tableShown.erase(std::find(m_tableShown.begin(), m_tableShown.end(), drop.key));
+        m_table->setItemCount(m_tableShown.size());
+        m_table->rebind();
+
+        m_listKeys.insert(m_listKeys.begin()+static_cast<std::ptrdiff_t>(std::min(drop.targetIndex,
+            m_listKeys.size())), drop.key);
+        m_list->insertItems(std::min(drop.targetIndex, m_listKeys.size()-1), 1);
+        return;
+    }
 
     if(drop.sourceIndex >= m_listKeys.size())
         return;

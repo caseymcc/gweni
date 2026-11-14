@@ -9,6 +9,7 @@
 
 #include <gweni/controls/button.h>
 #include <gweni/controls/label.h>
+#include <gweni/controls/reorderable.h>
 #include <gweni/controls/scrollControl.h>
 #include <gweni/controls/selectable.h>
 #include <gweni/controls/virtualList.h>
@@ -388,6 +389,23 @@ public:
     //! Source mode: scrolls as little as puts the item fully in view (resolved
     //! by the next layout, VirtualList::scrollToItem).
     void scrollToItem(size_t item);
+
+    //! Rows reordered by drag and drop (Reorderable), the drop reported and
+    //! applied by the app (setRowOrder in row mode; its own data and rebind()
+    //! in source mode). Row mode: setRowsReorderable(true) keys each row by its
+    //! control, the gap from the rows' bounds (a CardReorder over the body).
+    //! Source mode: setItemsReorderable() takes the app's key(index) and
+    //! indexOf(key), as a VirtualListReorder over the body; turning it on
+    //! enters source mode. Either way no reorder within the table is taken
+    //! while it has a sort column (no gap, the No cursor), while a drop of its
+    //! row into another list still works, and a header click goes ascending,
+    //! descending, then back to no sort. Returns the Reorderable (its rules,
+    //! its group, setOnItemDropped), null when turned off; getReorderable()
+    //! gives it.
+    Reorderable *setRowsReorderable(bool reorderable);
+    Reorderable *setItemsReorderable(VirtualListReorder::KeyOf keyOf, VirtualListReorder::IndexOf indexOf);
+    Reorderable *getReorderable() const;
+    bool isReorderable() const { return getReorderable() != nullptr; }
 
     internal::DataTableHeader *getHeader() const { return m_header; }
     //! The body the rows scroll in: a DataTableBody in row mode, the

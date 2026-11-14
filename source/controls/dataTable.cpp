@@ -9,6 +9,7 @@
 #include <gweni/controls/canvas.h>
 
 #include <algorithm>
+#include <memory>
 
 namespace gweni
 {
@@ -649,10 +650,81 @@ void DataTable::columnsChanged()
 
 void DataTable::headerCellPressed(int column)
 {
+    // A reorderable table goes back to its own order after descending: the
+    // order the user drags rows into, which a sort column hides.
+    if(isReorderable() && column == m_sortColumn && m_sortDirection == SortDirection::Descending)
+    {
+        setSortColumn(-1, SortDirection::None, true);
+        return;
+    }
+
     const SortDirection direction=(column == m_sortColumn && m_sortDirection == SortDirection::Ascending)?
         SortDirection::Descending:SortDirection::Ascending;
 
     setSortColumn(column, direction, true);
+}
+
+namespace
+{
+
+// The rows of a row-mode table, as a column's cards, reordered within the
+// table only while it has no sort column.
+class DataTableRowReorder: public CardReorder
+{
+public:
+    DataTableRowReorder(ScrollControl *body, const DataTable *table): CardReorder(body), m_table(table) {}
+
+protected:
+    bool reorderWithinNow() const override { return m_table->getSortColumn() < 0; }
+
+private:
+    const DataTable *m_table;
+};
+
+// The items of a source-mode table, as a VirtualList's, likewise.
+class DataTableItemReorder: public VirtualListReorder
+{
+public:
+    DataTableItemReorder(VirtualList *body, const DataTable *table, KeyOf keyOf, IndexOf indexOf):
+        VirtualListReorder(body, std::move(keyOf), std::move(indexOf)), m_table(table)
+    {}
+
+protected:
+    bool reorderWithinNow() const override { return m_table->getSortColumn() < 0; }
+
+private:
+    const DataTable *m_table;
+};
+
+}//namespace
+
+Reorderable *DataTable::setRowsReorderable(bool reorderable)
+{
+    if(isSourceMode() || !m_rowBody)
+        return nullptr;
+
+    if(!reorderable)
+    {
+        m_rowBody->setReorderable(nullptr);
+        return nullptr;
+    }
+
+    if(!m_rowBody->getReorderable())
+        m_rowBody->setReorderable(std::make_unique<DataTableRowReorder>(m_rowBody, this));
+    return m_rowBody->getReorderable();
+}
+
+Reorderable *DataTable::setItemsReorderable(VirtualListReorder::KeyOf keyOf, VirtualListReorder::IndexOf indexOf)
+{
+    enterSourceMode();
+    m_virtualBody->setReorderable(std::make_unique<DataTableItemReorder>(m_virtualBody, this,
+        std::move(keyOf), std::move(indexOf)));
+    return m_virtualBody->getReorderable();
+}
+
+Reorderable *DataTable::getReorderable() const
+{
+    return m_body ? m_body->getReorderable() : nullptr;
 }
 
 void DataTable::setSortColumn(int column, SortDirection direction, bool doEvents)

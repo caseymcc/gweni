@@ -16,6 +16,7 @@ namespace gweni
 namespace controls
 {
 class CheckBoxWithLabel;
+class DataTable;
 class Label;
 class ScrollControl;
 class TabButton;
@@ -45,7 +46,13 @@ private:
 //! column but are not reordered within. The demo applies every drop to its
 //! cards. The Lists: a VirtualList of ListItems tasks (a
 //! controls::VirtualListReorder keyed by each task's id), reordered within
-//! itself, the demo moving the task in its vector. "Live updates" adds, every
+//! itself, the demo moving the task in its vector; beside it a source-mode
+//! DataTable of TableJobs jobs (DataTable::setItemsReorderable, keyed by job
+//! id), sortable by either column: while unsorted it is reordered by hand
+//! (the demo keeps that order and shows it again when the sort goes back to
+//! none), sorted it takes none of its own rows, and either way a job dragged
+//! into the task list goes there (the list and the table in one ReorderGroup,
+//! the table taking nothing from the list). "Live updates" adds, every
 //! LiveSeconds, a card below the pinned one and a task at the list's top and,
 //! past LiveCap live ones of each, deletes the oldest.
 class ReorderDemo: public controls::Base
@@ -69,6 +76,9 @@ public:
     static constexpr int CardHeight=32;
     static constexpr int CardGap=6;
     static constexpr size_t ListItems=10000;
+    static constexpr size_t TableJobs=2000;
+    //! A job's key, apart from the tasks' (which count up from 0)
+    static constexpr uint64_t JobKeyBase=1000000;
 
     controls::ScrollControl *column(size_t index) const { return m_columns.at(index); }
     controls::CardReorder *columnReorder(size_t index) const { return m_reorders.at(index); }
@@ -90,8 +100,14 @@ public:
     controls::VirtualListReorder *listReorder() const { return m_listReorder; }
     //! The list's task ids, in order
     const std::vector<uint64_t> &listKeys() const { return m_listKeys; }
-    //! The text the list shows for a task
+    //! The text the list shows for a task (or a job dropped into it)
     static String taskText(uint64_t key);
+
+    controls::DataTable *table() const { return m_table; }
+    //! The jobs the table shows, in its order now (sorted or by hand)
+    const std::vector<uint64_t> &tableKeys() const { return m_tableShown; }
+    //! A job's priority, the second column
+    static int jobPriority(uint64_t key);
 
     controls::CheckBoxWithLabel *liveToggle() const { return m_liveToggle; }
     void setLiveUpdates(bool live);
@@ -103,6 +119,10 @@ private:
     void onLiveChanged(event::Info info);
     void applyDrop(const controls::ItemDrop &drop);
     void applyListDrop(const controls::ItemDrop &drop);
+    void applyTableDrop(const controls::ItemDrop &drop);
+    void onTableSorted(event::Info info);
+    // the shown order from the hand order and the sort column
+    void showTableOrder();
 
     std::vector<controls::ScrollControl *> m_columns;
     std::vector<controls::CardReorder *> m_reorders;
@@ -114,6 +134,10 @@ private:
     controls::VirtualListReorder *m_listReorder=nullptr;
     std::vector<uint64_t> m_listKeys;
     std::vector<uint64_t> m_liveTasks;
+    controls::DataTable *m_table=nullptr;
+    controls::ReorderGroup m_listGroup;
+    std::vector<uint64_t> m_tableOrder;
+    std::vector<uint64_t> m_tableShown;
     uint64_t m_nextTask=0;
     ReorderDemoCard *m_pinned=nullptr;
     std::vector<controls::ItemDrop> m_drops;
