@@ -316,7 +316,9 @@ set(GWENI_CONTROL_SOURCES
     source/controls/scrollBarButton.cpp
     include/gweni/controls/scrollControl.h
     source/controls/scrollControl.cpp
+    include/gweni/controls/reorderable.h
     include/gweni/controls/selectable.h
+    source/controls/reorderable.cpp
     source/controls/selectable.cpp
     include/gweni/controls/segmentedButtons.h
     source/controls/segmentedButtons.cpp
