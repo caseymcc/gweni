@@ -39,6 +39,9 @@
  *  frame runs no animation; it stops too when the cursor leaves the band, when
  *  the drag ends and over a list that does not take the item; the top band
  *  scrolls back up, and at offset 0 does nothing.
+ *  A refused gap first allowed by auto-scroll or a card insert shows its bar
+ *  in that layout pass, with no second pass or render-phase layout, both on
+ *  the first drag and when the indicator is reused from an earlier drag.
  */
 #include "headlessFixture.h"
 
@@ -564,6 +567,96 @@ Point aboveViewportBottom(controls::ScrollControl *list, int fromBottom)
 }
 
 }//namespace
+
+TEST_CASE("CardReorder: a refused gap allowed by auto-scroll shows its indicator in one layout pass")
+{
+    Scene scene(20);
+    controls::ScrollControl *list=scene.todo.list;
+    CardReorder *reorder=scene.todo.reorder;
+    size_t previousIndicatorId=0;
+
+    SUBCASE("a fresh indicator") {}
+    SUBCASE("an indicator hidden after an earlier drag")
+    {
+        scene.startDrag(scene.todo.cards[0]);
+        REQUIRE(reorder->indicatorShown());
+        previousIndicatorId=reorder->getIndicator()->getControlId();
+        scene.release();
+        REQUIRE(reorder->getIndicator()->hidden());
+    }
+
+    reorder->setCanDrop([](Reorderable *, uint64_t, Reorderable *, size_t index) {
+        return index >= 10;
+    });
+    scene.startDrag(scene.todo.cards[0]);
+    REQUIRE(draganddrop::isDragging());
+    scene.move(aboveViewportBottom(list, 2));
+    REQUIRE_FALSE(reorder->showsGap());
+    REQUIRE_FALSE(reorder->indicatorShown());
+    REQUIRE(draganddrop::currentCursor() == cursor::No);
+    REQUIRE(anim::activeCount(list) == 1);
+
+    bool allowed=false;
+    for(int frame=0; frame < 40; ++frame)
+    {
+        scene.step();
+        const controls::LayoutStats &stats=scene.canvas->getLayoutStats();
+        INFO("frame ", frame, ", gap ", reorder->gap());
+        CHECK(stats.passes <= 1);
+        CHECK_FALSE(stats.renderLayout);
+        CHECK(reorder->indicatorShown() == reorder->showsGap());
+        allowed=allowed || reorder->showsGap();
+    }
+    CHECK(allowed);
+    CHECK(draganddrop::isDragging());
+    CHECK(draganddrop::currentCursor() == cursor::Normal);
+    REQUIRE(reorder->getIndicator());
+    if(previousIndicatorId)
+        CHECK(reorder->getIndicator()->getControlId() == previousIndicatorId);
+    scene.release();
+    CHECK_FALSE(reorder->indicatorShown());
+    CHECK(anim::activeCount(list) == 0);
+}
+
+TEST_CASE("CardReorder: a refused gap allowed by a card insert shows its indicator in one layout pass")
+{
+    Scene scene;
+    CardReorder *reorder=scene.todo.reorder;
+
+    SUBCASE("a fresh indicator") {}
+    SUBCASE("an indicator hidden after an earlier drag")
+    {
+        scene.startDrag(scene.todo.cards[3]);
+        REQUIRE(reorder->indicatorShown());
+        scene.release();
+        REQUIRE(reorder->getIndicator()->hidden());
+    }
+
+    reorder->setCanDrop([](Reorderable *, uint64_t, Reorderable *, size_t index) {
+        return index == 1;
+    });
+    scene.startDrag(scene.todo.cards[3]);
+    scene.move(Scene::on(scene.todo.cards[0], 3));
+    REQUIRE_FALSE(reorder->showsGap());
+    REQUIRE_FALSE(reorder->indicatorShown());
+    REQUIRE(reorder->gap() == 0);
+
+    // The edit is discovered by listArranged, after the panel placed its
+    // cards. The gap stays before the same card, now at allowed index 1.
+    scene.card(scene.todo)->sendToBack();
+    scene.frame();
+    const controls::LayoutStats &stats=scene.canvas->getLayoutStats();
+    CHECK(stats.passes == 1);
+    CHECK_FALSE(stats.renderLayout);
+    CHECK(draganddrop::isDragging());
+    CHECK(reorder->gap() == 1);
+    CHECK(reorder->indicatorShown());
+    CHECK(draganddrop::currentCursor() == cursor::Normal);
+    scene.release();
+    REQUIRE(scene.todo.drops.size() == 1);
+    CHECK(scene.todo.drops[0].sourceIndex == 4);
+    CHECK(scene.todo.drops[0].targetIndex == 1);
+}
 
 TEST_CASE("CardReorder: the cursor resting in the bottom band scrolls the column, faster deeper in")
 {
