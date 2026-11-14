@@ -76,8 +76,10 @@ public:
 
     //! On or off. A change fires onToggled, then onToggledOn or onToggledOff
     //! (and Button's toggle callers); the current value fires and marks
-    //! nothing. If a handler turns it back, the superseded call stops its
-    //! remaining notifications.
+    //! nothing. If a handler turns it back, the superseded call fires none of
+    //! the Switch's own notifications left (Button's onToggleOnCaller or
+    //! onToggleOffCaller still fires the state it ends in once more when an
+    //! onToggleCaller handler turned it back, as for any toggle Button).
     void setOn(bool on) { setToggleState(on); }
     bool isOn() const { return getToggleState(); }
     void toggle() override { setToggleState(!getToggleState()); }

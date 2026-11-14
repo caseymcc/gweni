@@ -3534,8 +3534,11 @@ two programs and the draws. What follows describes both together:
   `isOn`, `toggle`), and a change fires Button's toggle callers, then `onToggled` and
   `onToggledOn` or `onToggledOff`, once per real change, from a click, a key or `setOn`
   alike; `setOn` with the value it has fires and marks nothing. If a handler turns
-  it back from Button's callers or `onToggled`, the outer call stops its remaining
-  notifications, so it never announces a stale On or Off. Its label is the
+  it back from Button's callers or `onToggled`, the outer call fires none of the
+  Switch's own notifications left, so it never announces a stale On or Off
+  (Button's `onToggleOnCaller` or `onToggleOffCaller`, turned back from
+  `onToggleCaller`, fires the state it ends in a second time, as for any toggle
+  Button). Its label is the
   switch's own Text (`setText`), not a control beside it as a `CheckBoxWithLabel`'s
   is: the track sits in the switch's padding on the label's other side
   (`setLabelOnLeft`, `TrackWidth` and `Gap` units wide), so a hover or a click
