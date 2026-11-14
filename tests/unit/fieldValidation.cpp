@@ -16,7 +16,9 @@
  *  renderer draws, the text, a NumericUpDown's buttons) stays the height the
  *  box was asked for, above the line. The message is not content (not
  *  getText(), a press on it leaves the caret and the selection), and a
- *  PasswordTextBox shows it in clear text.
+ *  PasswordTextBox shows it in clear text. A box whose height its parent
+ *  sets (docked Center) keeps it as the line is reserved, and still draws its
+ *  frame again at the new field height.
  *
  *  The validator: set, it runs nothing and reserves the line; on Change it
  *  runs in each text change, on the text after a TextBoxNumeric's filtering
@@ -643,6 +645,32 @@ TEST_CASE_TEMPLATE("Field validation: the error surfaces", T,
     controls::TextBox, controls::PasswordTextBox, controls::TextBoxNumeric, controls::NumericUpDown)
 {
     checkLook<T>();
+}
+
+TEST_CASE_TEMPLATE("Field validation: a box its parent sizes draws its frame above a newly reserved line", T,
+    controls::TextBox, controls::PasswordTextBox, controls::TextBoxNumeric, controls::NumericUpDown)
+{
+    LookScene scene;
+    controls::Base *holder=scene.canvas->newChild<controls::Base>("holder");
+    holder->setAlignment(Alignment::Absolute);
+    holder->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    holder->setBounds(Rect(10, 10, 200, 60));
+    T *box=holder->newChild<T>("box");
+    box->setDock(DockPosition::Center);
+    scene.canvas->updateCanvas();
+    scene.canvas->renderCanvas();
+    REQUIRE(box->getHeight() == 60);
+
+    // the height stays the parent's, so only the room moves the field part:
+    // the frame must be drawn again at the new field height
+    box->setValidator([](const String &) { return String(); });
+    scene.renderer.draws.clear();
+    scene.canvas->updateCanvas();
+    scene.canvas->renderCanvas();
+    CHECK(box->getHeight() == 60);
+    CHECK(box->getFieldHeight() < 60);
+    REQUIRE(scene.renderer.draws.size() == 1);
+    CHECK(scene.renderer.draws.back().rect.h == box->getFieldHeight());
 }
 
 TEST_CASE("Field validation: the message follows the ErrorText and HelperText colours")

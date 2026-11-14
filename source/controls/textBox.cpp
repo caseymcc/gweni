@@ -440,6 +440,9 @@ void TextBox::updateMessageRoom()
     // inside the box's own measure, before anything is placed in it
     m_padding=m_message->fieldPadding;
     m_padding.bottom+=room;
+    // a box whose height its parent sets keeps its size, so nothing else
+    // marks it: the frame is drawn at getFieldHeight(), which moved
+    addStateChange(StateChange_Background);
 }
 
 int TextBox::requestedSizeExtra(Dim dim) const
