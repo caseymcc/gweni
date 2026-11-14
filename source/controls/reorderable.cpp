@@ -841,7 +841,26 @@ bool Reorderable::handleDrop(draganddrop::Package *package, int /*x*/, int /*y*/
     if(sourceIndex == NoItem)
         return false;
 
-    const size_t targetIndex=targetIndexFor(source, sourceIndex, this, m_gap);
+    // Cards the app edited since the last layout (a live update applied
+    // between two frames, then the release) are seen only by the next
+    // listArranged: the gap is found again before the card it was before, or
+    // at the end, and the rule asked again for the index that gives.
+    size_t gap=m_gap;
+
+    if(cheapKeys())
+    {
+        gap=m_gapAtEnd ? itemCount() : indexOf(m_gapKey);
+        if(gap == NoItem)
+            gap=gapAt(m_lastPoint);
+        if(gap == NoItem)
+            return false;
+    }
+
+    const size_t targetIndex=targetIndexFor(source, sourceIndex, this, gap);
+
+    if(((gap != m_gap) || (sourceIndex != source->m_dragIndex)) && m_canDrop
+        && !m_canDrop(source, source->m_dragKey, this, targetIndex))
+        return false;
 
     // dropped where it was: nothing to report
     if((source == this) && (targetIndex == sourceIndex))

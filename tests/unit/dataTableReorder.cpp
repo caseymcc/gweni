@@ -9,7 +9,8 @@
  *
  *  Row mode (setRowsReorderable): a press on a row moved 5 units drags it,
  *  keyed by its control; a drop reports its indexes and the app applying it
- *  with setRowOrder shows the new order. While the table has a sort column it
+ *  with setRowOrder shows the new order; a setRowOrder in the input phase of
+ *  the release drops before the row the gap was before. While the table has a sort column it
  *  takes no row of its own (no gap, the No cursor, a release cancels), but a
  *  row dragged out of it drops on the other table. Source mode
  *  (setItemsReorderable): a pooled row drags its item by the app's key, a
@@ -204,6 +205,29 @@ TEST_CASE("DataTable reorder: a row-mode row drags by its control, and setRowOrd
     scene.frame();
     CHECK(scene.left->getRows() == order);
     CHECK(rows[1]->getY() > rows[3]->getY());
+}
+
+TEST_CASE("DataTable reorder: a row-mode setRowOrder just before the release drops at the held gap")
+{
+    // the app's new order and the release in one input phase: the drop is
+    // before the row the gap was before, as the order is at the release
+    Scene scene(false);
+    const std::vector<DataTableRow *> rows=scene.left->getRows();
+
+    // row 5 dragged, the gap before row 2
+    scene.startDrag(rows[5]);
+    scene.move(Scene::centre(rows[2], 2));
+    REQUIRE(scene.left->getReorderable()->gap() == 2);
+    scene.frame();
+
+    // rows 0 and 1 moved below row 4: row 2 is first, row 5 last
+    const std::vector<DataTableRow *> order={rows[2], rows[3], rows[4], rows[0], rows[1], rows[5]};
+    scene.left->setRowOrder(order);
+    scene.release();
+
+    REQUIRE(scene.leftDrops.size() == 1);
+    CHECK(scene.leftDrops[0].sourceIndex == 5);
+    CHECK(scene.leftDrops[0].targetIndex == 0);
 }
 
 TEST_CASE("DataTable reorder: a sorted table takes no row of its own, but its rows drop elsewhere")

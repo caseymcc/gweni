@@ -22,7 +22,10 @@
  *  member of the group report the card's key and indexes, and gweni moves no
  *  card. A card the app adds above the gap during the drag keeps the gap
  *  before the card it was before, the bar following it, in one layout pass,
- *  and the drop reports the indexes as they are then. The dragged card
+ *  and the drop reports the indexes as they are then. Cards added or
+ *  removed in the input phase of the release, with no update between, drop
+ *  before the card the gap was before (or at the end), the drop rule asked
+ *  again for that index. The dragged card
  *  deleted cancels the drag with nothing reported. Escape cancels, hiding the
  *  looks. The release of the button after a cancel it did not make (Escape,
  *  the dragged card deleted, the source column hidden) reaches no control:
@@ -525,6 +528,87 @@ TEST_CASE("CardReorder: a card added above the gap keeps it before the same card
     CHECK(scene.todo.drops[0].key == CardReorder::keyOf(cards[3]));
     CHECK(scene.todo.drops[0].sourceIndex == 4);
     CHECK(scene.todo.drops[0].targetIndex == 3);
+}
+
+TEST_CASE("CardReorder: cards edited just before the release, with no update between, drop at the held gap")
+{
+    // The app's edit and the release in one input phase (a live update applied
+    // between two frames, then the mouseup): the drop is before the card the
+    // gap was before, or at the end, as the column is at the release.
+    Scene scene;
+    std::vector<controls::Button *> &cards=scene.todo.cards;
+
+    SUBCASE("a card added above")
+    {
+        scene.startDrag(cards[3]);
+        scene.move(Scene::on(cards[2], 3));
+        REQUIRE(scene.todo.reorder->gap() == 2);
+        scene.frame();
+
+        scene.card(scene.todo)->sendToBack();
+        input::onMouseClicked(scene.canvas, 0, false);
+        scene.frame();
+        REQUIRE(scene.todo.drops.size() == 1);
+        CHECK(scene.todo.drops[0].sourceIndex == 4);
+        CHECK(scene.todo.drops[0].targetIndex == 3);
+    }
+
+    SUBCASE("a card removed above")
+    {
+        scene.startDrag(cards[3]);
+        scene.move(Scene::on(cards[2], 3));
+        REQUIRE(scene.todo.reorder->gap() == 2);
+        scene.frame();
+
+        delete cards[0];
+        input::onMouseClicked(scene.canvas, 0, false);
+        scene.frame();
+        REQUIRE(scene.todo.drops.size() == 1);
+        CHECK(scene.todo.drops[0].sourceIndex == 2);
+        CHECK(scene.todo.drops[0].targetIndex == 1);
+    }
+
+    SUBCASE("two removed below, the gap at the end")
+    {
+        scene.startDrag(cards[0]);
+        scene.move(Scene::on(cards[3], CardHeight-3));
+        REQUIRE(scene.todo.reorder->gap() == 4);
+        scene.frame();
+
+        delete cards[3];
+        delete cards[2];
+        input::onMouseClicked(scene.canvas, 0, false);
+        scene.frame();
+        REQUIRE(scene.todo.drops.size() == 1);
+        CHECK(scene.todo.drops[0].sourceIndex == 0);
+        // two cards left, one after the item's removal: the end is index 1
+        CHECK(scene.todo.drops[0].targetIndex == 1);
+    }
+
+    SUBCASE("the rule asked again for the index the edit gave the gap")
+    {
+        std::vector<size_t> asked;
+
+        // index 3 refused: allowed as the gap is found (2), refused once a
+        // card added above moves it to 3
+        scene.todo.reorder->setCanDrop([&asked](Reorderable *, uint64_t, Reorderable *, size_t index) {
+            asked.push_back(index);
+            return index != 3;
+        });
+        scene.startDrag(cards[3]);
+        scene.move(Scene::on(cards[2], 3));
+        REQUIRE(scene.todo.reorder->gap() == 2);
+        REQUIRE(scene.todo.reorder->indicatorShown());
+        scene.frame();
+
+        asked.clear();
+        scene.card(scene.todo)->sendToBack();
+        input::onMouseClicked(scene.canvas, 0, false);
+        scene.frame();
+        CHECK(asked == std::vector<size_t>{3});
+        CHECK(scene.todo.drops.empty());
+        CHECK_FALSE(draganddrop::isDragging());
+    }
 }
 
 TEST_CASE("CardReorder: the dragged card deleted cancels the drag, and Escape hides the looks")
