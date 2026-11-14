@@ -518,7 +518,47 @@ void main()
         int kind = int(vRadius + 0.5);
         float a;
 
-        if(kind <= 1 || kind >= 7)
+        if(kind == 9)
+        {
+            // Arc (drawArc): on the largest circle centred in the quad, its stroke,
+            // the whole px drawArc packs into the border colour's red byte, inside
+            // the circle, round caps at both ends. Its start and sweep are color1's
+            // two fields, 1/65536 of a turn from the top clockwise (y is down), a
+            // sweep of 65535 the whole ring. In device px with the box filter and
+            // the constant aa of kinds 2-6, at the pixel centre rounded to the
+            // half px it is at (as kinds 0 and 1), so the arc drawn here is the
+            // arc moved, or drawn by another backend.
+            float s = floor(vBorderColor.r*255.0 + 0.5);
+            float startBits = floor(vColor1.r*255.0 + 0.5)*256.0 + floor(vColor1.g*255.0 + 0.5);
+            float sweepBits = floor(vColor1.b*255.0 + 0.5)*256.0 + floor(vColor1.a*255.0 + 0.5);
+            float aa = max(0.5*(length(dFdx(vLocal)) + length(dFdy(vLocal))), 1e-4);
+            vec2 q = floor(vLocal*2.0 + 0.5)*0.5;
+            float outer = min(vHalf.x, vHalf.y);
+            float w = min(s, outer);
+            float r = outer - 0.5*w;    // the stroke's middle
+            float d = abs(length(q) - r) - 0.5*w;
+
+            if(sweepBits < 65535.0)
+            {
+                // where q is from the start, in turns clockwise: inside the sweep
+                // the ring's distance is the arc's, past it the nearer cap's
+                float start = startBits/65536.0;
+                float sweep = sweepBits/65535.0;
+                float t = dot(q, q) > 0.0 ? fract(atan(q.x, -q.y)*0.15915494 - start) : 0.0;
+
+                if(t > sweep)
+                {
+                    float a0 = start*6.2831853;
+                    float a1 = (start + sweep)*6.2831853;
+                    vec2 p0 = r*vec2(sin(a0), -cos(a0));
+                    vec2 p1 = r*vec2(sin(a1), -cos(a1));
+
+                    d = min(length(q - p0), length(q - p1)) - 0.5*w;
+                }
+            }
+            a = clamp(0.5 - d/aa, 0.0, 1.0);
+        }
+        else if(kind <= 1 || kind >= 7)
         {
             // Normalized local coords in [-1,1], so the stroke scales with the rect.
             // At a pixel's centre vLocal is a multiple of 0.5 exactly (the quad's
@@ -654,7 +694,7 @@ void main()
     }
 
     // a transparent image texel writes no depth, so what lies behind it still draws;
-    // nor does a pixel an icon or a line leaves uncovered (a rule's quad reaches past
+    // nor does a pixel an icon, an arc or a line leaves uncovered (a rule's quad reaches past
     // its control, over its neighbours, and a line's quad is its bounding box), whose
     // coverage beside a stroke's edge is 0 give or take rounding: less than half a
     // step of 8-bit alpha changes no pixel; nor one a rounded rect (styles 4, 6, 7)

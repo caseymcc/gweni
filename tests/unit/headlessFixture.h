@@ -172,6 +172,24 @@ public:
         wrotePrimitive(primitiveId);
     }
 
+    //! One drawArc call, as it was made.
+    struct ArcDraw
+    {
+        size_t id;
+        gweni::Rect rect;
+        float startTurns, sweepTurns, thickness;
+        gweni::Color color;
+        int zIndex;
+    };
+
+    //! Recorded in `arcs`, not drawn.
+    void drawArc(size_t primitiveId, gweni::Rect rect, float startTurns, float sweepTurns,
+        float thickness, gweni::Color color, int zIndex) override
+    {
+        arcs.push_back({primitiveId, rect, startTurns, sweepTurns, thickness, color, zIndex});
+        wrotePrimitive(primitiveId);
+    }
+
     //! One drawTrapezoid call, as it was made.
     struct TrapezoidDraw
     {
@@ -323,6 +341,8 @@ public:
     std::vector<LineDraw> lines;
     //! Every drawTrapezoid call, in call order. Tests clear it as they go.
     std::vector<TrapezoidDraw> trapezoids;
+    //! Every drawArc call, in call order. Tests clear it as they go.
+    std::vector<ArcDraw> arcs;
 
     //! An id handed out while this renderer still had it live (two owners), or
     //! released while it was not live (released twice). Both should stay 0.

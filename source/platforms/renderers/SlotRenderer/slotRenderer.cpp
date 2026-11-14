@@ -2013,7 +2013,7 @@ void SlotRenderer::setVertex(Vertex &vertex, uint8_t type, int x, int y, int z, 
         vertex.ty=v;
     }
 
-    // SDF fields are only used by styles 3-9 (drawLine, writeRoundedQuad, drawIcon, drawGrid, drawTrapezoid)
+    // SDF fields are only used by styles 3-9 (drawLine, writeRoundedQuad, drawIcon, drawArc, drawGrid, drawTrapezoid)
     // and style 2's page, layer and size (drawTexturedRect); keep them 0 otherwise.
     vertex.lx=0;
     vertex.ly=0;
@@ -2260,6 +2260,62 @@ void SlotRenderer::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int 
     setIcon(vertexIndex++, x1, y0, +hw, -hh);
     setIcon(vertexIndex++, x0, y1, -hw, +hh);
     setIcon(vertexIndex++, x1, y1, +hw, +hh);
+
+    cullOutOfRangeQuad(primitiveId, rect);
+    markPrimitiveChanges(primitiveId, before);
+}
+
+void SlotRenderer::drawArc(size_t primitiveId, gweni::Rect rect, float startTurns, float sweepTurns,
+    float thickness, gweni::Color color, int zIndex)
+{
+    // a negative sweep is the same arc from its other end
+    if(sweepTurns < 0.0f)
+    {
+        startTurns+=sweepTurns;
+        sweepTurns=-sweepTurns;
+    }
+
+    const uint16_t start=renderer::arcStartBits(startTurns);
+    const uint16_t sweep=renderer::arcSweepBits(sweepTurns);
+    // whole device px, as a border is snapped
+    const int stroke=std::min(std::max(1, snap(thickness)), 255);
+
+    translate(rect);
+
+    size_t vertexIndex=primitiveId*4;
+
+    ensurePrimitiveSlots(primitiveId);
+
+    PrimitiveSlot before;
+
+    readPrimitiveSlot(primitiveId, before);
+
+    m_clippingBoxes[primitiveId]=makeClipBox();
+
+    // the quad is the rect, lx/ly in half-pixel units as in drawIcon
+    const int x0=rect.x;
+    const int y0=rect.y;
+    const int x1=rect.x+rect.w;
+    const int y1=rect.y+rect.h;
+    const int hw=halfPixelSize(rect.w);
+    const int hh=halfPixelSize(rect.h);
+
+    auto setArc=[&](size_t vi, int px, int py, int lx, int ly)
+    {
+        Vertex &v=m_vertexes[vi];
+        setVertex(v, 5, px, py, zIndex, color.rg(), color.ba());
+        v.lx=(int16_t)lx;
+        v.ly=(int16_t)ly;
+        v.radius=9;
+        v.cx=start;
+        v.cy=sweep;
+        v.bx=(uint16_t)(stroke<<8);
+    };
+
+    setArc(vertexIndex++, x0, y0, -hw, -hh);
+    setArc(vertexIndex++, x1, y0, +hw, -hh);
+    setArc(vertexIndex++, x0, y1, -hw, +hh);
+    setArc(vertexIndex++, x1, y1, +hw, +hh);
 
     cullOutOfRangeQuad(primitiveId, rect);
     markPrimitiveChanges(primitiveId, before);

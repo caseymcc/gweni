@@ -126,6 +126,28 @@ enum RoundedEdge: uint8_t
     NoBorderLeft=0x80
 };
 
+//! drawArc's angles as its slot keeps them, in 1/65536 of a turn: a start's
+//! fraction of a turn, rounded (a whole turn is 0), and a sweep clamped to 0..1
+//! turn, rounded, where 65535 is the whole ring. Two angles with the same bits
+//! draw the same arc, so a caller that animates one can tell a step that draws
+//! nothing new.
+inline uint16_t arcStartBits(float turns)
+{
+    if(!std::isfinite(turns))
+        return 0;
+    const double fraction=double(turns)-std::floor(double(turns));
+    return (uint16_t)(std::lround(fraction*65536.0) & 0xffff);
+}
+
+inline uint16_t arcSweepBits(float turns)
+{
+    if(!(turns > 0.0f))
+        return 0;
+    if(turns >= 1.0f)
+        return 0xffff;
+    return (uint16_t)std::lround(double(turns)*65535.0);
+}
+
 class ICacheToTexture
 {
 public:
@@ -265,6 +287,21 @@ public:
     //! pixel grid. A pixel the glyph does not cover writes nothing, depth included.
     virtual void drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int direction,
         gweni::Color color, int zIndex) {}
+
+    //! Draw a stroked circular arc in \a color, with round caps, in one primitive:
+    //! on the largest circle centred in \a rect, its stroke max(1, snap(thickness))
+    //! whole device px wide and inside the circle (the stroke's outer edge on it),
+    //! anti-aliased with the rounded rect's 1 px box filter. \a startTurns is where
+    //! it starts, in turns from the top (12 o'clock) clockwise, any value (only its
+    //! fraction counts); \a sweepTurns how far it runs on clockwise, clamped to
+    //! 0..1 (a negative sweep runs anticlockwise from the start): 0 is a dot (its
+    //! two caps), 1 the whole ring with no cap. Both are kept to 1/65536 of a turn
+    //! (arcStartBits, arcSweepBits). A pixel the arc does not cover writes nothing,
+    //! depth included. A spinner's arc, or a circular progress. The default draws
+    //! nothing.
+    virtual void drawArc(size_t /*primitiveId*/, gweni::Rect /*rect*/, float /*startTurns*/,
+        float /*sweepTurns*/, float /*thickness*/, gweni::Color /*color*/, int /*zIndex*/)
+    {}
 
     //! Draw a line segment from \a p0 to \a p1 in the current color (setDrawColor):
     //! a capsule (round caps) \a thickness wide, anti-aliased, in one primitive.
