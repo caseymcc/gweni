@@ -108,7 +108,8 @@ controls, from inside its `think()`: removal waits until the loop ends.
 `anim::cancel(control, animation)` removes one animation and leaves the control's
 others. `UpdateStats::animsRun` (`anims_run=` in `ControlTest --stats` and
 `gweni_bench`) counts the animations a canvas's update ran: 0 on a settled frame with no
-focused TextBox and no moving bar (Demo's 2 are ProgressBarDemo's indeterminate bars).
+focused TextBox and no moving bar (Demo's 1 is LogViewDemo's stream, which stays
+registered on its hidden page and waits there; a hidden moving bar has none).
 `tests/unit/animations.cpp` pins it. The z indices are numbered depth-first, each control taking its
 skin Control's `depthLayers()`, and that numbering only changes with the tree order, so
 the canvas renumbers only on a frame after the tree order changed
@@ -1955,7 +1956,9 @@ two programs and the draws. What follows describes both together:
   rounded to the half px it is at (`vLocal`, as kinds 0 and 1) and its distance to the
   stroke's middle circle less half the stroke (the ring); a pixel outside the sweep
   (by the signs of its cross products with the two directions, and for a sweep under
-  half a turn its side of their sum) takes the distance to the nearer cap's centre less
+  half a turn its side of either direction: not of their sum, which just under half a
+  turn nearly cancels after the `int16` rounding and points anywhere, cutting a gap
+  into the start cap) takes the distance to the nearer cap's centre less
   half the stroke instead, which is the arc's exact distance; the coverage is the box
   filter `clamp(0.5 - d/aa, 0, 1)`. A sweep of 65535 skips the caps, so the whole ring
   has no seam. The shader computes no `sin`, `cos` or `atan`: with them (the first
@@ -1964,7 +1967,8 @@ two programs and the draws. What follows describes both together:
   the CPU every backend does the same arithmetic. `renderer::Base`'s default draws
   nothing, as `drawIcon`'s does;
   `StubRenderer` records each call in `arcs`. `tests/arc.cpp` reads back every pixel of
-  arcs at sweeps of 0.25 to 1 turn from a start in each quadrant against the same
+  arcs at sweeps of 0.25 to 1 turn from a start in each quadrant, and of 32756 to
+  32767/65535 from 16 starts, against the same
   distance worked out on the CPU (within 2 levels), the start's direction, the stroke
   at scales 1 and 2 and the depth of an uncovered pixel, on every backend.
 - **Trapezoids (style 9).** `drawTrapezoid(id, x0, x1, top0, top1, bottom0, bottom1,
