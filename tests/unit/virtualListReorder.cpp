@@ -190,7 +190,7 @@ TEST_CASE("VirtualListReorder: a press on a row drags its item, and the gap is i
     CHECK(scene.reorder->gap() == 12);
     controls::internal::DropIndicator *indicator=scene.reorder->getIndicator();
     REQUIRE(indicator != nullptr);
-    CHECK(indicator->visible());
+    CHECK(scene.reorder->indicatorShown());
     CHECK(indicator->getY() == scene.top(12)-Reorderable::IndicatorThickness/2);
     scene.move(scene.at(scene.top(12)+RowHeight/2+1));
     CHECK(scene.reorder->gap() == 13);
@@ -234,20 +234,20 @@ TEST_CASE("VirtualListReorder: the veil follows the dragged item as rows rebind,
     scene.startDrag(2);
     controls::internal::DragSourceVeil *veil=scene.reorder->getSourceVeil();
     REQUIRE(veil != nullptr);
-    REQUIRE(veil->visible());
+    REQUIRE(scene.reorder->veilShown());
 
     // scrolled so far that item 2 is gone and its row shows another item
     controls::Base *row=scene.list->rowForItem(2);
     scene.scrollTo(300);
     CHECK(scene.list->rowForItem(2) == nullptr);
     CHECK(scene.list->itemForRow(row) != 2);
-    CHECK_FALSE(veil->visible());
+    CHECK_FALSE(scene.reorder->veilShown());
 
     // part way back: item 2 on screen, on whichever row shows it now
     scene.scrollTo(30);
     controls::Base *now=scene.list->rowForItem(2);
     REQUIRE(now != nullptr);
-    CHECK(veil->visible());
+    CHECK(scene.reorder->veilShown());
     CHECK(str(veil->getBounds()) == str(now->getBounds()));
     scene.release();
     CHECK_FALSE(veil->visible());
@@ -287,7 +287,7 @@ TEST_CASE("VirtualListReorder: the cursor in the bottom band auto-scrolls the li
     CHECK(scene.list->rowForItem(scene.list->firstVisibleItem()+3) != nullptr);
     CHECK(draganddrop::isDragging());
     CHECK(scene.reorder->dragKey() == scene.keys[1]);
-    CHECK_FALSE(scene.reorder->getSourceVeil()->visible());
+    CHECK_FALSE(scene.reorder->veilShown());
     // the pressed row, bound to other items as it scrolled, looks hovered by
     // none of them: the drag took the hover away
     for(controls::Base *row : scene.list->getRows())

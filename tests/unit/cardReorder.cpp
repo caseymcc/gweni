@@ -267,7 +267,7 @@ TEST_CASE("CardReorder: the gap is the half-height rule over the cards, its bar 
 
     controls::internal::DropIndicator *indicator=scene.todo.reorder->getIndicator();
     REQUIRE(indicator != nullptr);
-    CHECK(indicator->visible());
+    CHECK(scene.todo.reorder->indicatorShown());
     // centred in the 4-unit space between cards 1 and 2
     const int between=(cards[1]->getY()+cards[1]->getHeight()+cards[2]->getY())/2;
     CHECK(indicator->getY() == between-Reorderable::IndicatorThickness/2);
@@ -280,7 +280,7 @@ TEST_CASE("CardReorder: the gap is the half-height rule over the cards, its bar 
     // the veil over the dragged card
     controls::internal::DragSourceVeil *veil=scene.todo.reorder->getSourceVeil();
     REQUIRE(veil != nullptr);
-    CHECK(veil->visible());
+    CHECK(scene.todo.reorder->veilShown());
     CHECK(veil->getBounds().y == cards[0]->getY());
     CHECK(veil->getBounds().h == CardHeight);
     scene.release();

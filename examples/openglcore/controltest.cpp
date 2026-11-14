@@ -168,7 +168,7 @@
  *                       stats-overlay | depth-view | zoom-panel |
  *                       node-graph | code-editor | log-view |
  *                       chip-badge | navigation-rail | flow | board |
- *                       switch (see below)
+ *                       switch | reorder (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -937,6 +937,29 @@
  *                 shorter content's end); the empty frame clamps it to 0,
  *                 where it stays; settled frames write nothing; the demo gives
  *                 every id back. Exits non-zero if any check is no.
+ *    reorder      ReorderDemo at 760x460 (reorder*.png): on the Board, the
+ *                 clock frozen, a reorder within Todo, Todo to Running, cancels
+ *                 by Escape and by a release outside, a refused drop (Running
+ *                 to Todo) and live data (a card inserted above the dragged one,
+ *                 the dragged card deleted); on the Lists, the task list's
+ *                 auto-scroll with the mouse resting in its bottom band and the
+ *                 clock stepping, run twice, then the job table sorted. One line
+ *                   reorder todo_drag_started=yes|no todo_gap_indicator=yes|no ...
+ *                   settled=yes|no ids_back=yes|no
+ *                 reports the checks: a gap change writes the drop indicator's
+ *                 ids alone, a move keeping the gap writes and changes nothing,
+ *                 each drop's callback has its key and indexes and the demo
+ *                 shows the order it applied, a cancel gives no callback and,
+ *                 the mouse back at the press, the frame before it byte for
+ *                 byte, a refusing list shows no indicator with the No cursor,
+ *                 an insert above keeps the gap before its card and the drop
+ *                 gives the shifted index, the dragged card deleted cancels,
+ *                 the auto-scroll moves every frame with the veil over the
+ *                 item's row while it shows and both runs give the same
+ *                 offsets and pixels, the sorted table takes none of its own
+ *                 rows while its job drops into the list, settled frames write
+ *                 nothing and the demo gives its ids back. Exits non-zero if
+ *                 any check is no.
  *    board        BoardDemo at 640x480, the clock frozen (board*.png): a
  *                 vertical wheel over the overflowing column's body, then at
  *                 its bottom and its top and over the fitting column's body;
@@ -1497,7 +1520,7 @@ static void printUsage(std::ostream &out)
          "                     | inspector\n"
          "                     | stats-overlay | depth-view | zoom-panel\n"
          "                     | node-graph | code-editor | log-view | chip-badge\n"
-         "                     | navigation-rail | flow | board | switch;\n"
+         "                     | navigation-rail | flow | board | switch | reorder;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -2548,7 +2571,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
-    ChipBadge, NavigationRail, Flow, Board, Switch };
+    ChipBadge, NavigationRail, Flow, Board, Switch, Reorder };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2587,6 +2610,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "navigation-rail") scenario=Scenario::NavigationRail;
     else if(name == "flow") scenario=Scenario::Flow;
     else if(name == "board") scenario=Scenario::Board;
+    else if(name == "reorder") scenario=Scenario::Reorder;
     else if(name == "switch") scenario=Scenario::Switch;
     else return false;
     return true;
@@ -14399,6 +14423,459 @@ static bool runBoardScenario(Session &s, const std::string &shotDir, bool &passe
 }
 
 //-----------------------------------------------------------------------------
+// --scenario reorder: ReorderDemo at 760x460. On the Board, the clock frozen:
+// a reorder within Todo (the callback's values, a gap change writing only the
+// drop indicator's slot, a move that keeps the gap writing nothing, the order
+// the demo applies), a card from Todo to Running, a cancel by Escape and by a
+// release outside (no callback; with the mouse back where it was pressed, the
+// frame before the press, byte for byte), a refused drop (Running's card over
+// Todo: no indicator, the No cursor, no callback) and live data (a card
+// inserted above the dragged one, the drop reporting the shifted index; the
+// dragged card deleted mid-drag cancelling). On the Lists, the clock stepping:
+// the mouse resting in the task list's bottom band auto-scrolls it, rows
+// binding and the veil over the dragged item's row while it shows, the same
+// drag run twice giving the same offsets and pixels; then, the clock frozen,
+// the job table sorted refuses a reorder within itself while one of its jobs
+// drops into the task list. Every settled frame writes nothing and the demo
+// gives its ids back.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+// The ids a control's skin Control holds.
+void controlIds(gweni::controls::Base *control, std::set<size_t> &primitives, std::set<size_t> &texts)
+{
+    if(!control)
+        return;
+    if(const gweni::skin::Control *skinControl=control->getSkinControl())
+    {
+        std::vector<size_t> primitiveIds, textIds;
+
+        skinControl->appendIds(primitiveIds, textIds);
+        primitives.insert(primitiveIds.begin(), primitiveIds.end());
+        texts.insert(textIds.begin(), textIds.end());
+    }
+}
+
+// A point a fraction down a control and in its middle across, on the canvas.
+gweni::Point reorderPoint(gweni::controls::Base *control, float fy)
+{
+    const gweni::Rect bounds=control->getCanvasBounds();
+
+    return gweni::Point(bounds.x+bounds.w/2, bounds.y+static_cast<int>(bounds.h*fy));
+}
+
+std::string titlesOf(const std::vector<gweni::ReorderDemoCard *> &cards)
+{
+    std::string text;
+
+    for(gweni::ReorderDemoCard *card : cards)
+        text+=(text.empty()?"":"|")+card->title();
+    return text;
+}
+
+std::string dropText(const gweni::controls::ItemDrop &drop)
+{
+    return "key "+std::to_string(drop.key)+" from "+std::to_string(drop.sourceIndex)+" to "
+        +std::to_string(drop.targetIndex);
+}
+
+}//namespace
+
+static bool runReorderScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    checks.scenario="reorder";
+
+    if(!resizeSession(s, 760, 460))
+        return false;
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    gweni::controls::Base *control=addControl(s, "ReorderDemo");
+    auto *demo=gweni::gweni_cast<gweni::ReorderDemo>(control);
+
+    if(!demo)
+    {
+        std::cerr<<"ControlTest: reorder: ReorderDemo was not built\n";
+        return false;
+    }
+
+    s.label="reorder";
+
+    using gweni::ReorderDemo;
+    using gweni::controls::Reorderable;
+    std::vector<uint8_t> pixels;
+
+    renderFrames(s, 1);
+    size_t idleWork=settleCodeEditor(s, pixels);
+    bool ok=shoot(s, shotDir+"/reorder.png");
+
+    gweni::controls::CardReorder *todo=demo->columnReorder(ReorderDemo::Todo);
+    gweni::controls::CardReorder *running=demo->columnReorder(ReorderDemo::Running);
+
+    auto settle=[&]() { idleWork+=settleCodeEditor(s, pixels); };
+    // the mouse at a point, its frame, and the frames after it settled
+    auto moveTo=[&](const gweni::Point &point)
+    {
+        moveMouse(s, point.x, point.y);
+        CodeEditorFrame frame=codeEditorFrame(s);
+        return frame;
+    };
+    // a press at `at`, a move 6 units right (the drag starts), its frame
+    auto startDrag=[&](const gweni::Point &at)
+    {
+        moveMouse(s, at.x, at.y);
+        renderFrames(s, 1);
+        settle();
+        mouseDown(s, at.x, at.y, true);
+        renderFrames(s, 1);
+        moveTo(gweni::Point(at.x+6, at.y));
+    };
+    auto release=[&](const gweni::Point &at)
+    {
+        mouseUp(s, at.x, at.y);
+        renderFrames(s, 1);
+        settle();
+    };
+    auto escape=[&]()
+    {
+        glfwKey(s, GLFW_KEY_ESCAPE, GLFW_PRESS, 0);
+        glfwKey(s, GLFW_KEY_ESCAPE, GLFW_RELEASE, 0);
+        renderFrames(s, 1);
+        settle();
+    };
+    auto indicatorIds=[](Reorderable *reorder)
+    {
+        std::set<size_t> primitives, texts;
+
+        controlIds(reorder->getIndicator(), primitives, texts);
+        return primitives;
+    };
+
+    // --- a reorder within Todo
+    std::vector<gweni::ReorderDemoCard *> cards=demo->cards(ReorderDemo::Todo);
+    const std::string todoBefore=titlesOf(cards);
+    gweni::ReorderDemoCard *moved=cards[1];
+    const size_t dropsBefore=demo->drops().size();
+
+    startDrag(reorderPoint(moved, 0.3f));
+
+    const bool started=gweni::draganddrop::isDragging() && Reorderable::dragSource() == todo
+        && todo->dragKey() == gweni::controls::CardReorder::keyOf(moved);
+
+    // below card 3: gap 4
+    const CodeEditorFrame toGap=moveTo(reorderPoint(cards[3], 0.8f));
+    const size_t firstGap=todo->gap();
+    const std::set<size_t> indicator=indicatorIds(todo);
+    const bool gapOnlyIndicator=firstGap == 4 && !indicator.empty() && idsWithin(toGap.primitives, indicator)
+        && toGap.texts.empty() && toGap.passes <= 1;
+    // a unit further inside the same half: the same gap
+    const CodeEditorFrame kept=moveTo(reorderPoint(cards[3], 0.85f));
+    const bool keptNothing=todo->gap() == 4 && kept.primitives.empty() && kept.texts.empty() && kept.changed == 0
+        && kept.passes == 0;
+    // the half above: gap 3, the indicator alone again
+    const CodeEditorFrame toOther=moveTo(reorderPoint(cards[3], 0.2f));
+    const size_t otherGap=todo->gap();
+    const bool otherOnlyIndicator=otherGap == 3 && idsWithin(toOther.primitives, indicator)
+        && toOther.texts.empty() && toOther.changed <= 1;
+    const CodeEditorFrame back=moveTo(reorderPoint(cards[3], 0.8f));
+
+    (void)back;
+    ok=shoot(s, shotDir+"/reorder-todo-drag.png") && ok;
+    release(reorderPoint(cards[3], 0.8f));
+
+    const bool oneDrop=demo->drops().size() == dropsBefore+1;
+    const gweni::controls::ItemDrop drop=oneDrop?demo->drops().back():gweni::controls::ItemDrop();
+    const std::string todoAfter=titlesOf(demo->cards(ReorderDemo::Todo));
+
+    checks.check("todo_drag_started", started, "a press on Todo's second card moved 6 units started no drag of it");
+    checks.check("todo_gap_indicator", gapOnlyIndicator && otherOnlyIndicator,
+        "the gap changes (to "+std::to_string(firstGap)+" and "+std::to_string(otherGap)+") wrote "
+        +std::to_string(toGap.primitives.size())+" and "+std::to_string(toOther.primitives.size())
+        +" primitive ids (the indicator holds "+std::to_string(indicator.size())+", within it: "
+        +(idsWithin(toGap.primitives, indicator) && idsWithin(toOther.primitives, indicator)?"yes":"no")
+        +"), "+std::to_string(toGap.texts.size()+toOther.texts.size())+" text ids, changed "
+        +std::to_string(toOther.changed)+" controls, "+std::to_string(toGap.passes)+" passes");
+    checks.check("todo_gap_kept", keptNothing, "a move keeping the gap wrote "
+        +std::to_string(kept.primitives.size()+kept.texts.size())+" ids, changed "
+        +std::to_string(kept.changed)+" controls in "+std::to_string(kept.passes)+" passes");
+    checks.check("todo_drop", oneDrop && drop.source == todo && drop.target == todo
+            && drop.key == gweni::controls::CardReorder::keyOf(moved) && drop.sourceIndex == 1
+            && drop.targetIndex == 3,
+        std::to_string(demo->drops().size()-dropsBefore)+" drops, "+dropText(drop));
+
+    std::vector<std::string> expected;
+    for(gweni::ReorderDemoCard *card : cards)
+        expected.push_back(card->title());
+    std::rotate(expected.begin()+1, expected.begin()+2, expected.begin()+4);
+
+    std::string expectedText;
+    for(const std::string &title : expected)
+        expectedText+=(expectedText.empty()?"":"|")+title;
+    checks.check("todo_order", todoAfter == expectedText && moved->getY() > cards[3]->getY(),
+        "Todo was "+todoBefore+", is "+todoAfter+", expected "+expectedText);
+    ok=shoot(s, shotDir+"/reorder-todo-dropped.png") && ok;
+
+    // --- Todo to Running
+    cards=demo->cards(ReorderDemo::Todo);
+    std::vector<gweni::ReorderDemoCard *> runningCards=demo->cards(ReorderDemo::Running);
+    gweni::ReorderDemoCard *across=cards[2];
+    const std::string acrossTitle=across->title();
+
+    startDrag(reorderPoint(across, 0.3f));
+    moveTo(reorderPoint(runningCards[1], 0.2f));
+    const bool runningGap=Reorderable::dropTarget() == running && running->gap() == 1 && running->showsGap();
+    release(reorderPoint(runningCards[1], 0.2f));
+
+    const gweni::controls::ItemDrop acrossDrop=demo->drops().empty()?gweni::controls::ItemDrop():demo->drops().back();
+    const std::vector<gweni::ReorderDemoCard *> todoNow=demo->cards(ReorderDemo::Todo);
+    const std::vector<gweni::ReorderDemoCard *> runningNow=demo->cards(ReorderDemo::Running);
+
+    checks.check("todo_to_running", runningGap && acrossDrop.source == todo && acrossDrop.target == running
+            && acrossDrop.sourceIndex == 2 && acrossDrop.targetIndex == 1 && runningNow.size() == 3
+            && runningNow[1] == across && todoNow.size() == cards.size()-1
+            && std::find(todoNow.begin(), todoNow.end(), across) == todoNow.end(),
+        "the drop "+dropText(acrossDrop)+", Todo "+titlesOf(todoNow)+", Running "+titlesOf(runningNow));
+    ok=shoot(s, shotDir+"/reorder-running.png") && ok;
+
+    // --- cancels: the frame before the press back
+    cards=demo->cards(ReorderDemo::Todo);
+    auto cancelBack=[&](const std::string &name, bool byEscape)
+    {
+        const gweni::Point at=reorderPoint(cards[1], 0.3f);
+
+        moveMouse(s, at.x, at.y);
+        renderFrames(s, 1);
+        settle();
+
+        const std::vector<uint8_t> before=pixels;
+        const size_t drops=demo->drops().size();
+        const std::string order=titlesOf(demo->cards(ReorderDemo::Todo));
+
+        startDrag(at);
+        moveTo(reorderPoint(cards[3], 0.7f));
+
+        bool refusedOutside=true;
+
+        if(byEscape)
+            escape();
+        else
+        {
+            // the hint above the board takes no card
+            const gweni::Point outside(at.x, 18);
+
+            moveTo(outside);
+            refusedOutside=Reorderable::dropTarget() == nullptr
+                && gweni::draganddrop::currentCursor() == gweni::cursor::No;
+            release(outside);
+        }
+
+        const bool ended=!gweni::draganddrop::isDragging();
+
+        moveMouse(s, at.x, at.y);
+        renderFrames(s, 1);
+        settle();
+        checks.check(name, ended && refusedOutside && demo->drops().size() == drops && pixels == before
+                && titlesOf(demo->cards(ReorderDemo::Todo)) == order,
+            std::string(ended?"ended":"still dragging")+", "+(refusedOutside?"":"the outside took it, ")
+            +std::to_string(demo->drops().size()-drops)+" drops, the frame before the press "
+            +(pixels == before?"back":"not back"));
+    };
+    cancelBack("cancel_escape", true);
+    cancelBack("cancel_release_outside", false);
+
+    // --- a refused drop: Running's card over Todo
+    runningCards=demo->cards(ReorderDemo::Running);
+    {
+        const size_t drops=demo->drops().size();
+        const std::string todoOrder=titlesOf(demo->cards(ReorderDemo::Todo));
+        const std::string runningOrder=titlesOf(runningCards);
+
+        startDrag(reorderPoint(runningCards[0], 0.3f));
+        moveTo(reorderPoint(demo->cards(ReorderDemo::Todo)[2], 0.3f));
+
+        const bool refused=Reorderable::dropTarget() == nullptr
+            && !todo->indicatorShown()
+            && gweni::draganddrop::currentCursor() == gweni::cursor::No;
+
+        ok=shoot(s, shotDir+"/reorder-refused.png") && ok;
+        release(reorderPoint(demo->cards(ReorderDemo::Todo)[2], 0.3f));
+        checks.check("refused_running_to_todo", refused && demo->drops().size() == drops
+                && titlesOf(demo->cards(ReorderDemo::Todo)) == todoOrder
+                && titlesOf(demo->cards(ReorderDemo::Running)) == runningOrder,
+            std::string(refused?"refused":"taken (a target, an indicator or a cursor)")+", "
+            +std::to_string(demo->drops().size()-drops)+" drops");
+    }
+
+    // --- live data: an insert above the dragged card, then its removal
+    {
+        cards=demo->cards(ReorderDemo::Todo);
+        gweni::ReorderDemoCard *dragged=cards[2];
+
+        startDrag(reorderPoint(dragged, 0.3f));
+        moveTo(reorderPoint(cards.back(), 0.8f));
+
+        const size_t gapBefore=todo->gap();
+
+        demo->liveTick();
+        renderFrames(s, 1);
+
+        const bool kept=gweni::draganddrop::isDragging() && todo->gap() == gapBefore+1
+            && todo->dragIndex() == 3;
+
+        release(reorderPoint(cards.back(), 0.8f));
+
+        const gweni::controls::ItemDrop liveDrop=demo->drops().back();
+
+        checks.check("live_insert", kept && liveDrop.key == gweni::controls::CardReorder::keyOf(dragged)
+                && liveDrop.sourceIndex == 3 && liveDrop.targetIndex == cards.size(),
+            std::string(kept?"kept":"not kept")+" (gap "+std::to_string(todo->gap())+"), the drop "+dropText(liveDrop));
+
+        cards=demo->cards(ReorderDemo::Todo);
+        gweni::ReorderDemoCard *gone=cards[3];
+        const size_t drops=demo->drops().size();
+
+        startDrag(reorderPoint(gone, 0.3f));
+        moveTo(reorderPoint(cards[1], 0.8f));
+        delete gone;
+        renderFrames(s, 1);
+
+        const bool cancelled=!gweni::draganddrop::isDragging();
+
+        release(reorderPoint(cards[1], 0.8f));
+        checks.check("live_removed_cancels", cancelled && demo->drops().size() == drops,
+            std::string(cancelled?"cancelled":"still dragging")+", "+std::to_string(demo->drops().size()-drops)
+            +" drops");
+    }
+
+    // --- the Lists: the task list auto-scrolls with the mouse resting
+    moveMouse(s, -1, -1);
+    demo->showLists();
+    renderFrames(s, 1);
+    settle();
+    ok=shoot(s, shotDir+"/reorder-lists.png") && ok;
+
+    gweni::controls::VirtualList *list=demo->list();
+    gweni::controls::VirtualListReorder *listReorder=demo->listReorder();
+    struct ScrollRun
+    {
+        std::vector<int> offsets;
+        bool veilOnRow=true;
+        bool rowsBound=true;
+        std::vector<uint8_t> last;
+    };
+    auto autoScroll=[&]() -> ScrollRun
+    {
+        ScrollRun run;
+
+        list->setVerticalScrollOffset(0);
+        renderFrames(s, 1);
+        settle();
+
+        gweni::controls::Base *row=list->rowForItem(2);
+        const gweni::Rect &viewport=list->getViewport();
+        const gweni::Point band=list->localPosToCanvas(gweni::Point(viewport.x+viewport.w/2,
+            viewport.y+viewport.h-4));
+
+        startDrag(reorderPoint(row, 0.3f));
+        moveTo(band);
+        s.freezeClock=false;
+        for(int frame=0; frame < 20; ++frame)
+        {
+            renderFrames(s, 1);
+            run.offsets.push_back(list->getVerticalScrollOffset());
+
+            gweni::controls::Base *shown=list->rowForItem(2);
+            gweni::controls::internal::DragSourceVeil *veil=listReorder->getSourceVeil();
+
+            if(shown && !(listReorder->veilShown() && veil->getBounds() == shown->getBounds()))
+                run.veilOnRow=false;
+            if(!shown && listReorder->veilShown())
+                run.veilOnRow=false;
+            if(!list->rowForItem(list->firstVisibleItem()+1))
+                run.rowsBound=false;
+        }
+        s.freezeClock=true;
+        run.last=framePixels(s);
+        escape();
+        return run;
+    };
+    const ScrollRun first=autoScroll();
+    const ScrollRun second=autoScroll();
+    bool scrolling=first.offsets.size() == 20 && first.offsets.back() > 100;
+
+    for(size_t i=1; i < first.offsets.size(); ++i)
+        scrolling=scrolling && first.offsets[i] > first.offsets[i-1];
+
+    std::string offsetsText;
+    for(int offset : first.offsets)
+        offsetsText+=std::to_string(offset)+" ";
+    checks.check("list_autoscroll", scrolling && first.rowsBound && first.veilOnRow,
+        "offsets "+offsetsText+(first.rowsBound?"":", rows not bound")+(first.veilOnRow?"":", the veil off the item's row"));
+    checks.check("list_autoscroll_deterministic", first.offsets == second.offsets && first.last == second.last,
+        "a second run gave other offsets or pixels");
+    list->setVerticalScrollOffset(0);
+    renderFrames(s, 1);
+    settle();
+
+    // --- the table sorted refuses its own rows; its job goes into the list
+    {
+        gweni::controls::DataTable *table=demo->table();
+
+        table->setSortColumn(1, gweni::controls::SortDirection::Ascending, true);
+        renderFrames(s, 1);
+        settle();
+
+        const std::vector<uint64_t> shown=demo->tableKeys();
+        const size_t drops=demo->drops().size();
+
+        startDrag(reorderPoint(table->rowForItem(2), 0.3f));
+        moveTo(reorderPoint(table->rowForItem(6), 0.3f));
+
+        const bool refused=Reorderable::dropTarget() == nullptr
+            && gweni::draganddrop::currentCursor() == gweni::cursor::No;
+
+        ok=shoot(s, shotDir+"/reorder-table-sorted.png") && ok;
+        release(reorderPoint(table->rowForItem(6), 0.3f));
+        checks.check("sorted_table_refuses", refused && demo->drops().size() == drops && demo->tableKeys() == shown,
+            std::string(refused?"refused":"taken")+", "+std::to_string(demo->drops().size()-drops)+" drops");
+
+        const uint64_t job=demo->tableKeys()[2];
+
+        startDrag(reorderPoint(table->rowForItem(2), 0.3f));
+        moveTo(reorderPoint(list->rowForItem(4), 0.2f));
+        release(reorderPoint(list->rowForItem(4), 0.2f));
+
+        const std::vector<uint64_t> &tasks=demo->listKeys();
+        checks.check("sorted_table_drops_out", demo->drops().size() == drops+1 && tasks.size() > 4
+                && tasks[4] == job
+                && std::find(demo->tableKeys().begin(), demo->tableKeys().end(), job) == demo->tableKeys().end(),
+            "the job "+std::to_string(job)+" is "+(tasks.size() > 4 && tasks[4] == job?"":"not ")+"the list's fifth");
+        ok=shoot(s, shotDir+"/reorder-table-to-list.png") && ok;
+    }
+
+    checks.check("settled", idleWork == 0, "settled frames wrote or changed "+std::to_string(idleWork));
+
+    moveMouse(s, -1, -1);
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()+liveTextIds()-idsBefore;
+
+    checks.check("ids_back", idsLeft == 0, std::to_string(idsLeft)+" ids not given back");
+
+    passed=checks.allPassed();
+    std::cout<<"reorder";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<"\n";
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // --scenario log-view: LogViewDemo's log filled with 1 000 and then 100 000
 // events, the clock frozen (the demo streams nothing) and the idle re-measure
 // off, so no frame measures off screen. Each input is one frame, held to the
@@ -17013,6 +17490,15 @@ int main(int argc, char *argv[])
             ok=runBoardScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a wheel reached the wrong ScrollControl, or an edit moved an offset
+            break;
+        }
+
+        case Scenario::Reorder:
+        {
+            bool passed=false;
+            ok=runReorderScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a drag reported, wrote or showed what it should not have
             break;
         }
 
