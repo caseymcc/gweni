@@ -112,7 +112,9 @@ GWENI_CONTROL_CONSTRUCTOR(CalendarTitle)
 
 void CalendarTitle::updateColors()
 {
-    setTextColor(getSkin()->Colors.Calendar.Title);
+    const auto &colors=getSkin()->Colors.Calendar;
+
+    setTextColor(isDisabled()?colors.Disabled:colors.Title);
 }
 
 }//namespace internal
@@ -686,8 +688,10 @@ void Calendar::rebind()
         {
             const Date date=cellDate(i);
 
-            m_cells[static_cast<size_t>(i)]->bind(date, std::to_string(date.day), i%Columns, Columns,
-                dayLook(date));
+            internal::CalendarCellLook look=dayLook(date);
+
+            look.disabled=look.disabled || isDisabled();
+            m_cells[static_cast<size_t>(i)]->bind(date, std::to_string(date.day), i%Columns, Columns, look);
         }
     }
     else
@@ -711,15 +715,38 @@ void Calendar::rebind()
             look.today=m_today && same(*m_today, date);
             look.selected=((m_selectionMode == SelectionMode::Single) && m_selected && same(*m_selected, date))
                 || (range && (same(low, date) || same(high, date)));
-            look.disabled=year?!isMonthEnabled(date.year, date.month):!isYearEnabled(date.year);
+            look.disabled=isDisabled() || (year?!isMonthEnabled(date.year, date.month):!isYearEnabled(date.year));
             look.cursor=focused && same(m_cursor, date);
             m_cells[static_cast<size_t>(i)]->bind(date, year?getShortMonthName(i+1):std::to_string(date.year),
                 i%ZoomColumns, ZoomColumns, look);
         }
     }
 
-    m_previous->setDisabled(!canShowPrevious());
-    m_next->setDisabled(!canShowNext());
+    m_previous->setDisabled(isDisabled() || !canShowPrevious());
+    m_next->setDisabled(isDisabled() || !canShowNext());
+    m_title->setDisabled(isDisabled());
+}
+
+// The parts are bound disabled with it (rebind), so a press, a hover look or
+// a key reaches none of them, and it gives up the focus and its Tab stop.
+void Calendar::setDisabled(bool active)
+{
+    if(active == isDisabled())
+        return;
+
+    ParentClass::setDisabled(active);
+    setKeyboardInputEnabled(!active);
+    setTabable(!active);
+    m_preview.reset();
+    if(active && (KeyboardFocus == this))
+        unfocus();
+    rebind();
+}
+
+void Calendar::focus()
+{
+    if(!isDisabled())
+        ParentClass::focus();
 }
 
 void Calendar::chooseDate(const Date &date)
@@ -867,26 +894,36 @@ bool Calendar::cursorKey(bool down, int64_t daySteps, int64_t viewSteps)
 
 bool Calendar::onKeyLeft(bool down)
 {
+    if(isDisabled())
+        return false;
     return cursorKey(down, -1, -1);
 }
 
 bool Calendar::onKeyRight(bool down)
 {
+    if(isDisabled())
+        return false;
     return cursorKey(down, 1, 1);
 }
 
 bool Calendar::onKeyUp(bool down)
 {
+    if(isDisabled())
+        return false;
     return cursorKey(down, -7, -ZoomColumns);
 }
 
 bool Calendar::onKeyDown(bool down)
 {
+    if(isDisabled())
+        return false;
     return cursorKey(down, 7, ZoomColumns);
 }
 
 bool Calendar::onKeyHome(bool down)
 {
+    if(isDisabled())
+        return false;
     if(!down)
         return true;
 
@@ -919,6 +956,8 @@ bool Calendar::onKeyHome(bool down)
 
 bool Calendar::onKeyend(bool down)
 {
+    if(isDisabled())
+        return false;
     if(!down)
         return true;
 
@@ -950,11 +989,15 @@ bool Calendar::onKeyend(bool down)
 
 bool Calendar::onKeyPageUp(bool down)
 {
+    if(isDisabled())
+        return false;
     return down?pageCursor(-1):true;
 }
 
 bool Calendar::onKeyPageDown(bool down)
 {
+    if(isDisabled())
+        return false;
     return down?pageCursor(1):true;
 }
 
@@ -995,6 +1038,8 @@ bool Calendar::pageCursor(int direction)
 
 bool Calendar::onKeySpace(bool down)
 {
+    if(isDisabled())
+        return false;
     if(!down)
         return true;
 

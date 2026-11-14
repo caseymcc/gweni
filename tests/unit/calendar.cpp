@@ -48,6 +48,15 @@
  *  back where they were. In those views the arrows move over months and
  *  years, PageDown a year, Space zooms in, and months and years outside the
  *  limits are disabled.
+ *
+ *  New limits, a filter, a month shown or a zoom in put the cursor on an
+ *  enabled date (month, year) of what is shown, never leaving it. A view
+ *  shown past a limit gets back to it: the header's button toward the limit
+ *  is enabled and jumps to the limit's month, year or decade, and an arrow or
+ *  page toward it puts the cursor on it. A disabled calendar binds every
+ *  cell, the title and both buttons disabled, so a click, a key or focus()
+ *  does nothing; it drops the focus at once and leaves the Tab order, and
+ *  enabled again it takes them back.
  */
 #include "headlessFixture.h"
 
@@ -994,4 +1003,61 @@ TEST_CASE("Calendar: the year and decade views get back inside limits the shown 
     scene.click(calendar->getNextButton());
     CHECK(calendar->getDisplayedYear() == 2040);
     CHECK_FALSE(calendar->getCell(2)->getLook().disabled);
+}
+
+TEST_CASE("Calendar: a disabled calendar takes no press, hover, key or focus")
+{
+    Scene scene;
+    Calendar *calendar=scene.calendar(2026, 11);
+    Events events;
+
+    events.attach(calendar);
+    calendar->setSelectionMode(Calendar::SelectionMode::Range);
+    calendar->setCursor(Date(2026, 11, 11));
+    calendar->focus();
+    scene.frame();
+    REQUIRE(calendar->isFocussed());
+
+    calendar->setDisabled(true);
+    // the focus is dropped at once (the canvas would only drop it in the next
+    // update), and cannot come back; Tab passes it over
+    CHECK_FALSE(calendar->isFocussed());
+    scene.frame();
+    CHECK_FALSE(calendar->isTabable());
+    calendar->focus();
+    CHECK_FALSE(calendar->isFocussed());
+
+    // every part reads as disabled: the cells, the title and both buttons
+    for(int i=0; i < Calendar::CellCount; ++i)
+        CHECK(calendar->getCell(i)->isDisabled());
+    CHECK(calendar->getTitle()->isDisabled());
+    CHECK(calendar->getPreviousButton()->isDisabled());
+    CHECK(calendar->getNextButton()->isDisabled());
+
+    // a click on a day selects nothing, the header changes nothing
+    scene.click(cellOf(calendar, Date(2026, 11, 11)));
+    CHECK_FALSE(calendar->getRangeStart().has_value());
+    scene.click(cellOf(calendar, Date(2026, 11, 20)));
+    scene.click(calendar->getNextButton());
+    CHECK(calendar->getDisplayedMonth() == 11);
+    scene.click(calendar->getTitle());
+    CHECK(calendar->getView() == Calendar::View::Month);
+    // the keys, sent straight to it, move and select nothing
+    CHECK_FALSE(calendar->onKeyRight(true));
+    CHECK_FALSE(calendar->onKeyPageDown(true));
+    CHECK_FALSE(calendar->onKeySpace(true));
+    CHECK(calendar->getCursor().toIso() == "2026-11-11");
+    CHECK(calendar->getDisplayedMonth() == 11);
+    CHECK_FALSE(calendar->getRangeStart().has_value());
+    CHECK(events.selections == 0);
+
+    // enabled again, it takes them all back
+    calendar->setDisabled(false);
+    scene.frame();
+    CHECK(calendar->isTabable());
+    CHECK_FALSE(cellOf(calendar, Date(2026, 11, 11))->isDisabled());
+    CHECK_FALSE(calendar->getNextButton()->isDisabled());
+    scene.click(cellOf(calendar, Date(2026, 11, 11)));
+    CHECK(calendar->getRangeStart().has_value());
+    CHECK(events.selections == 1);
 }

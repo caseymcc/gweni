@@ -318,6 +318,12 @@ public:
     //! The weekday labels' colour.
     void updateColors() override;
 
+    //! Disabled, every cell, the title and both buttons are too (drawn so),
+    //! it takes no press, hover look, key or focus, and it leaves the Tab
+    //! order.
+    void setDisabled(bool active) override;
+    void focus() override;
+
     bool onKeyLeft(bool down) override;
     bool onKeyRight(bool down) override;
     bool onKeyUp(bool down) override;
