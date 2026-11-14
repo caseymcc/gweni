@@ -41,6 +41,9 @@
  *  Only the current step's page is shown, and a page's content is never laid
  *  out while it is hidden: a probe in each page counts no layout entry until
  *  its step is current.
+ *
+ *  A step's subtitle and "Optional" caption are drawn in a clip region that
+ *  reaches past the step's right edge (the stepper's), not cut at its bounds.
  */
 #include "headlessFixture.h"
 
@@ -653,4 +656,31 @@ TEST_CASE("Stepper: a step change hit-tests the resting mouse's hover again")
     REQUIRE(scene.canvas->getControlAt(mouse.x, mouse.y) != step);
     CHECK_FALSE(step->isHovered());
     CHECK(HoveredControl == scene.canvas->getControlAt(mouse.x, mouse.y));
+}
+
+TEST_CASE("Stepper: a step's captions are not clipped to its bounds")
+{
+    Scene scene;
+    Stepper *stepper=scene.canvas->newChild<Stepper>();
+
+    stepper->setDock(DockPosition::Center);
+    stepper->addStep("One", "A wider subtitle");
+    stepper->addStep("Two");
+    stepper->setStepOptional(0);
+    scene.frame();
+
+    // The step is exactly its widest line's measured width, so a clip to its
+    // bounds would cut that line's ink past its last pen: the captions draw
+    // in the stepper's region, reaching past the step's right edge.
+    StepperStep *step=stepper->getStep(0);
+    const Point origin=step->localPosToCanvas();
+    const int right=origin.x+step->getWidth();
+
+    REQUIRE(scene.renderer.textClips.count("A wider subtitle") == 1);
+    REQUIRE(scene.renderer.textClips.count("Optional") == 1);
+    const Rect &subtitle=scene.renderer.textClips["A wider subtitle"];
+    const Rect &optional=scene.renderer.textClips["Optional"];
+
+    CHECK(subtitle.x+subtitle.w > right);
+    CHECK(optional.x+optional.w > right);
 }

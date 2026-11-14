@@ -101,10 +101,17 @@ public:
     bool onKeyDown(bool down) override;
     //! The stepper's one Tab stop alone (Stepper::getTabStop()).
     bool isTabable() override;
-    //! Its Texts lie inside it, but it is exactly their measured width, so
-    //! its clip would cut the ink past the last pen (at a scale, the widest
-    //! line's last column): they draw in the stepper's region instead.
-    bool shouldClip() override { return false; }
+    //! The step is exactly its title block's measured width, so Label's clip
+    //! to its bounds would cut a caption's ink past the last pen (at a scale,
+    //! the widest line's last column): the subtitle and the "Optional"
+    //! caption draw in the stepper's region instead, and the title keeps
+    //! Label's ink-margin rect.
+    const gweni::Rect *getChildClipRect(const Base *child) const override
+    {
+        if(child && ((child == m_subtitle) || (child == m_optionalText)))
+            return nullptr;
+        return ParentClass::getChildClipRect(child);
+    }
 
     void calculateSize(skin::Base *skin, Dim dim) override;
 

@@ -4258,9 +4258,11 @@ two programs and the draws. What follows describes both together:
     `StepperTitleCurrent`, `StepperErrorText` or `StepperTitleDisabled`, the captions
     `StepperSubtitle`, the indicator's text and check `StepperNumber` (a disabled
     step's number in `StepperTitleDisabled`, muted as its title is)
-    (`Colors.Stepper`). A step is exactly its title block's measured width, so it
-    does not clip (`shouldClip()` false): its Texts lie inside it, and its clip would
-    cut the ink past the last pen (at a scale, the widest line's last column).
+    (`Colors.Stepper`). A step is exactly its title block's measured width, and as a
+    Label it clips each child to a rect of its own (`getChildClipRect()`): the title to
+    Label's ink-margin rect, and the subtitle and the "Optional" caption to none, so
+    they draw in the stepper's region; a clip to the step's bounds would cut their ink
+    past the last pen (at a scale, the widest line's last column).
     Between two steps a `StepperConnector` draws a 1-unit rule
     (icon kind 6) through its middle, in `StepperConnector`'s or, when the step after
     it shows as done, `StepperConnectorDone`'s top colour.

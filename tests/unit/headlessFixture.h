@@ -214,7 +214,8 @@ public:
     void showPrimitive(int, size_t primitiveId) override { wrotePrimitive(primitiveId); }
     void hidePrimitive(size_t primitiveId) override { wrotePrimitive(primitiveId); }
 
-    //! Counts the string's codepoints as the run's glyph slots, all written.
+    //! Counts the string's codepoints as the run's glyph slots, all written,
+    //! and records the clip region it is drawn in (textClips).
     void renderText(size_t textId, const gweni::Font &, gweni::Point, int,
         const gweni::String &text) override
     {
@@ -224,6 +225,7 @@ public:
             ++glyphs;
         textGlyphs[textId]=glyphs;
         textSpans[textId].clear();
+        textClips[text]=clipRegion();
         wroteText(textId, glyphs);
     }
     //! Records the spans in `textSpans`, then counts the run as the plain call does.
@@ -265,6 +267,8 @@ public:
 
     //! Each text id's glyph count at its last renderText
     std::map<size_t, size_t> textGlyphs;
+    //! The clip region each string's last renderText was drawn in
+    std::map<gweni::String, gweni::Rect> textClips;
     //! Each text id's colour spans at its last renderText (empty for the plain call)
     std::map<size_t, std::vector<gweni::renderer::ColorSpan>> textSpans;
     //! renderText calls with spans so far. Tests take deltas.
