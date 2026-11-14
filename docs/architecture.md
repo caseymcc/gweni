@@ -4287,7 +4287,11 @@ drag through `Base::dragAndDrop_takesDescendantDrag`, which only a reorderable
 still drags nothing; a part that took the mouse for a gesture of its own (a
 Slider's thumb, a TextBox's selection, a nested scroll bar: `MouseFocus` set and
 no Button) keeps it, and its list starts no drag. `draganddrop::currentCursor()` is the cursor the core asked
-for, since natively `platform::setCursor` does nothing.
+for, since natively `platform::setCursor` does nothing (`platform::setCursorHandler`
+replaces what it does, for an app's own window or a test). A drag sets the Normal
+cursor as it starts, over whatever cursor the pressed control had set, and a
+target hidden under the cursor stops being the target at the next update, so a
+release before the next move drops nothing into it.
 
 **`Reorderable`, the part a list owns.** `ScrollControl::setReorderable` gives a
 `ScrollControl` (every list is one) a Reorderable, to which it forwards its

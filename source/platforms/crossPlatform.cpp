@@ -474,8 +474,25 @@ double platformTimeInSeconds()
 
 #endif
 
+static CursorHandler &cursorHandler()
+{
+    static CursorHandler handler;
+    return handler;
+}
+
+void setCursorHandler(CursorHandler handler)
+{
+    cursorHandler()=std::move(handler);
+}
+
 void setCursor(unsigned char iCursor)
 {
+    if(const CursorHandler &handler=cursorHandler())
+    {
+        handler(iCursor);
+        return;
+    }
+
     // No platform independent way to do this
 #if defined(__EMSCRIPTEN__)
     // The web: the CSS cursor of the page's canvas (Module.canvas), by the CSS

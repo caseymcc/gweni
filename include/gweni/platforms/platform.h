@@ -61,6 +61,14 @@ GWENI_EXPORT String getExecutableDir();
 //! @param cursor : Cursor number to use. @see CursorType
 GWENI_EXPORT void setCursor(unsigned char cursor);
 
+//! What setCursor() does with a cursor number.
+typedef std::function<void(unsigned char cursor)> CursorHandler;
+//! Replace what setCursor() does (natively nothing, on the web the page
+//! canvas's CSS cursor): an app with a window of its own sets the system
+//! cursor there, and a test records what was asked for.
+//! @param handler : The handler; an empty function restores the platform's.
+GWENI_EXPORT void setCursorHandler(CursorHandler handler);
+
 GWENI_EXPORT void getCursorPos(gweni::Point &p);
 GWENI_EXPORT void getDesktopSize(int &w, int &h);
 

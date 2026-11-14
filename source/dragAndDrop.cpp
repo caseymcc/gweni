@@ -319,6 +319,12 @@ static bool ShouldStartDraggingControl(int x, int y)
 
     SourceControl->dragAndDrop_startDragging(CurrentPackage,
         LastPressedPos.x, LastPressedPos.y);
+
+    // Whatever cursor the pressed control had set (a Finger, a Beam), the drag
+    // starts with the Normal one: the moves only set a cursor that differs
+    // from the last the drag asked for.
+    if(CurrentPackage)
+        setCursor(cursor::Normal);
     return CurrentPackage != nullptr;
 }
 
@@ -424,6 +430,20 @@ bool onCanvasThink(gweni::controls::Canvas *canvas)
     // control drag's source hides itself as it starts: a tab, a dock.)
     if(CurrentPackage->sourceList && !CurrentPackage->sourceList->visible())
         return cancel();
+
+    // A target hidden under the cursor is the target no more: a release before
+    // the next move would drop into it. The next move finds what is there.
+    if(HoveredControl && !HoveredControl->visible())
+    {
+        gweni::controls::Base *target=HoveredControl;
+
+        HoveredControl=nullptr;
+        DropRefused=false;
+        target->dragAndDrop_hoverLeave(CurrentPackage);
+
+        if(CurrentPackage && (Cursor != cursor::No))
+            setCursor(cursor::No);
+    }
 
     return false;
 }
