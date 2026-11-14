@@ -401,7 +401,9 @@ public:
     //! row into another list still works, and a header click goes ascending,
     //! descending, then back to no sort. Returns the Reorderable (its rules,
     //! its group, setOnItemDropped), null when turned off; getReorderable()
-    //! gives it.
+    //! gives it. setRowsReorderable(true) keeps one it made before, while
+    //! setItemsReorderable() makes a new one on every call (the key functions
+    //! are its), so its rules, group and handler are set again after it.
     Reorderable *setRowsReorderable(bool reorderable);
     Reorderable *setItemsReorderable(VirtualListReorder::KeyOf keyOf, VirtualListReorder::IndexOf indexOf);
     Reorderable *getReorderable() const;
