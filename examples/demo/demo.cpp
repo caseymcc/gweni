@@ -70,6 +70,7 @@
 #include "demo/showcaseDisplay.h"
 #include "demo/showcaseWindows.h"
 #include "demo/slider.h"
+#include "demo/rangeSlider.h"
 #include "demo/sliderText.h"
 #include "demo/statusBar.h"
 #include "demo/tabClose.h"
@@ -259,6 +260,7 @@ void Demo::init(const String &name)
         addDemo<NumericDemo>(cat, "NumericDemo", "Numeric");
         addDemo<SliderDemo>(cat, "SliderDemo", "Slider");
         addDemo<SliderTextDemo>(cat, "SliderTextDemo", "Slider text");
+        addDemo<RangeSliderDemo>(cat, "RangeSliderDemo", "Range slider");
         addDemo<DragNumberDemo>(cat, "DragNumberDemo", "Drag number");
         addDemo<VectorFieldDemo>(cat, "VectorFieldDemo", "Vector field");
         addDemo<MenuStripDemo>(cat, "MenuStripDemo", "Menu strip");

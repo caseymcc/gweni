@@ -187,12 +187,21 @@ public:
     int positionOf(double value) const;
     //! The thumbs' travel: the track's length less a thumb's.
     int getTravel() const;
+    //! Where `thumb` is drawn and hit, in this control's own units: at
+    //! positionOf() its value along the track, ThumbLength long, across it the
+    //! track's column. The thumb controls' own bounds are the whole column.
+    Rect getThumbRect(int thumb) const;
+    //! The front thumb where its rect is, else the other one's, else this
+    //! control (the value texts take no mouse).
+    Base *getControlAt(int x, int y, bool onlyIfMouseEnabled=true) override;
 
-    //! Where the track and thumbs are, in this control's own coordinates (a
-    //! Slider's getTrackBounds()).
+    //! Where the track and thumbs are, as a Slider's getTrackBounds(): the
+    //! render bounds (in the parent's units, as a renderer draws them), less a
+    //! vertical slider's text column.
     Rect getTrackBounds() const;
-    //! The fill between the thumbs' centres, along the track, across it the
-    //! whole track's bounds (the renderer draws it thinner).
+    //! The fill between the thumbs' centres along the track, across it the
+    //! whole track's bounds (the renderer draws it thinner), in the units of
+    //! getTrackBounds().
     Rect getFillBounds() const;
     //! A vertical slider's text column width (0 for a horizontal one or with
     //! no text).
