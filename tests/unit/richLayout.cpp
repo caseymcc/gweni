@@ -8,6 +8,8 @@
  *  box is its size, its baseline at four fifths of it). It pins:
  *  - a line breaks after spaces, which end the line in no piece, and a word
  *    goes on the next line whole when it does not fit;
+ *  - spaces starting a span hang past the edge as one span's spaces do,
+ *    making no line of their own;
  *  - a word made of two spans (a span ending mid-word) stays together;
  *  - a url span also breaks after '/', '-', '?', '&' and '=', the same text
  *    in a plain span not;
@@ -124,6 +126,31 @@ TEST_CASE("RichLayout: a span that ends mid-word keeps the word together")
     CHECK(layout.pieces()[2].span == 1);
     CHECK(layout.pieces()[2].offset == 6);
     CHECK(layout.pieces()[2].pos.x == 8);
+}
+
+TEST_CASE("RichLayout: spaces starting a span hang past the edge as a span's trailing spaces do")
+{
+    test::StubRenderer renderer;
+    RichLayout layout;
+
+    // "aaa" is 12 wide, a space 4: the spaces after it do not fit at 14, and
+    // hang on its line in no piece instead of making a line of their own
+    layout.layout({ span("aaa  bbb") }, 14, RichMeasure::of(renderer));
+    CHECK(lineTexts(layout) == Lines{ "aaa", "bbb" });
+
+    layout.layout({ span("aaa "), span(" bbb") }, 14, RichMeasure::of(renderer));
+    CHECK(lineTexts(layout) == Lines{ "aaa", "bbb" });
+    REQUIRE(layout.lines().size() == 2);
+    CHECK(layout.lines()[0].end == 5);
+    CHECK(layout.lines()[1].begin == 5);
+    CHECK(layout.lines()[1].top == 10);
+
+    layout.layout({ span("aaa"), span(" "), span(" bbb") }, 14, RichMeasure::of(renderer));
+    CHECK(lineTexts(layout) == Lines{ "aaa", "bbb" });
+
+    // a '\n' starting a span after hanging spaces ends their line
+    layout.layout({ span("aaa  "), span("\nbbb") }, 14, RichMeasure::of(renderer));
+    CHECK(lineTexts(layout) == Lines{ "aaa", "bbb" });
 }
 
 TEST_CASE("RichLayout: a url span breaks after / - ? & =, a plain one only at any character")

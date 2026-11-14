@@ -5031,7 +5031,9 @@ own, so a piece's width and carets are what it draws), so a new width measures a
 nothing. A line breaks at a `'\n'`, after a run of spaces, and in a url span after `/`,
 `-`, `?`, `&` or `=`; a word goes on the line if it fits to its last visible character,
 else on the next line, and a word wider than the width breaks at any codepoint, filling its
-line first; the spaces ending a line take no width and are in no piece. A line's baseline
+line first; the spaces ending a line take no width and are in no piece, a span's leading
+spaces after an open line's last word hanging past the edge with them (never a line of
+their own). A line's baseline
 is its pieces' largest ascender, each piece's top at `baseline - ascender`, its height
 reaching the largest descender. Kerning across a span edge is lost. `tests/unit/richLayout.cpp`
 pins the breaks, the shared baseline across sizes, empty spans and a span ending mid-word.

@@ -349,7 +349,11 @@ void RichLayout::breakLines(int width, const RichMeasure &measure)
 
         const Atom *begin=atoms.data()+first;
         const Atom *end=atoms.data()+last;
-        const bool fits=(width <= 0) || (extent(begin, end, !lineOpen) <= width);
+        // a word of spaces only (a span starting with spaces, or a '\n' marker)
+        // hangs past the edge on the open line, as a word's trailing spaces do
+        const bool blank=lineOpen && std::all_of(begin, end,
+            [](const Atom &atom) { return atom.visibleEnd == atom.start; });
+        const bool fits=(width <= 0) || blank || (extent(begin, end, !lineOpen) <= width);
 
         if(!fits && (extent(begin, end, true) > width))
         {
