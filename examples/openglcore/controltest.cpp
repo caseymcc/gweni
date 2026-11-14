@@ -167,7 +167,7 @@
  *                       inspector |
  *                       stats-overlay | depth-view | zoom-panel |
  *                       node-graph | code-editor | log-view |
- *                       chip-badge | flow (see below)
+ *                       chip-badge | flow | switch (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -917,6 +917,30 @@
  *                 shorter content's end); the empty frame clamps it to 0,
  *                 where it stays; settled frames write nothing; the demo gives
  *                 every id back. Exits non-zero if any check is no.
+ *    switch       SwitchDemo, the clock stepping (switch.png, switch-on.png),
+ *                 the "Label on the right" switch focused throughout and the
+ *                 mouse off it between inputs: the mouse onto its track, onto
+ *                 its label and off; a click on the track and a second one; a
+ *                 click on the label twice; Space twice; the mouse onto and a
+ *                 click on each disabled switch; the "Allow apply" switch
+ *                 clicked twice; a click and the demo hidden two frames into
+ *                 the slide. One line
+ *                   switch settled_start=yes|no hover=yes|no ... ids_back=yes|no
+ *                 reports the checks: the hover writes the track's slot alone
+ *                 (the label's the same look, writing nothing more) and
+ *                 changes no pixel outside the switch, and moving off gives
+ *                 the frame back; each toggle's input frame writes the
+ *                 switch's ids alone and each frame of its slide (3 or more
+ *                 writing the thumb) the thumb's slot alone, with no layout
+ *                 pass and no pixel changed outside the switch, until a frame
+ *                 runs no animation and writes nothing; the second click,
+ *                 the label and Space give the same on and off looks; a
+ *                 disabled switch writes nothing, keeps its state and its
+ *                 pixels and takes no focus, hovered or clicked; the Apply
+ *                 button follows the "Allow apply" switch; the frame after
+ *                 the hide runs no animation, the thumb at its end; settled
+ *                 frames write nothing; the demo gives every id back. Exits
+ *                 non-zero if any check is no.
  *    virtual-list VirtualListDemo with its list at 1 000 and then 100 000
  *                 items, the clock frozen: a settled frame, a one-row scroll
  *                 from the top (scrollByRows) and a wheel notch over the list
@@ -1166,6 +1190,7 @@
 #include <demo/popup.h>
 #include <demo/chipBadge.h>
 #include <demo/switch.h>
+#include <gweni/controls/switch.h>
 #include <gweni/controls/badge.h>
 #include <gweni/controls/chip.h>
 #include <demo/dialog.h>
@@ -1423,7 +1448,7 @@ static void printUsage(std::ostream &out)
          "                     | inspector\n"
          "                     | stats-overlay | depth-view | zoom-panel\n"
          "                     | node-graph | code-editor | log-view | chip-badge\n"
-         "                     | flow;\n"
+         "                     | flow | switch;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -2462,7 +2487,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
-    ChipBadge, Flow };
+    ChipBadge, Flow, Switch };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2499,6 +2524,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "log-view") scenario=Scenario::LogView;
     else if(name == "chip-badge") scenario=Scenario::ChipBadge;
     else if(name == "flow") scenario=Scenario::Flow;
+    else if(name == "switch") scenario=Scenario::Switch;
     else return false;
     return true;
 }
@@ -11851,6 +11877,362 @@ static bool runChipBadgeScenario(Session &s, const std::string &shotDir, bool &p
     return ok;
 }
 
+//-----------------------------------------------------------------------------
+// --scenario switch: SwitchDemo's switches, the clock stepping
+//
+// A Switch draws its track and its thumb in two slots of its own, its label
+// being its own Text. A hover lights the track alone; a toggle starts the
+// thumb's slide, an animation registered only while it moves, each of whose
+// frames writes the thumb's slot alone and lays nothing out; a settled switch
+// runs no animation. Every look is compared with the switch focused (the
+// focus border stays the same throughout), the mouse off it.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+// What a toggle's frames did: the input frame, then each slide frame until
+// one runs no animation.
+struct SwitchSlideRun
+{
+    size_t frames=0;            // slide frames that ran the animation
+    size_t thumbFrames=0;       // of those, the ones that wrote the thumb's slot
+    bool inputWithin=true;      // the input frame wrote the switch's ids alone
+    bool slideThumbOnly=true;   // every slide frame wrote the thumb's slot alone
+    bool slideNoLayout=true;    // and ran no layout pass
+    size_t outside=0;           // pixels changed outside the switch, every frame
+    bool ended=false;           // a frame ran no animation and the switch is not sliding
+};
+
+SwitchSlideRun switchSlideFrames(Session &s, gweni::controls::Switch *control,
+    const std::vector<uint8_t> &before)
+{
+    SwitchSlideRun run;
+    std::set<size_t> prims, texts;
+
+    subtreeIds(control, prims, texts);
+
+    const size_t thumb=control->getSkinControl()->getPrimitives().at(1);
+    const gweni::Rect rect=control->getCanvasBounds();
+    const CodeEditorFrame input=codeEditorFrame(s);
+
+    run.inputWithin=idsWithin(input.primitives, prims) && input.texts.empty();
+    run.outside+=differencesOutsideRects(s, before, input.pixels, {rect});
+
+    for(int i=0; i < 60; ++i)
+    {
+        const CodeEditorFrame frame=codeEditorFrame(s);
+
+        run.outside+=differencesOutsideRects(s, before, frame.pixels, {rect});
+        if(s.canvas->getUpdateStats().animsRun == 0)
+        {
+            run.ended=!control->isSliding() && frame.written == 0;
+            break;
+        }
+        ++run.frames;
+        if(frame.primitives.count(thumb))
+            ++run.thumbFrames;
+        if(!idsWithin(frame.primitives, {thumb}) || !frame.texts.empty())
+            run.slideThumbOnly=false;
+        if(frame.passes != 0)
+            run.slideNoLayout=false;
+    }
+    return run;
+}
+
+bool switchSlideGood(const SwitchSlideRun &run)
+{
+    return run.inputWithin && run.slideThumbOnly && run.slideNoLayout && run.outside == 0
+        && run.ended && run.thumbFrames >= 3;
+}
+
+std::string switchSlideReport(const SwitchSlideRun &run)
+{
+    return "input frame within the switch's ids: "+std::string(run.inputWithin?"yes":"no")
+        +"; "+std::to_string(run.frames)+" slide frames, "+std::to_string(run.thumbFrames)
+        +" writing the thumb (3 or more wanted), thumb alone: "+std::string(run.slideThumbOnly?"yes":"no")
+        +", no layout: "+std::string(run.slideNoLayout?"yes":"no")+"; "+std::to_string(run.outside)
+        +" pixels changed outside the switch; ended: "+std::string(run.ended?"yes":"no");
+}
+
+gweni::Point switchTrackCentre(gweni::controls::Switch *control)
+{
+    const gweni::Rect track=control->getTrackRect();
+
+    return control->localPosToCanvas(gweni::Point(track.x+track.w/2, track.y+track.h/2));
+}
+
+gweni::Point switchLabelPoint(gweni::controls::Switch *control)
+{
+    const gweni::Rect track=control->getTrackRect();
+    const int x=(track.x == 0)?control->getWidth()-4:4;
+
+    return control->localPosToCanvas(gweni::Point(x, control->getHeight()/2));
+}
+
+}//namespace
+
+static bool runSwitchScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=false;
+    s.statsClockSteps=true;
+
+    InteractionChecks checks;
+    checks.scenario="switch";
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    gweni::controls::Base *control=addControl(s, "SwitchDemo");
+    auto *demo=gweni::gweni_cast<gweni::SwitchDemo>(control);
+
+    if(!demo || !demo->labelRightSwitch() || !demo->disabledOffSwitch() || !demo->enablingSwitch())
+    {
+        std::cerr<<"ControlTest: switch: SwitchDemo was not built\n";
+        return false;
+    }
+
+    s.label="switch";
+    renderFrames(s, s.frames);
+
+    gweni::controls::Switch *target=demo->labelRightSwitch();
+    const gweni::Point off(s.size.x-4, s.size.y-4);
+
+    // every look below is the focused one
+    target->focus();
+    renderFrames(s, 1);
+
+    std::vector<uint8_t> offLook;
+    size_t idleWork=settleCodeEditor(s, offLook);
+    bool ok=shoot(s, shotDir+"/switch.png");
+
+    checks.check("settled_start", idleWork == 0 && s.canvas->getUpdateStats().animsRun == 0,
+        "the demo's first settled frames wrote or changed "+std::to_string(idleWork)
+        +" and ran "+std::to_string(s.canvas->getUpdateStats().animsRun)+" animations");
+
+    // (1) a hover: the switch's track alone, on the track and on the label alike
+    std::set<size_t> prims, texts;
+
+    subtreeIds(target, prims, texts);
+
+    const gweni::Rect rect=target->getCanvasBounds();
+    const size_t track=target->getSkinControl()->getPrimitives().at(0);
+    const gweni::Point onTrack=switchTrackCentre(target);
+    const gweni::Point onLabel=switchLabelPoint(target);
+
+    moveMouse(s, onTrack.x, onTrack.y);
+
+    const CodeEditorFrame hover=codeEditorFrame(s);
+    const size_t hoverOutside=differencesOutsideRects(s, offLook, hover.pixels, {rect});
+
+    moveMouse(s, onLabel.x, onLabel.y);
+
+    const CodeEditorFrame labelHover=codeEditorFrame(s);
+
+    moveMouse(s, off.x, off.y);
+
+    const CodeEditorFrame leave=codeEditorFrame(s);
+
+    checks.check("hover",
+        hover.primitives == std::set<size_t>{track} && hover.texts.empty() && hoverOutside == 0
+            && hover.pixels != offLook && labelHover.written == 0 && labelHover.pixels == hover.pixels
+            && leave.pixels == offLook,
+        "the hover wrote "+std::to_string(hover.primitives.size())+" primitive ids (the track's alone wanted) and "
+        +std::to_string(hover.texts.size())+" text ids, changed "+std::to_string(hoverOutside)
+        +" pixels outside the switch, the label's hover wrote "+std::to_string(labelHover.written)
+        +(labelHover.pixels == hover.pixels?"":" and looked unlike the track's")
+        +(leave.pixels == offLook?"":", and moving off did not give the frame back"));
+    idleWork+=settleCodeEditor(s, offLook);
+
+    // (2) a click on the track: its slide, the thumb's slot alone
+    clickMouse(s, onTrack.x, onTrack.y);
+
+    const SwitchSlideRun clickOn=switchSlideFrames(s, target, offLook);
+
+    checks.check("click_slide", target->isOn() && switchSlideGood(clickOn),
+        std::string(target->isOn()?"":"the click did not turn it on; ")+switchSlideReport(clickOn));
+
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, 1);   // the leave frame: the hover goes
+
+    std::vector<uint8_t> onLook;
+
+    idleWork+=settleCodeEditor(s, onLook);
+    checks.check("settled_on", s.canvas->getUpdateStats().animsRun == 0 && onLook != offLook
+        && differencesOutsideRects(s, offLook, onLook, {rect}) == 0,
+        "on, settled, it ran "+std::to_string(s.canvas->getUpdateStats().animsRun)
+        +" animations, looked as off, or changed pixels outside it");
+    ok=shoot(s, shotDir+"/switch-on.png") && ok;
+
+    // (3) a second click gives the first look back
+    clickMouse(s, onTrack.x, onTrack.y);
+
+    const SwitchSlideRun clickOff=switchSlideFrames(s, target, offLook);
+    std::vector<uint8_t> back;
+
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, 1);   // the leave frame: the hover goes
+    idleWork+=settleCodeEditor(s, back);
+    checks.check("second_click", !target->isOn() && switchSlideGood(clickOff) && back == offLook,
+        std::string(target->isOn()?"the second click left it on; ":"")+switchSlideReport(clickOff)
+        +(back == offLook?"":"; the off look did not come back"));
+
+    // (4) a click on the label and Space: the same toggle, the same looks
+    clickMouse(s, onLabel.x, onLabel.y);
+
+    const SwitchSlideRun labelOn=switchSlideFrames(s, target, offLook);
+    std::vector<uint8_t> labelOnLook, labelOffLook;
+
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, 1);   // the leave frame: the hover goes
+    idleWork+=settleCodeEditor(s, labelOnLook);
+    clickMouse(s, onLabel.x, onLabel.y);
+
+    const SwitchSlideRun labelOff=switchSlideFrames(s, target, offLook);
+
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, 1);   // the leave frame: the hover goes
+    idleWork+=settleCodeEditor(s, labelOffLook);
+    checks.check("label_click", switchSlideGood(labelOn) && switchSlideGood(labelOff)
+        && labelOnLook == onLook && labelOffLook == offLook,
+        switchSlideReport(labelOn)+"; back: "+switchSlideReport(labelOff)
+        +(labelOnLook == onLook?"":"; on, unlike the click's on look")
+        +(labelOffLook == offLook?"":"; off, unlike the first look"));
+
+    glfwKey(s, GLFW_KEY_SPACE, GLFW_PRESS, 0);
+    glfwKey(s, GLFW_KEY_SPACE, GLFW_RELEASE, 0);
+
+    const SwitchSlideRun spaceOn=switchSlideFrames(s, target, offLook);
+    std::vector<uint8_t> spaceOnLook, spaceOffLook;
+
+    idleWork+=settleCodeEditor(s, spaceOnLook);
+    glfwKey(s, GLFW_KEY_SPACE, GLFW_PRESS, 0);
+    glfwKey(s, GLFW_KEY_SPACE, GLFW_RELEASE, 0);
+
+    const SwitchSlideRun spaceOff=switchSlideFrames(s, target, offLook);
+
+    idleWork+=settleCodeEditor(s, spaceOffLook);
+    checks.check("space", switchSlideGood(spaceOn) && switchSlideGood(spaceOff)
+        && spaceOnLook == onLook && spaceOffLook == offLook,
+        switchSlideReport(spaceOn)+"; back: "+switchSlideReport(spaceOff)
+        +(spaceOnLook == onLook?"":"; on, unlike the click's on look")
+        +(spaceOffLook == offLook?"":"; off, unlike the first look"));
+
+    // (5) the disabled switches: neither a hover nor a click changes them. A
+    // click on one drops the focus as a click on anything that takes no keys
+    // does, so they are compared with the focus dropped first.
+    clickMouse(s, off.x, off.y);
+    moveMouse(s, off.x, off.y);
+
+    std::vector<uint8_t> unfocused;
+
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, unfocused);
+
+    bool disabledStill=gweni::KeyboardFocus == nullptr;
+    std::string disabledReport=disabledStill?"":"a click off the switch kept the focus; ";
+
+    for(gweni::controls::Switch *disabled : {demo->disabledOffSwitch(), demo->disabledOnSwitch()})
+    {
+        const bool wasOn=disabled->isOn();
+        const gweni::Point at=switchTrackCentre(disabled);
+
+        moveMouse(s, at.x, at.y);
+
+        const CodeEditorFrame hovered=codeEditorFrame(s);
+
+        clickMouse(s, at.x, at.y);
+
+        const CodeEditorFrame clicked=codeEditorFrame(s);
+        const CodeEditorFrame after=codeEditorFrame(s);
+
+        moveMouse(s, off.x, off.y);
+
+        const CodeEditorFrame left=codeEditorFrame(s);
+        const bool still=disabled->isOn() == wasOn && !disabled->isSliding() && hovered.written == 0
+            && clicked.written == 0 && after.written == 0 && left.written == 0
+            && hovered.pixels == unfocused && clicked.pixels == unfocused && left.pixels == unfocused
+            && gweni::KeyboardFocus == nullptr;
+
+        if(!still)
+        {
+            disabledStill=false;
+            disabledReport+=std::string(wasOn?"the disabled on switch":"the disabled off switch")
+                +" wrote "+std::to_string(hovered.written)+" slots hovered, "+std::to_string(clicked.written)
+                +" and "+std::to_string(after.written)+" clicked, is "+(disabled->isOn()?"on":"off")
+                +(gweni::KeyboardFocus == nullptr?"":", took the focus")
+                +(clicked.pixels == unfocused?"; ":", changed pixels; ");
+        }
+    }
+    checks.check("disabled", disabledStill, disabledReport);
+    idleWork+=settleCodeEditor(s, back);
+
+    // (6) the switch that enables the Apply button
+    gweni::controls::Switch *enabling=demo->enablingSwitch();
+    const gweni::Point enablingAt=switchTrackCentre(enabling);
+    const bool disabledFirst=demo->enabledButton()->isDisabled();
+
+    clickMouse(s, enablingAt.x, enablingAt.y);
+    renderFrames(s, 1);
+
+    const bool enabled=!demo->enabledButton()->isDisabled();
+
+    clickMouse(s, enablingAt.x, enablingAt.y);
+    renderFrames(s, 1);
+
+    const bool disabledAgain=demo->enabledButton()->isDisabled();
+
+    checks.check("enables", disabledFirst && enabled && disabledAgain,
+        "the Apply button was "+std::string(disabledFirst?"disabled":"enabled")+", then "
+        +(enabled?"enabled":"disabled")+", then "+(disabledAgain?"disabled":"enabled"));
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, 30);
+
+    // (7) the demo hidden mid-slide: the next frame runs no animation
+    clickMouse(s, onTrack.x, onTrack.y);
+    renderFrames(s, 2);
+
+    const bool slidingBeforeHide=target->isSliding();
+
+    control->setHidden(true);
+    renderFrames(s, 1);
+
+    const size_t hideFrameAnims=s.canvas->getUpdateStats().animsRun;
+
+    renderFrames(s, 1);
+
+    const size_t nextAnims=s.canvas->getUpdateStats().animsRun;
+
+    checks.check("hidden_mid_slide", slidingBeforeHide && !target->isSliding() && nextAnims == 0
+        && target->getThumbPosition() == 1.0f,
+        "sliding before the hide: "+std::string(slidingBeforeHide?"yes":"no")+"; after it "
+        +(target->isSliding()?"still sliding":"not sliding")+", thumb at "+std::to_string(target->getThumbPosition())
+        +", the hide frame ran "+std::to_string(hideFrameAnims)+" and the next "+std::to_string(nextAnims)
+        +" animations");
+    control->setHidden(false);
+    renderFrames(s, 1);
+
+    forgetMouse(s);
+    renderFrames(s, 1);
+    std::vector<uint8_t> last;
+    idleWork+=settleCodeEditor(s, last);
+    checks.check("settled", idleWork == 0 && s.canvas->getUpdateStats().animsRun == 0,
+        "settled frames wrote or changed "+std::to_string(idleWork));
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()+liveTextIds()-idsBefore;
+
+    checks.check("ids_back", idsLeft == 0, std::to_string(idsLeft)+" ids not given back");
+
+    passed=checks.allPassed();
+    std::cout<<"switch";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<" hover_prims="<<hover.primitives.size()<<" slide_frames="<<clickOn.frames
+             <<" thumb_frames="<<clickOn.thumbFrames<<" hide_frame_anims="<<hideFrameAnims<<"\n";
+    return ok;
+}
+
 static bool runCodeEditorScenario(Session &s, const std::string &shotDir, bool &passed)
 {
     s.freezeClock=true;
@@ -15840,6 +16222,15 @@ int main(int argc, char *argv[])
             ok=runChipBadgeScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a count, a move, a hover or a removal did more than its part
+            break;
+        }
+
+        case Scenario::Switch:
+        {
+            bool passed=false;
+            ok=runSwitchScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a hover, a slide or a disabled switch did more than its part
             break;
         }
 

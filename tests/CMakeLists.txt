@@ -226,11 +226,11 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # dragged past its parent's edges, the tooltip box, the context menu, the
     # stats overlay, the depth view, the zoom panel, the node graph and a
     # variable-height VirtualList, the code editor, the log view, the
-    # badges' counts and anchor moves, the dialogs, the toasts and a Flow's
-    # resizes and rebuilds
+    # badges' counts and anchor moves, the dialogs, the toasts, a Flow's
+    # resizes and rebuilds and the switches' toggles
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
-            dialog toast flow)
+            dialog toast flow switch)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         add_test(NAME controltest_verify_layout_${verify_name}
             COMMAND $<TARGET_FILE:ControlTest> --headless --scenario ${verify_scenario}
@@ -547,6 +547,16 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_chip_badge 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario chip-badge --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/chip_badge@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # SwitchDemo, the clock stepping: a hover writes the track's slot alone,
+    # each frame of a toggle's slide the thumb's alone with no layout, a
+    # settled switch runs no animation, the label and Space toggle it as a
+    # click does, a disabled one changes nothing, and hidden mid-slide it
+    # runs no animation from the next frame on
+    gweni_whole_app_test(controltest_switch 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario switch --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/switch@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # gweni::tools::Inspector over the settled Demo, opened and closed by F12:
