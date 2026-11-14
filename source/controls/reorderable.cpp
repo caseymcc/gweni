@@ -157,6 +157,9 @@ internal::DragSourceVeil *Reorderable::getSourceVeil() const
 template<typename Look>
 Look *Reorderable::look(size_t &id)
 {
+    // an edit of the items not seen yet (made earlier in this input phase) is
+    // left for listArranged to see
+    const bool editSeen=(treeSerialOf(m_list) == m_treeSerial);
     Look *control=gweni_cast<Look>(Base::getControlById(id));
 
     // made the first time it shows (again, if the app cleared the panel)
@@ -190,7 +193,8 @@ Look *Reorderable::look(size_t &id)
     }
 
     // the looks' own changes to the tree are no edit of the items
-    m_treeSerial=treeSerialOf(m_list);
+    if(editSeen)
+        m_treeSerial=treeSerialOf(m_list);
     return control;
 }
 

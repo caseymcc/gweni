@@ -25,6 +25,11 @@
  *  source column (setReorderable(nullptr)) or deletes it ends the drag, the
  *  drop reported once, with nothing read of the freed Reorderable (a real
  *  check in the ASAN tree).
+ *  A drag sets the Normal cursor as it starts, whatever cursor the pressed
+ *  control had set. A target column hidden during the drag stops being the
+ *  target at the next update (the No cursor; a release drops nothing into
+ *  it). A card the app adds in the same input phase as a move that changes
+ *  the gap is seen: the dragged index and the veil follow it.
  *
  *  Auto-scroll, on the stepped canvas clock (1/60 s a frame): the cursor
  *  resting in the bottom band of an overflowing column's viewport scrolls it
@@ -439,6 +444,70 @@ TEST_CASE("CardReorder: the dragged card deleted cancels the drag, and Escape hi
         CHECK(scene.todo.drops.empty());
         CHECK_FALSE(scene.todo.cards[1]->getToggleState());
     }
+}
+
+TEST_CASE("CardReorder: a drag sets the Normal cursor as it starts, over a cursor a control set")
+{
+    Scene scene;
+    std::vector<int> asked;
+    platform::setCursorHandler([&asked](unsigned char cursor) { asked.push_back(cursor); });
+
+    // a card with a cursor of its own (a LabelClickable's Finger, a TextBox's
+    // Beam), which the canvas sets as the mouse moves over it
+    scene.todo.cards[1]->setCursor(cursor::Finger);
+    const Point at=Scene::on(scene.todo.cards[1], CardHeight/4);
+    scene.press(at);
+    asked.clear();
+    scene.move(Point(at.x+6, at.y));
+    REQUIRE(draganddrop::isDragging());
+    CHECK_FALSE(asked.empty());
+    CHECK((asked.empty() ? -1 : asked.back()) == cursor::Normal);
+    scene.release();
+    platform::setCursorHandler(nullptr);
+}
+
+TEST_CASE("CardReorder: a target column hidden during the drag is the target no more")
+{
+    Scene scene;
+    scene.startDrag(scene.todo.cards[1]);
+    scene.move(Scene::on(scene.running.cards[0], 3));
+    REQUIRE(Reorderable::dropTarget() == scene.running.reorder);
+
+    scene.running.list->hide();
+    scene.frame();
+    CHECK(draganddrop::isDragging());
+    CHECK(Reorderable::dropTarget() == nullptr);
+    CHECK(draganddrop::currentCursor() == cursor::No);
+
+    // a release with no move after the hide drops nothing into it
+    scene.release();
+    CHECK_FALSE(draganddrop::isDragging());
+    CHECK(scene.running.drops.empty());
+    CHECK(scene.todo.drops.empty());
+}
+
+TEST_CASE("CardReorder: a card added in the input phase of a gap-changing move is seen")
+{
+    Scene scene;
+    std::vector<controls::Button *> &cards=scene.todo.cards;
+
+    scene.startDrag(cards[3]);
+    scene.move(Scene::on(cards[2], 3));
+    REQUIRE(scene.todo.reorder->gap() == 2);
+    REQUIRE(scene.todo.reorder->dragIndex() == 3);
+    scene.frame();
+
+    // the app adds a card at the top, and in the same input phase the mouse
+    // moves to another gap (the indicator is placed again)
+    controls::Button *added=scene.card(scene.todo);
+    added->sendToBack();
+    scene.canvas->inputMouseMoved(Scene::on(cards[0], 3).x, Scene::on(cards[0], 3).y, 0, 0);
+    scene.frame();
+    scene.frame();
+
+    CHECK(draganddrop::isDragging());
+    CHECK(scene.todo.reorder->dragIndex() == 4);
+    CHECK(scene.todo.reorder->getSourceVeil()->getY() == cards[3]->getY());
 }
 
 TEST_CASE("CardReorder: a drop handler that takes reordering off the source column or deletes it ends the drag")
