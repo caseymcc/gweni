@@ -12,6 +12,11 @@
 
 namespace gweni
 {
+namespace anim
+{
+class Animation;
+}
+
 namespace controls
 {
 
@@ -39,6 +44,17 @@ namespace controls
 //!
 //! Its size is the track's (TrackWidth x TrackHeight) and the label's beside
 //! it, Gap apart, so a toggle never lays anything out.
+//!
+//! A toggle slides the thumb to its new end over SlideSeconds, eased, on the
+//! canvas clock (platform::getTimeInSeconds()), by an animation registered
+//! only while it moves (anim::add on the toggle, cancelled on arrival); a
+//! toggle mid-slide turns it round from where the thumb is. A step marks the
+//! switch only when the thumb's rect in whole units changes, so the track's
+//! slot keeps its bytes and the thumb's alone is written. The thumb jumps to
+//! its end (no animation) when the switch is not visible(), has not been drawn
+//! yet (its first frame shows the thumb where it ends) or GWENI_ANIMATE is
+//! off, and a step that finds the switch not visible() puts it there and
+//! cancels itself.
 class GWENI_EXPORT Switch: public Button
 {
 public:
@@ -55,6 +71,8 @@ public:
     static constexpr int ThumbInset=3;
     //! Units between the track and the label.
     static constexpr int Gap=6;
+    //! The thumb's slide from one end to the other, in seconds.
+    static constexpr double SlideSeconds=0.15;
 
     //! On or off. A change fires onToggled, then onToggledOn or onToggledOff
     //! (and Button's toggle callers); the current value fires and marks
@@ -77,6 +95,20 @@ public:
     Rect getThumbRect() const;
     //! The thumb's place along its travel: 0 at the left, 1 at the right.
     float getThumbPosition() const { return m_thumbPosition; }
+    //! Whether the thumb is on its way (its animation registered).
+    bool isSliding() const { return m_slide != nullptr; }
+
+    //! The slide's step, from its animation: the thumb's place at the clock's
+    //! time, the arrival cancelling it.
+    void slideStep();
+
+    //! Disabled, it takes no keyboard focus (a click would give it the focus,
+    //! as any control taking keys) and gives up the one it has.
+    void setDisabled(bool disabled) override;
+
+    //! Notes that it has been drawn: a toggle before that has nothing to
+    //! slide from.
+    void render(skin::Base *skin) override;
 
     void onPress(event::Info info) override;
     bool onKeySpace(bool down) override;
@@ -97,9 +129,23 @@ public:
 private:
     //! The padding that keeps the track beside the label.
     void updatePadding();
+    //! The thumb toward the state's end: a slide, or a jump.
+    void moveThumb();
+    //! The thumb at \p position, the switch marked if its rect changed.
+    void placeThumb(float position);
+    //! Ends the slide, cancelling its animation.
+    void stopSlide();
 
     bool m_labelOnLeft=false;
     float m_thumbPosition=0.0f;
+    //! The slide: from where, since when and for how long.
+    float m_slideFrom=0.0f;
+    double m_slideStart=0.0;
+    double m_slideLength=0.0;
+    //! The thumb's rect when the switch was last marked for it.
+    Rect m_thumbMarked;
+    anim::Animation *m_slide=nullptr;
+    bool m_drawn=false;
 };
 
 }//namespace controls

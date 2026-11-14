@@ -6,6 +6,7 @@
 
 
 #include <gweni/controls/switch.h>
+#include <gweni/anim.h>
 #include <gweni/gweni.h>
 #include <gweni/skin.h>
 
@@ -16,6 +17,21 @@ namespace gweni
 {
 namespace controls
 {
+
+namespace
+{
+
+//! A switch's slide: one step a frame while the thumb moves.
+class SwitchSlide: public anim::Animation
+{
+public:
+    void think() override
+    {
+        gweni_cast<Switch>(m_control)->slideStep();
+    }
+};
+
+}//namespace
 
 // Its preferred size (Elastic): the track and the label beside it, whatever a
 // Button's default request says; the label centred down it.
@@ -41,13 +57,88 @@ void Switch::setToggleState(bool on)
 
     // Button's: the state, its toggle callers and a redraw of this control
     ParentClass::setToggleState(on);
-    m_thumbPosition=on?1.0f:0.0f;
+    moveThumb();
 
     onToggled.call(this);
     if(on)
         onToggledOn.call(this);
     else
         onToggledOff.call(this);
+}
+
+// A slide from where the thumb is, as long as the part of the travel left
+// takes, or a jump when nothing would show it: not visible(), or not drawn yet
+// (the first frame draws the thumb where it ends).
+void Switch::moveThumb()
+{
+    const float target=getToggleState()?1.0f:0.0f;
+
+#if GWENI_ANIMATE
+    if(visible() && m_drawn && getCanvas())
+    {
+        m_slideFrom=m_thumbPosition;
+        m_slideStart=platform::getTimeInSeconds();
+        m_slideLength=SlideSeconds*std::fabs(double(target-m_slideFrom));
+        if(!m_slide)
+        {
+            m_slide=new SwitchSlide();
+            anim::add(this, m_slide);
+        }
+        return;
+    }
+#endif
+    stopSlide();
+    placeThumb(target);
+}
+
+// Eased in and out (a half cosine), from m_slideFrom at m_slideStart to the
+// state's end m_slideLength later. A switch not visible() ends where it goes.
+void Switch::slideStep()
+{
+    const float target=getToggleState()?1.0f:0.0f;
+    const double elapsed=platform::getTimeInSeconds()-m_slideStart;
+
+    if(!visible() || (elapsed >= m_slideLength) || (m_slideLength <= 0.0))
+    {
+        stopSlide();
+        placeThumb(target);
+        return;
+    }
+
+    const double t=std::max(0.0, elapsed/m_slideLength);
+    const double eased=0.5-0.5*std::cos(3.14159265358979323846*t);
+
+    placeThumb(static_cast<float>(m_slideFrom+(target-m_slideFrom)*eased));
+}
+
+void Switch::stopSlide()
+{
+    if(!m_slide)
+        return;
+
+    anim::cancel(this, m_slide);
+    m_slide=nullptr;
+}
+
+// A step of less than a unit leaves the thumb's rect, and its slot, as they
+// are; the toggle itself marked the switch (its colours changed).
+void Switch::placeThumb(float position)
+{
+    m_thumbPosition=position;
+
+    const Rect thumb=getThumbRect();
+
+    if(thumb == m_thumbMarked)
+        return;
+
+    m_thumbMarked=thumb;
+    addStateChange(StateChange_Background);
+}
+
+void Switch::render(skin::Base *skin)
+{
+    ParentClass::render(skin);
+    m_drawn=true;
 }
 
 void Switch::setLabelOnLeft(bool left)
@@ -109,6 +200,15 @@ Rect Switch::getThumbRect() const
     const int offset=static_cast<int>(std::floor(m_thumbPosition*float(travel)+0.5f));
 
     return Rect(track.x+ThumbInset+offset, track.y+ThumbInset, diameter, diameter);
+}
+
+void Switch::setDisabled(bool disabled)
+{
+    ParentClass::setDisabled(disabled);
+    setKeyboardInputEnabled(!disabled);
+    setTabable(!disabled);
+    if(disabled && (KeyboardFocus == this))
+        unfocus();
 }
 
 void Switch::onPress(event::Info info)
