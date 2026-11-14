@@ -20,6 +20,7 @@
 #include "gweni/tools/statsOverlay.h"
 
 #include "demo/button.h"
+#include "demo/board.h"
 #include "demo/checkBox.h"
 #include "demo/collapsibleList.h"
 #include "demo/colorEdit.h"
@@ -264,6 +265,7 @@ void Demo::init(const String &name)
         addDemo<TabCloseDemo>(cat, "TabCloseDemo", "Closable tabs");
         addDemo<TabOverflowDemo>(cat, "TabOverflowDemo", "Tab overflow");
         addDemo<ScrollControlDemo>(cat, "ScrollControlDemo", "Scroll control");
+        addDemo<BoardDemo>(cat, "BoardDemo", "Board");
         addDemo<PageControlDemo>(cat, "PageControlDemo", "Page control");
     }
     {

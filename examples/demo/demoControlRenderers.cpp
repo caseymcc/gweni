@@ -153,6 +153,22 @@ public:
     inline static const std::string_view name="FlowDemoCard";
 };
 
+// BoardDemo's task card: the same surface, with its own wrapped labels.
+class BoardDemoCard:public textured::ControlRegister<BoardDemoCard>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+    size_t requiredPrimitives() override { return 1; }
+    void update(renderer::Base *renderer, controls::Base *baseControl) override
+    {
+        if(m_primitives.empty())
+            return;
+
+        tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::GroupBox);
+    }
+    inline static const std::string_view name="BoardDemoCard";
+};
+
 // Force the registrar static initializers to run so each renderer is registered.
 template class ControlRegister<Demo>;
 template class ControlRegister<ButtonDemo>;
@@ -201,6 +217,7 @@ template class ControlRegister<NavigationRailDemo>;
 template class ControlRegister<ZoomPanelDemo>;
 template class ControlRegister<FlowDemo>;
 template class ControlRegister<FlowDemoCard>;
+template class ControlRegister<BoardDemoCard>;
 template class ControlRegister<NodeGraphDemo>;
 template class ControlRegister<SeparatorDemo>;
 template class ControlRegister<ShowcaseContainersDemo>;
