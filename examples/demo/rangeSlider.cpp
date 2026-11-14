@@ -30,38 +30,38 @@ GWENI_CONTROL_CONSTRUCTOR(RangeSliderDemo)
         return slider;
     };
 
-    price=row(10, 20, "Price");
-    price->setRange(0, 1000);
-    price->setMinimumGap(50);
-    price->setValues(200, 800);
-    price->setValueFormat("%.0f");
+    m_price=row(10, 20, "Price");
+    m_price->setRange(0, 1000);
+    m_price->setMinimumGap(50);
+    m_price->setValues(200, 800);
+    m_price->setValueFormat("%.0f");
 
     // room for its ticks below the track
-    stepped=row(40, 30, "Stepped");
-    stepped->setRange(0, 100);
-    stepped->setNotchCount(10);
-    stepped->setClampToNotches(true);
-    stepped->setValues(20, 60);
+    m_stepped=row(40, 30, "Stepped");
+    m_stepped->setRange(0, 100);
+    m_stepped->setNotchCount(10);
+    m_stepped->setClampToNotches(true);
+    m_stepped->setValues(20, 60);
 
-    joined=row(80, 20, "Hours");
-    joined->setRange(0, 24);
-    joined->setValues(9, 17);
-    joined->setValueTextMode(controls::RangeSlider::ValueTextMode::Joined);
-    joined->setValueFormat("%.0f");
+    m_joined=row(80, 20, "Hours");
+    m_joined->setRange(0, 24);
+    m_joined->setValues(9, 17);
+    m_joined->setValueTextMode(controls::RangeSlider::ValueTextMode::Joined);
+    m_joined->setValueFormat("%.0f");
 
-    disabled=row(110, 20, "Disabled");
-    disabled->setRange(0, 10);
-    disabled->setValues(2.5, 7.5);
-    disabled->setValueFormat("%.1f");
-    disabled->setDisabled(true);
+    m_disabled=row(110, 20, "Disabled");
+    m_disabled->setRange(0, 10);
+    m_disabled->setValues(2.5, 7.5);
+    m_disabled->setValueFormat("%.1f");
+    m_disabled->setDisabled(true);
 
-    vertical=newChild<controls::RangeSlider>();
-    vertical->setHorizontal(false);
-    vertical->setPos(350, 10);
-    vertical->setSize(20, 180);
-    vertical->setRange(-50, 50);
-    vertical->setValues(-10, 30);
-    vertical->setValueFormat("%+.0f");
+    m_vertical=newChild<controls::RangeSlider>();
+    m_vertical->setHorizontal(false);
+    m_vertical->setPos(350, 10);
+    m_vertical->setSize(20, 180);
+    m_vertical->setRange(-50, 50);
+    m_vertical->setValues(-10, 30);
+    m_vertical->setValueFormat("%+.0f");
 }
 
 }//namespace gweni

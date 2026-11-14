@@ -1999,20 +1999,33 @@ void RangeSlider::update(renderer::Base *renderer, controls::Base *baseControl)
 
     tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::SliderTrack, track);
 
-    // The fill between the thumbs' centres, across the track (inside a
-    // field's border).
+    // The fill between the thumbs' centres, across the track. In a field it
+    // spans the field's whole height and draws the track's own border on its
+    // top and bottom (square, no border at its ends), so those rows are the
+    // track's at any scale: a logical inset would miss the border's
+    // max(1, snap(width)) device rows at a fractional one.
     const gweni::Rect between=slider->getFillBounds();
-    const int inset=field?int(tokyonight::SliderTrack.borderWidth):0;
+    tokyonight::Surface surface=slider->isDisabled()?tokyonight::RangeSliderFillDisabled
+        :tokyonight::RangeSliderFill;
     gweni::Rect fill;
+    uint8_t edges=0;
 
     if(horizontal)
-        fill=gweni::Rect(between.x, track.y+inset, between.w, std::max(0, track.h-2*inset));
+    {
+        fill=gweni::Rect(between.x, track.y, between.w, track.h);
+
+        if(field)
+        {
+            surface.border=tokyonight::SliderTrack.border;
+            surface.borderWidth=tokyonight::SliderTrack.borderWidth;
+            edges=renderer::SquareTopLeft|renderer::SquareTopRight|renderer::SquareBottomLeft
+                |renderer::SquareBottomRight|renderer::NoBorderLeft|renderer::NoBorderRight;
+        }
+    }
     else
         fill=gweni::Rect(track.x, between.y, track.w, between.h);
 
-    tokyonight::paintSurface(renderer, &m_primitives[1], baseControl,
-        slider->isDisabled()?tokyonight::RangeSliderFillDisabled:tokyonight::RangeSliderFill, fill,
-        0, 0.0f, 1);
+    tokyonight::paintSurface(renderer, &m_primitives[1], baseControl, surface, fill, edges, 0.0f, 1);
 
     Slider::paintTicks(renderer, m_primitives.data()+2, baseControl, r, track, bar, horizontal, field, notches,
         ticks);

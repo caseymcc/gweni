@@ -1105,10 +1105,14 @@
  *                 the release there; the price's low thumb focused and Right,
  *                 Left, Up, Down, PageUp, PageDown, End and Home, then Tab and
  *                 Home. One line
- *                   range-slider settled_start=yes|no hover=yes|no
+ *                   range-slider settled_start=yes|no field_borders=yes|no
+ *                     hover=yes|no
  *                     drag_<name>=yes|no gap_<name>=yes|no ... ids_back=yes|no
  *                     glyph_kept_frames=N
- *                 reports the checks: the hover writes the thumb's slot alone
+ *                 reports the checks: the price and joined fields' top and
+ *                 bottom border rows, down a column outside the fill and one
+ *                 under it, are the same max(1, snap(1)) device rows; the
+ *                 hover writes the thumb's slot alone
  *                 and moving off gives the frame back; every drag and key
  *                 frame writes the thumb's slot, the fill's and its text's
  *                 glyphs alone (none when its string stays), lays nothing
@@ -12543,6 +12547,70 @@ int textWidth(gweni::controls::RangeSlider *slider, int thumb)
 // its texts, each measured and arranged in both axes.
 constexpr size_t RangeResizeEntries=24;
 
+// The device-pixel runs of the track's border colour (each channel within 2)
+// down device column `x` from y0 up to y1: their starts and lengths.
+std::vector<std::pair<int, int>> rangeBorderRuns(const Session &s, const std::vector<uint8_t> &pixels, int x,
+    int y0, int y1)
+{
+    const gweni::Color &border=gweni::skin::textured::tokyonight::SliderTrack.border;
+    std::vector<std::pair<int, int>> runs;
+
+    if(x < 0 || x >= s.pixels.x)
+        return runs;
+    for(int y=std::max(y0, 0); y < std::min(y1, s.pixels.y); ++y)
+    {
+        const size_t at=(static_cast<size_t>(y)*s.pixels.x+x)*4;
+        const bool match=std::abs(int(pixels[at])-int(border.r)) <= 2 && std::abs(int(pixels[at+1])-int(border.g)) <= 2
+            && std::abs(int(pixels[at+2])-int(border.b)) <= 2;
+
+        if(!match)
+            continue;
+        if(!runs.empty() && runs.back().first+runs.back().second == y)
+            ++runs.back().second;
+        else
+            runs.push_back({y, 1});
+    }
+    return runs;
+}
+
+// A field slider's top and bottom border rows, down a column left of the low
+// thumb (the track alone) and one between the thumbs (the fill over it): each
+// column's first and last runs must be the border's max(1, snap(width))
+// device rows at the same place, so the fill covers none of them and leaves
+// no field-coloured row between itself and them at any scale. Empty when they
+// are; else what each column shows.
+std::string rangeFieldBorders(const Session &s, const std::vector<uint8_t> &pixels,
+    gweni::controls::RangeSlider *slider)
+{
+    const int borderPx=std::max(1, gweni::renderer::Base::snap(
+        gweni::skin::textured::tokyonight::SliderTrack.borderWidth, s.scale));
+    const gweni::Rect low=slider->getThumbRect(0), high=slider->getThumbRect(1);
+    const gweni::Rect bounds=slider->getCanvasBounds();
+    const int y0=devicePixels(gweni::Point(0, bounds.y), s.scale).y;
+    const int y1=devicePixels(gweni::Point(0, bounds.y+bounds.h), s.scale).y;
+    const gweni::Point outside=slider->localPosToCanvas(gweni::Point(low.x-3, 0));
+    const gweni::Point between=slider->localPosToCanvas(gweni::Point((low.x+low.w+high.x)/2, 0));
+    std::vector<std::pair<int, int>> columns[2];
+    std::string report;
+
+    columns[0]=rangeBorderRuns(s, pixels, devicePixels(outside, s.scale).x, y0, y1);
+    columns[1]=rangeBorderRuns(s, pixels, devicePixels(between, s.scale).x, y0, y1);
+
+    const bool ok=columns[0].size() >= 2 && columns[1].size() >= 2
+        && columns[0].front() == columns[1].front() && columns[0].back() == columns[1].back()
+        && columns[0].front().second == borderPx && columns[0].back().second == borderPx;
+
+    if(ok)
+        return report;
+    for(int c=0; c < 2; ++c)
+    {
+        report+=(c?" between=":"outside=");
+        for(size_t r=0; r < columns[c].size(); ++r)
+            report+=(r?",":"")+std::to_string(columns[c][r].first)+"+"+std::to_string(columns[c][r].second);
+    }
+    return report+" (border "+std::to_string(borderPx)+" device px)";
+}
+
 // One frame of a drag or a key: what it did against what it may do.
 struct RangeStep
 {
@@ -12670,7 +12738,7 @@ static bool runRangeSliderScenario(Session &s, const std::string &shotDir, bool 
     gweni::controls::Base *control=addControl(s, "RangeSliderDemo");
     auto *demo=gweni::gweni_cast<gweni::RangeSliderDemo>(control);
 
-    if(!demo || !demo->price || !demo->vertical || !demo->joined)
+    if(!demo || !demo->m_price || !demo->m_vertical || !demo->m_joined)
     {
         std::cerr<<"ControlTest: range-slider: RangeSliderDemo was not built\n";
         return false;
@@ -12691,7 +12759,16 @@ static bool runRangeSliderScenario(Session &s, const std::string &shotDir, bool 
     checks.check("settled_start", idleWork == 0, "the demo's first settled frames wrote or changed "
         +std::to_string(idleWork));
 
-    gweni::controls::RangeSlider *price=demo->price;
+    gweni::controls::RangeSlider *price=demo->m_price;
+
+    // (0) the fields' border rows are the track's, under the fill as outside it
+    {
+        const std::string priced=rangeFieldBorders(s, rest, price);
+        const std::string joined=rangeFieldBorders(s, rest, demo->m_joined);
+
+        checks.check("field_borders", priced.empty() && joined.empty(),
+            "the fill changes a field's border rows: price "+priced+"; joined "+joined);
+    }
 
     // (1) a hover writes the hovered thumb's slot alone; off gives it back
     {
@@ -12727,9 +12804,9 @@ static bool runRangeSliderScenario(Session &s, const std::string &shotDir, bool 
     {
         {"price_low", price, 0, 1},
         {"price_high", price, 1, -1},
-        {"vertical_low", demo->vertical, 0, -1},
-        {"vertical_high", demo->vertical, 1, 1},
-        {"joined_high", demo->joined, 1, -1},
+        {"vertical_low", demo->m_vertical, 0, -1},
+        {"vertical_high", demo->m_vertical, 1, 1},
+        {"joined_high", demo->m_joined, 1, -1},
     };
     size_t keptFrames=0;
     std::vector<uint8_t> previous;

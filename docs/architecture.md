@@ -3139,7 +3139,8 @@ two programs and the draws. What follows describes both together:
   notched and a disabled slider and a vertical one; ShowcaseInputDemo has one.
 - **The range slider.** `controls::RangeSlider` (`include/gweni/controls/rangeSlider.h`)
   picks a range (MUI's range Slider, imgui's DragFloatRange2): `getLow()` to `getHigh()`
-  in `getMin()` to `getMax()`, doubles, never closer than `setMinimumGap()`, on the grid
+  in `getMin()` to `getMax()`, doubles, never closer than `setMinimumGap()` (kept as asked and clamped to each `setRange`, so one set before the
+  range is not lost to the default 0..1), on the grid
   of `setStep()` or of the notches while clamped to them (`setNotchCount`,
   `setClampToNotches`, as a Slider's). `setValues` clamps, orders, snaps and spreads the
   two to the gap (the high one up, the low one down at the maximum) and fires and marks
@@ -3181,7 +3182,11 @@ two programs and the draws. What follows describes both together:
   `RangeSlider` draws a Slider's track and ticks (`Slider::trackRect`, `paintTicks`,
   shared with the Slider's renderer, which draws the same bytes) in `SliderTrack` and
   `SliderNotch`, the fill between the thumbs' centres at z+1 (`RangeSliderFill`,
-  `RangeSliderFillDisabled`), and reserves z+2 and z+3 for the thumbs (`depthLayers()`
+  `RangeSliderFillDisabled`; in a field, the field's whole height with the track's own
+  border on its top and bottom and none at its ends, square, so its border rows are the
+  track's `max(1, snap(width))` device rows at any scale: an inset of the border's
+  logical width would cover one of the 2 rows at 1.5, or leave a field row at 1.25, and
+  `controltest_range_slider_scale150` scans them), and reserves z+2 and z+3 for the thumbs (`depthLayers()`
   4): `RangeSliderThumb` draws in its slider's z+2, or z+3 while it is the front thumb
   (`getFrontThumb()`, the one dragged or focused last), in the SliderThumb surfaces, the
   focused one with `RangeSliderThumbFocus`'s border colour and width; the texts, children
@@ -3191,7 +3196,10 @@ two programs and the draws. What follows describes both together:
   `SliderBar::thumbSurface` and `thumbRect`, and `tokyonight::paintSurface` takes a depth
   offset for those reserved layers. So a hover writes the hovered thumb's slot, a drag
   frame that thumb's slot, the fill's and its text's glyphs, and a change of the front
-  thumb both thumbs' slots. **Dragging the range itself** (both thumbs at once, by a press
+  thumb both thumbs' slots. Slots draw in id order, so where the thumbs overlap with the
+  low one in front (its slot is the lower), its anti-aliased corners, drawn first at the
+  nearer depth, keep the high thumb's border off those pixels (1 px a corner): gweni's
+  general slot-order limit, not worth swapping the thumbs' slots for. **Dragging the range itself** (both thumbs at once, by a press
   on the fill) is not done: it would be a third drag target picked in
   `RangeSlider::onMouseClickLeft` for a press between the thumbs, moving both values by
   the drag in `thumbMoved` within `[min, max]`. RangeSliderDemo shows a price band with a

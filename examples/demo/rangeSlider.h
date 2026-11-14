@@ -24,11 +24,11 @@ public:
 public:
 
     //! The rows, for the range-slider scenario.
-    controls::RangeSlider *price=nullptr;
-    controls::RangeSlider *stepped=nullptr;
-    controls::RangeSlider *joined=nullptr;
-    controls::RangeSlider *disabled=nullptr;
-    controls::RangeSlider *vertical=nullptr;
+    controls::RangeSlider *m_price=nullptr;
+    controls::RangeSlider *m_stepped=nullptr;
+    controls::RangeSlider *m_joined=nullptr;
+    controls::RangeSlider *m_disabled=nullptr;
+    controls::RangeSlider *m_vertical=nullptr;
 };
 
 }//namespace gweni

@@ -88,8 +88,8 @@ private:
 //! field the thumbs' height with the low text centred in its left half and the
 //! high one in its right half (a Joined text in the whole field); vertical,
 //! the texts are in a column right of the track, the high one at its top and
-//! the low one at its bottom (a Joined one centred), as wide as the widest
-//! string the range can give.
+//! the low one at its bottom (a Joined one centred), as wide as the wider
+//! of the formatted minimum and maximum.
 //!
 //! Dragging the range itself (both thumbs at once, a press on the fill) is
 //! not done; it would be a third drag target in thumbPressed()'s place for a
@@ -141,7 +141,8 @@ public:
     //! 0 the low value, 1 the high one.
     double getValue(int thumb) const { return m_values[thumb?1:0]; }
 
-    //! The least getHigh()-getLow(), at most the range's length.
+    //! The least getHigh()-getLow(), at most the range's length (one set
+    //! before setRange is kept and clamped to each new range).
     void setMinimumGap(double gap);
     double getMinimumGap() const { return m_gap; }
 
@@ -232,7 +233,8 @@ public:
     void onMouseClickLeft(int x, int y, bool down) override;
 
     //! From a thumb: its press (down) or release, and the mouse's moves while
-    //! a press lasts. `local` is the mouse in this control's coordinates.
+    //! a press lasts. `local` is the mouse in this control's coordinates. In
+    //! these, `thumb` is 0 for the low thumb and anything else the high one.
     void thumbPressed(int thumb, Point local, bool down);
     void thumbMoved(int thumb, Point local);
     //! From a thumb's key: `steps` key steps (negative toward the minimum).
@@ -279,6 +281,8 @@ protected:
     double m_min=0.0;
     double m_max=1.0;
     double m_gap=0.0;
+    //! What setMinimumGap asked for; m_gap is it clamped to the range.
+    double m_requestedGap=0.0;
     double m_step=0.0;
     int m_numNotches=5;
     bool m_clampToNotches=false;

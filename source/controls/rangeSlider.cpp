@@ -206,7 +206,7 @@ void RangeSlider::setRange(double min, double max)
 
     m_min=min;
     m_max=max;
-    m_gap=std::min(m_gap, m_max-m_min);
+    m_gap=std::min(m_requestedGap, m_max-m_min);
     applyConstraints();
     // the thumbs' places and the fill follow the range, the same values or not
     placeThumbs();
@@ -248,7 +248,10 @@ void RangeSlider::applyConstraints()
 
 void RangeSlider::setMinimumGap(double gap)
 {
-    gap=std::clamp(gap, 0.0, m_max-m_min);
+    // kept as asked, so a gap set before its range is not lost to the
+    // default one: each setRange clamps it again
+    m_requestedGap=std::max(gap, 0.0);
+    gap=std::min(m_requestedGap, m_max-m_min);
     if(gap == m_gap)
         return;
 
@@ -638,6 +641,7 @@ void RangeSlider::startDrag(int thumb, int hold)
 
 void RangeSlider::thumbPressed(int thumb, Point local, bool down)
 {
+    thumb=thumb?1:0;
     if(!down)
     {
         if(m_dragged >= 0)
@@ -662,6 +666,7 @@ void RangeSlider::thumbPressed(int thumb, Point local, bool down)
 
 void RangeSlider::thumbMoved(int thumb, Point local)
 {
+    thumb=thumb?1:0;
     if(isDisabled() || (m_dragged < 0) || (thumb != m_dragged))
         return;
 
@@ -741,6 +746,7 @@ void RangeSlider::onMouseClickLeft(int x, int y, bool down)
 
 void RangeSlider::thumbStepped(int thumb, int steps)
 {
+    thumb=thumb?1:0;
     if(isDisabled())
         return;
     moveThumb(thumb, m_values[thumb?1:0]+steps*getKeyStep());
@@ -748,6 +754,7 @@ void RangeSlider::thumbStepped(int thumb, int steps)
 
 void RangeSlider::thumbToLimit(int thumb, bool upper)
 {
+    thumb=thumb?1:0;
     if(isDisabled())
         return;
     moveThumb(thumb, upper?getUpperLimit(thumb):getLowerLimit(thumb));
@@ -755,6 +762,7 @@ void RangeSlider::thumbToLimit(int thumb, bool upper)
 
 void RangeSlider::thumbFocused(int thumb)
 {
+    thumb=thumb?1:0;
     setFront(thumb);
 }
 

@@ -603,6 +603,12 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario range-slider --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/range_slider@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    # the same at 1.5, where the track's border is 2 device rows: the fill
+    # must keep off them as at 1 (its field_borders check)
+    gweni_whole_app_test(controltest_range_slider_scale150 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario range-slider --require-one-pass --scale 1.5
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/range_slider_scale150@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # SpinnerDemo, the clock stepping: a spinning frame writes the arc slots
     # of the spinners whose arcs moved alone, lays nothing out and changes no

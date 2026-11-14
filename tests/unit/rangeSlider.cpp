@@ -8,6 +8,8 @@
  *  - setValues clamps to the range, orders the two values, keeps the gap (the
  *    high value moved up, the low one down at the maximum), snaps to the step,
  *    and fires nothing, marking nothing when the values are the ones it has;
+ *    a gap set before its range is kept, clamped to each range it gets;
+ *  - a thumb index other than 0 given to the thumb calls is the high thumb;
  *  - a drag of either thumb one unit at a time moves it by exactly that unit
  *    (its position rounded from the value read off it), stops it at the other
  *    thumb's value less or plus the gap, never moving the other, and at the
@@ -810,4 +812,38 @@ TEST_CASE("RangeSlider: disabling from a track press callback cancels its drag")
     CHECK(slider->getLow() == doctest::Approx(35));
     CHECK(s.changes.size() == 1);
     s.release();
+}
+
+TEST_CASE("RangeSlider: a gap set before its range is kept")
+{
+    Scene s;
+    controls::RangeSlider *r=s.canvas->newChild<controls::RangeSlider>();
+
+    // before the range the default 0..1 is all it can hold
+    r->setMinimumGap(50);
+    CHECK(r->getMinimumGap() == 1);
+    r->setRange(0, 1000);
+    CHECK(r->getMinimumGap() == 50);
+    r->setValues(200, 210);
+    CHECK(r->getHigh()-r->getLow() == 50);
+    // a shorter range clamps it again, a longer one gives it back
+    r->setRange(0, 20);
+    CHECK(r->getMinimumGap() == 20);
+    r->setRange(0, 100);
+    CHECK(r->getMinimumGap() == 50);
+}
+
+TEST_CASE("RangeSlider: a thumb index past 1 is the high thumb")
+{
+    Scene s;
+    controls::RangeSlider *r=s.slider;
+
+    r->setValues(20, 80);
+    r->thumbStepped(7, -1);
+    CHECK(r->getLow() == 20);
+    CHECK(r->getHigh() == 79);
+    r->thumbToLimit(-3, false);
+    CHECK(r->getHigh() == 20);
+    r->thumbFocused(2);
+    CHECK(r->getFrontThumb() == 1);
 }
