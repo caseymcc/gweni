@@ -32,6 +32,12 @@
 #                                  (GWENI_VULKAN_TEST_ICD); also the labels gpu
 #                                  and vulkan
 #
+#  The Vulkan headers, volk and glslangValidator are required in every build.
+#  The validation layer (vcpkg's vulkan-validationlayers, a heavy port) only
+#  with GWENI_BUILD_TESTS: only the tests enable it, through
+#  gweni_vulkan_test_environment, so an app taking gweni without its tests
+#  needs neither the port nor its files.
+#
 
 find_package(VulkanHeaders CONFIG QUIET)
 find_package(volk CONFIG QUIET)
@@ -42,48 +48,59 @@ set(gweni_vulkan_installed "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
 # path would outlive the feature being dropped from an existing tree, and the
 # check below would pass with the files gone.
 set(GWENI_GLSLANG_VALIDATOR "${gweni_vulkan_installed}/tools/glslang/glslangValidator")
-set(GWENI_VULKAN_LAYER_MANIFEST
-    "${gweni_vulkan_installed}/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json")
-set(GWENI_VULKAN_LAYER_LIBRARY "${gweni_vulkan_installed}/lib/libVkLayer_khronos_validation.so")
-foreach(file GWENI_GLSLANG_VALIDATOR GWENI_VULKAN_LAYER_MANIFEST GWENI_VULKAN_LAYER_LIBRARY)
+set(gweni_vulkan_files GWENI_GLSLANG_VALIDATOR)
+set(gweni_vulkan_layer_text "")
+if(GWENI_BUILD_TESTS)
+    set(GWENI_VULKAN_LAYER_MANIFEST
+        "${gweni_vulkan_installed}/share/vulkan/explicit_layer.d/VkLayer_khronos_validation.json")
+    set(GWENI_VULKAN_LAYER_LIBRARY "${gweni_vulkan_installed}/lib/libVkLayer_khronos_validation.so")
+    list(APPEND gweni_vulkan_files GWENI_VULKAN_LAYER_MANIFEST GWENI_VULKAN_LAYER_LIBRARY)
+endif()
+foreach(file IN LISTS gweni_vulkan_files)
     if(NOT EXISTS "${${file}}")
         set(${file} "${${file}} (missing)")
         set(gweni_vulkan_missing TRUE)
     endif()
 endforeach()
+if(GWENI_BUILD_TESTS)
+    set(gweni_vulkan_layer_text
+        ", validation layer (for the tests): ${GWENI_VULKAN_LAYER_MANIFEST}, ${GWENI_VULKAN_LAYER_LIBRARY}")
+endif()
 
 if(NOT VulkanHeaders_FOUND OR NOT volk_FOUND OR gweni_vulkan_missing)
     message(FATAL_ERROR
         "GWENI_RENDER_VULKAN is ON but the vcpkg feature \"vulkan\" is not installed "
         "(VulkanHeaders found: ${VulkanHeaders_FOUND}, volk found: ${volk_FOUND}, "
-        "glslangValidator: ${GWENI_GLSLANG_VALIDATOR}, "
-        "validation layer: ${GWENI_VULKAN_LAYER_MANIFEST}, ${GWENI_VULKAN_LAYER_LIBRARY}). "
+        "glslangValidator: ${GWENI_GLSLANG_VALIDATOR}${gweni_vulkan_layer_text}). "
         "Configure through ./generate.sh, which adds it, or pass "
         "-DVCPKG_MANIFEST_FEATURES=vulkan; -DGWENI_RENDER_VULKAN=OFF builds without Vulkan.")
 endif()
 
-# The installed manifest names its library bare ("library_path":
-# "libVkLayer_khronos_validation.so"), which the loader dlopen()s through the
-# system search path, where it is not. The tests' layer path is a copy of it in
-# the build tree naming the library by its absolute path instead (the release
-# build, in every tree; it is not instrumented under ASAN, as no vcpkg
-# dependency is).
-set(GWENI_VULKAN_LAYER_DIR "${CMAKE_BINARY_DIR}/vulkan/explicit_layer.d")
-file(READ "${GWENI_VULKAN_LAYER_MANIFEST}" gweni_layer_manifest)
-string(REGEX REPLACE "\"library_path\": *\"[^\"]*\""
-    "\"library_path\": \"${GWENI_VULKAN_LAYER_LIBRARY}\""
-    gweni_layer_manifest "${gweni_layer_manifest}")
-set(gweni_layer_copy "${GWENI_VULKAN_LAYER_DIR}/VkLayer_khronos_validation.json")
-set(gweni_layer_old "")
-if(EXISTS "${gweni_layer_copy}")
-    file(READ "${gweni_layer_copy}" gweni_layer_old)
-endif()
-if(NOT gweni_layer_old STREQUAL gweni_layer_manifest)
-    file(WRITE "${gweni_layer_copy}" "${gweni_layer_manifest}")
+if(GWENI_BUILD_TESTS)
+    # The installed manifest names its library bare ("library_path":
+    # "libVkLayer_khronos_validation.so"), which the loader dlopen()s through
+    # the system search path, where it is not. The tests' layer path is a copy
+    # of it in the build tree naming the library by its absolute path instead
+    # (the release build, in every tree; it is not instrumented under ASAN, as
+    # no vcpkg dependency is).
+    set(GWENI_VULKAN_LAYER_DIR "${CMAKE_BINARY_DIR}/vulkan/explicit_layer.d")
+    file(READ "${GWENI_VULKAN_LAYER_MANIFEST}" gweni_layer_manifest)
+    string(REGEX REPLACE "\"library_path\": *\"[^\"]*\""
+        "\"library_path\": \"${GWENI_VULKAN_LAYER_LIBRARY}\""
+        gweni_layer_manifest "${gweni_layer_manifest}")
+    set(gweni_layer_copy "${GWENI_VULKAN_LAYER_DIR}/VkLayer_khronos_validation.json")
+    set(gweni_layer_old "")
+    if(EXISTS "${gweni_layer_copy}")
+        file(READ "${gweni_layer_copy}" gweni_layer_old)
+    endif()
+    if(NOT gweni_layer_old STREQUAL gweni_layer_manifest)
+        file(WRITE "${gweni_layer_copy}" "${gweni_layer_manifest}")
+    endif()
+
+    message(STATUS "Vulkan: validation layer ${GWENI_VULKAN_LAYER_LIBRARY}")
 endif()
 
 message(STATUS "Vulkan: glslangValidator ${GWENI_GLSLANG_VALIDATOR}")
-message(STATUS "Vulkan: validation layer ${GWENI_VULKAN_LAYER_LIBRARY}")
 
 add_library(gweni_vulkan INTERFACE)
 target_link_libraries(gweni_vulkan INTERFACE Vulkan::Headers volk::volk)

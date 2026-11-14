@@ -23,8 +23,16 @@ option(GWENI_GL_ES "Build the GL renderer against GLES 3.0 instead of desktop GL
 # ./generate.sh turns it on in every tree it configures (with the vcpkg
 # manifest feature "vulkan").
 option(GWENI_RENDER_VULKAN "Vulkan 1.3 Renderer" OFF)
-option(GWENI_BUILD_EXAMPLES "Build Examples" ON)
-option(GWENI_BUILD_TESTS "Build tests" ON)
+# The examples and the tests are gweni's own: a project taking gweni with
+# add_subdirectory builds the library alone unless it asks for them. Before
+# project(), so CMAKE_SOURCE_DIR against this directory says which it is.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(GWENI_TOP_LEVEL ON)
+else()
+    set(GWENI_TOP_LEVEL OFF)
+endif()
+option(GWENI_BUILD_EXAMPLES "Build Examples" ${GWENI_TOP_LEVEL})
+option(GWENI_BUILD_TESTS "Build tests" ${GWENI_TOP_LEVEL})
 option(GWENI_DEBUG_LOGGING "Verbose per-control update/layout debug logging" OFF)
 set(GWENI_SANITIZE "" CACHE STRING "Sanitizers to build with, e.g. address")
 option(GWENI_FRAME_POINTERS "Keep frame pointers (-fno-omit-frame-pointer), for profiling" OFF)
@@ -51,10 +59,12 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 include(${GWENI_SOURCE_DIR}/cmake/Config.cmake)
 include(${GWENI_SOURCE_DIR}/cmake/Warnings.cmake)
 
-# write the version info
+# write the version info: <gweni/version.h>, in the build tree (configuring
+# writes nothing under the source tree), on gweni's include path and installed
+set(GWENI_GENERATED_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated/include)
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gweni_config.h.in
-    ${CMAKE_CURRENT_SOURCE_DIR}/source/platform/include/gwen/Version.h
+    ${GWENI_GENERATED_INCLUDE_DIR}/gweni/version.h
     @ONLY)
 
 # Sanitizers apply to everything built here, so set them before deps: the
@@ -99,8 +109,6 @@ add_subdirectory(deps)
 
 #gweni library
 include_directories(
-    ${GWENI_SOURCE_DIR}/source/platform/include
-    ${GWENI_SOURCE_DIR}/source/gweni/include
     ${GWENI_RENDER_INCLUDES}
     ${GWENI_REFLECT_INCLUDE}
 )
@@ -671,7 +679,8 @@ endif()
 
 gweni_set_warnings(gweni)
 
-target_include_directories(gweni PUBLIC "${CMAKE_CURRENT_LIST_DIR}/include")
+target_include_directories(gweni PUBLIC "${CMAKE_CURRENT_LIST_DIR}/include"
+    "${GWENI_GENERATED_INCLUDE_DIR}")
 target_link_libraries(gweni
     ${GWENI_ADDITIONAL_LIBRARIES}
 #    gweni${GWENI_RENDER_NAME}
@@ -708,14 +717,11 @@ if(GWENI_BUILD_TESTS AND GWENI_BUILD_EXAMPLES AND TARGET gweni_capture AND NOT E
     add_subdirectory(bench)
 endif()
 
-#target_include_directories(gweni PUBLIC
-#        ${GWENI_SOURCE_DIR}/source/platform/include
-#        ${GWENI_SOURCE_DIR}/source/gweni/include
-#        ${GWENI_RENDER_INCLUDES}
-#)
-
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/gweni
         DESTINATION include
+)
+install(FILES ${GWENI_GENERATED_INCLUDE_DIR}/gweni/version.h
+        DESTINATION include/gweni
 )
 
 install(TARGETS gweni
