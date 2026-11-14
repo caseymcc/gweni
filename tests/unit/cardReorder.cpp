@@ -62,7 +62,10 @@
  *  the first drag and when the indicator is reused from an earlier drag.
  *  A card the app appends to the source or the target column while the drag
  *  rests over it leaves the looks the panel's last children, numbered over
- *  it, in one layout pass.
+ *  it, in one layout pass. The target column's Reorderable replaced
+ *  mid-drag is the target in the next frame, the cursor resting (its gap,
+ *  bar and drop) or moved; taken off, the column is no target (the No
+ *  cursor, nothing dropped).
  */
 #include "headlessFixture.h"
 
@@ -1631,4 +1634,59 @@ TEST_CASE("CardReorder: a card appended to a column under a resting drag keeps t
     CHECK(indicator->getZIndex() > added->getZIndex());
     CHECK(column->reorder->indicatorShown());
     scene.release();
+}
+
+
+TEST_CASE("CardReorder: the target column's Reorderable replaced mid-drag is the target at once")
+{
+    Scene scene;
+    scene.startDrag(scene.todo.cards[0]);
+    REQUIRE(draganddrop::isDragging());
+    scene.move(Scene::on(scene.running.cards[1], 20));
+    REQUIRE(Reorderable::dropTarget() == scene.running.reorder);
+    REQUIRE(scene.running.reorder->indicatorShown());
+
+    SUBCASE("replaced")
+    {
+        // an app attaching again, as DataTable::setItemsReorderable() does on
+        // every call
+        scene.running.reorder=CardReorder::attach(scene.running.list);
+        scene.group.add(scene.running.reorder);
+        std::vector<ItemDrop> &drops=scene.running.drops;
+        scene.running.reorder->setOnItemDropped([&drops](const ItemDrop &drop) { drops.push_back(drop); });
+
+        SUBCASE("the cursor resting")
+        {
+            scene.frame();
+            CHECK(Reorderable::dropTarget() == scene.running.reorder);
+            CHECK(scene.running.reorder->gap() == 2);
+            CHECK(scene.running.reorder->indicatorShown());
+            CHECK(draganddrop::currentCursor() == cursor::Normal);
+            CHECK(scene.canvas->getLayoutStats().passes <= 1);
+            scene.release();
+            REQUIRE(drops.size() == 1);
+            CHECK(drops[0].targetIndex == 2);
+        }
+        SUBCASE("a move after it")
+        {
+            scene.move(Scene::on(scene.running.cards[0], 3));
+            CHECK(Reorderable::dropTarget() == scene.running.reorder);
+            CHECK(scene.running.reorder->gap() == 0);
+            CHECK(scene.running.reorder->indicatorShown());
+            scene.release();
+            REQUIRE(drops.size() == 1);
+            CHECK(drops[0].targetIndex == 0);
+        }
+    }
+    SUBCASE("taken off")
+    {
+        scene.running.list->setReorderable(nullptr);
+        scene.running.reorder=nullptr;
+        scene.frame();
+        CHECK(Reorderable::dropTarget() == nullptr);
+        CHECK(draganddrop::currentCursor() == cursor::No);
+        scene.release();
+        CHECK_FALSE(draganddrop::isDragging());
+        CHECK(scene.todo.drops.empty());
+    }
 }

@@ -40,7 +40,9 @@ public:
     //! control's, which forwards its drag-and-drop hooks to it and has it
     //! place its looks as its layout ends. A press on anything inside the
     //! inner panel, in the viewport, starts the drag of the item under it.
-    //! Null takes it away (a live drag of it is cancelled).
+    //! Null takes it away (a live drag of it is cancelled). Replaced or taken
+    //! away while it is a live drag's target, the target is found again at
+    //! the cursor in the next update phase, so the new one takes the drop.
     void setReorderable(std::unique_ptr<Reorderable> reorderable);
     Reorderable *getReorderable() const { return m_reorderable.get(); }
 

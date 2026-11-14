@@ -85,6 +85,12 @@ void GWENI_EXPORT onMouseMoved(gweni::controls::Canvas *canvas, int x, int y);
 GWENI_EXPORT void wheeled(gweni::controls::Canvas *canvas);
 GWENI_EXPORT bool rehoverPending(gweni::controls::Canvas *canvas);
 
+//! \p control, the live drag's target, no longer takes the drop as it did
+//! (its Reorderable replaced or taken off): it is the target no more, told
+//! nothing, and the target is found again at the resting cursor in the next
+//! update phase (or by the next move), so a new Reorderable is entered.
+GWENI_EXPORT void targetChanged(gweni::controls::Base *control);
+
 //! The update phase of \p canvas, before its layout: after a wheel (wheeled())
 //! the target under the resting cursor is found again and told of the point,
 //! as a move would.

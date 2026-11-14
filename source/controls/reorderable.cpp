@@ -136,8 +136,13 @@ Reorderable::~Reorderable()
     if(m_group)
         m_group->remove(this);
 
+    // the list stays (another Reorderable, or none): the core enters what
+    // takes the drop there now
     if(s_target == this)
+    {
         s_target=nullptr;
+        draganddrop::targetChanged(m_list);
+    }
 
     // The source goes: the drag ends with nothing reported. The hooks the
     // cancel forwards to this find it in no drag and do nothing. The package
