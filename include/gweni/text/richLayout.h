@@ -104,12 +104,12 @@ struct RichLine
 //! span's font's line box. Kerning across a span edge, and across a line
 //! break inside a span, is lost.
 //!
-//! Each span is measured once (measureCarets of its text, and its font's
-//! metrics); a piece that starts inside its span (after a break in it) is
-//! measured again on its own, so every piece's width and carets are the
-//! measure of what it draws. A line's width is that of its pieces, which can
-//! pass the width the breaks were chosen for by a unit, the rounding of a
-//! piece cut out of its span.
+//! Each span is measured once (measureCarets of each '\n'-free part of its
+//! text, and its font's metrics); a piece that starts inside its span (after
+//! a break in it) is measured again on its own, so every piece's width and
+//! carets are the measure of what it draws. A line's width is that of its
+//! pieces, which can pass the width the breaks were chosen for by a unit,
+//! the rounding of a piece cut out of its span.
 class GWENI_EXPORT RichLayout
 {
 public:
