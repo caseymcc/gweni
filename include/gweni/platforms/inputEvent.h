@@ -53,6 +53,9 @@ public:
     // 60 units per wheel notch, positive = away from the user (scroll up).
     // ScrollControl divides by 60, so one notch is one nudge.
     virtual bool inputMouseWheel(int val)=0;
+    //! Horizontal wheel, in the same 60-unit notches. Optional for existing
+    //! input receivers; positive scrolls towards the left.
+    virtual bool inputMouseWheelH(int val) { return false; }
     //! The cursor left the window. Optional: the default ignores it.
     virtual bool inputMouseLeave() { return false; }
     virtual bool inputQuit()=0;

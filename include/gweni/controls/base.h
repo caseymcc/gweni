@@ -864,6 +864,8 @@ public:
 
     virtual void onMouseMoved(int x, int y, int deltaX, int deltaY);
     virtual bool onMouseWheeled(int iDelta);
+    //! Horizontal wheel: bubbles to the actual parent, as the vertical wheel does.
+    virtual bool onMouseWheeledH(int iDelta);
 
     //! A press of mouse \p button (0 left, 1 right, 2 middle) on this control
     //! or under it that this control takes as the start of a gesture of its

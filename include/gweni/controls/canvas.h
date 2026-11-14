@@ -50,8 +50,9 @@ public:
 
     virtual void captureMouseMoved(int x, int y, int deltaX, int deltaY) {}
     virtual void captureMouseButton(int button, bool down) {}
-    /// 60 a wheel notch, positive away from the user (IInputEvent's)
-    virtual void captureMouseWheel(int delta) {}
+    /// 60 a wheel notch (IInputEvent's), on the axis received, before the
+    /// canvas maps Shift+wheel to horizontal.
+    virtual void captureMouseWheel(int delta, Dim dim=Dim::Y) {}
     /// A key (gweni::keys) pressed or released: inputModifierKey's
     virtual void captureKey(int key, bool down) {}
     virtual void captureCharacter(gweni::UnicodeChar chr) {}
@@ -758,6 +759,7 @@ public:
     bool inputCharacter(gweni::UnicodeChar chr) override;
 
     bool inputMouseWheel(int val) override;
+    bool inputMouseWheelH(int val) override;
     /// The cursor left the window: nothing on this canvas is hovered any more
     /// (input::onMouseLeft), so the next update phase hides its tooltip.
     bool inputMouseLeave() override;
@@ -784,6 +786,10 @@ public:
     }
 
 protected:
+
+    /// Common wheel dispatch: captures take the original axis; controls take
+    /// Shift+wheel as horizontal, with the same hover and modal checks.
+    bool inputMouseWheelOnAxis(int val, Dim dim);
 
     bool m_needsRedraw;
     float m_scale;

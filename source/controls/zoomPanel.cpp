@@ -76,7 +76,7 @@ public:
 
     // A zoom mid-drag moves the pan about the cursor, so the drag goes on
     // from there: from where the mouse and the pan are now.
-    void captureMouseWheel(int delta) override
+    void captureMouseWheel(int delta, Dim /*dim*/) override
     {
         if(!m_panel->visible() || m_panel->isDisabled())
             return;

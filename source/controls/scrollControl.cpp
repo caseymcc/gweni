@@ -194,6 +194,15 @@ bool ScrollControl::onMouseWheeled(int iDelta)
     return ParentClass::onMouseWheeled(iDelta);
 }
 
+bool ScrollControl::onMouseWheeledH(int iDelta)
+{
+    if(canScrollHorizontal() && m_horizontalScrollBar->visible()
+        && !m_horizontalScrollBar->isDisabled() && wheelBar(m_horizontalScrollBar, iDelta))
+        return true;
+
+    return ParentClass::onMouseWheeledH(iDelta);
+}
+
 bool ScrollControl::contentsAreDocked()
 {
     if(!m_innerPanel)

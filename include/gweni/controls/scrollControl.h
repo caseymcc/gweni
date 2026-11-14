@@ -125,6 +125,8 @@ public:
     virtual void onHorizontalBarMoved(event::Info);
 
     bool onMouseWheeled(int iDelta) override;
+    //! Uses the horizontal bar alone; bubbles when it cannot move.
+    bool onMouseWheeledH(int iDelta) override;
 
     //! Scroll to an edge of the content: resolved by the next layout, to 0
     //! or getMax*ScrollOffset() of the content that layout gives, so a call

@@ -5,7 +5,7 @@
  *
  *  Canvas::setInputCapture, what tools::DepthView takes the input through, on a
  *  real Canvas with a StubRenderer: while a capture is set, every kind of event
- *  the canvas gets (a move, both buttons, the wheel, a key, a character, the
+ *  the canvas gets (a move, both buttons, both wheel axes, a key, a character, the
  *  cursor leaving) reaches the capture, in order and as it came, and nothing
  *  else: no hit test, the hovered control, the keyboard focus, the mouse focus,
  *  the mouse position and the keys held stay as they were, a Button under a
@@ -50,9 +50,9 @@ public:
     {
         events.push_back("button "+std::to_string(button)+(down ? " down" : " up"));
     }
-    void captureMouseWheel(int delta) override
+    void captureMouseWheel(int delta, Dim dim) override
     {
-        events.push_back("wheel "+std::to_string(delta));
+        events.push_back(std::string(dim == Dim::X?"wheel X ":"wheel Y ")+std::to_string(delta));
     }
     void captureKey(int key, bool down) override
     {
@@ -163,6 +163,7 @@ TEST_CASE("Input capture: every event reaches the capture and nothing on the can
     CHECK(canvas->inputMouseButton(1, true));
     CHECK(canvas->inputMouseButton(1, false));
     CHECK(canvas->inputMouseWheel(-60));
+    CHECK(canvas->inputMouseWheelH(90));
     CHECK(canvas->inputModifierKey(keys::Shift, true));
     CHECK(canvas->inputModifierKey(keys::Escape, true));
     CHECK(canvas->inputModifierKey(keys::Escape, false));
@@ -178,7 +179,7 @@ TEST_CASE("Input capture: every event reaches the capture and nothing on the can
     const std::vector<std::string> expected={
         "move 200,150 170,130",
         "button 0 down", "button 0 up", "button 1 down", "button 1 up",
-        "wheel -60",
+        "wheel Y -60", "wheel X 90",
         "key "+std::to_string(keys::Shift)+" down",
         "key "+std::to_string(keys::Escape)+" down",
         "key "+std::to_string(keys::Escape)+" up",
@@ -188,6 +189,9 @@ TEST_CASE("Input capture: every event reaches the capture and nothing on the can
         "move 30,20 -170,-130",
         "button 0 down", "button 0 up" };
 
+    REQUIRE(recorder.events.size() == expected.size());
+    CHECK(recorder.events[5] == "wheel Y -60");
+    CHECK(recorder.events[6] == "wheel X 90");
     CHECK(recorder.events == expected);
 
     // the update and render phases run, and nothing changed

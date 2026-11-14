@@ -2230,9 +2230,19 @@ bool Canvas::inputMouseLeave()
 
 bool Canvas::inputMouseWheel(int val)
 {
+    return inputMouseWheelOnAxis(val, Dim::Y);
+}
+
+bool Canvas::inputMouseWheelH(int val)
+{
+    return inputMouseWheelOnAxis(val, Dim::X);
+}
+
+bool Canvas::inputMouseWheelOnAxis(int val, Dim dim)
+{
     if(m_inputCapture)
     {
-        m_inputCapture->captureMouseWheel(val);
+        m_inputCapture->captureMouseWheel(val, dim);
         return true;
     }
 
@@ -2250,6 +2260,9 @@ bool Canvas::inputMouseWheel(int val)
 
     if(!modalAllows(HoveredControl))
         return false;
+
+    if(dim == Dim::X || input::isShiftDown())
+        return HoveredControl->onMouseWheeledH(val);
 
     return HoveredControl->onMouseWheeled(val);
 }

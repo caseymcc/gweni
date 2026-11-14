@@ -304,10 +304,22 @@ public:
 
     bool processScroll(float sx, float sy)
     {
+        if(!m_eventCaller)
+            return false;
+
         // One wheel notch is 60 units, as documented on
         // IInputEvent::inputMouseWheel. GLFW reports +-1 per notch, and
         // fractional offsets on touchpads, so round.
-        return m_eventCaller->inputMouseWheel(static_cast<int>(std::lround(sy*60.0f)));
+        const int horizontal=static_cast<int>(std::lround(sx*60.0f));
+        const int vertical=static_cast<int>(std::lround(sy*60.0f));
+        bool used=false;
+
+        if(vertical)
+            used=m_eventCaller->inputMouseWheel(vertical);
+        if(horizontal)
+            used=m_eventCaller->inputMouseWheelH(horizontal) || used;
+
+        return used;
     }
 
 protected:

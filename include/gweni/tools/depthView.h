@@ -139,7 +139,7 @@ public:
 
     void captureMouseMoved(int x, int y, int deltaX, int deltaY) override;
     void captureMouseButton(int button, bool down) override;
-    void captureMouseWheel(int delta) override;
+    void captureMouseWheel(int delta, Dim dim=Dim::Y) override;
     void captureKey(int key, bool down) override;
     void captureCharacter(gweni::UnicodeChar chr) override;
     void captureMouseLeave() override;

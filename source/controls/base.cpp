@@ -3144,6 +3144,14 @@ bool Base::onMouseWheeled(int iDelta)
     return false;
 }
 
+bool Base::onMouseWheeledH(int iDelta)
+{
+    if(m_actualParent)
+        return m_actualParent->onMouseWheeledH(iDelta);
+
+    return false;
+}
+
 void Base::onMouseMoved(int /*x*/, int /*y*/, int /*deltaX*/, int /*deltaY*/)
 {}
 

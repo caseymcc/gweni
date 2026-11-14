@@ -328,7 +328,7 @@ void DepthView::captureMouseButton(int button, bool down)
         m_panning=down;
 }
 
-void DepthView::captureMouseWheel(int delta)
+void DepthView::captureMouseWheel(int delta, Dim /*dim*/)
 {
     // away from the user (positive) dollies in
     if(delta)

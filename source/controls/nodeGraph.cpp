@@ -922,7 +922,7 @@ public:
             canvas->inputMouseMoved(mouse.x, mouse.y, mouse.x-at.x, mouse.y-at.y);
     }
 
-    void captureMouseWheel(int delta) override
+    void captureMouseWheel(int delta, Dim /*dim*/) override
     {
         if(m_graph->isDisabled())
             return;
@@ -1053,7 +1053,7 @@ public:
             canvas->inputMouseMoved(mouse.x, mouse.y, mouse.x-at.x, mouse.y-at.y);
     }
 
-    void captureMouseWheel(int delta) override
+    void captureMouseWheel(int delta, Dim /*dim*/) override
     {
         if(m_graph->isDisabled())
             return;
