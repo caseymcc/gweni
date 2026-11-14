@@ -523,7 +523,8 @@ again at the start of its own Y arrange, with both sizes final
 see a `layout()` that does not: its full pass runs `layout()` only where
 `needsLayout()` is set, so a stale placement passes it, and the Slider's case
 (its value text 0 high, half a line low, in a slider whose height and parent
-did not change in the pass) is pinned by `tests/unit/sliderText.cpp`. Placement code in a pass that invalidates a
+did not change in the pass) is pinned by `tests/unit/sliderText.cpp`.
+Placement code in a pass that invalidates a
 control (`PlacementScope`, such as `ScrollControl::placeContents` giving its
 bars their new ranges) walks up only to the first ancestor already dirty,
 whose way up the pass has marked. Outside a pass (an input-phase `setSize`, a
