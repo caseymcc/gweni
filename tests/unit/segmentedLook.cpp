@@ -16,7 +16,8 @@
  *  SegmentDisabled, SegmentOnDisabled) and its text in the skin's
  *  SegmentedButton colours. The check icon is drawn at the segment's z+1 in
  *  getCheckRect() while it is selected in a row that shows checks, and hidden
- *  otherwise. The segment holding the keyboard focus is drawn as it is
+ *  otherwise, and drawn again where that rect moves to when a new text moves
+ *  it inside bounds that stay (a row of equal widths). The segment holding the keyboard focus is drawn as it is
  *  unfocused, its border SegmentFocus's and its fill its state's, and after
  *  the first its third slot paints its left joint in SegmentFocus's border: a
  *  rect of no width at its fill's left edge, NoBorderLeft with the border
@@ -495,4 +496,32 @@ TEST_CASE("Segmented look: the focused segment's outline and left joint are in t
     CHECK(scene.focusJointOf(0) == nullptr);
     KeyboardFocus->unfocus();
     scene.frame();
+}
+
+// In a row of equal widths a narrower segment's content is centred in it, so
+// a new text moves the check inside bounds that stay: the check is drawn
+// again where getCheckRect() now says.
+TEST_CASE("Segmented look: the check follows its rect when a new text moves it within the same bounds")
+{
+    Scene scene({"A", "Much longer", "C"});
+    SegmentedButtons *row=scene.row;
+
+    row->setEqualWidths(true);
+    row->setShowCheck(true);
+    scene.settle();
+
+    SegmentedButton *segment=row->getSegment(0);
+    const Rect bounds=segment->getRenderBounds();
+    const int checkX=segment->getCheckRect().x;
+
+    REQUIRE(scene.checkShown(0));
+    segment->setText("AAAA");
+    scene.settle();
+    REQUIRE((segment->getRenderBounds() == bounds));
+    REQUIRE(segment->getCheckRect().x != checkX);
+
+    const Recorder::Icon &icon=scene.renderer.icons.at(Scene::slotsOf(segment)[1]);
+
+    CHECK(icon.rect.x == bounds.x+segment->getCheckRect().x);
+    CHECK(icon.rect.y == bounds.y+segment->getCheckRect().y);
 }

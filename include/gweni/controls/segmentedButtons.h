@@ -39,6 +39,9 @@ public:
 
 public:
 
+    //! Leaves its row while its Selectable part is still whole.
+    ~SegmentedButton() override;
+
     //! Units between the segment's edges and its content.
     static constexpr int SidePadding=12;
     static constexpr int PaddingY=4;
@@ -68,6 +71,18 @@ public:
     //! Where the check icon goes, in the segment's own coordinates (empty
     //! without the check's room). The skin draws it there while selected.
     const Rect &getCheckRect() const { return m_checkRect; }
+
+    //! An image-only segment's tooltip follows its text.
+    void setText(const String &str, bool doEvents=true) override;
+
+    //! Deselecting the exclusive selection of a row that does not allow none
+    //! is refused, so getSelectedIndex() is never -1 there; the group moving
+    //! the selection on deselects the old one after it holds the new one.
+    void setSelected(bool selected, bool doEvents=true) override;
+
+    //! Exclusive: Return goes on up to the parents (a dialog's default
+    //! button), there being nothing for it to toggle; Multi: it toggles.
+    bool onKeyReturn(bool down) override;
 
     //! Disabled by its own setDisabled() or by its row's.
     bool isDisabled() override;
@@ -120,7 +135,8 @@ protected:
 //!
 //! The segments are owner-placed in one row in the order they were added, each
 //! its content width or, with setEqualWidths(true), the widest one's, all of
-//! them the tallest one's height; each one after the first starts Joint units
+//! them the tallest one's height (a row made taller by its dock or a layout
+//! keeps them at it, at its top padding); each one after the first starts Joint units
 //! left of the previous one's right edge, so neighbours share their border
 //! column. The row's preferred size is theirs and its padding.
 //!
@@ -132,6 +148,9 @@ protected:
 //! groups', WinUI RadioButtons' keys), in a Multi row only the focus does, and
 //! Space or Return toggles the focused segment (Selectable's keys). Disabled
 //! segments are passed over, and a disabled row takes no key.
+//!
+//! A hidden segment is not supported: it keeps its room in the row and its
+//! place in the joints and the rounded ends. Remove a segment instead.
 class GWENI_EXPORT SegmentedButtons: public Base
 {
 public:
@@ -248,6 +267,12 @@ protected:
     void arrange(skin::Base *skin, Dim dim) override;
     void onChildRemoved(Base *child) override;
 
+    friend class SegmentedButton;
+
+    //! A segment being deleted leaves the row (from its destructor, while its
+    //! selection can still be read), the selection moving on as for a
+    //! removal.
+    void segmentDestroyed(SegmentedButton *segment);
     //! Whether \p control is a segment still in this row (one removed keeps
     //! its handlers until it is deleted).
     bool isOwnSegment(const Base *control) const;

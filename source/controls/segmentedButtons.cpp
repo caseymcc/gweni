@@ -32,6 +32,38 @@ GWENI_CONTROL_CONSTRUCTOR(SegmentedButton)
     m_text->setPlacement(Placement::Owner);
 }
 
+// Its row reads its selection to move the exclusive one on, which it can
+// only do before the Selectable part is destroyed (Base's destructor, which
+// tells the row through onChildRemoved, runs after it).
+SegmentedButton::~SegmentedButton()
+{
+    if(m_row)
+        m_row->segmentDestroyed(this);
+}
+
+void SegmentedButton::setText(const String &str, bool doEvents)
+{
+    ParentClass::setText(str, doEvents);
+    if(m_imageOnly)
+        setToolTipText(str);
+}
+
+void SegmentedButton::setSelected(bool selected, bool doEvents)
+{
+    if(!selected && m_row && (m_row->getMode() == SegmentedButtons::Mode::Exclusive) && !m_row->allowsNone()
+        && (m_row->m_group.getSelected() == this))
+        return;
+
+    ParentClass::setSelected(selected, doEvents);
+}
+
+bool SegmentedButton::onKeyReturn(bool down)
+{
+    if(m_row && (m_row->getMode() == SegmentedButtons::Mode::Exclusive))
+        return false;
+    return ParentClass::onKeyReturn(down);
+}
+
 void SegmentedButton::setImage(const String &name, bool center)
 {
     const bool had=(m_image != nullptr);
@@ -147,8 +179,15 @@ void SegmentedButton::arrangeHorizontal(skin::Base *skin)
     ParentClass::arrangeHorizontal(skin);
 
     int x=std::max(SidePadding, (getWidth()-contentWidth())/2);
+    const Rect check=m_checkRoom?Rect(x, m_checkRect.y, CheckSize, CheckSize):Rect();
 
-    m_checkRect=m_checkRoom?Rect(x, m_checkRect.y, CheckSize, CheckSize):Rect();
+    // the check is the skin's to draw where this says: a move within the
+    // same bounds (a new text in a row of equal widths) is a new look
+    if(!(check == m_checkRect))
+    {
+        m_checkRect=check;
+        addStateChange(StateChange_Background);
+    }
     if(m_checkRoom)
         x+=CheckSize+CheckGap;
     if(m_image)
@@ -166,8 +205,11 @@ void SegmentedButton::arrangeVertical(skin::Base *skin)
 
     const int height=getHeight();
 
-    if(m_checkRoom)
+    if(m_checkRoom && (m_checkRect.y != (height-CheckSize)/2))
+    {
         m_checkRect.y=(height-CheckSize)/2;
+        addStateChange(StateChange_Background);
+    }
     if(m_image)
         placeChild(m_image, m_image->getX(), (height-imageHeight())/2, m_image->getWidth(), imageHeight());
 
@@ -335,12 +377,9 @@ void SegmentedButtons::setSelected(int index, bool selected)
 {
     SegmentedButton *segment=getSegment(index);
 
-    if(!segment)
-        return;
-    if(!selected && (m_mode == Mode::Exclusive) && !m_allowNone)
-        return;
-
-    segment->setSelected(selected);
+    // the segment refuses the exclusive deselect itself
+    if(segment)
+        segment->setSelected(selected);
 }
 
 bool SegmentedButtons::isSelected(int index) const
@@ -449,7 +488,26 @@ void SegmentedButtons::ensureSelection(int from)
     m_segments[static_cast<size_t>(from)]->setSelected(true);
 }
 
-// A segment deleted by the app (not through removeSegment) leaves the row.
+void SegmentedButtons::segmentDestroyed(SegmentedButton *segment)
+{
+    const int index=indexOf(segment);
+
+    if(index < 0)
+        return;
+
+    const bool wasSelected=segment->isSelected();
+
+    m_segments.erase(m_segments.begin()+index);
+    segment->m_row=nullptr;
+    m_group.remove(segment);
+    if(wasSelected && (m_mode == Mode::Exclusive))
+        ensureSelection(index);
+    restyleSegments();
+}
+
+// A segment moved to another parent leaves the row: its handlers, its
+// group, its owner placement and the check's room go with it (a deleted one
+// has left from its destructor already).
 void SegmentedButtons::onChildRemoved(Base *child)
 {
     ParentClass::onChildRemoved(child);
@@ -460,16 +518,12 @@ void SegmentedButtons::onChildRemoved(Base *child)
         return;
 
     SegmentedButton *segment=m_segments[static_cast<size_t>(index)];
-    const bool wasSelected=segment->isSelected();
 
-    m_segments.erase(m_segments.begin()+index);
-    segment->m_row=nullptr;
-    // a deleted segment has left the group already; one moved to another
-    // parent leaves it here
-    m_group.remove(segment);
-    if(wasSelected && (m_mode == Mode::Exclusive))
-        ensureSelection(index);
-    restyleSegments();
+    segmentDestroyed(segment);
+    segment->onSelect.removeHandler(this);
+    segment->onDeselect.removeHandler(this);
+    segment->setPlacement(Placement::Parent);
+    segment->setCheckRoom(false);
 }
 
 bool SegmentedButtons::isOwnSegment(const Base *control) const
@@ -669,8 +723,12 @@ void SegmentedButtons::arrange(skin::Base *skin, Dim dim)
     }
     else
     {
-        // every segment the tallest one's height, the row's content height
-        const int height=std::max(0, getHeight()-padding.top-padding.bottom);
+        // every segment the tallest one's height, at the top padding, however
+        // tall the row's dock or layout makes it
+        int height=0;
+
+        for(const SegmentedButton *segment : m_segments)
+            height=std::max(height, segment->getPreferredSize().height);
 
         for(SegmentedButton *segment : m_segments)
             placeChild(segment, segment->getX(), padding.top, segment->getWidth(), height);

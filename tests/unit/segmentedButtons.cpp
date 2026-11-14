@@ -25,7 +25,12 @@
  *  deletes itself; a segment removed from its own click's onSelectionChange
  *  is deleted after the click is done with it. A row of 17 or more segments
  *  (Base's arrange walking only the changed children) places every segment
- *  again after a text change or a removal.
+ *  again after a text change or a removal. The exclusive selection refuses
+ *  its own deselect (straight on the segment too) unless none is allowed; an
+ *  image-only segment's tooltip follows its text; Return goes on up from an
+ *  exclusive row and toggles in a multi row; a row made taller than its
+ *  segments keeps them at the tallest one's height; a segment moved to
+ *  another parent leaves the row (the selection moving on) and its handlers.
  *
  *  The keyboard, through input::onKeyEvent: the row is one Tab stop, entered
  *  at the exclusive selection (else the first enabled segment) and left from
@@ -733,4 +738,117 @@ TEST_CASE("SegmentedButtons: a disabled row takes no key and no Tab")
     scene.frame();
     scene.key(keys::Tab);
     CHECK(KeyboardFocus == after);
+}
+
+TEST_CASE("SegmentedButtons: the exclusive selection refuses its own deselect unless none is allowed")
+{
+    Scene scene;
+    SegmentedButtons *row=scene.row({"A", "B", "C"});
+    Changes changes;
+
+    row->onSelectionChange.add(&changes, &Changes::changed);
+    row->setSelected(1, true);
+    changes.segments.clear();
+
+    // straight on the segment, not through the row
+    row->getSegment(1)->setSelected(false);
+    CHECK(row->getSelectedIndex() == 1);
+    CHECK(changes.segments.empty());
+    // an unselected one deselected: nothing to do
+    row->getSegment(2)->setSelected(false);
+    CHECK(row->getSelectedIndex() == 1);
+    // the group moving the selection still deselects the old one
+    row->getSegment(2)->setSelected(true);
+    CHECK(row->getSelectedIndices() == std::vector<int>{2});
+
+    row->setAllowNone(true);
+    row->getSegment(2)->setSelected(false);
+    CHECK(row->getSelectedIndex() == -1);
+
+    // a multi row's segments deselect freely
+    row->setMode(SegmentedButtons::Mode::Multi);
+    row->getSegment(0)->setSelected(true);
+    row->getSegment(0)->setSelected(false);
+    CHECK(row->getSelectedIndices().empty());
+}
+
+TEST_CASE("SegmentedButtons: an image-only segment's tooltip follows its text")
+{
+    Scene scene;
+    SegmentedButtons *row=scene.row({});
+    SegmentedButton *image=row->addSegment("Zoom in", "test16.png", true);
+    SegmentedButton *both=row->addSegment("Grid", "test16.png", false);
+
+    CHECK(image->getToolTipText() == "Zoom in");
+    image->setText("Zoom out");
+    CHECK(image->getToolTipText() == "Zoom out");
+    both->setText("List");
+    CHECK(both->getToolTipText().empty());
+    image->setImageOnly(false);
+    CHECK(image->getToolTipText().empty());
+}
+
+TEST_CASE("SegmentedButtons: Return goes on up from an exclusive row and toggles in a multi row")
+{
+    Scene scene;
+    SegmentedButtons *row=scene.row({"A", "B"});
+    SegmentedButton *segment=row->getSegment(0);
+
+    // a key goes to the focused segment
+    segment->focus();
+    REQUIRE(KeyboardFocus == segment);
+    CHECK_FALSE(segment->onKeyReturn(true));
+    CHECK(row->getSelectedIndex() == 0);
+
+    row->setMode(SegmentedButtons::Mode::Multi);
+    CHECK(segment->onKeyReturn(true));
+    CHECK_FALSE(row->isSelected(0));
+}
+
+TEST_CASE("SegmentedButtons: a row made taller than its segments keeps them at the tallest one's height")
+{
+    Scene scene;
+    SegmentedButtons *row=scene.row({"A", "B"});
+    const int height=row->getSegment(0)->getPreferredSize().height;
+
+    row->setDock(DockPosition::Center);
+    scene.frame();
+    REQUIRE(row->getHeight() > height+20);
+    for(int i=0; i < row->segmentCount(); ++i)
+    {
+        CHECK(row->getSegment(i)->getHeight() == height);
+        CHECK(row->getSegment(i)->getY() == row->getPadding().top);
+    }
+}
+
+TEST_CASE("SegmentedButtons: a segment moved to another parent leaves the row and its handlers")
+{
+    Scene scene;
+    SegmentedButtons *row=scene.row({"A", "B", "C"});
+    Changes changes;
+
+    row->onSelectionChange.add(&changes, &Changes::changed);
+    row->setSelected(1, true);
+    changes.segments.clear();
+
+    SegmentedButton *moved=row->getSegment(1);
+
+    moved->setParent(scene.canvas);
+    CHECK(row->segmentCount() == 2);
+    CHECK(row->indexOf(moved) < 0);
+    CHECK(moved->getSegmentedButtons() == nullptr);
+    CHECK(moved->getPlacement() == controls::Placement::Parent);
+    CHECK_FALSE(moved->hasCheckRoom());
+    // the selection moved on to the next segment, which fired
+    CHECK(row->getSelectedIndex() == 1);
+    REQUIRE(changes.segments.size() == 1);
+    CHECK(changes.segments[0] == row->getSegment(1));
+
+    // the moved one is the row's no more: its changes fire nothing there
+    changes.segments.clear();
+    moved->setSelected(false);
+    moved->setSelected(true);
+    CHECK(changes.segments.empty());
+    CHECK(row->getSelectedIndex() == 1);
+    scene.frame();
 }

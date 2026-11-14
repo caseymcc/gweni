@@ -3773,13 +3773,22 @@ two programs and the draws. What follows describes both together:
     is Exclusive, none while it is Multi, and `setAllowNone(true)` gives the members
     their toggling back, so a click on the selected one clears it. An exclusive row
     that does not allow none always has one selected once a segment exists: the first
-    added, and after a removal the next enabled one, else the one before.
+    added, and after a removal the next enabled one, else the one before; the segment
+    itself refuses that selection's deselect (`SegmentedButton::setSelected`, so
+    `getSegment(i)->setSelected(false)` cannot clear it either), while the group moving
+    the selection on deselects the old one after it holds the new one.
     `removeSegment` takes the segment out of the row at once (hidden, out of the
     group) and `delayedDelete()`s it, since it may be called from that segment's own
     click: an `onSelectionChange` handler runs inside `Button::onPress`, which goes on
     with the segment once it returns. A removed segment keeps the row's handlers until
     it is deleted (an `event::Caller` must not lose a handler while it calls it), and
-    the row ignores them once the segment's row is no longer it.
+    the row ignores them once the segment's row is no longer it. A segment the app
+    deletes itself leaves the row from its own destructor, while its selection can
+    still be read (Base's destructor, which tells the row, runs after the
+    `Selectable` part is gone), and one moved to another parent leaves it in
+    `onChildRemoved`, with the row's handlers, its group, its owner placement and the
+    check's room. A hidden segment is not supported (it keeps its room and its place
+    in the joints and the ends): remove it instead.
     `onSelectionChange` fires once per real change with the changed segment: the one
     the selection reached (the one it left fires nothing: its deselect comes while the
     group's selection is already the new one), the cleared one, or the toggled one.
@@ -3787,12 +3796,15 @@ two programs and the draws. What follows describes both together:
     segments (from `MinChangedWalk` (16) children on, that walks only the changed ones
     and calls neither `arrangeHorizontal` nor `arrangeVertical`, `Flow`'s case): each segment
     its content width (or with `setEqualWidths(true)` the widest one's), all the
-    tallest one's height, and each one after the first starting `Joint` (1) unit left
+    tallest one's height (a row its dock or a layout makes taller keeps them at it, at
+    its top padding), and each one after the first starting `Joint` (1) unit left
     of the previous one's right edge (`segmentPositions`). A segment places its own
     Owner Text and image too, as one group centred in it: the check's room
     (`CheckSize` and `CheckGap`, in every segment while the row `setShowCheck`s, so a
     selection never changes a width), the image, the text, `SidePadding` in from its
-    sides. So a hover, a selection and a toggle lay nothing out.
+    sides. So a hover, a selection and a toggle lay nothing out. A new text that moves
+    the check inside bounds that stay (a narrower segment in a row of equal widths)
+    marks the segment, so the check is drawn again where `getCheckRect()` says.
   - *The look.* The textured `SegmentedButton` renderer draws one rounded rect per
     segment, rounded only at the row's ends through the edge mask: the first is square
     on its right, the last on its left, the inner ones on both. A joint is its left
@@ -3824,7 +3836,9 @@ two programs and the draws. What follows describes both together:
     the focus moved. Left/Up and Right/Down step to the previous and next enabled
     segment, Home/End to the ends, without wrapping; an Exclusive row's selection
     moves with the focus, a Multi row's focus moves alone and Space/Return
-    (Selectable's) toggle the focused segment. The keys reach the row because a
+    (Selectable's) toggle the focused segment. An Exclusive row's segment does not take
+    Return, which has nothing to toggle there, so Enter goes on up to a dialog's
+    default button. The keys reach the row because a
     segment does not take them and `Base::onKeyPress` passes an unhandled key up. A
     disabled row disables every segment (`SegmentedButton::isDisabled()` asks the row
     too, so each gets its own state back) and takes no key and no Tab.

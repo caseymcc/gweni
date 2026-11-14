@@ -14,7 +14,7 @@ class SegmentedButtons;
 //! SegmentedButtons rows: an exclusive row of text segments, one of an image
 //! and text each in equal widths, one of images alone (their text the
 //! tooltip), a multi-select row with checks and a disabled row, and a label
-//! naming what the first and the multi row have selected.
+//! naming what the view, layout, zoom and format rows have selected.
 class SegmentedButtonsDemo: public controls::Base
 {
 public:
