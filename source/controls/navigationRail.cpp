@@ -128,9 +128,10 @@ const String &NavigationItem::getText() const
 
 void NavigationItem::setImage(const String &name, bool /*center*/)
 {
-    // Retain the ImagePanel: it is also the anchor for an item's badge.
-    if(name != m_image->getImageName())
-        m_image->setImage(name);
+    // Retain the ImagePanel: it is also the anchor for an item's badge. Its
+    // setImage skips the name it already holds, and an empty one clears an
+    // image set through getIcon() as well, which has no name.
+    m_image->setImage(name);
     m_image->setHidden(name.empty() && !m_badge);
 }
 

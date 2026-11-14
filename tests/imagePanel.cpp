@@ -21,7 +21,10 @@
  *    edge moves with the crop);
  *  - a NavigationItem's icon (an ImagePanel subclass) given pixels through
  *    getIcon() draws them, and setImage(name) then setImage("") on the item
- *    gives the texture back.
+ *    gives the texture back;
+ *  - setImage("") on an item whose badge keeps its icon shown takes away
+ *    pixels set through getIcon() too: the icon draws nothing and gives the
+ *    texture back.
  */
 #include <doctest/doctest.h>
 
@@ -414,5 +417,40 @@ TEST_CASE("ImagePanel: a NavigationItem's icon draws an image from pixels and gi
     item->setImage("");
     scene.frame();
     CHECK(icon->isEmpty());
+    CHECK(renderer.loadedTextureCount() == baseline);
+}
+
+TEST_CASE("ImagePanel: a NavigationItem's setImage(\"\") gives back pixels set on its icon")
+{
+    Scene scene;
+    SlotRenderer &renderer=scene.renderer;
+    const size_t baseline=renderer.loadedTextureCount();
+
+    scene.panel->hide();
+
+    auto *rail=scene.canvas->newChild<gweni::controls::NavigationRail>();
+    gweni::controls::NavigationItem *item=rail->addItem("Home");
+    ImagePanel *icon=item->getIcon();
+    const Color red(255, 0, 0, 255);
+    const std::vector<uint8_t> pixels=testPixels(red, red);
+
+    // the badge keeps the icon shown with no image name
+    item->setBadgeCount(3);
+    icon->setImagePixels(ImageW, ImageH, ImageW*4, pixels.data());
+    scene.frame();
+
+    std::vector<uint8_t> frame=scene.frame();
+    const gweni::Point centre=icon->localPosToCanvas(
+        gweni::Point(icon->getWidth()/2, icon->getHeight()/2));
+
+    CHECK(renderer.loadedTextureCount() == baseline+1);
+    CHECK(isRed(scene.at(frame, centre.x, centre.y)));
+
+    // no name on the item: the pixels go as a file image would
+    item->setImage("");
+    scene.frame();
+    frame=scene.frame();
+    CHECK(icon->isEmpty());
+    CHECK_FALSE(isRed(scene.at(frame, centre.x, centre.y)));
     CHECK(renderer.loadedTextureCount() == baseline);
 }
