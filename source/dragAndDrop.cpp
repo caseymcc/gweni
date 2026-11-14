@@ -168,9 +168,16 @@ void controlDeleted(gweni::controls::Base *control)
     if(CurrentPackage && (control == DragCanvas))
     {
         // the canvas goes: nothing it holds may be called
+        const bool cursorSet=(Cursor != cursor::Normal);
+
         clear();
         LastPressedControl=nullptr;
         NewHoveredControl=nullptr;
+
+        // the platform's cursor (a page's CSS cursor) is not left at the
+        // drag's No
+        if(cursorSet)
+            setCursor(cursor::Normal);
         return;
     }
 
