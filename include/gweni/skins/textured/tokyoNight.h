@@ -262,6 +262,27 @@ inline Surface SegmentOnDisabled{ Color(0x2a,0x35,0x5a), Color(0x22,0x2b,0x47), 
 // gives the fill).
 inline Surface SegmentFocus     { SurfHi,                Surf,                  Blue,  Radius, BorderW };
 
+// A Calendar: its frame as a panel's; the title's hover and press (nothing at
+// rest) and each day cell's looks, one slot a cell. An idle cell draws nothing
+// (its slot hidden). Today is CalendarCellToday's border over whichever fill
+// the cell has (its own fill when it has none), the keyboard cursor
+// CalendarCellFocus's border likewise (it wins over today's); a range's cells
+// are CalendarCellInRange, square where they join, its ends the selection.
+// A disabled date draws nothing but its muted text, unless it is selected or
+// in the range (CalendarCellDisabled).
+inline Surface Calendar                  { Color(0x1f,0x22,0x33), Bg,                    BgHighlight, RadiusLg, BorderW };
+inline Surface CalendarTitleHover        { SurfHi,                SurfHi,                SurfHi,      RadiusSm, 0.0f };
+inline Surface CalendarTitleDown         { Surf,                  Surf,                  Surf,        RadiusSm, 0.0f };
+inline Surface CalendarCellHover         { SurfHi,                SurfHi,                SurfHi,      RadiusSm, 0.0f };
+inline Surface CalendarCellDown          { Surf,                  BgStorm,               Surf,        RadiusSm, 0.0f };
+inline Surface CalendarCellSelected      { DarkBlue,              DarkBlue,              Blue,        RadiusSm, BorderW };
+inline Surface CalendarCellSelectedHover { Color(0x4a,0x67,0xb5), Color(0x4a,0x67,0xb5), Blue,        RadiusSm, BorderW };
+inline Surface CalendarCellInRange       { Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), RadiusSm, 0.0f };
+inline Surface CalendarCellInRangeHover  { Color(0x33,0x46,0x7a), Color(0x33,0x46,0x7a), Color(0x33,0x46,0x7a), RadiusSm, 0.0f };
+inline Surface CalendarCellToday         { BgStorm,               BgStorm,               Blue,        RadiusSm, BorderW };
+inline Surface CalendarCellFocus         { BgStorm,               BgStorm,               Cyan,        RadiusSm, BorderW };
+inline Surface CalendarCellDisabled      { BgStorm,               Color(0x1f,0x22,0x33), BgHighlight, RadiusSm, BorderW };
+
 // A PropertyRow's label column: flat and square, so only top is read. A dark
 // fill at rest, lifted while the row is hovered, blue-tinted while its value
 // is edited; the label's text (Properties.Label_*) reads over each.
@@ -491,6 +512,12 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"Segment",&Segment},{"SegmentHover",&SegmentHover},{"SegmentDown",&SegmentDown},{"SegmentOn",&SegmentOn},
         {"SegmentOnHover",&SegmentOnHover},{"SegmentDisabled",&SegmentDisabled},{"SegmentOnDisabled",&SegmentOnDisabled},
         {"SegmentFocus",&SegmentFocus},
+        {"Calendar",&Calendar},{"CalendarTitleHover",&CalendarTitleHover},{"CalendarTitleDown",&CalendarTitleDown},
+        {"CalendarCellHover",&CalendarCellHover},{"CalendarCellDown",&CalendarCellDown},
+        {"CalendarCellSelected",&CalendarCellSelected},{"CalendarCellSelectedHover",&CalendarCellSelectedHover},
+        {"CalendarCellInRange",&CalendarCellInRange},{"CalendarCellInRangeHover",&CalendarCellInRangeHover},
+        {"CalendarCellToday",&CalendarCellToday},{"CalendarCellFocus",&CalendarCellFocus},
+        {"CalendarCellDisabled",&CalendarCellDisabled},
         {"PropertyColumn",&PropertyColumn},{"PropertyColumnHover",&PropertyColumnHover},
         {"PropertyColumnEditing",&PropertyColumnEditing},
         {"DataTableHeader",&DataTableHeader},{"DataTableHeaderHover",&DataTableHeaderHover},

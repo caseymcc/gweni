@@ -481,6 +481,20 @@ public:
             gweni::Color Check{0xff, 0xff, 0xff};
         } SegmentedButton;
 
+        //! A Calendar's text: a day of the shown month, one of the months
+        //! either side, a disabled date, the selection, today, the weekday
+        //! row and the title.
+        struct Calendar_t
+        {
+            gweni::Color Day{0, 0, 0};
+            gweni::Color OtherMonth{0x80, 0x80, 0x80};
+            gweni::Color Disabled{0x80, 0x80, 0x80};
+            gweni::Color Selected{0xff, 0xff, 0xff};
+            gweni::Color Today{0, 0, 0};
+            gweni::Color Weekday{0x60, 0x60, 0x60};
+            gweni::Color Title{0, 0, 0};
+        } Calendar;
+
         //! A Chip's text, by its tone and by its palette entry.
         struct Chip_t
         {

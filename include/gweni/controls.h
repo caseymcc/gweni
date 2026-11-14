@@ -14,6 +14,7 @@
 #include <gweni/controls/boardColumn.h>
 #include <gweni/controls/bullet.h>
 #include <gweni/controls/button.h>
+#include <gweni/controls/calendar.h>
 #include <gweni/controls/canvas.h>
 #include <gweni/controls/caretBlink.h>
 #include <gweni/controls/chart.h>

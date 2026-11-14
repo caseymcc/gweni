@@ -16,6 +16,7 @@
 #include "gweni/controls/listBox.h"
 #include "gweni/controls/slider.h"
 #include "gweni/controls/spinner.h"
+#include "gweni/controls/calendar.h"
 #include "gweni/controls/plotHistogram.h"
 #include "gweni/controls/plotLines.h"
 #include "gweni/controls/chart.h"
@@ -1079,6 +1080,111 @@ void SegmentedButton::update(renderer::Base *renderer, controls::Base *baseContr
     }
     else
         renderer->hidePrimitive(m_primitives[1]);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//Calendar
+void Calendar::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::Calendar);
+}
+
+void CalendarTitle::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    controls::internal::CalendarTitle *title=static_cast<controls::internal::CalendarTitle *>(baseControl);
+    const tokyonight::Surface *surface=nullptr;
+
+    if(!title->isDisabled())
+    {
+        if(title->isDepressed())
+            surface=&tokyonight::CalendarTitleDown;
+        else if(title->isHovered())
+            surface=&tokyonight::CalendarTitleHover;
+    }
+
+    // nothing at rest: a hidden slot, not a transparent rect writing depth
+    if(surface && baseControl->visible())
+        renderer->drawRoundedRect(m_primitives[0], baseControl->getRenderBounds(), surface->radius,
+            surface->borderWidth, surface->top, surface->bottom, surface->border, baseControl->getZIndex());
+    else
+        renderer->hidePrimitive(m_primitives[0]);
+}
+
+void CalendarCell::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    controls::internal::CalendarCell *cell=static_cast<controls::internal::CalendarCell *>(baseControl);
+    const controls::internal::CalendarCellLook &look=cell->getLook();
+    const bool hovered=cell->isHovered();
+    const bool ends=look.selected || look.rangeStart || look.rangeEnd;
+    const tokyonight::Surface *surface=nullptr;
+
+    if(look.disabled)
+    {
+        if(ends || look.inRange)
+            surface=&tokyonight::CalendarCellDisabled;
+    }
+    else if(cell->isDepressed())
+        surface=&tokyonight::CalendarCellDown;
+    else if(ends)
+        surface=hovered?&tokyonight::CalendarCellSelectedHover:&tokyonight::CalendarCellSelected;
+    else if(look.inRange)
+        surface=hovered?&tokyonight::CalendarCellInRangeHover:&tokyonight::CalendarCellInRange;
+    else if(hovered)
+        surface=&tokyonight::CalendarCellHover;
+    else if(look.today)
+        surface=&tokyonight::CalendarCellToday;
+    else if(look.cursor)
+        surface=&tokyonight::CalendarCellFocus;
+
+    if(!surface || !baseControl->visible())
+    {
+        renderer->hidePrimitive(m_primitives[0]);
+        return;
+    }
+
+    tokyonight::Surface paint=*surface;
+
+    // the rings are the slot's border, over whatever fill it has
+    if(look.cursor)
+    {
+        paint.border=tokyonight::CalendarCellFocus.border;
+        paint.borderWidth=std::max(paint.borderWidth, tokyonight::CalendarCellFocus.borderWidth);
+    }
+    else if(look.today && !ends)
+    {
+        paint.border=tokyonight::CalendarCellToday.border;
+        paint.borderWidth=std::max(paint.borderWidth, tokyonight::CalendarCellToday.borderWidth);
+    }
+
+    // A range is one strip along each row: a cell joined to its left or right
+    // neighbour is square and reaches the cell's edge on that side; every
+    // other side is a unit in, rounded.
+    const bool joinLeft=look.inRange && !look.rangeStart && (cell->getColumn() > 0);
+    const bool joinRight=look.inRange && !look.rangeEnd && (cell->getColumn() < cell->getColumns()-1);
+    const gweni::Rect &bounds=baseControl->getRenderBounds();
+    gweni::Rect rect(bounds.x+(joinLeft?0:1), bounds.y+1, bounds.w-(joinLeft?0:1)-(joinRight?0:1), bounds.h-2);
+    uint8_t edges=0;
+
+    if(joinLeft)
+        edges|=renderer::SquareTopLeft|renderer::SquareBottomLeft;
+    if(joinRight)
+        edges|=renderer::SquareTopRight|renderer::SquareBottomRight;
+
+    if(edges)
+        renderer->drawRoundedRect(m_primitives[0], rect, paint.radius, paint.borderWidth, paint.top, paint.bottom,
+            paint.border, baseControl->getZIndex(), edges);
+    else
+        renderer->drawRoundedRect(m_primitives[0], rect, paint.radius, paint.borderWidth, paint.top, paint.bottom,
+            paint.border, baseControl->getZIndex());
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -5028,6 +5134,9 @@ template class ControlRegister<Badge>;
 template class ControlRegister<Chip>;
 template class ControlRegister<Switch>;
 template class ControlRegister<Spinner>;
+template class ControlRegister<Calendar>;
+template class ControlRegister<CalendarTitle>;
+template class ControlRegister<CalendarCell>;
 template class ControlRegister<StatusBar>;
 // NOTE: TabItem<_Type> is itself a class template (TabItem<TabTop>, <TabBottom>,
 // <TabLeft>, <TabRight>); register those specializations here if/when their

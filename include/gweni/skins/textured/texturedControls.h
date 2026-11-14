@@ -1311,6 +1311,47 @@ public:
     inline static const std::string_view name="SegmentedButton";
 };
 
+// controls::Calendar's frame: one slot, the Calendar surface. Its header,
+// weekday row and cells are children that draw themselves.
+class Calendar:public textured::ControlRegister<Calendar>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="Calendar";
+};
+
+// A Calendar's title: hidden at rest, CalendarTitleHover and CalendarTitleDown
+// while hovered and pressed; its Text draws the month.
+class CalendarTitle:public textured::ControlRegister<CalendarTitle>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="CalendarTitle";
+};
+
+// A Calendar cell: one slot, hidden while the cell is idle (no hover, press,
+// selection, range, today or cursor), else the surface its look picks (see
+// tokyoNight.h's Calendar surfaces) inset a unit from the cell's edges but on
+// the sides where a range joins it to its neighbour, which are square and
+// reach the edge, so a range is one strip along each row. Today's and the
+// cursor's rings are that slot's border, so a cell is one slot in any look and
+// a hover writes it alone. Its Text draws the number.
+class CalendarCell:public textured::ControlRegister<CalendarCell>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="CalendarCell";
+};
+
 // A Chart's legend row: [0] its background as a Selectable's (hidden at rest,
 // SelectableHover and SelectableDown; a legend row is never selected), and [1]
 // its swatch at getZIndex()+1, ChartLegendRow::getSwatchRect() in its series'

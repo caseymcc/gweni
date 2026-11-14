@@ -522,6 +522,10 @@ std::unordered_map<std::string, gweni::Color*> TexturedSkin::textColorRegistry()
         {"SegmentNormal",&Colors.SegmentedButton.Normal},{"SegmentHover",&Colors.SegmentedButton.Hover},
         {"SegmentSelected",&Colors.SegmentedButton.Selected},{"SegmentDisabled",&Colors.SegmentedButton.Disabled},
         {"SegmentCheck",&Colors.SegmentedButton.Check},
+        {"CalendarDayText",&Colors.Calendar.Day},{"CalendarOtherMonthText",&Colors.Calendar.OtherMonth},
+        {"CalendarDisabledText",&Colors.Calendar.Disabled},{"CalendarSelectedText",&Colors.Calendar.Selected},
+        {"CalendarTodayText",&Colors.Calendar.Today},{"CalendarWeekdayText",&Colors.Calendar.Weekday},
+        {"CalendarTitleText",&Colors.Calendar.Title},
         {"ToastText",&Colors.Toast.Text},{"ToastInfo",&Colors.Toast.Info},
         {"ToastPositive",&Colors.Toast.Positive},{"ToastWarning",&Colors.Toast.Warning},
         {"ToastNegative",&Colors.Toast.Negative},
@@ -1417,6 +1421,15 @@ void TexturedSkin::setThemeColors()
     Colors.SegmentedButton.Selected=White;
     Colors.SegmentedButton.Disabled=Muted;
     Colors.SegmentedButton.Check=Blue;
+    // a calendar's days as a list's text, the other months' and the weekday
+    // row secondary, a disabled date muted, today in the accent
+    Colors.Calendar.Day=Fg;
+    Colors.Calendar.OtherMonth=FgDark;
+    Colors.Calendar.Disabled=Muted;
+    Colors.Calendar.Selected=White;
+    Colors.Calendar.Today=Blue;
+    Colors.Calendar.Weekday=FgDark;
+    Colors.Calendar.Title=Fg;
 
     // Tokyo Night's sizes, set with its colours so a theme's "metrics" applies
     // over them.
