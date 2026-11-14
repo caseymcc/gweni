@@ -167,7 +167,8 @@
  *                       inspector |
  *                       stats-overlay | depth-view | zoom-panel |
  *                       node-graph | code-editor | log-view |
- *                       chip-badge | navigation-rail | flow | switch (see below)
+ *                       chip-badge | navigation-rail | flow | board |
+ *                       switch (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -934,6 +935,29 @@
  *                 shorter content's end); the empty frame clamps it to 0,
  *                 where it stays; settled frames write nothing; the demo gives
  *                 every id back. Exits non-zero if any check is no.
+ *    board        BoardDemo at 640x480, the clock frozen (board*.png): a
+ *                 vertical wheel over the overflowing column's body, then at
+ *                 its bottom and its top and over the fitting column's body;
+ *                 a vertical wheel over the board's inset, the gap after the
+ *                 first column and its header; a horizontal wheel and a
+ *                 Shift+wheel over a body; then, scrolled, a card added to
+ *                 the overflowing and to the fitting column and a card's text
+ *                 grown, then cards added to the fitting column until it
+ *                 overflows. One line
+ *                   board board_overflows=yes|no body_wheel=yes|no ...
+ *                   ids_back=yes|no offsets=<board>,<body>,...
+ *                 reports the checks: each wheel's frame has nothing pending
+ *                 outside the ScrollControl it is meant to scroll and writes
+ *                 only that subtree's shown slots, in at most one pass; the
+ *                 body wheel moves that body alone, at either end and in the
+ *                 fitting column it is consumed with nothing moved, and the
+ *                 inset, gap, header, horizontal and Shift wheels move the
+ *                 board alone; the edits keep every offset in one pass and
+ *                 the fitting column's cards their widths, also once it
+ *                 overflows; every body shows its bar, disabled exactly while
+ *                 its cards fit, the fitting one's enabled once it overflows; settled
+ *                 frames write nothing; the demo gives every id back. Exits
+ *                 non-zero if any check is no.
  *    switch       SwitchDemo, the clock stepping (switch.png, switch-on.png),
  *                 the "Label on the right" switch focused throughout and the
  *                 mouse off it between inputs: the mouse onto its track, onto
@@ -1257,6 +1281,8 @@
 #include <demo/zoomPanel.h>
 #include <demo/flow.h>
 #include <demo/board.h>
+#include <gweni/controls/board.h>
+#include <gweni/controls/boardColumn.h>
 #include <gweni/controls/layout/flow.h>
 #include <demo/nodeGraph.h>
 #include <gweni/controls/vectorField.h>
@@ -1468,7 +1494,7 @@ static void printUsage(std::ostream &out)
          "                     | inspector\n"
          "                     | stats-overlay | depth-view | zoom-panel\n"
          "                     | node-graph | code-editor | log-view | chip-badge\n"
-         "                     | navigation-rail | flow | switch;\n"
+         "                     | navigation-rail | flow | board | switch;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -2507,7 +2533,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
-    ChipBadge, NavigationRail, Flow, Switch };
+    ChipBadge, NavigationRail, Flow, Board, Switch };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2545,6 +2571,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "chip-badge") scenario=Scenario::ChipBadge;
     else if(name == "navigation-rail") scenario=Scenario::NavigationRail;
     else if(name == "flow") scenario=Scenario::Flow;
+    else if(name == "board") scenario=Scenario::Board;
     else if(name == "switch") scenario=Scenario::Switch;
     else return false;
     return true;
@@ -13937,6 +13964,426 @@ static bool runFlowScenario(Session &s, const std::string &shotDir, bool &passed
 }
 
 //-----------------------------------------------------------------------------
+// --scenario board: BoardDemo at 640x480, the clock frozen. Every wheel is
+// one frame inspected before it renders: the controls with a change pending
+// must all be under the ScrollControl it scrolls (a column's body, or the
+// Board), and the slots it writes must be the shown slots of that subtree.
+// A vertical wheel over the overflowing column's body scrolls it alone; at
+// its bottom, at its top and over the fitting column it is consumed with the
+// board and the body still and nothing pending anywhere. A vertical wheel
+// over the board's inset, a gap between columns and a column header scrolls
+// the board; a horizontal wheel and a Shift+wheel over a body scroll the
+// board and leave the body. Then, the board and two bodies scrolled, a card
+// added to the overflowing column, one added to the fitting column and a
+// card's text grown keep every offset, each in one pass; every body's bar
+// shows, disabled exactly while its cards fit, and the fitting column's
+// cards keep their widths, also once cards added to it make it overflow
+// (its bar enabled then). Settled frames write nothing, and the demo gives
+// its ids back.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+// One frame of the board scenario: the controls pending outside the allowed
+// subtrees as the update phase ends, and what the frame wrote.
+struct BoardFrame
+{
+    std::vector<std::string> strays;
+    std::set<size_t> primitives;
+    std::set<size_t> texts;
+    size_t primitiveSlots=0;
+    int passes=0;
+};
+
+// The ids the shown controls under `control` hold.
+void shownSubtreeIds(gweni::controls::Base *control, std::set<size_t> &primitives, std::set<size_t> &texts)
+{
+    if(control->hidden())
+        return;
+    if(const gweni::skin::Control *skinControl=control->getSkinControl())
+    {
+        std::vector<size_t> primitiveIds, textIds;
+
+        skinControl->appendIds(primitiveIds, textIds);
+        primitives.insert(primitiveIds.begin(), primitiveIds.end());
+        texts.insert(textIds.begin(), textIds.end());
+    }
+    for(gweni::controls::Base *child : control->getActualChildren())
+        shownSubtreeIds(child, primitives, texts);
+}
+
+gweni::controls::BaseScrollBar *boardVerticalBar(gweni::controls::ScrollControl *body)
+{
+    for(gweni::controls::Base *child : body->getActualChildren())
+        if(auto *bar=gweni::gweni_cast<gweni::controls::VerticalScrollBar>(child))
+            return bar;
+    return nullptr;
+}
+
+// Every offset of the board: the board's own, then each body's.
+std::vector<int> boardOffsets(gweni::BoardDemo *demo)
+{
+    std::vector<int> offsets{demo->board()->getHorizontalScrollOffset()};
+
+    for(gweni::controls::BoardColumn *column : demo->columns())
+        offsets.push_back(column->getBody()->getVerticalScrollOffset());
+    return offsets;
+}
+
+std::string offsetsText(const std::vector<int> &offsets)
+{
+    std::string text;
+
+    for(int offset : offsets)
+        text+=(text.empty()?"":",")+std::to_string(offset);
+    return text;
+}
+
+}//namespace
+
+// The controls with a change pending outside `root`'s subtree, walking the
+// tree as it renders: a column's cards are the BoardColumn's children
+// (getParent()) but sit in its body's inner panel.
+static void boardPendingOutside(gweni::controls::Base *control, gweni::controls::Base *root,
+    std::vector<std::string> &strays)
+{
+    if(control == root)
+        return;
+    if(control->getStateChange() != gweni::controls::StateChange_Nothing)
+        strays.push_back(std::string(control->getTypeName())+"#"+std::to_string(control->getControlId()));
+    for(gweni::controls::Base *child : control->getActualChildren())
+        boardPendingOutside(child, root, strays);
+}
+
+static BoardFrame boardFrame(Session &s, gweni::controls::Base *root)
+{
+    BoardFrame frame;
+
+    // frameCheckingStrays, with the strays taken by the rendered tree
+    gweni::controls::resetChangeStats();
+    verifyIdleBefore(s);
+    s.canvas->updateCanvas();
+    boardPendingOutside(s.canvas, root, frame.strays);
+
+    s.renderer->clearTarget(s.background);
+    s.canvas->renderCanvas();
+    verifyIdleAfter(s);
+
+    if(s.stats)
+        printFrameStats(s.frame, s.label, gweni::controls::getChangeStats(),
+            s.renderer->getFrameStats(), s.canvas->getLayoutStats(),
+            s.canvas->getUpdateStats());
+    checkOnePass(s, std::to_string(s.frame));
+    ++s.frame;
+    ++g_clockSteps;
+
+    for(size_t id : s.renderer->writtenPrimitiveIds())
+        frame.primitives.insert(id);
+    for(const gweni::renderer::WrittenText &text : s.renderer->writtenTextIds())
+        frame.texts.insert(text.textId);
+    frame.primitiveSlots=s.renderer->frameStats().primitiveSlotsWritten;
+    frame.passes=s.canvas->getLayoutStats().passes;
+    return frame;
+}
+
+static bool runBoardScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    checks.scenario="board";
+
+    if(!resizeSession(s, 640, 480))
+        return false;
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    gweni::controls::Base *control=addControl(s, "BoardDemo");
+    auto *demo=gweni::gweni_cast<gweni::BoardDemo>(control);
+
+    if(!demo || demo->columns().size() != gweni::BoardDemo::ColumnCount)
+    {
+        std::cerr<<"ControlTest: board: BoardDemo was not built\n";
+        return false;
+    }
+
+    s.label="board";
+
+    std::vector<uint8_t> pixels;
+    renderFrames(s, 1);
+    size_t idleWork=settleCodeEditor(s, pixels);
+    bool ok=shoot(s, shotDir+"/board.png");
+
+    gweni::controls::Board *board=demo->board();
+    gweni::controls::ScrollControl *overflowing=demo->columns()[gweni::BoardDemo::OverflowingColumn]->getBody();
+    gweni::controls::ScrollControl *fitting=demo->columns()[gweni::BoardDemo::FittingColumn]->getBody();
+
+    checks.check("board_overflows", board->getMaxHorizontalScrollOffset() > 0
+            && overflowing->getMaxVerticalScrollOffset() > 0 && fitting->getMaxVerticalScrollOffset() == 0,
+        "the board's range is "+std::to_string(board->getMaxHorizontalScrollOffset())
+        +", the overflowing body's "+std::to_string(overflowing->getMaxVerticalScrollOffset())
+        +" and the fitting body's "+std::to_string(fitting->getMaxVerticalScrollOffset()));
+
+    // the mouse at a point, and the hover it gives settled before the wheel
+    auto pointAt=[&](const gweni::Point &point)
+    {
+        moveMouse(s, point.x, point.y);
+        renderFrames(s, 1);
+        idleWork+=settleCodeEditor(s, pixels);
+    };
+    auto bodyPoint=[&](gweni::controls::ScrollControl *body)
+    {
+        const gweni::Rect &viewport=body->getViewport();
+
+        return body->localPosToCanvas(gweni::Point(viewport.x+viewport.w/2, viewport.y+viewport.h/2));
+    };
+
+    // one wheel and its frame: held to `scroll`'s subtree, writing only its
+    // shown slots; `moved` the ScrollControl expected to move, or null
+    struct WheelResult
+    {
+        bool consumed=false;
+        bool held=false;
+        std::vector<int> before, after;
+    };
+    auto wheel=[&](const std::string &name, gweni::controls::ScrollControl *scroll, gweni::Dim dim,
+        bool shift, int delta) -> WheelResult
+    {
+        WheelResult result;
+
+        result.before=boardOffsets(demo);
+        if(shift)
+            s.canvas->inputModifierKey(gweni::keys::Shift, true);
+        result.consumed=dim == gweni::Dim::X?s.canvas->inputMouseWheelH(delta):s.canvas->inputMouseWheel(delta);
+        if(shift)
+            s.canvas->inputModifierKey(gweni::keys::Shift, false);
+
+        const BoardFrame frame=boardFrame(s, scroll);
+        std::set<size_t> primitives, texts;
+
+        shownSubtreeIds(scroll, primitives, texts);
+        result.after=boardOffsets(demo);
+        result.held=frame.strays.empty() && idsWithin(frame.primitives, primitives)
+            && idsWithin(frame.texts, texts) && frame.primitiveSlots <= primitives.size() && frame.passes <= 1;
+        if(!result.held)
+            std::cerr<<"ControlTest: board: "<<name<<": "<<frame.strays.size()<<" controls pending outside "
+                     <<scroll->getTypeName()<<"#"<<scroll->getControlId()
+                     <<(frame.strays.empty()?"":" (first "+frame.strays.front()+")")<<", "
+                     <<frame.primitiveSlots<<" primitive slots written of the "<<primitives.size()
+                     <<" it shows, ids within it: "<<(idsWithin(frame.primitives, primitives)?"yes":"no")
+                     <<"/"<<(idsWithin(frame.texts, texts)?"yes":"no")<<", "<<frame.passes<<" passes\n";
+        idleWork+=settleCodeEditor(s, pixels);
+        return result;
+    };
+    // the board's offset is index 0, the overflowing body's 1, the fitting 2
+    auto changedOnly=[](const WheelResult &result, size_t index)
+    {
+        for(size_t i=0; i < result.before.size(); ++i)
+        {
+            if((i == index) != (result.before[i] != result.after[i]))
+                return false;
+        }
+        return true;
+    };
+    auto still=[](const WheelResult &result) { return result.before == result.after; };
+    auto describe=[](const WheelResult &result)
+    {
+        return std::string(result.consumed?"consumed":"not consumed")+", offsets "+offsetsText(result.before)
+            +" -> "+offsetsText(result.after);
+    };
+    const size_t boardIndex=0;
+    const size_t overflowingIndex=1+gweni::BoardDemo::OverflowingColumn;
+
+    // a vertical wheel over the overflowing body scrolls it alone
+    pointAt(bodyPoint(overflowing));
+    const WheelResult down=wheel("body_wheel", overflowing, gweni::Dim::Y, false, -120);
+
+    checks.check("body_wheel", down.consumed && down.held && changedOnly(down, overflowingIndex)
+            && overflowing->getVerticalScrollOffset() > 0,
+        "a wheel over the overflowing body: "+describe(down));
+    ok=shoot(s, shotDir+"/board-body-scrolled.png") && ok;
+
+    // at the bottom, at the top and in the fitting body it stops there
+    overflowing->setVerticalScrollOffset(overflowing->getMaxVerticalScrollOffset());
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    const WheelResult bottom=wheel("body_bottom", overflowing, gweni::Dim::Y, false, -120);
+
+    overflowing->setVerticalScrollOffset(0);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    const WheelResult top=wheel("body_top", overflowing, gweni::Dim::Y, false, 120);
+
+    pointAt(bodyPoint(fitting));
+
+    const WheelResult fits=wheel("body_fits", fitting, gweni::Dim::Y, false, -120);
+
+    checks.check("body_ends_consumed", bottom.consumed && bottom.held && still(bottom)
+            && top.consumed && top.held && still(top) && fits.consumed && fits.held && still(fits),
+        "at the bottom: "+describe(bottom)+"; at the top: "+describe(top)+"; fitting: "+describe(fits));
+
+    // a vertical wheel over the board's inset, a gap and a header scrolls the board
+    auto boardWheel=[&](const std::string &name, const gweni::Point &point,
+        const std::function<bool(gweni::controls::Base *)> &hovered, int delta)
+    {
+        pointAt(point);
+
+        const bool onIt=gweni::HoveredControl && hovered(gweni::HoveredControl);
+        const WheelResult result=wheel(name, board, gweni::Dim::Y, false, delta);
+
+        checks.check(name, onIt && result.consumed && result.held && changedOnly(result, boardIndex),
+            std::string("the mouse ")+(onIt?"on":"not on")+" its target ("
+            +(gweni::HoveredControl?gweni::HoveredControl->getTypeName():"nothing")+"), "+describe(result));
+    };
+
+    boardWheel("inset_wheel", board->localPosToCanvas(gweni::Point(2, 20)),
+        [&](gweni::controls::Base *at) { return at == board; }, -120);
+
+    gweni::controls::BoardColumn *first=demo->columns()[0];
+
+    board->setHorizontalScrollOffset(0);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+    boardWheel("gap_wheel", first->localPosToCanvas(gweni::Point(first->getWidth()+board->getGap()/2,
+            first->getHeight()/2)),
+        [&](gweni::controls::Base *at) { return at == board->getInnerPanel(); }, -120);
+    boardWheel("header_wheel", first->getHeader()->localPosToCanvas(gweni::Point(
+            first->getHeader()->getWidth()/2, first->getHeader()->getHeight()/2)),
+        [&](gweni::controls::Base *at) { return isUnder(at, first->getHeader()); }, 120);
+
+    // a horizontal wheel and a Shift+wheel over a body scroll the board
+    board->setHorizontalScrollOffset(0);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+    pointAt(bodyPoint(overflowing));
+
+    const WheelResult horizontal=wheel("horizontal_wheel", board, gweni::Dim::X, false, -120);
+
+    checks.check("horizontal_wheel", horizontal.consumed && horizontal.held
+            && changedOnly(horizontal, boardIndex),
+        "a horizontal wheel over a body: "+describe(horizontal));
+    ok=shoot(s, shotDir+"/board-scrolled.png") && ok;
+
+    const WheelResult shifted=wheel("shift_wheel", board, gweni::Dim::Y, true, -120);
+
+    checks.check("shift_wheel", shifted.consumed && shifted.held && changedOnly(shifted, boardIndex),
+        "a Shift+wheel over a body: "+describe(shifted));
+
+    // offsets kept as cards come and text grows
+    board->setHorizontalScrollOffset(board->getMaxHorizontalScrollOffset()/2);
+    overflowing->setVerticalScrollOffset(overflowing->getMaxVerticalScrollOffset()/2);
+
+    gweni::controls::ScrollControl *third=demo->columns()[2]->getBody();
+
+    third->setVerticalScrollOffset(third->getMaxVerticalScrollOffset());
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    const std::vector<int> kept=boardOffsets(demo);
+    bool offsetsKept=kept[0] > 0 && kept[overflowingIndex] > 0 && kept[3] > 0;
+    std::string offsetsWhy="the offsets "+offsetsText(kept);
+    auto keepsOffsets=[&](const std::string &name)
+    {
+        const CodeEditorFrame frame=codeEditorFrame(s);
+        const std::vector<int> now=boardOffsets(demo);
+
+        if(now != kept || frame.passes != 1)
+        {
+            offsetsKept=false;
+            offsetsWhy+="; "+name+" gave "+offsetsText(now)+" in "+std::to_string(frame.passes)+" passes";
+        }
+        idleWork+=settleCodeEditor(s, pixels);
+    };
+
+    demo->addCard(gweni::BoardDemo::OverflowingColumn, "Added card",
+        "A card added below the others leaves every scroll position where it was.");
+    keepsOffsets("a card added to the overflowing column");
+
+    std::vector<gweni::Rect> fittingBefore;
+
+    for(gweni::BoardDemoCard *card : demo->cards(gweni::BoardDemo::FittingColumn))
+        fittingBefore.push_back(card->getBounds());
+    demo->addCard(gweni::BoardDemo::FittingColumn, "Fits too", "One more short card.");
+    keepsOffsets("a card added to the fitting column");
+
+    bool widthsKept=true;
+
+    for(size_t i=0; i < fittingBefore.size(); ++i)
+        widthsKept=widthsKept && demo->cards(gweni::BoardDemo::FittingColumn)[i]->getBounds().w == fittingBefore[i].w;
+
+    gweni::BoardDemoCard *grown=demo->cards(gweni::BoardDemo::OverflowingColumn)[1];
+
+    grown->setBody(grown->body()->getText()+" It grew by a sentence that wraps onto more lines than before.");
+    keepsOffsets("a card's text grown");
+    checks.check("offsets_kept", offsetsKept, offsetsWhy);
+    checks.check("fitting_widths_kept", widthsKept, "a card added to the fitting column changed a card's width");
+
+    // every body's bar shows, disabled exactly while its cards fit
+    bool barsOk=true;
+    std::string barsWhy;
+
+    for(gweni::controls::BoardColumn *column : demo->columns())
+    {
+        gweni::controls::ScrollControl *body=column->getBody();
+        gweni::controls::BaseScrollBar *bar=boardVerticalBar(body);
+        const bool fitsNow=body->getMaxVerticalScrollOffset() == 0;
+
+        if(!bar || !bar->visible() || bar->isDisabled() != fitsNow)
+        {
+            barsOk=false;
+            barsWhy+=" "+column->getText()+(bar && bar->visible()?"":" has no shown bar")
+                +(bar && bar->isDisabled() != fitsNow?" bar disabled="+std::to_string(bar->isDisabled())
+                    +" with range "+std::to_string(body->getMaxVerticalScrollOffset()):"");
+        }
+    }
+    checks.check("bars", barsOk && fitting->getMaxVerticalScrollOffset() == 0, "the bars:"+barsWhy
+        +" (the fitting body's range "+std::to_string(fitting->getMaxVerticalScrollOffset())+")");
+    ok=shoot(s, shotDir+"/board-edited.png") && ok;
+
+    // cards added to the fitting column until it overflows: its bar enables,
+    // and no card it had changes its width
+    gweni::controls::BaseScrollBar *fittingBar=boardVerticalBar(fitting);
+    int added=0;
+    bool overflowWidthsKept=true;
+
+    for(; added < 20 && fitting->getMaxVerticalScrollOffset() == 0; ++added)
+    {
+        demo->addCard(gweni::BoardDemo::FittingColumn, "Overflow "+std::to_string(added),
+            "One more card, until the column no longer fits its cards.");
+        keepsOffsets("card "+std::to_string(added)+" added to the fitting column");
+    }
+    for(size_t i=0; i < fittingBefore.size(); ++i)
+        overflowWidthsKept=overflowWidthsKept
+            && demo->cards(gweni::BoardDemo::FittingColumn)[i]->getBounds().w == fittingBefore[i].w;
+    checks.check("overflow_widths_kept", fitting->getMaxVerticalScrollOffset() > 0 && overflowWidthsKept
+            && fittingBar && fittingBar->visible() && !fittingBar->isDisabled() && offsetsKept,
+        std::to_string(added)+" cards added to the fitting column gave it a range of "
+        +std::to_string(fitting->getMaxVerticalScrollOffset())+", its cards' widths "
+        +(overflowWidthsKept?"kept":"changed")+", its bar "
+        +(fittingBar && fittingBar->visible()?(fittingBar->isDisabled()?"disabled":"enabled"):"not shown")
+        +"; "+offsetsWhy);
+
+    checks.check("settled", idleWork == 0, "settled frames wrote or changed "+std::to_string(idleWork));
+
+    moveMouse(s, -1, -1);
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()+liveTextIds()-idsBefore;
+
+    checks.check("ids_back", idsLeft == 0, std::to_string(idsLeft)+" ids not given back");
+
+    passed=checks.allPassed();
+    std::cout<<"board";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<" offsets="<<offsetsText(kept)<<"\n";
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // --scenario log-view: LogViewDemo's log filled with 1 000 and then 100 000
 // events, the clock frozen (the demo streams nothing) and the idle re-measure
 // off, so no frame measures off screen. Each input is one frame, held to the
@@ -16542,6 +16989,15 @@ int main(int argc, char *argv[])
             ok=runFlowScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a size, a card's edit or a rebuild did more than its part
+            break;
+        }
+
+        case Scenario::Board:
+        {
+            bool passed=false;
+            ok=runBoardScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a wheel reached the wrong ScrollControl, or an edit moved an offset
             break;
         }
 

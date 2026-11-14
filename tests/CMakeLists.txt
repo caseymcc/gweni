@@ -227,11 +227,11 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # stats overlay, the depth view, the zoom panel, the node graph and a
     # variable-height VirtualList, the code editor, the log view, the
     # badges' counts and anchor moves, the dialogs, the toasts, a Flow's
-    # resizes and rebuilds, the switches' toggles and the navigation rail's
-    # collapse/selection
+    # resizes and rebuilds, the switches' toggles, the navigation rail's
+    # collapse/selection and the board's wheels and edits
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
-            dialog toast flow switch navigation-rail)
+            dialog toast flow switch navigation-rail board)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail")
@@ -543,6 +543,18 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_flow 120
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario flow --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/flow@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # BoardDemo: a vertical wheel over a column's body scrolls it alone and is
+    # consumed at either end and in the fitting column; over the board's
+    # inset, a gap and a header it scrolls the board, as do a horizontal wheel
+    # and Shift+wheel over a body; each wheel frame has nothing pending outside
+    # the ScrollControl it scrolls and writes only that subtree's shown slots;
+    # cards added and text grown keep every offset, the fitting column's cards
+    # their widths, and every body shows its bar, disabled while its cards fit
+    gweni_whole_app_test(controltest_board 120
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario board --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/board@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # ChipBadgeDemo: a badge's new count writes its slots alone and lays out
