@@ -15,6 +15,8 @@
 #include <gweni/controls/scrollControl.h>
 #include <gweni/text/undoStack.h>
 
+#include <memory>
+
 namespace gweni
 {
 namespace anim
@@ -30,6 +32,10 @@ class GWENI_EXPORT TextBox:public Label
     GWENI_CONTROL(TextBox, Label);
 
 public:
+    ~TextBox() override;
+    //! Points the message line's Text at the skin's font before its own goes.
+    void preDelete(skin::Base *skin) override;
+
     void renderFocus(skin::Base * /*skin*/) override {}
 
     void calculateSize(skin::Base *skin, Dim dim) override;
@@ -62,6 +68,61 @@ public:
     //! The hint's Text, nullptr until a hint is set: placed like the typed
     //! text, inside the same padding with the same alignment and font.
     const internal::Text *getPlaceholderText() const { return m_placeholder; }
+
+    //! \name The field validation state
+    //! A message line under the field part (the frame, the text, the caret
+    //! and any docked children such as a NumericUpDown's buttons): an error
+    //! (setError) in the skin's ErrorText colour, the field drawn in its
+    //! error look, or else the helper text (setHelperText) in HelperText.
+    //! The line is a Text of its own, made on first use: not content (not
+    //! getText(), not selectable, not scrolled with the text), never masked
+    //! in a PasswordTextBox, one line in the field's font one size smaller,
+    //! cut at the box's right edge. A press on it leaves the caret and the
+    //! selection as they are.
+    //!
+    //! Its room (getMessageRoom()) is added to the box's requested height
+    //! (requestedSizeExtra) and to its bottom padding, below the field
+    //! padding the app sets (getPadding() and setPadding() are the field's),
+    //! from the first setError, setHelperText or setReserveMessageLine(true)
+    //! on, so a field grows once, and from then on a message set, changed or
+    //! cleared lays out the box alone.
+    //! \{
+
+    //! Puts the field in its error state, \p text on the message line, or,
+    //! with an empty one, out of it (the helper text back, if any). Fires
+    //! onErrorChanged once per change of the error text.
+    virtual void setError(const String &text);
+    void clearError() { setError(String()); }
+    bool hasError() const;
+    const String &getError() const;
+
+    //! Shown on the message line while the field has no error; empty for none.
+    virtual void setHelperText(const String &text);
+    const String &getHelperText() const;
+
+    //! Keeps the message line's room in the box's height whether or not it
+    //! shows anything, so the first message lays out the box alone too. Off
+    //! gives the room back only while nothing is shown.
+    void setReserveMessageLine(bool reserve);
+    bool reservesMessageLine() const;
+
+    //! The message line's room in units (its line, and the gap above it), 0
+    //! while none is reserved. Measured in the box's Y measure.
+    int getMessageRoom() const;
+    //! The height of the field part: the box less the message line's room.
+    int getFieldHeight() const { return getHeight()-getMessageRoom(); }
+    //! The message line's Text, nullptr until the line is first used.
+    const internal::Text *getMessageText() const;
+    //! The text on the message line now: the error, else the helper text.
+    const String &getMessage() const;
+
+    //! The field's own padding: the box's, less the message line's room.
+    const Padding &getPadding() const override;
+    void setPadding(const Padding &padding) override;
+
+    //! Fired when the error text changes (setError), with this box.
+    event::Caller onErrorChanged;
+    //! \}
 
     using Label::setFont;
     void setFont(const gweni::Font &font) override;
@@ -170,6 +231,8 @@ protected:
     //! change with the string, so an Elastic height is still the text line's
     //! (a property row's box). With no request it asks for its string.
     bool sizedByRequest(Dim dim) const override;
+    //! The message line's room, in Y (see setReserveMessageLine).
+    int requestedSizeExtra(Dim dim) const override;
 
     //! A string that fits is placed by the text alignment in this box's
     //! padded content box, like any Label's (Placement::Parent).
@@ -252,6 +315,21 @@ protected:
 
     //! The hint, a second Text beside m_text, made by the first setPlaceholder.
     internal::Text *m_placeholder=nullptr;
+
+    //! The message line's state, made by its first use, so a box with no
+    //! validation state holds only this pointer.
+    struct MessageLine;
+    std::unique_ptr<MessageLine> m_message;
+    //! The message line, made (and its room reserved) at once.
+    MessageLine &messageLine();
+    //! Reserves the line's room, or gives it back; lays the box out again.
+    void setMessageReserved(bool reserved);
+    //! Sets the line's Text to getMessage() in its colour, and the box's look.
+    void refreshMessage();
+    //! Measures the room in the line's font, adding it to the bottom padding.
+    void updateMessageRoom();
+    //! Whether a point in canvas coordinates is on the message line.
+    bool onMessageLine(int x, int y);
 
     //! The selection as the undo stack records it: anchor m_cursorEnd, caret
     //! m_cursorPos.

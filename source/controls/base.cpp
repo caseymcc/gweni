@@ -1730,12 +1730,12 @@ Size Base::getMinimumSize()
     Size minimumSize=m_minimumSize;
 
     if(m_sizeFlags.horizontal==SizeFlag::Fixed)
-        minimumSize.width=m_requestedBounds.w;
+        minimumSize.width=requestedSize(Dim::X);
     else if((m_sizeFlags.horizontal == SizeFlag::Expand) || (m_sizeFlags.horizontal == SizeFlag::Bloat))
         minimumSize.width=std::max(minimumSize.width, m_preferredSize.width);
 
     if(m_sizeFlags.vertical==SizeFlag::Fixed)
-        minimumSize.height=m_requestedBounds.h;
+        minimumSize.height=requestedSize(Dim::Y);
     else if((m_sizeFlags.vertical==SizeFlag::Expand)||(m_sizeFlags.vertical==SizeFlag::Bloat))
         minimumSize.height=std::max(minimumSize.height, m_preferredSize.height);
 
@@ -1747,12 +1747,12 @@ Size Base::getMaximumSize()
     Size maximumSize=m_maximumSize;
 
     if(m_sizeFlags.horizontal==SizeFlag::Fixed)
-        maximumSize.width=m_requestedBounds.w;
+        maximumSize.width=requestedSize(Dim::X);
     else if(m_sizeFlags.horizontal == SizeFlag::Shrink)
         maximumSize.width=std::max(maximumSize.width, m_preferredSize.width);
 
     if(m_sizeFlags.vertical==SizeFlag::Fixed)
-        maximumSize.height=m_requestedBounds.h;
+        maximumSize.height=requestedSize(Dim::Y);
     else if(m_sizeFlags.vertical == SizeFlag::Shrink)
         maximumSize.height=std::max(maximumSize.height, m_preferredSize.height);
 
@@ -3599,7 +3599,7 @@ int Base::preferredFromContent(int contentSize, Dim dim) const
 {
     const bool x=(dim == Dim::X);
     const SizeFlag flag=x?m_sizeFlags.horizontal:m_sizeFlags.vertical;
-    const int requested=x?m_requestedBounds.w:m_requestedBounds.h;
+    const int requested=requestedSize(dim);
     const int minimum=x?m_minimumSize.width:m_minimumSize.height;
     const int maximum=x?m_maximumSize.width:m_maximumSize.height;
 
@@ -3632,9 +3632,9 @@ void Base::calculateSize(skin::Base *skin, Dim dim)
     if(sizedByRequest(dim))
     {
         if(dim == Dim::X)
-            m_preferredSize.width=preferredFromContent(m_requestedBounds.w, Dim::X);
+            m_preferredSize.width=preferredFromContent(requestedSize(Dim::X), Dim::X);
         else
-            m_preferredSize.height=preferredFromContent(m_requestedBounds.h, Dim::Y);
+            m_preferredSize.height=preferredFromContent(requestedSize(Dim::Y), Dim::Y);
     }
 }
 
@@ -3642,7 +3642,7 @@ int Base::dockNoneSize(Dim dim, int preferred) const
 {
     const bool x=(dim == Dim::X);
     const SizeFlag flag=x?m_sizeFlags.horizontal:m_sizeFlags.vertical;
-    const int requested=x?m_requestedBounds.w:m_requestedBounds.h;
+    const int requested=requestedSize(dim);
 
     if(flag == SizeFlag::Fixed)
         return requested;
@@ -3665,7 +3665,7 @@ int Base::layoutCellSize(Dim dim, int cell) const
 {
     const bool x=(dim == Dim::X);
     const SizeFlag flag=x?m_sizeFlags.horizontal:m_sizeFlags.vertical;
-    const int requested=x?m_requestedBounds.w:m_requestedBounds.h;
+    const int requested=requestedSize(dim);
     const int preferred=x?m_preferredSize.width:m_preferredSize.height;
 
     if(flag == SizeFlag::Fixed)

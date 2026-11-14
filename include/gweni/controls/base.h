@@ -1384,6 +1384,19 @@ protected:
     //! whose content scrolls inside it. False by default.
     virtual bool sizedByRequest(Dim /*dim*/) const { return false; }
 
+    //! Room this control adds to its requested size along `dim` for a part of
+    //! itself the request does not cover: a TextBox's message line under the
+    //! field it was asked to be (TextBox::getMessageRoom). Every rule that
+    //! reads the request (preferredFromContent, dockNoneSize, layoutCellSize,
+    //! the Fixed minimum and maximum) reads requestedSize(), the request plus
+    //! this. 0 by default.
+    virtual int requestedSizeExtra(Dim /*dim*/) const { return 0; }
+    //! The requested width (Dim::X) or height plus requestedSizeExtra().
+    int requestedSize(Dim dim) const
+    {
+        return (dim == Dim::X?m_requestedBounds.w:m_requestedBounds.h)+requestedSizeExtra(dim);
+    }
+
     bool processLayout(skin::Base *skin, Dim dim);
     Size sizeOfChildren(skin::Base *skin, Dim dim);
     //! The size `text` takes in `font`: the skin's renderer's measureText().

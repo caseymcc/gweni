@@ -66,6 +66,36 @@ GWENI_CONTROL_CONSTRUCTOR(TextBox)
     addAccelerator("Ctrl + Shift + Z", &TextBox::onRedo);
 }
 
+// The message line's state, on the heap from its first use.
+struct TextBox::MessageLine
+{
+    internal::Text *text=nullptr;
+    //! The line's font: the box's one size smaller. A new one replaces it on
+    //! every change, as the Text keeps a pointer and tells a new font by it.
+    std::unique_ptr<gweni::Font> font;
+    String error;
+    String helper;
+    //! The app's padding; the box's own is this plus room at the bottom.
+    Padding fieldPadding;
+    bool reserved=false;
+    int room=0;
+};
+
+//! How much smaller the message line's font is than the box's.
+static constexpr float MessageFontStep=1.0f;
+//! The gap between the field part and the message line's text.
+static constexpr int MessageGap=2;
+
+TextBox::~TextBox()=default;
+
+void TextBox::preDelete(skin::Base *skin)
+{
+    if(m_message)
+        m_message->text->setFont(skin->getDefaultFont());
+
+    ParentClass::preDelete(skin);
+}
+
 bool TextBox::onChar(gweni::UnicodeChar c)
 {
     if(c == '\t')
@@ -355,6 +385,172 @@ void TextBox::updatePlaceholder()
     m_placeholder->setHidden(!show);
 }
 
+// The line is placed by this box (Placement::Owner) and not in its size: its
+// room is, as a fixed amount (requestedSizeExtra and the bottom padding), so a
+// new message lays out the box and its Text alone.
+TextBox::MessageLine &TextBox::messageLine()
+{
+    if(!m_message)
+    {
+        m_message.reset(new MessageLine());
+        m_message->fieldPadding=m_padding;
+        m_message->font.reset(new gweni::Font(m_text->getFont()));
+        m_message->font->size=std::max(1.0f, m_message->font->size-MessageFontStep);
+
+        internal::Text *text=newChild<internal::Text>();
+
+        text->doNotIncludeInSize();
+        text->setPlacement(Placement::Owner);
+        text->setFont(*m_message->font);
+        text->setSkinTextColor(internal::SkinTextColor::HelperText);
+        m_message->text=text;
+    }
+
+    setMessageReserved(true);
+    return *m_message;
+}
+
+void TextBox::setMessageReserved(bool reserved)
+{
+    if(m_message->reserved == reserved)
+        return;
+
+    m_message->reserved=reserved;
+    // the room comes and goes with the Y measure (updateMessageRoom); the
+    // box's size changes, as with a new padding
+    noteSizeInputsChanging();
+    invalidate();
+    invalidateParent();
+    invalidateParentReaders();
+}
+
+void TextBox::updateMessageRoom()
+{
+    if(!m_message)
+        return;
+
+    const int room=m_message->reserved?measureLineHeight(*m_message->font)+MessageGap:0;
+
+    if(room == m_message->room)
+        return;
+
+    m_message->room=room;
+    // inside the box's own measure, before anything is placed in it
+    m_padding=m_message->fieldPadding;
+    m_padding.bottom+=room;
+}
+
+int TextBox::requestedSizeExtra(Dim dim) const
+{
+    return (dim == Dim::Y && m_message)?m_message->room:0;
+}
+
+int TextBox::getMessageRoom() const
+{
+    return m_message?m_message->room:0;
+}
+
+const Padding &TextBox::getPadding() const
+{
+    return m_message?m_message->fieldPadding:m_padding;
+}
+
+void TextBox::setPadding(const Padding &padding)
+{
+    if(!m_message)
+        return ParentClass::setPadding(padding);
+
+    m_message->fieldPadding=padding;
+
+    Padding withRoom=padding;
+
+    withRoom.bottom+=m_message->room;
+    ParentClass::setPadding(withRoom);
+}
+
+void TextBox::setError(const String &text)
+{
+    if(m_message?(m_message->error == text):text.empty())
+        return;
+
+    messageLine().error=text;
+    refreshMessage();
+    onErrorChanged.call(this);
+}
+
+bool TextBox::hasError() const
+{
+    return m_message && !m_message->error.empty();
+}
+
+const String &TextBox::getError() const
+{
+    static const String none;
+    return m_message?m_message->error:none;
+}
+
+void TextBox::setHelperText(const String &text)
+{
+    if(m_message?(m_message->helper == text):text.empty())
+        return;
+
+    messageLine().helper=text;
+    refreshMessage();
+}
+
+const String &TextBox::getHelperText() const
+{
+    static const String none;
+    return m_message?m_message->helper:none;
+}
+
+void TextBox::setReserveMessageLine(bool reserve)
+{
+    if(reserve)
+        messageLine();
+    else if(m_message && getMessage().empty())
+        setMessageReserved(false);
+}
+
+bool TextBox::reservesMessageLine() const
+{
+    return m_message && m_message->reserved;
+}
+
+const internal::Text *TextBox::getMessageText() const
+{
+    return m_message?m_message->text:nullptr;
+}
+
+const String &TextBox::getMessage() const
+{
+    static const String none;
+
+    if(!m_message)
+        return none;
+
+    return m_message->error.empty()?m_message->helper:m_message->error;
+}
+
+// The Text's string and colour, and the box's look (its error surfaces): a
+// redraw() of the box, whose frame is one slot.
+void TextBox::refreshMessage()
+{
+    internal::Text *text=m_message->text;
+
+    text->setSkinTextColor(hasError()?internal::SkinTextColor::ErrorText:internal::SkinTextColor::HelperText);
+    text->setText(getMessage());
+    redraw();
+}
+
+bool TextBox::onMessageLine(int x, int y)
+{
+    if(!m_message || m_message->room == 0)
+        return false;
+
+    return canvasPosToLocal(gweni::Point(x, y)).y >= getFieldHeight();
+}
+
 void TextBox::updateColors()
 {
     ParentClass::updateColors();
@@ -367,6 +563,19 @@ void TextBox::setFont(const gweni::Font &font)
 
     if(m_placeholder)
         m_placeholder->setFont(font);
+
+    if(m_message)
+    {
+        std::unique_ptr<gweni::Font> smaller(new gweni::Font(font));
+
+        smaller->size=std::max(1.0f, smaller->size-MessageFontStep);
+
+        if(*smaller != *m_message->font)
+        {
+            m_message->text->setFont(*smaller);
+            m_message->font=std::move(smaller);
+        }
+    }
 }
 
 void TextBox::setTextPadding(const Padding &padding)
@@ -500,8 +709,11 @@ void TextBox::onSelectAll(event::Info)
     refreshCursorBounds();
 }
 
-void TextBox::onMouseDoubleClickLeft(int /*x*/, int /*y*/)
+void TextBox::onMouseDoubleClickLeft(int x, int y)
 {
+    if(onMessageLine(x, y))
+        return;
+
     onSelectAll(this);
 }
 
@@ -705,6 +917,11 @@ void TextBox::eraseSelection()
 
 void TextBox::onMouseClickLeft(int x, int y, bool down)
 {
+    // the message line is not content: a press on it moves no caret, and the
+    // release of one there is no drag's end
+    if(down && onMessageLine(x, y))
+        return;
+
     if(m_selectAll)
     {
         onSelectAll(this);
@@ -784,10 +1001,10 @@ void TextBox::makeCaretVisible()
             y=getPadding().top;
 
         if(textAlignment & Alignment::Bottom)
-            y=getHeight()-text.height-getPadding().bottom;
+            y=getFieldHeight()-text.height-getPadding().bottom;
 
         if(textAlignment & Alignment::CenterV)
-            y=(getHeight()-text.height) / 2;
+            y=(getFieldHeight()-text.height) / 2;
 
         placeScrolledText(x, y, text);
     }
@@ -841,6 +1058,11 @@ void TextBox::setSizedByText(bool sizedByText)
 // under them.
 void TextBox::calculateSize(skin::Base *skin, Dim dim)
 {
+    // the message line's room is in the request and the padding the measure
+    // below reads
+    if(dim == Dim::Y)
+        updateMessageRoom();
+
     ParentClass::calculateSize(skin, dim);
 
     if(sizedByRequest(dim) || m_text->hidden())
@@ -883,8 +1105,31 @@ void TextBox::layout(skin::Base *skin)
     makeCaretVisible();
 }
 
+// The message line goes under the field part, from the field padding's left
+// to the box's right edge (which cuts a longer message), at the line's height.
+// Each axis is placed before the children are arranged along it.
 void TextBox::arrange(skin::Base *skin, Dim dim)
 {
+    if(m_message)
+    {
+        PlacementScope placement;
+        internal::Text *text=m_message->text;
+        const Rect &bounds=text->getBounds();
+
+        if(dim == Dim::X)
+        {
+            const int left=m_message->fieldPadding.left;
+
+            placeChild(text, left, bounds.y, std::max(0, getWidth()-left), bounds.h);
+        }
+        else
+        {
+            const int room=m_message->room;
+
+            placeChild(text, bounds.x, getHeight()-room+MessageGap, bounds.w, std::max(0, room-MessageGap));
+        }
+    }
+
     if(dim == Dim::Y)
     {
         PlacementScope placement;
@@ -964,7 +1209,7 @@ void TextBoxMultiline::makeCaretVisible()
     const Size text=m_text->refreshSize(false);
     const Alignment textAlignment=getTextAlignment();
 
-    if(text.height < getHeight())
+    if(text.height < getFieldHeight())
     {
         alignText(textAlignment);
     }
@@ -973,8 +1218,8 @@ void TextBoxMultiline::makeCaretVisible()
         //const Rect &bounds = getInnerBounds();
 
         //if ( pos  &Alignment::Top ) y = bounds.y + ypadding;
-        //if ( pos  &Alignment::Bottom ) y = bounds.y + ( bounds.h - getHeight() - ypadding );
-        //if ( pos  &Alignment::CenterV ) y = bounds.y + ( bounds.h - getHeight() )   *0.5;
+        //if ( pos  &Alignment::Bottom ) y = bounds.y + ( bounds.h - getFieldHeight() - ypadding );
+        //if ( pos  &Alignment::CenterV ) y = bounds.y + ( bounds.h - getFieldHeight() )   *0.5;
 
         Rect pos=m_text->getCharacterPosition(displayPos(m_cursorPos));
         int iCaretPos=pos.y; // + pos.h;
@@ -986,10 +1231,10 @@ void TextBoxMultiline::makeCaretVisible()
         int y=m_text->getY();
 
         // bottom of carat too low
-        if(iRealCaretPos > getHeight()-pos.h-getPadding().bottom)
+        if(iRealCaretPos > getFieldHeight()-pos.h-getPadding().bottom)
         {
             //align bottom
-            y=getHeight()-iCaretPos-pos.h-getPadding().bottom;
+            y=getFieldHeight()-iCaretPos-pos.h-getPadding().bottom;
         }
 
         // top of carat too low
@@ -997,8 +1242,8 @@ void TextBoxMultiline::makeCaretVisible()
             y=-iCaretPos+getPadding().top;
 
         // Don't show too much whitespace to the bottom
-        if(y+text.height < getHeight()-getPadding().bottom)
-            y=-text.height+(getHeight()-getPadding().bottom);
+        if(y+text.height < getFieldHeight()-getPadding().bottom)
+            y=-text.height+(getFieldHeight()-getPadding().bottom);
 
         // Or the top
         if(y > getPadding().top)

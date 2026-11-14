@@ -4249,7 +4249,10 @@ void TextBox::update(renderer::Base *renderer, controls::Base *baseControl)
     const int stateChange=box->getStateChange();
     const bool blinkOnly=(stateChange == controls::StateChange_Caret);
     const bool focused=box->visible() && box->isFocussed();
-    const Rect &bounds=box->getRenderBounds();
+    // the field part: the box less its message line (TextBox::getMessageRoom)
+    Rect bounds=box->getRenderBounds();
+
+    bounds.h=box->getFieldHeight();
 
     if(!blinkOnly)
     {
@@ -4259,7 +4262,7 @@ void TextBox::update(renderer::Base *renderer, controls::Base *baseControl)
         else if(box->isFocussed())
             surface=&tokyonight::TextBoxFocus;
 
-        tokyonight::paintSurface(renderer, m_primitives.data(), box, *surface);
+        tokyonight::paintSurface(renderer, m_primitives.data(), box, *surface, bounds);
 
         const Rect selection=inBox(box->getSelectionBounds(), bounds);
         const tokyonight::Surface &fill=tokyonight::TextSelection;

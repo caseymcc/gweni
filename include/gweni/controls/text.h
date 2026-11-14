@@ -32,6 +32,8 @@ enum class SkinTextColor
     LabelDark,      //!< Colors.Label.Dark
     LabelHighlight, //!< Colors.Label.Highlight
     Placeholder,    //!< Colors.PlaceholderText, a TextBox's hint
+    ErrorText,      //!< Colors.ErrorText, a TextBox's error message
+    HelperText,     //!< Colors.HelperText, a TextBox's helper text
     CodePlain       //!< Colors.CodeEditor's Plain token colour, a CodeEditor line's
 };
 

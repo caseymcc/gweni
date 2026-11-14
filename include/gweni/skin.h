@@ -401,6 +401,10 @@ public:
         gweni::Color TooltipText;
         //! A TextBox's hint, drawn while it is empty and unfocused.
         gweni::Color PlaceholderText{0x80, 0x80, 0x80};
+        //! A TextBox's message line: its error (TextBox::setError) and its
+        //! helper text (TextBox::setHelperText), shown while it has no error.
+        gweni::Color ErrorText{0xd0, 0x40, 0x40};
+        gweni::Color HelperText{0x80, 0x80, 0x80};
         //! A VectorField's axis letter (X, Y, Z, W), drawn on its axis's colour.
         gweni::Color AxisTagText{0, 0, 0};
         //! A Badge's count, drawn on its bubble.
