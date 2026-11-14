@@ -999,7 +999,9 @@
  *                 to it and its subtree), write its frame's slot and the
  *                 message's glyphs alone and change no pixel outside it, at
  *                 the same height; the clear gives the frame before the set
- *                 back; the buttons do the same; "a" shows the error in the
+ *                 back; each button click does the same, its button's own
+ *                 slots and pixels allowed too, and with the mouse gone the
+ *                 frame before them is back; "a" shows the error in the
  *                 field's ids alone, "b" writes no message glyph, "h" (the
  *                 eighth) clears it; Tab shows "required"; settled frames
  *                 write nothing; the demo gives every id back. Exits non-zero
@@ -12705,23 +12707,47 @@ static bool runFieldValidationScenario(Session &s, const std::string &shotDir, b
         "the frame after the clear is not the one before the set");
     idleWork+=settleCodeEditor(s, pixels);
 
-    // (2) the buttons take the same path
-    const gweni::Rect setButton=demo->setErrorButton()->getCanvasBounds();
-    const gweni::Rect clearButton=demo->clearErrorButton()->getCanvasBounds();
+    // (2) the buttons take the same path: each click's frame lays out the
+    // field alone, writes the field's frame slot and message glyphs and the
+    // clicked button's own (its hover and press look), and changes no pixel
+    // outside the two; with the mouse gone the frame before the set is back
+    const std::vector<uint8_t> beforeButtons=pixels;
 
-    clickMouse(s, setButton.x+setButton.w/2, setButton.y+setButton.h/2);
-    renderFrames(s, 1);
-    const bool buttonSet=key->getError() == "a key already in this file";
-    clickMouse(s, clearButton.x+clearButton.w/2, clearButton.y+clearButton.h/2);
-    renderFrames(s, 1);
-    const bool buttonCleared=!key->hasError();
-    forgetMouse(s);
-    renderFrames(s, 1);
+    auto buttonClick=[&](const char *name, gweni::controls::Button *button, bool wantError)
+    {
+        std::set<size_t> primitives{keyIds.frame};
+        std::set<size_t> texts=keyIds.message;
 
-    checks.check("buttons", buttonSet && buttonCleared,
-        std::string("Set error ")+(buttonSet?"set":"did not set")+" the error and Clear error "
-        +(buttonCleared?"cleared":"did not clear")+" it");
-    idleWork+=settleCodeEditor(s, pixels);
+        subtreeIds(button, primitives, texts);
+
+        const gweni::Rect rect=button->getCanvasBounds();
+        const size_t entries=keyEntries;
+
+        clickMouse(s, rect.x+rect.w/2, rect.y+rect.h/2);
+
+        const CodeEditorFrame frame=codeEditorFrame(s);
+        const size_t outside=differencesOutsideRects(s, pixels, frame.pixels, {keyRect, rect});
+        const bool state=wantError?key->getError() == "a key already in this file":!key->hasError();
+
+        checks.check(name,
+            state && frame.passes == 1 && frame.visited <= entries && frame.primitives.count(keyIds.frame)
+                && idsWithin(frame.primitives, primitives) && idsWithin(frame.texts, texts)
+                && (!wantError || !frame.texts.empty()) && outside == 0 && key->getHeight() == keyHeight,
+            std::string("the ")+button->getText().c_str()+" click "+(state?"did":"did not")
+            +" what it says, wrote "+std::to_string(frame.primitives.size())
+            +" primitive ids (the frame's and the button's allowed) and "+std::to_string(frame.texts.size())
+            +" text ids (the message's and the button's), ran "+std::to_string(frame.passes)+" passes entering "
+            +std::to_string(frame.visited)+" ("+std::to_string(entries)+" allowed) and changed "
+            +std::to_string(outside)+" pixels outside the field and the button");
+        forgetMouse(s);
+        renderFrames(s, 1);
+        idleWork+=settleCodeEditor(s, pixels);
+    };
+
+    buttonClick("button_set", demo->setErrorButton(), true);
+    buttonClick("button_clear", demo->clearErrorButton(), false);
+    checks.check("buttons_give_back", pixels == beforeButtons,
+        "the frame after the buttons' set and clear, the mouse gone, is not the one before them");
 
     // (3) typing into the Change-validated password: the frame that makes it
     // invalid shows the error, within the field's ids (its typed glyphs, caret
