@@ -112,16 +112,18 @@ void ReorderGroup::remove(Reorderable *member)
 
 // The control the looks are made in when no panel is given: newChild() puts a
 // child of a control with an inner panel (a ScrollControl) in that panel.
-static Base *defaultPanel(Base *list)
+// The control newChild() on \p panel puts a child in: its innermost inner
+// panel (addChild forwards to it), so the looks are found there again
+static Base *innermostPanel(Base *panel)
 {
-    if(list && list->getInnerPanel())
-        return const_cast<Base *>(list->getInnerPanel());
-    return list;
+    while(panel && panel->getInnerPanel() && (panel->getInnerPanel() != panel))
+        panel=const_cast<Base *>(panel->getInnerPanel());
+    return panel;
 }
 
 Reorderable::Reorderable(Base *list, Base *panel):
     m_list(list),
-    m_panel(panel ? panel : defaultPanel(list))
+    m_panel(innermostPanel(panel ? panel : list))
 {
     m_package.name=PackageName;
     m_package.draggable=true;

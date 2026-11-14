@@ -178,7 +178,8 @@ public:
 
     //! \p panel is the control the gaps and items are placed in; if null,
     //! the list's inner panel when it has one (a ScrollControl's, where the
-    //! looks made with newChild() land), else the list itself.
+    //! looks made with newChild() land), else the list itself. A panel with
+    //! an inner panel stands for its innermost one, for the same reason.
     explicit Reorderable(Base *list, Base *panel=nullptr);
     virtual ~Reorderable();
 

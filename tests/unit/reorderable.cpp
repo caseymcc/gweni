@@ -35,7 +35,9 @@
  *  out; a gap change changes the indicator alone, in one pass entering only
  *  the way down to it. The veil follows the item's index through inserts,
  *  removals and an edit the list cannot describe, and is hidden while the
- *  item has no rect (out of a pooled list's view).
+ *  item has no rect (out of a pooled list's view). On a ScrollControl, given
+ *  no panel or the ScrollControl itself, the looks go in its inner panel, one
+ *  indicator for a whole drag.
  */
 #include "headlessFixture.h"
 
@@ -898,15 +900,21 @@ TEST_CASE("Reorderable: the looks go with their Reorderable")
 
 // A Reorderable given no panel on a ScrollControl places its looks in the
 // list's inner panel, where newChild() puts them: one indicator for the drag,
-// not a new one each time a look is asked for.
-TEST_CASE("Reorderable: with no panel given, a ScrollControl's inner panel is the panel")
+// not a new one each time a look is asked for. So does one given the
+// ScrollControl itself as its panel (a panel with an inner panel stands for
+// its innermost one).
+TEST_CASE("Reorderable: with no panel or the ScrollControl given, its inner panel is the panel")
 {
     Scene scene;
     controls::ScrollControl *list=scene.canvas->newChild<controls::ScrollControl>();
     list->setDock(DockPosition::Center);
     list->setScroll(false, true);
+    controls::Base *given=nullptr;
+
+    SUBCASE("no panel") {}
+    SUBCASE("the ScrollControl given as the panel") { given=list; }
     {
-        auto reorder=std::make_unique<KeyReorder>(list);
+        auto reorder=std::make_unique<KeyReorder>(list, given);
         reorder->keys={21, 22, 23, 24};
         list->setReorderable(std::move(reorder));
     }
