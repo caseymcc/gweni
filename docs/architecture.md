@@ -1796,7 +1796,7 @@ two programs and the draws. What follows describes both together:
   textured Separator's quad reaches one unit past it over its neighbours; kinds 7 and 8
   are a filled triangle and its outline, the stroke thick, in the chevron's normalized
   frame and pointing its way, a node graph's pin markers, the largest of the three sides'
-  distances), `6` = SDF bilinear fill (`drawBilinearRect`: each vertex carries its
+  distances; kind 9 is `drawArc`'s arc, below), `6` = SDF bilinear fill (`drawBilinearRect`: each vertex carries its
   own top-edge color in color0 and bottom-edge color in color3; both are linear in x,
   so the blend along y is exact, with no crease on the quad's diagonal), `7` = SDF
   checker composite (`drawCheckerRect`: color0 with its alpha over 4 px cells of
@@ -1928,6 +1928,38 @@ two programs and the draws. What follows describes both together:
   axis-aligned segment without its caps, and ignores the neighbours. `tests/lines.cpp`
   checks style 3 pixel by pixel against a model of the placement, the coverage and a
   joint's owner and union.
+- **Arcs (style 5, kind 9).** `drawArc(id, rect, startTurns, sweepTurns, thickness,
+  color, z)` draws a stroked circular arc with round caps in one slot: on the largest
+  circle centred in `rect` (its diameter the shorter side, in device px after
+  `translate()`), the stroke `max(1, snap(thickness))` whole px wide (at most the
+  circle's radius) inside the circle, its outer edge on it. The angles are in turns
+  from the top (12 o'clock) clockwise, y being down: `startTurns` any value, only its
+  fraction counting, `sweepTurns` clamped to 0..1 (a negative one is the same arc from
+  its other end, the start moved back by it). It is an icon kind rather than a style
+  of its own because style 5 already has all it needs: the device-px box filter and
+  constant `aa` of kinds 2-6, the stroke in `bx`'s high byte, the half-step discard
+  that writes no depth for an uncovered pixel, and a vertex shader that unpacks
+  color1 into a flat varying, so the arc took no new attribute, varying or vertex
+  code. **The `Vertex` fields:** `style` 5, `radius` 9 (the kind), `lx/ly` the quad's
+  half-pixel local position as for every SDF style, `tx/ty` the colour, `bx`'s high
+  byte the stroke px, `cx` the start and `cy` the sweep, each in 1/65536 of a turn
+  (`renderer::arcStartBits`, the fraction rounded, and `arcSweepBits`, rounded with
+  65535 the whole ring), which the fragment shader reads back exactly from color1's
+  four bytes. Two calls with the same bits draw the same bytes, so a caller animating
+  an arc compares the bits to tell a step that draws nothing new (the Spinner does).
+  The shader takes the pixel centre rounded to the half px it is at (`vLocal`, as
+  kinds 0 and 1), its distance to the stroke's middle circle less half the stroke
+  (the ring), and outside the sweep (where it is from the start, `fract(atan(x, -y)/2π
+  - start)`, past the sweep) the distance to the nearer cap's centre less half the
+  stroke instead, which is the arc's exact distance; the coverage is the box filter
+  `clamp(0.5 - d/aa, 0, 1)`. A sweep of 65535 skips the caps, so the whole ring has no
+  seam. The two sides of the sweep's boundary give the same distance, so `atan`'s
+  precision, which differs between Mesa, lavapipe and SwiftShader, moves no level
+  there. `renderer::Base`'s default draws nothing, as `drawIcon`'s does;
+  `StubRenderer` records each call in `arcs`. `tests/arc.cpp` reads back every pixel of
+  arcs at sweeps of 0.25 to 1 turn from a start in each quadrant against the same
+  distance worked out on the CPU (within 2 levels), the start's direction, the stroke
+  at scales 1 and 2 and the depth of an uncovered pixel, on every backend.
 - **Trapezoids (style 9).** `drawTrapezoid(id, x0, x1, top0, top1, bottom0, bottom1,
   colour, z)` draws a region with vertical sides at `x0` and `x1` and straight top and
   bottom edges between them, in canvas units (a `Chart` area's segment, from its line
@@ -2312,6 +2344,31 @@ two programs and the draws. What follows describes both together:
   label is set only when the whole percentage changes. An `Elastic` bar is as high as
   its label, so a bar whose label comes and goes is given a `Fixed` height if that must
   not move its neighbours (ProgressBarDemo does).
+  The animation is registered only while the bar moves **and** is `visible()`: a
+  cycling or indeterminate bar on a page switched away from, under a hidden ancestor
+  or hidden itself has none, so it costs its canvas's update phase nothing
+  (`anims_run=0`), and shown again it gets a new one. That is
+  `Base::onVisibleChanged()`, which `ProgressBar` overrides to call
+  `updateAnimation()` (below, "The visibility hook"). A bar built into a page hidden
+  already (every shell page from index 1 on) registers nothing until the page shows;
+  its first step after the show is the time since it was shown, and its pixels and
+  counters while shown are as they were (ProgressBarDemo's, byte for byte, in
+  ControlTest and in the shell).
+- **The visibility hook.** `Base::onVisibleChanged()` (virtual, empty) is called on
+  each control whose `visible()` changed, wherever `StateChange_Visibility` is marked
+  for that reason: from its own `setHidden()` (unless under a hidden ancestor, where
+  nothing changes), from `setAncestorHidden()` as an ancestor's hide or show reaches
+  it (stopping at a descendant that hid itself, whose subtree does not change), and
+  so from being attached to or detached from a hidden parent. It is called once its
+  whole subtree has its new flags, so `visible()` is the new value on it and below it.
+  A control that does not override it pays one empty virtual call per change, nothing
+  more. `setParent()` moving a control straight from one parent to another leaves its
+  ancestor flag for `addChild()` to set (`g_movingChild` in `source/controls/base.cpp`;
+  `removeChild()` would otherwise set it shown on its own in between), so a move
+  between two hidden parents marks nothing and calls nothing. Work kept only while a
+  control shows (a ProgressBar's or a Spinner's animation) is registered and
+  cancelled from it. The Switch does not use it: its slide ends at once when it finds
+  itself hidden. `tests/unit/visibleChanged.cpp` pins the calls.
 - **The scroll position: a whole-unit offset per axis.** A `ScrollControl` keeps how
   far its content is scrolled as an offset in units per axis (`m_scrollOffset`,
   `get/setHorizontalScrollOffset`, `get/setVerticalScrollOffset`, 0 to
@@ -3696,10 +3753,49 @@ two programs and the draws. What follows describes both together:
   otherwise slide in its first frames; `StateChange_Created` is not a reliable sign of
   that there) or `GWENI_ANIMATE` is off; a step that finds the switch not `visible()`
   (a page hidden mid-slide) puts the thumb at its end and cancels itself, so the
-  frame after the hide runs no animation. The step has to run once for that: nothing
-  tells a control its `visible()` changed. `tests/unit/switch.cpp` pins the control;
+  frame after the hide runs no animation. The step runs once for that (a slide lasts
+  0.15 s, so it does not use the visibility hook, "The visibility hook").
+  `tests/unit/switch.cpp` pins the control;
   `--scenario switch` (`controltest_switch`) its slots, pixels and animations on
   SwitchDemo.
+
+- **The spinner.** `controls::Spinner` (`include/gweni/controls/spinner.h`) is a busy
+  indicator (Material's CircularProgressIndicator, WinUI's ProgressRing, GTK's
+  Spinner): an arc turning round a ring while something runs, drawn by the textured
+  `Spinner` renderer as one `drawArc` slot at `getZIndex()+1` in `SpinnerArc`'s top
+  colour, with an optional track ring behind it (`setShowTrack`: a whole ring at
+  `getZIndex()` in `SpinnerTrack`'s, a slot hidden otherwise; `depthLayers()` 2).
+  **Its motion is Material's**, not a fixed sweep: the base turns at `setSpeed()` turns
+  a second (1), and over each cycle of `CycleTurns` (1.5) base turns the head runs
+  `MaxSweep - MinSweep` (0.64) turns ahead, eased, then the tail catches it up, so the
+  sweep grows from 0.08 to 0.72 and back, each cycle starting where the last one's tail
+  ended. `Spinner::arcAt(seconds, speed)` gives the arc as a function of the canvas
+  clock alone (`platform::getTimeInSeconds()`), not of when the spinner started: two
+  spinners at one speed are drawn alike, one shown again is where the clock says, and
+  a capture's stepped clock gives the same frames in every run
+  (`controltest_determinism`). **Its animation** is registered only while it spins at a
+  speed other than 0 and is `visible()`: `start()`, `stop()`, `setSpeed()` and
+  `onVisibleChanged()` ("The visibility hook") register or cancel it, so a stopped or
+  hidden spinner, or one on a hidden page, runs nothing. A step works the arc out and
+  keeps it as its slot keeps it (`renderer::arcStartBits`, `arcSweepBits`), marking
+  `StateChange_Background` only when those bits change, so a step that would draw the
+  same arc (a frozen clock, a speed too slow to move a bit) marks and writes nothing,
+  and a spinning frame writes the arc's slot alone. **Stopped**, it hides itself
+  (`setHideWhenStopped(true)`, the default), and `start()` shows it again only if
+  `stop()` hid it, not if the app did (`setHidden` clears that); with
+  `setHideWhenStopped(false)` it shows a whole still ring in `SpinnerStopped`'s colour,
+  dimmed. **Its size** is its diameter, the preferred size both ways: `Small` (the
+  default) is the skin font's line height (`measureLineHeight`), so it fits in a
+  Button's row beside its text; `Medium` and `Large` are 32 and 48 units, for a card;
+  `setDiameter()` sets one of its own. The stroke is a tenth of the shorter side of
+  its bounds, at least 1.5 units (`drawArc` snaps it). It takes no keyboard input, no
+  focus and no Tab, and no mouse input unless it has a tooltip (`setToolTipText`,
+  `setToolTip`), which needs its hover; with one, a press over it is its own, doing
+  nothing, as on any control taking the mouse. The three surfaces read only their top
+  colour, as a stroke has no fill or border. `tests/unit/spinner.cpp` pins the
+  control and its renderer's draws; `--scenario spinner` (`controltest_spinner`, its
+  `_vulkan` twin and `controltest_verify_layout_spinner`) its slots, pixels and
+  animations on SpinnerDemo.
 
 - **The navigation rail.** `controls::NavigationRail`
   (`include/gweni/controls/navigationRail.h`) is a side rail of pages (Material's
@@ -4796,12 +4892,12 @@ set by its bare name and one with some of them as `Name.field` per missing field
 the shipped theme with `"strict": true` added):
 
 ```
-theme strict: 185 of 189 surfaces not set: Badge, ButtonDisabled, ButtonDown, ...
+theme strict: 188 of 192 surfaces not set: Badge, ButtonDisabled, ButtonDown, ...
 theme strict: 65 of 67 text colors not set: AxisTagText, BadgeText, ButtonDisabled, ...
 ```
 
-(`theme strict: all 189 surfaces set` for a kind with no gaps, and a single
-`theme strict: all 189 surfaces and 67 text colors set` when there are none at all). A
+(`theme strict: all 192 surfaces set` for a kind with no gaps, and a single
+`theme strict: all 192 surfaces and 67 text colors set` when there are none at all). A
 rejected value counts as not set. A surface that is transparent at rest on purpose
 (`WindowButton`, `SelectableHover`: a transparent fill hides the slot) is magenta too
 until the theme sets it to `[0,0,0,0]`; the theme has not said what it looks like. The
