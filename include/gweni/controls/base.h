@@ -337,6 +337,12 @@ public:
 
     virtual void sendToBack(void);
     virtual void bringToFront(void);
+    //! bringToFront() for a child its parent places itself (not docked, in
+    //! no LayoutItem), whose place among the children is only its z: moved
+    //! last with nothing invalidated, so it may be called inside a layout
+    //! pass (a list's drop indicator kept after rows the pass added). The
+    //! next renumber gives it its new z.
+    void bringToFrontKeepingLayout();
     virtual void bringNextToControl(controls::Base *child, bool bBehind);
 
     //! A point in this control's coordinates on the canvas and back, through

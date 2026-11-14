@@ -31,6 +31,9 @@
  *  Wheel input at a resting cursor during the drag scrolls and rebinds rows
  *  without hover or key lookups; the drag keeps its key after its row is
  *  recycled, and the drop uses the gap under the cursor after scrolling.
+ *  The list made taller during the drag grows its pool in the layout pass,
+ *  and the looks stay the panel's last children, numbered over every row, in
+ *  that one pass.
  */
 #include "headlessFixture.h"
 
@@ -45,6 +48,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -590,5 +594,36 @@ TEST_CASE("VirtualListReorder: a drag started with its item out of view shows it
         shown=shown || scene.reorder->veilShown();
     }
     CHECK(shown);
+    scene.release();
+}
+
+TEST_CASE("VirtualListReorder: a pool grown under a resting drag keeps the looks last, in one pass")
+{
+    Scene scene;
+    scene.startDrag(2);
+    REQUIRE(draganddrop::isDragging());
+    scene.move(scene.at(scene.top(4)+5));
+    REQUIRE(scene.reorder->indicatorShown());
+    REQUIRE(scene.reorder->veilShown());
+    const size_t before=scene.reorder->getPanel()->getChildren().size();
+
+    // made taller (a window resize): the pool grows in the layout pass
+    scene.list->setSize(200, 290);
+    scene.frame();
+
+    const controls::LayoutStats &stats=scene.canvas->getLayoutStats();
+    const controls::Base::List &children=scene.reorder->getPanel()->getChildren();
+    REQUIRE(children.size() > before);
+    CHECK(stats.passes <= 1);
+    CHECK_FALSE(stats.renderLayout);
+    CHECK_FALSE(scene.canvas->layoutDirty());
+    REQUIRE(scene.reorder->getIndicator() != nullptr);
+    CHECK(children.back() == scene.reorder->getIndicator());
+    CHECK(*std::next(children.rbegin()) == scene.reorder->getSourceVeil());
+    for(const controls::Base *child : children)
+    {
+        if((child != scene.reorder->getIndicator()) && (child != scene.reorder->getSourceVeil()))
+            CHECK(child->getZIndex() < scene.reorder->getSourceVeil()->getZIndex());
+    }
     scene.release();
 }

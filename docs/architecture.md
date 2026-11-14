@@ -4361,8 +4361,10 @@ applying the drop is a plain edit. The adapters:
   alternating as before.
 
 **The looks.** Two one-slot controls in the list's panel, made when needed
-and kept as its last children (numbered after the rows, the indicator last),
-owner-placed from the adapter's geometry and held by control id, so an app that
+and kept as its last children (numbered after the rows, the indicator last;
+put back there by `Base::bringToFrontKeepingLayout()`, which invalidates
+nothing, so a card appended or a pool grown in a layout pass costs no second
+one), owner-placed from the adapter's geometry and held by control id, so an app that
 clears the panel leaves nothing dangling: `internal::DropIndicator`, a 2-unit bar
 across the panel at the gap (theme surface `DropIndicator`; a gap on the panel's
 or the viewport's top or bottom edge has its bar wholly inside, not half cut off

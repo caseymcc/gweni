@@ -22,6 +22,7 @@
 #include <gweni/utility.h>
 #include <gweni/objectIdBank.h>
 #include <algorithm>
+#include <cassert>
 #include <limits>
 #include <type_traits>
 #include <list>
@@ -1318,6 +1319,19 @@ void Base::bringToFront()
     noteReordered();
     m_actualParent->invalidate();
     redraw();
+}
+
+void Base::bringToFrontKeepingLayout()
+{
+    noteRenderWalkMutation(this, "bringToFront");
+    assert(getDock() == DockPosition::None);
+
+    if(!m_actualParent || (m_actualParent->m_children.back() == this))
+        return;
+
+    m_actualParent->m_children.remove(this);
+    m_actualParent->m_children.push_back(this);
+    zOrderMoved(this);
 }
 
 controls::Base *Base::findChildByName(const String &name, bool recursive)
