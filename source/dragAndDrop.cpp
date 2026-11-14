@@ -27,6 +27,7 @@ static gweni::Point LastPressedPos;
 static gweni::controls::Canvas *DragCanvas=nullptr;
 static gweni::Point LastDragPos;
 static int Cursor=cursor::Normal;
+static bool DropRefused=false;
 
 static void setCursor(int type)
 {
@@ -42,6 +43,7 @@ static void clear()
     HoveredControl=nullptr;
     DragCanvas=nullptr;
     Cursor=cursor::Normal;
+    DropRefused=false;
 }
 
 bool isDragging()
@@ -57,6 +59,16 @@ gweni::controls::Canvas *dragCanvas()
 int currentCursor()
 {
     return Cursor;
+}
+
+void setDropRefused(bool refused)
+{
+    DropRefused=CurrentPackage && refused;
+}
+
+bool isDropRefused()
+{
+    return DropRefused;
 }
 
 // The drag is over (dropped or cancelled): the canvas's hover, left where it
@@ -144,8 +156,9 @@ static bool OnDrop(int x, int y)
     Package *package=CurrentPackage;
     gweni::controls::Base *target=HoveredControl;
 
-    // released over nothing that accepts it: a cancel
-    if(!target)
+    // released over nothing that accepts it, or where its target refuses it:
+    // a cancel
+    if(!target || DropRefused)
         return cancel();
 
     gweni::controls::Base *source=SourceControl;
@@ -279,6 +292,9 @@ static void UpdateHoveredControl(gweni::controls::Base *ctrl, int x, int y)
         return;
     }
 
+    // the old target's refusal was its own
+    DropRefused=false;
+
     // We changed - tell the old hovered control that it's no longer hovered.
     if(HoveredControl)
         HoveredControl->dragAndDrop_hoverLeave(CurrentPackage);
@@ -326,8 +342,13 @@ void onMouseMoved(gweni::controls::Canvas *canvas, int x, int y)
     // nothing.
     HoveredControl->dragAndDrop_hover(CurrentPackage, x, y);
 
-    if(CurrentPackage && (Cursor != cursor::Normal))
-        setCursor(cursor::Normal);
+    if(!CurrentPackage)
+        return;
+
+    const int wanted=DropRefused ? cursor::No : cursor::Normal;
+
+    if(Cursor != wanted)
+        setCursor(wanted);
 }
 
 bool onCanvasThink(gweni::controls::Canvas *canvas)

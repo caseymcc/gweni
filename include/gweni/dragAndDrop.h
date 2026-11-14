@@ -47,6 +47,13 @@ GWENI_EXPORT bool cancel();
 //! does nothing, so a test reads this.
 GWENI_EXPORT int currentCursor();
 
+//! The target under the cursor takes the package but not where the cursor is
+//! (a Reorderable whose canDrop refuses the gap): the cursor is cursor::No, and
+//! a release cancels the drag. Set by the target from its hover; cleared when
+//! the target changes and when the drag ends.
+GWENI_EXPORT void setDropRefused(bool refused);
+GWENI_EXPORT bool isDropRefused();
+
 //! A press (\p down) on \p hoveredControl is remembered as a drag's possible
 //! start; a release ends the live drag, dropping it on the target under the
 //! cursor or, over none, cancelling it. Returns true when the release ended a

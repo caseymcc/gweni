@@ -77,6 +77,7 @@
 #include <gweni/controls/radioButton.h>
 #include <gweni/controls/radioButtonController.h>
 #include <gweni/controls/rectangle.h>
+#include <gweni/controls/reorderable.h>
 #include <gweni/controls/resizableControl.h>
 #include <gweni/controls/resizer.h>
 #include <gweni/controls/richLabel.h>
