@@ -858,6 +858,53 @@ TEST_CASE("CardReorder: a refused gap allowed by auto-scroll shows its indicator
     CHECK(anim::activeCount(list) == 0);
 }
 
+// A drag cancelled inside a layout pass (its card hidden) posts the hide of
+// its parked indicator. The next drag, started before that post runs, takes the
+// same indicator into use parked; the post must leave it so, or the gap first
+// allowed during auto-scroll unhides it inside a layout pass (two passes).
+TEST_CASE("CardReorder: a hide posted by a cancel in a pass leaves the next drag's indicator alone")
+{
+    Scene scene(20);
+    controls::ScrollControl *list=scene.todo.list;
+    CardReorder *reorder=scene.todo.reorder;
+
+    reorder->setCanDrop([](Reorderable *, uint64_t, Reorderable *, size_t index) { return index >= 10; });
+
+    // a drag cancelled inside a layout pass: its dragged card hidden
+    scene.startDrag(scene.todo.cards[1]);
+    REQUIRE(draganddrop::isDragging());
+    scene.todo.cards[1]->hide();
+    scene.frame();
+    REQUIRE_FALSE(draganddrop::isDragging());
+
+    // the next drag, in the same input phase (before the posted hide runs)
+    input::onMouseClicked(scene.canvas, 0, false);
+    const Point at=Scene::on(scene.todo.cards[0], scene.todo.cards[0]->getHeight()/4);
+    scene.canvas->inputMouseMoved(at.x, at.y, 0, 0);
+    input::onMouseClicked(scene.canvas, 0, true);
+    scene.canvas->inputMouseMoved(at.x+6, at.y, 0, 0);
+    REQUIRE(draganddrop::isDragging());
+    const Point band=aboveViewportBottom(list, 2);
+    scene.canvas->inputMouseMoved(band.x, band.y, 0, 0);
+    REQUIRE_FALSE(reorder->showsGap());
+
+    int maxPasses=0;
+    bool allowed=false;
+
+    for(int frame=0; frame < 40; ++frame)
+    {
+        scene.step();
+        maxPasses=std::max(maxPasses, scene.canvas->getLayoutStats().passes);
+        // the posted hide has run by now: the indicator is still the drag's
+        CHECK_FALSE(reorder->getIndicator()->hidden());
+        allowed=allowed || reorder->showsGap();
+        CHECK(reorder->indicatorShown() == reorder->showsGap());
+    }
+    CHECK(allowed);
+    CHECK(maxPasses <= 1);
+    scene.release();
+}
+
 TEST_CASE("CardReorder: a refused gap allowed by a card insert shows its indicator in one layout pass")
 {
     Scene scene;
