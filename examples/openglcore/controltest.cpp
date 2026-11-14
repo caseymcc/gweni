@@ -13049,6 +13049,15 @@ static bool runStepperScenario(Session &s, const std::string &shotDir, bool &pas
         +std::to_string(layoutBound(vertical))+"), or changed "+std::to_string(jumpOutside)
         +" pixels outside the stepper's column");
 
+    // the step moved up from under the resting mouse: the hover is what is
+    // under it now, not the step's look kept
+    gweni::controls::Base *under=s.canvas->getControlAt(s.mouse.x, s.mouse.y);
+
+    checks.check("rest_hover",
+        under != target && gweni::HoveredControl == under && !target->isHovered(),
+        std::string("after the click the step ")+(target->isHovered()?"kept":"lost")
+        +" its hover with the mouse no longer over it, or the hovered control is not the one under the mouse");
+
     forgetMouse(s);
     if(gweni::KeyboardFocus)
         gweni::KeyboardFocus->unfocus();

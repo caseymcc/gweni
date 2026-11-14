@@ -101,6 +101,10 @@ public:
     bool onKeyDown(bool down) override;
     //! The stepper's one Tab stop alone (Stepper::getTabStop()).
     bool isTabable() override;
+    //! Its Texts lie inside it, but it is exactly their measured width, so
+    //! its clip would cut the ink past the last pen (at a scale, the widest
+    //! line's last column): they draw in the stepper's region instead.
+    bool shouldClip() override { return false; }
 
     void calculateSize(skin::Base *skin, Dim dim) override;
 

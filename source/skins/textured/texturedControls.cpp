@@ -1141,7 +1141,9 @@ void StepperStep::update(renderer::Base *renderer, controls::Base *baseControl)
     tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, circleSurface, circle);
 
     const bool visible=baseControl->visible();
-    const gweni::Color &color=step->getSkin()->Colors.Stepper.Number;
+    // a disabled step's number muted as its title is
+    const gweni::Color &color=(look == controls::StepLook::Disabled)?
+        step->getSkin()->Colors.Stepper.TitleDisabled:step->getSkin()->Colors.Stepper.Number;
     const int z=baseControl->getZIndex()+1;
 
     if(visible && (look == controls::StepLook::Done))

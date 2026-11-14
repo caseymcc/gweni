@@ -4075,8 +4075,12 @@ two programs and the draws. What follows describes both together:
     strings are measured in the step's X measure, so a new look writes the step's
     slots and glyphs and lays nothing out. The title is `StepperTitle`,
     `StepperTitleCurrent`, `StepperErrorText` or `StepperTitleDisabled`, the captions
-    `StepperSubtitle`, the indicator's text and check `StepperNumber`
-    (`Colors.Stepper`). Between two steps a `StepperConnector` draws a 1-unit rule
+    `StepperSubtitle`, the indicator's text and check `StepperNumber` (a disabled
+    step's number in `StepperTitleDisabled`, muted as its title is)
+    (`Colors.Stepper`). A step is exactly its title block's measured width, so it
+    does not clip (`shouldClip()` false): its Texts lie inside it, and its clip would
+    cut the ink past the last pen (at a scale, the widest line's last column).
+    Between two steps a `StepperConnector` draws a 1-unit rule
     (icon kind 6) through its middle, in `StepperConnector`'s or, when the step after
     it shows as done, `StepperConnectorDone`'s top colour.
   - *The orientations.* The stepper owner-places its steps, connectors and body in its
@@ -4111,15 +4115,20 @@ two programs and the draws. What follows describes both together:
     else the first enabled one), in which Left/Right, or Up/Down when vertical, move
     the focus over the enabled steps (`moveFocus`, no wrapping) and Return or Space
     go to the focused one. Escape is not taken. A Disabled step is never clicked,
-    focused or gone to.
+    focused or gone to. Tab walks the children in order, so the steps come before
+    the body (`addStep` brings the body to the front) and in the body the page area
+    before the navigation bar (Center is filled after the edges): Tab goes through
+    the steps' stop, the page's controls, Back, then Next.
   - *The cost.* A step change marks the steps whose looks change (their circles,
     checks, numbers and titles' colours), the connectors whose colour changes, the
     old page's hide and the new one's show and Next's text when it changes; it lays
     out the page area (and, vertical, the header, whose steps after the page move).
     A horizontal stepper's height follows the shown page's, so a flow whose pages
     differ in height gives the stepper a height of its own (StepperDemo's linear
-    one) to move nothing below it. A hover on a clickable step writes its circle's
-    slot alone. `tests/unit/stepper.cpp` pins the looks, the events, the veto, both
+    one) to move nothing below it. A change moves controls under a resting mouse (a
+    new page, and vertical the steps after it), so it calls
+    `Canvas::hoverMayHaveMoved()` and the hover is hit-tested again once laid out. A
+    hover on a clickable step writes its circle's slot alone. `tests/unit/stepper.cpp` pins the looks, the events, the veto, both
     modes, the keys and the hidden pages, and `--scenario stepper` the costs and
     pixels on StepperDemo (a linear stepper with a name field that vetoes Next while
     empty, a vertical non-linear one and one with a disabled step).

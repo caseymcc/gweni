@@ -30,7 +30,13 @@
  *  nothing; the steps are one Tab stop, the current step, in which Right and
  *  Left (Down and Up when vertical) move the focus over the enabled steps and
  *  Return and Space go to the focused one, through the veto too; Escape is
- *  not taken.
+ *  not taken. Tab, sent as keys, goes in the order they are seen: the
+ *  steps' Tab stop (non-linear), the page's controls, Back, then Next, and
+ *  Shift+Tab back the same way.
+ *
+ *  A step change hit-tests a resting mouse's hover again: after a click on a
+ *  vertical step, which moves it up under the mouse, the hovered control is
+ *  the one under the mouse and the step is no longer hovered.
  *
  *  Only the current step's page is shown, and a page's content is never laid
  *  out while it is hidden: a probe in each page counts no layout entry until
@@ -39,6 +45,7 @@
 #include "headlessFixture.h"
 
 #include <gweni/controls/stepper.h>
+#include <gweni/controls/textBox.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/skins/textured/texturedSkin.h>
@@ -168,6 +175,13 @@ struct Scene
         input::onKeyEvent(canvas, key, true);
         input::onKeyEvent(canvas, key, false);
         frame();
+    }
+
+    void shiftTab()
+    {
+        input::onKeyEvent(canvas, keys::Shift, true);
+        key(keys::Tab);
+        input::onKeyEvent(canvas, keys::Shift, false);
     }
 };
 
@@ -566,4 +580,77 @@ TEST_CASE("Stepper: only the current page shows, and a hidden page is never laid
     CHECK(stepper->getBody()->getY() > stepper->getStep(1)->getY());
     CHECK(stepper->getStep(2)->getY() > stepper->getBody()->getY()+stepper->getBody()->getHeight());
     CHECK(stepper->getBody()->getX() == StepperStep::IndicatorSize+StepperStep::LabelGap);
+}
+
+TEST_CASE("Stepper: Tab goes through the steps, the page's controls, Back, then Next")
+{
+    Scene scene;
+    controls::TextBox *before=scene.canvas->newChild<controls::TextBox>();
+
+    before->setDock(DockPosition::Top);
+
+    Stepper *stepper=scene.canvas->newChild<Stepper>();
+
+    stepper->setDock(DockPosition::Center);
+
+    controls::TextBox *field=stepper->addStep("One")->newChild<controls::TextBox>();
+
+    field->setDock(DockPosition::Top);
+    stepper->addStep("Two");
+    stepper->addStep("Three");
+    stepper->setLinear(false);
+    scene.frame();
+
+    before->focus();
+    scene.frame();
+    scene.key(keys::Tab);
+    CHECK(KeyboardFocus == stepper->getStep(0));
+    scene.key(keys::Tab);
+    CHECK(KeyboardFocus == field);
+    scene.key(keys::Tab);
+    CHECK(KeyboardFocus == stepper->backButton());
+    scene.key(keys::Tab);
+    CHECK(KeyboardFocus == stepper->nextButton());
+    scene.key(keys::Tab);
+    CHECK(KeyboardFocus == before);
+
+    scene.shiftTab();
+    CHECK(KeyboardFocus == stepper->nextButton());
+    scene.shiftTab();
+    CHECK(KeyboardFocus == stepper->backButton());
+    scene.shiftTab();
+    CHECK(KeyboardFocus == field);
+    scene.shiftTab();
+    CHECK(KeyboardFocus == stepper->getStep(0));
+
+    // linear: no step stop, the page's field first
+    stepper->setLinear(true);
+    before->focus();
+    scene.frame();
+    scene.key(keys::Tab);
+    CHECK(KeyboardFocus == field);
+    scene.key(keys::Tab);
+    CHECK(KeyboardFocus == stepper->backButton());
+}
+
+TEST_CASE("Stepper: a step change hit-tests the resting mouse's hover again")
+{
+    Scene scene;
+    Stepper *stepper=scene.stepper(4);
+
+    stepper->setOrientation(Stepper::Orientation::Vertical);
+    stepper->setLinear(false);
+    scene.frame();
+
+    StepperStep *step=stepper->getStep(2);
+    const Point before=step->localPosToCanvas();
+    const Point mouse(before.x+step->getWidth()/2, before.y+step->getHeight()/2);
+
+    // the click moves step 3 up (step 1's page leaves the space above it)
+    scene.click(step);
+    REQUIRE(stepper->getCurrentStep() == 2);
+    REQUIRE(step->localPosToCanvas().y < before.y);
+    REQUIRE(scene.canvas->getControlAt(mouse.x, mouse.y) != step);
+    CHECK_FALSE(step->isHovered());
+    CHECK(HoveredControl == scene.canvas->getControlAt(mouse.x, mouse.y));
 }
