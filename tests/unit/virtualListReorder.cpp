@@ -23,6 +23,9 @@
  *  removed cancels the drag. An insert or removal that moves the gap asks
  *  canDrop again: onto a refused index the bar goes, the cursor is No and a
  *  release reports nothing; off one it comes back and the drop is reported.
+ *  Wheel input at a resting cursor during the drag scrolls and rebinds rows
+ *  without hover or key lookups; the drag keeps its key after its row is
+ *  recycled, and the drop uses the gap under the cursor after scrolling.
  */
 #include "headlessFixture.h"
 
@@ -253,6 +256,50 @@ TEST_CASE("VirtualListReorder: the veil follows the dragged item as rows rebind,
     CHECK(str(veil->getBounds()) == str(now->getBounds()));
     scene.release();
     CHECK_FALSE(veil->visible());
+}
+
+TEST_CASE("VirtualListReorder: wheel input during a drag rebinds rows and keeps the key without hover")
+{
+    Scene scene;
+    controls::Base *pressed=scene.list->rowForItem(2);
+    REQUIRE(pressed != nullptr);
+    scene.startDrag(2);
+    REQUIRE(draganddrop::isDragging());
+    scene.move(scene.at(100));
+    const uint64_t key=scene.reorder->dragKey();
+    const int keys=scene.keyCalls;
+    const int indexes=scene.indexCalls;
+    const size_t before=scene.reorder->gap();
+
+    for(int notch=0; notch < 10; ++notch)
+    {
+        CHECK(scene.canvas->inputMouseWheel(-120));
+        const controls::CanvasFrameStats stats=scene.inputFrame();
+        CHECK(stats.layout.passes == 1);
+        CHECK_FALSE(stats.layout.renderLayout);
+    }
+    CHECK(scene.list->getVerticalScrollOffset() > 200);
+    CHECK(scene.list->rowForItem(2) == nullptr);
+    CHECK(scene.list->itemForRow(pressed) != 2);
+    CHECK_FALSE(scene.reorder->veilShown());
+    CHECK(scene.reorder->gap() > before);
+    CHECK(scene.reorder->gap() == static_cast<size_t>(
+        (100+scene.list->getVerticalScrollOffset()+RowHeight/2)/RowHeight));
+    CHECK(scene.keyCalls == keys);
+    CHECK(scene.indexCalls == indexes);
+    CHECK(draganddrop::isDragging());
+    CHECK(scene.reorder->dragKey() == key);
+    CHECK(scene.reorder->dragIndex() == 2);
+    CHECK(HoveredControl == nullptr);
+    for(controls::Base *row : scene.list->getRows())
+        CHECK_FALSE(row->isHovered());
+
+    const size_t gap=scene.reorder->gap();
+    scene.release();
+    REQUIRE(scene.drops.size() == 1);
+    CHECK(scene.drops[0].key == key);
+    CHECK(scene.drops[0].sourceIndex == 2);
+    CHECK(scene.drops[0].targetIndex == gap-1);
 }
 
 TEST_CASE("VirtualListReorder: the cursor in the bottom band auto-scrolls the list as a plain scroll costs")

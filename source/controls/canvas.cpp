@@ -2257,22 +2257,31 @@ bool Canvas::inputMouseWheelOnAxis(int val, Dim dim)
     if(hidden())
         return false;
 
-    if(!HoveredControl)
+    // Drag hover is frozen to keep crossed controls from changing their look.
+    // Wheel input still belongs to the control under the pointer.
+    Base *target=HoveredControl;
+    if(draganddrop::isDragging() && draganddrop::dragCanvas() == this)
+    {
+        const Point mouse=input::getMousePosition();
+        target=getControlAt(mouse.x, mouse.y);
+    }
+
+    if(!target)
         return false;
 
-    if(HoveredControl == this)
+    if(target == this)
         return false;
 
-    if(HoveredControl->getCanvas() != this)
+    if(target->getCanvas() != this)
         return false;
 
-    if(!modalAllows(HoveredControl))
+    if(!modalAllows(target))
         return false;
 
     if(dim == Dim::X || input::isShiftDown())
-        return HoveredControl->onMouseWheeledH(val);
+        return target->onMouseWheeledH(val);
 
-    return HoveredControl->onMouseWheeled(val);
+    return target->onMouseWheeled(val);
 }
 
 }//namespace controls

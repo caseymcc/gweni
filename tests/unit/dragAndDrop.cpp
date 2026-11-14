@@ -26,6 +26,8 @@
  *  release there cancels; a cancel calls no handleDrop and ends the source's
  *  drag with false. A press moved under 5 units starts nothing. Once a drag
  *  ends the hover goes to what is under the mouse.
+ *  A wheel during a tab drag goes to the control under the pointer, for
+ *  vertical, horizontal and Shift+wheel input, without moving the hover.
  */
 #include "headlessFixture.h"
 
@@ -218,6 +220,19 @@ public:
     }
 
     int escapes=0;
+};
+
+//! Records wheel input under the pointer, without accepting the tab's drop.
+class WheelCounter: public controls::Base
+{
+public:
+    GWENI_CONTROL_INLINE(WheelCounter, controls::Base)
+    {}
+
+    bool onMouseWheeled(int delta) override { vertical.push_back(delta); return true; }
+    bool onMouseWheeledH(int delta) override { horizontal.push_back(delta); return true; }
+
+    std::vector<int> vertical, horizontal;
 };
 
 //! Two ItemLists of three 20-unit rows (keys 1-3 and 11-13), 100 wide, docked
@@ -459,6 +474,49 @@ TEST_CASE("dragAndDrop: a drag move that keeps the marker where it is changes no
     input::onMouseClicked(scene.canvas, 0, false);
     scene.frame();
     CHECK(buttons(tabs) == std::vector<controls::TabButton *>{two, one, three});
+}
+
+TEST_CASE("dragAndDrop: wheel input during a tab drag reaches the pointer without moving hover")
+{
+    Scene scene;
+    controls::TabControl *tabs=scene.canvas->newChild<controls::TabControl>();
+    tabs->setSize(200, 150);
+    tabs->setAllowReorder(true);
+    controls::TabButton *one=tabs->addPage("One");
+    tabs->addPage("Two");
+    WheelCounter *underPointer=scene.canvas->newChild<WheelCounter>();
+    underPointer->setPos(250, 50);
+    underPointer->setSize(100, 100);
+    scene.frame();
+
+    startDrag(scene, at(one));
+    REQUIRE(draganddrop::isDragging());
+    REQUIRE(draganddrop::CurrentPackage->sourceList == nullptr);
+    controls::Base *hover=HoveredControl;
+    REQUIRE(hover == one);
+    scene.move(at(underPointer));
+    REQUIRE(scene.canvas->getControlAt(input::getMousePosition().x,
+        input::getMousePosition().y) == underPointer);
+
+    CHECK(scene.canvas->inputMouseWheel(-120));
+    CHECK(underPointer->vertical == std::vector<int>{-120});
+    CHECK(scene.canvas->inputMouseWheelH(60));
+    CHECK(underPointer->horizontal == std::vector<int>{60});
+    scene.canvas->inputModifierKey(keys::Shift, true);
+    // No REQUIRE between modifier press and release: a failure must not leave
+    // Shift held for the next case.
+    CHECK(scene.canvas->inputMouseWheel(-60));
+    scene.canvas->inputModifierKey(keys::Shift, false);
+    CHECK(underPointer->horizontal == std::vector<int>{60, -60});
+    CHECK(underPointer->vertical == std::vector<int>{-120});
+    CHECK(HoveredControl == hover);
+    CHECK_FALSE(underPointer->isHovered());
+    CHECK(draganddrop::isDragging());
+
+    draganddrop::cancel();
+    input::onMouseClicked(scene.canvas, 0, false);
+    scene.frame();
+    CHECK(underPointer->isHovered());
 }
 
 TEST_CASE("dragAndDrop: an item drag is its list's, and drops its key on the list under the cursor")
