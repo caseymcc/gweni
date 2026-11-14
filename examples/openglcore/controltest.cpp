@@ -12576,9 +12576,11 @@ std::vector<std::pair<int, int>> rangeBorderRuns(const Session &s, const std::ve
 // A field slider's top and bottom border rows, down a column left of the low
 // thumb (the track alone) and one between the thumbs (the fill over it): each
 // column's first and last runs must be the border's max(1, snap(width))
-// device rows at the same place, so the fill covers none of them and leaves
-// no field-coloured row between itself and them at any scale. Empty when they
-// are; else what each column shows.
+// device rows at the same place, so the fill thins and moves none of them at
+// any scale. A field-coloured row left between the fill and them (an inset
+// fill at 1.25) keeps the runs and is not caught here: the fill spans the
+// field's whole height, so it leaves none. Empty when they are; else what
+// each column shows.
 std::string rangeFieldBorders(const Session &s, const std::vector<uint8_t> &pixels,
     gweni::controls::RangeSlider *slider)
 {
