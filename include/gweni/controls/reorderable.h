@@ -139,6 +139,11 @@ public:
 
     //! The drop indicator's height, its middle at the gap's position
     static constexpr int IndicatorThickness=2;
+    //! The auto-scroll's bands, at the viewport's top and bottom (units)
+    static constexpr int DefaultAutoScrollBand=24;
+    //! The auto-scroll's speed at a band's outer edge (units a second); it is
+    //! the depth into the band's share of it
+    static constexpr float DefaultAutoScrollSpeed=600.0f;
 
     //! No item, no gap
     static constexpr size_t NoItem=std::numeric_limits<size_t>::max();
@@ -192,6 +197,23 @@ public:
 
     //! The group it is a member of, or null (ReorderGroup::add/remove)
     ReorderGroup *getGroup() const { return m_group; }
+
+    //! Auto-scroll, while this list is the drop target and it is a
+    //! ScrollControl that scrolls vertically: with the cursor in the top or
+    //! bottom band of its viewport (and the content not at that end), one
+    //! animation scrolls it every frame on the canvas clock, by the speed times
+    //! the cursor's depth into the band over its height, the gap found again at
+    //! the resting cursor after each layout. It ends at the content's end, when
+    //! the cursor leaves the band and when the drag ends. A band of 0 turns it
+    //! off.
+    void setAutoScrollBand(int units) { m_autoScrollBand=units; }
+    int getAutoScrollBand() const { return m_autoScrollBand; }
+    void setAutoScrollSpeed(float unitsPerSecond) { m_autoScrollSpeed=unitsPerSecond; }
+    float getAutoScrollSpeed() const { return m_autoScrollSpeed; }
+    //! Where the auto-scroll is going: -1 up, 1 down, 0 not scrolling
+    int autoScrollDirection() const { return m_scrollDirection; }
+    //! Its speed now, in units a second
+    float autoScrollRate() const { return m_scrollRate; }
 
     //! Checked when the gap changes; none takes every gap
     void setCanDrop(CanDrop canDrop) { m_canDrop=std::move(canDrop); }
@@ -300,6 +322,14 @@ private:
     void updateGap(size_t gap, bool force);
     void setGapState(size_t gap, bool allowed);
     void endAsSource();
+    // the gap at the cursor, from the canvas point it was last at
+    void hoverAt(Point canvasPoint);
+    // the auto-scroll follows the cursor: started, its rate set, or stopped
+    void updateAutoScroll();
+    void stopAutoScroll();
+    // one frame of it, from its animation
+    void autoScrollStep();
+    friend class ReorderAutoScroll;
     // the looks follow the state, then the adapter hears of it
     void gapMoved();
     void dragMoved();
@@ -329,6 +359,18 @@ private:
     size_t m_gap=NoItem;
     bool m_gapAllowed=false;
     Point m_lastPoint;
+    Point m_lastCanvasPoint;
+    // the auto-scroll: its animation while registered, its direction, rate,
+    // last step's clock and the part of a unit not yet scrolled
+    int m_autoScrollBand=DefaultAutoScrollBand;
+    float m_autoScrollSpeed=DefaultAutoScrollSpeed;
+    class ReorderAutoScroll *m_autoScroll=nullptr;
+    int m_scrollDirection=0;
+    float m_scrollRate=0.0f;
+    double m_scrollTime=0.0;
+    double m_scrollCarry=0.0;
+    // the list's scroll offset when the gap was last found from the cursor
+    int m_hoverScrollOffset=0;
     // with cheapKeys(): the item the gap is before, or the end
     uint64_t m_gapKey=0;
     bool m_gapAtEnd=false;

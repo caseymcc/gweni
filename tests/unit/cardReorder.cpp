@@ -19,10 +19,20 @@
  *  and the drop reports the indexes as they are then. The dragged card
  *  deleted cancels the drag with nothing reported. Escape cancels, hiding the
  *  looks.
+ *
+ *  Auto-scroll, on the stepped canvas clock (1/60 s a frame): the cursor
+ *  resting in the bottom band of an overflowing column's viewport scrolls it
+ *  every frame after the first, by the band depth's share of the speed (a
+ *  deeper cursor scrolls faster), the gap following the content under it, with
+ *  one animation registered on the column; at the content's end it stops and a
+ *  frame runs no animation; it stops too when the cursor leaves the band, when
+ *  the drag ends and over a list that does not take the item; the top band
+ *  scrolls back up, and at offset 0 does nothing.
  */
 #include "headlessFixture.h"
 
 #include <gweni/gweni.h>
+#include <gweni/anim.h>
 #include <gweni/controls/button.h>
 #include <gweni/controls/label.h>
 #include <gweni/controls/reorderable.h>
@@ -121,6 +131,13 @@ struct Scene
     {
         canvas->updateCanvas();
         canvas->renderCanvas();
+    }
+
+    //! A frame 1/60 s after the last on the canvas clock
+    void step()
+    {
+        clock+=1.0f/60.0f;
+        frame();
     }
 
     void move(Point to)
@@ -365,4 +382,168 @@ TEST_CASE("CardReorder: the dragged card deleted cancels the drag, and Escape hi
         CHECK(scene.todo.drops.empty());
         CHECK_FALSE(scene.todo.cards[1]->getToggleState());
     }
+}
+
+namespace
+{
+
+//! A canvas point \p fromBottom units above the bottom of \p list's viewport,
+//! in the middle across
+Point aboveViewportBottom(controls::ScrollControl *list, int fromBottom)
+{
+    const Rect &viewport=list->getViewport();
+    return list->localPosToCanvas(Point(viewport.x+viewport.w/2, viewport.y+viewport.h-1-fromBottom));
+}
+
+}//namespace
+
+TEST_CASE("CardReorder: the cursor resting in the bottom band scrolls the column, faster deeper in")
+{
+    Scene scene(12);
+    controls::ScrollControl *list=scene.todo.list;
+    REQUIRE(list->getMaxVerticalScrollOffset() > 60);
+
+    scene.startDrag(scene.todo.cards[0]);
+    REQUIRE(draganddrop::isDragging());
+
+    // 3 units into the 24-unit band from its bottom edge: depth 21
+    scene.move(aboveViewportBottom(list, 2));
+    CHECK(scene.todo.reorder->autoScrollDirection() == 1);
+    CHECK(anim::activeCount(list) == 1);
+    CHECK(scene.todo.reorder->autoScrollRate() == doctest::Approx(600.0f*22/24));
+
+    std::vector<int> deep;
+    for(int frame=0; frame < 4; ++frame)
+    {
+        const int before=list->getVerticalScrollOffset();
+        scene.step();
+        deep.push_back(list->getVerticalScrollOffset()-before);
+    }
+    // every frame scrolled, 550 units a second at 1/60 s a frame: 9 or 10
+    for(int delta : deep)
+        CHECK((delta == 9 || delta == 10));
+
+    // the gap follows the content under the resting cursor: 6 frames scroll
+    // more than a card (34 units)
+    const size_t gap=scene.todo.reorder->gap();
+    for(int frame=0; frame < 6; ++frame)
+        scene.step();
+    CHECK(scene.todo.reorder->gap() > gap);
+
+    // shallower: 4 units into the band, 100 units a second, about 2 a frame
+    scene.move(aboveViewportBottom(list, 20));
+    CHECK(scene.todo.reorder->autoScrollRate() == doctest::Approx(600.0f*4/24));
+    int shallow=0;
+    for(int frame=0; frame < 6; ++frame)
+    {
+        const int before=list->getVerticalScrollOffset();
+        scene.step();
+        shallow+=list->getVerticalScrollOffset()-before;
+    }
+    CHECK(shallow >= 8);
+    CHECK(shallow <= 12);
+
+    scene.release();
+}
+
+TEST_CASE("CardReorder: the auto-scroll stops at the content's end, off the band and at the drag's end")
+{
+    SUBCASE("at the end, a frame runs no animation")
+    {
+        Scene scene(12);
+        controls::ScrollControl *list=scene.todo.list;
+
+        scene.startDrag(scene.todo.cards[0]);
+        scene.move(aboveViewportBottom(list, 0));
+        for(int frame=0; frame < 120 && anim::activeCount(list) > 0; ++frame)
+            scene.step();
+
+        CHECK(list->getVerticalScrollOffset() == list->getMaxVerticalScrollOffset());
+        CHECK(anim::activeCount(list) == 0);
+        CHECK(scene.todo.reorder->autoScrollDirection() == 0);
+        scene.step();
+        const controls::CanvasFrameStats stats=scene.inputFrame();
+        CHECK(stats.update.animsRun == 0);
+        // the last gap: past the last card
+        CHECK(scene.todo.reorder->gap() == scene.todo.cards.size());
+        CHECK(draganddrop::isDragging());
+        scene.release();
+    }
+
+    SUBCASE("the cursor leaves the band, then the drag ends in it")
+    {
+        Scene scene(12);
+        controls::ScrollControl *list=scene.todo.list;
+
+        scene.startDrag(scene.todo.cards[0]);
+        scene.move(aboveViewportBottom(list, 2));
+        scene.step();
+        scene.step();
+        REQUIRE(anim::activeCount(list) == 1);
+
+        scene.move(aboveViewportBottom(list, 60));
+        CHECK(anim::activeCount(list) == 0);
+        const int offset=list->getVerticalScrollOffset();
+        scene.step();
+        scene.step();
+        CHECK(list->getVerticalScrollOffset() == offset);
+
+        scene.move(aboveViewportBottom(list, 2));
+        REQUIRE(anim::activeCount(list) == 1);
+        input::onKeyEvent(scene.canvas, keys::Escape, true);
+        input::onKeyEvent(scene.canvas, keys::Escape, false);
+        CHECK(anim::activeCount(list) == 0);
+        const int cancelled=list->getVerticalScrollOffset();
+        scene.step();
+        scene.step();
+        CHECK(list->getVerticalScrollOffset() == cancelled);
+        scene.release();
+    }
+
+    SUBCASE("over a column that does not take the item")
+    {
+        Scene scene(12);
+        // Running's own: it is not reordered within, and Todo takes none of it
+        scene.todo.reorder->setAcceptsFromGroup(false);
+        controls::ScrollControl *list=scene.todo.list;
+
+        scene.startDrag(scene.running.cards[0]);
+        scene.move(aboveViewportBottom(list, 2));
+        CHECK(Reorderable::dropTarget() == nullptr);
+        CHECK(anim::activeCount(list) == 0);
+        scene.step();
+        CHECK(list->getVerticalScrollOffset() == 0);
+        scene.release();
+    }
+}
+
+TEST_CASE("CardReorder: the top band scrolls back up, and at the top does nothing")
+{
+    Scene scene(12);
+    controls::ScrollControl *list=scene.todo.list;
+    const Rect &viewport=list->getViewport();
+    const Point top=list->localPosToCanvas(Point(viewport.x+viewport.w/2, viewport.y+2));
+
+    scene.startDrag(scene.todo.cards[0]);
+    scene.move(top);
+    CHECK(anim::activeCount(list) == 0);
+    CHECK(scene.todo.reorder->autoScrollDirection() == 0);
+
+    // down a while, then up
+    scene.move(aboveViewportBottom(list, 2));
+    for(int frame=0; frame < 8; ++frame)
+        scene.step();
+    const int down=list->getVerticalScrollOffset();
+    REQUIRE(down > 30);
+
+    scene.move(top);
+    CHECK(scene.todo.reorder->autoScrollDirection() == -1);
+    scene.step();
+    scene.step();
+    CHECK(list->getVerticalScrollOffset() < down);
+    for(int frame=0; frame < 60 && anim::activeCount(list) > 0; ++frame)
+        scene.step();
+    CHECK(list->getVerticalScrollOffset() == 0);
+    CHECK(anim::activeCount(list) == 0);
+    scene.release();
 }

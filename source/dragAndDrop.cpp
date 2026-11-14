@@ -64,7 +64,14 @@ int currentCursor()
 
 void setDropRefused(bool refused)
 {
+    const bool was=DropRefused;
+
     DropRefused=CurrentPackage && refused;
+
+    // a target's gap moved with no mouse move (its list auto-scrolled): the
+    // cursor follows at once
+    if(CurrentPackage && HoveredControl && (DropRefused != was))
+        setCursor(DropRefused ? cursor::No : cursor::Normal);
 }
 
 bool isDropRefused()
