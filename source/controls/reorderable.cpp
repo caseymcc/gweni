@@ -948,7 +948,11 @@ int CardReorder::gapPosition(size_t gap) const
     if(gap >= items.size())
     {
         const Base *last=items.back();
-        return last->getY()+last->getHeight()+last->getMargin().bottom/2+IndicatorThickness/2;
+        const int y=last->getY()+last->getHeight()+last->getMargin().bottom/2+IndicatorThickness/2;
+
+        // a last card at the panel's bottom edge (no bottom margin, an
+        // overflowing list scrolled to its end): the bar wholly inside it
+        return std::min(y, std::max(IndicatorThickness/2, getPanel()->getHeight()-IndicatorThickness/2));
     }
 
     const Base *above=items[gap-1];

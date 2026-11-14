@@ -365,3 +365,36 @@ TEST_CASE("DataTable reorder: a table the app sorts during a drag within it take
     scene.release();
     CHECK(scene.leftDrops.empty());
 }
+
+// An overflowing table scrolled to its end: the gap after the last row is at
+// the panel's bottom edge, and its bar lies wholly inside the panel, not past
+// it where the viewport cuts it away (as VirtualListReorder's ends).
+TEST_CASE("DataTable reorder: row mode, the bar for the gap after the last row lies inside the panel")
+{
+    Scene scene(false);
+    for(int i=6; i < 40; ++i)
+        scene.left->addRow()->setCellText(0, "row "+std::to_string(i));
+    scene.frame();
+    Reorderable *reorder=scene.left->getReorderable();
+    auto *body=gweni_cast<controls::ScrollControl>(reorder->getList());
+    REQUIRE(body != nullptr);
+    body->setVerticalScrollOffset(100000);
+    scene.frame();
+    scene.frame();
+    const std::vector<DataTableRow *> rows=scene.left->getRows();
+    REQUIRE(rows.back()->getMargin().bottom == 0);
+    REQUIRE(rows.back()->getY()+rows.back()->getHeight() == reorder->getPanel()->getHeight());
+
+    scene.startDrag(rows[35]);
+    REQUIRE(draganddrop::isDragging());
+    scene.move(Scene::centre(rows.back(), rows.back()->getHeight()-2));
+    scene.frame();
+    controls::Base *indicator=reorder->getIndicator();
+    REQUIRE(indicator != nullptr);
+    CHECK(reorder->gap() == rows.size());
+    CHECK(reorder->indicatorShown());
+    CHECK(indicator->getY()+indicator->getHeight() == reorder->getPanel()->getHeight());
+    CHECK(indicator->getHeight() == 2);
+    scene.release();
+    CHECK(scene.leftDrops.size() == 1);
+}
