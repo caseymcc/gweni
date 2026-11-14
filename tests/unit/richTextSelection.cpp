@@ -14,6 +14,9 @@
  *  - a double-click selects the word under it (a punctuation run apart),
  *    Ctrl+A every byte, Ctrl+C puts the selected text on the clipboard,
  *    Escape clears it, and the press gives the paragraph the keyboard focus;
+ *  - Ctrl+A and Ctrl+C need that focus: with a Button focused or a hidden
+ *    paragraph and nothing focused, select-all leaves it unselected and copy
+ *    leaves the clipboard unchanged, even with an existing selection;
  *  - wrapped, the selection is a rect per line, a selected line break
  *    reaching breakSelectionWidth() past the line's last piece, an empty
  *    line's rect that width at its left, and the last line's rect ending at
@@ -29,6 +32,7 @@
  */
 #include "richTextFixture.h"
 
+#include <gweni/controls/button.h>
 #include <gweni/controls/richText.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/input/glfw3.h>
@@ -265,6 +269,50 @@ TEST_CASE("RichText selection: a double-click selects a word, Ctrl+A everything,
     // nothing selected: Ctrl+C leaves the clipboard as it is
     scene.key(GLFW_KEY_C, GLFW_MOD_CONTROL);
     CHECK(platform::getClipboardText() == "Some bold and code() a link end.");
+}
+
+TEST_CASE("RichText selection: Ctrl+A and Ctrl+C require the paragraph's keyboard focus")
+{
+    Scene scene;
+    RichText *rich=scene.rich;
+
+    SUBCASE("another control has focus")
+    {
+        controls::Button *button=scene.canvas->newChild<controls::Button>();
+
+        button->setKeyboardInputEnabled(true);
+        button->focus();
+        scene.frame();
+        REQUIRE(button->isFocussed());
+    }
+
+    SUBCASE("hidden paragraph and nothing focused")
+    {
+        rich->setHidden(true);
+        KeyboardFocus=nullptr;
+        scene.frame();
+        REQUIRE_FALSE(rich->visible());
+        REQUIRE(KeyboardFocus == nullptr);
+    }
+
+    REQUIRE_FALSE(rich->isFocussed());
+    REQUIRE_FALSE(rich->hasSelection());
+    scene.key(GLFW_KEY_A, GLFW_MOD_CONTROL);
+    CHECK_FALSE(rich->hasSelection());
+
+    platform::setClipboardText("keep");
+    scene.key(GLFW_KEY_C, GLFW_MOD_CONTROL);
+    CHECK(platform::getClipboardText() == "keep");
+
+    // Check copy independently of select-all: a paragraph may keep a
+    // selection after losing focus or being hidden.
+    rich->select(0, 4);
+    scene.frame();
+    REQUIRE(rich->getSelectedText() == "Some");
+    platform::setClipboardText("keep");
+    scene.key(GLFW_KEY_C, GLFW_MOD_CONTROL);
+    CHECK(platform::getClipboardText() == "keep");
+    CHECK(rich->getSelectedText() == "Some");
 }
 
 TEST_CASE("RichText selection: wrapped, a rect per line, a selected break reaching past the line's end")

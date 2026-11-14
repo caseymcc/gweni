@@ -197,6 +197,7 @@ public:
     void onMouseClickLeft(int x, int y, bool down) override;
     void onMouseDoubleClickLeft(int x, int y) override;
     bool onKeyEscape(bool down) override;
+    bool AccelOnlyFocus() override { return true; }
 
 protected:
 
