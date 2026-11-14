@@ -28,8 +28,26 @@
  *  renderer draws no surface at rest, TreeTableExpanderHover hovered and
  *  TreeTableExpanderDown pressed, and a kind-1 chevron pointing right while
  *  collapsed and down while expanded in the TreeTableExpander, -Hover and
- *  -Disabled text colours, all of them in the theme's registries. No GL
- *  context or resources are needed.
+ *  -Disabled text colours, all of them in the theme's registries.
+ *
+ *  The selection is a node: setSelectedNode fires nothing and refuses a
+ *  hidden or unknown node; expands and collapses above it move its item, not
+ *  it; collapsing an ancestor that hides it (setExpanded or collapse-all)
+ *  moves it to that ancestor (the topmost collapsed one) with one
+ *  onSelectionChange carrying the id; expand-all and expandSubtree keep it;
+ *  scrolled off and back the row showing it is the only one selected; a click
+ *  selects the row's node and focuses the table. A plain source-mode
+ *  DataTable holds the focus and the Tab stop (its pooled rows neither):
+ *  Up/Down a row, Home/End, PageUp/PageDown by pageRows(), clamped at the
+ *  ends, each firing onSelectionChange and leaving the row wholly in the
+ *  viewport, Up or End with nothing selected taking the first or the last
+ *  item; an empty or row-mode table leaves the keys to its parents. The tree
+ *  keys: Right expands a collapsed parent then moves to its first child and
+ *  does nothing at a leaf or an empty advertised parent; Left moves a leaf or
+ *  a collapsed node to its parent, collapses an expanded one and does nothing
+ *  at a collapsed root; `*` expands the whole subtree with one onExpanded per
+ *  node, once; Return activates the selected node, parent or leaf; with no
+ *  selection none of them is taken. No GL context or resources are needed.
  */
 #include "headlessFixture.h"
 
@@ -148,6 +166,19 @@ struct Scene
         frame();
     }
 
+    void key(int key)
+    {
+        input::onKeyEvent(canvas, key, true);
+        input::onKeyEvent(canvas, key, false);
+        frame();
+    }
+
+    void character(UnicodeChar c)
+    {
+        canvas->inputCharacter(c);
+        frame();
+    }
+
     controls::TreeTableRow *row(size_t item) const
     {
         return gweni_cast<controls::TreeTableRow>(table->rowForItem(item));
@@ -214,7 +245,9 @@ struct Events: event::Handler
     std::vector<NodeId> expanded;
     std::vector<NodeId> collapsed;
     std::vector<NodeId> activated;
+    std::vector<size_t> selections;
     void expand(event::Info info) { expanded.push_back(info.integer); }
+    void select(event::Info info) { selections.push_back(info.integer); }
     void collapse(event::Info info) { collapsed.push_back(info.integer); }
     void activate(event::Info info) { activated.push_back(info.integer); }
 };
@@ -873,4 +906,358 @@ TEST_CASE("TreeTable: the textured expander draws a chevron by its state and a s
     MouseFocus=nullptr;
     delete canvas;
     platform::setTimeSource(nullptr);
+}
+
+TEST_CASE("TreeTable: the selection is a node kept across expand collapse and scroll and moved to the ancestor that hides it")
+{
+    Scene scene;
+    TreeTable *table=scene.table;
+    Events events;
+
+    table->onSelectionChange.add(&events, &Events::select);
+    table->addNode(Root, 10);
+    table->addNode(10, 11);
+    table->addNode(11, 12);
+    table->addNode(10, 13);
+    table->addNode(Root, 20);
+    table->addNode(20, 21);
+    table->addNode(Root, 30);
+    scene.roots(40);
+    scene.settle();
+
+    auto checkSelected=[&](NodeId expected)
+        {
+            CAPTURE(expected);
+            CHECK(table->getSelectedNode() == expected);
+            const size_t item=(expected == TreeTable::NoNode)?TreeTable::NoItem:table->itemForNode(expected);
+
+            CHECK(table->getSelectedItem() == item);
+            // the pooled rows show it, and only it, as selected
+            for(controls::Base *control : table->getVirtualBody()->getRows())
+            {
+                auto *row=gweni_cast<controls::DataTableRow>(control);
+                const size_t shows=table->itemForRow(row);
+
+                if(shows != TreeTable::NoItem)
+                    CHECK(row->isSelected() == (shows == item));
+            }
+        };
+
+    // no event from the app's selection
+    CHECK(table->setSelectedNode(30));
+    scene.frame();
+    checkSelected(30);
+    CHECK(table->getSelectedItem() == 2);
+
+    // an expand above it moves its item, not the selection
+    table->setExpanded(10, true);
+    scene.frame();
+    checkSelected(30);
+    CHECK(table->getSelectedItem() == 4);
+    table->setExpanded(11, true);
+    scene.frame();
+    checkSelected(30);
+    CHECK(table->getSelectedItem() == 5);
+    table->setExpanded(11, false);
+    scene.frame();
+    checkSelected(30);
+    // a collapse not hiding it moves it back up
+    table->setExpanded(10, false);
+    scene.frame();
+    checkSelected(30);
+    CHECK(events.selections.empty());
+
+    // hidden and unknown nodes are refused, NoNode clears it
+    CHECK_FALSE(table->setSelectedNode(12));
+    CHECK_FALSE(table->setSelectedNode(999));
+    checkSelected(30);
+    CHECK(table->setSelectedNode(TreeTable::NoNode));
+    scene.frame();
+    checkSelected(TreeTable::NoNode);
+
+    // collapsing a hidden node's ancestor moves the selection to it, once
+    table->setExpanded(10, true);
+    table->setExpanded(11, true);
+    REQUIRE(table->setSelectedNode(12));
+    scene.frame();
+    table->setExpanded(11, false);
+    scene.frame();
+    checkSelected(11);
+    CHECK(events.selections == std::vector<size_t>{11});
+    table->setExpanded(11, true);
+    scene.frame();
+    checkSelected(11);
+    REQUIRE(table->setSelectedNode(12));
+    table->setExpanded(10, false);
+    scene.frame();
+    checkSelected(10);
+    CHECK(events.selections == std::vector<size_t>{11, 10});
+    // expanding again keeps it on the ancestor
+    table->setExpanded(10, true);
+    scene.frame();
+    checkSelected(10);
+
+    // collapse-all moves it to the root that shows, expand-all keeps it
+    table->setExpanded(20, true);
+    REQUIRE(table->setSelectedNode(21));
+    table->collapseAll();
+    scene.frame();
+    checkSelected(20);
+    CHECK(events.selections == std::vector<size_t>{11, 10, 20});
+    table->expandAll();
+    scene.frame();
+    checkSelected(20);
+    REQUIRE(table->setSelectedNode(12));
+    table->expandSubtree(10);
+    scene.frame();
+    checkSelected(12);
+    CHECK(events.selections.size() == 3);
+
+    // scrolled away and back it is still the node, on whichever row shows it
+    table->scrollToItem(table->getItemCount()-1);
+    scene.frame();
+    CHECK(table->rowForItem(table->itemForNode(12)) == nullptr);
+    checkSelected(12);
+    table->scrollToItem(0);
+    scene.frame();
+    REQUIRE(table->rowForItem(table->itemForNode(12)) != nullptr);
+    checkSelected(12);
+
+    // a click selects the row's node, with the node's id
+    controls::TreeTableRow *row=scene.row(table->itemForNode(20));
+    REQUIRE(row != nullptr);
+    scene.click(row->getCell(1));
+    checkSelected(20);
+    CHECK(events.selections.back() == 20);
+    CHECK(KeyboardFocus == table);
+}
+
+TEST_CASE("DataTable source mode: row keys move the selection and keep it in view")
+{
+    float clock=Scene::nextClock();
+    platform::setTimeSource([&clock]() { return clock; });
+    test::StubRenderer renderer;
+    test::StubSkin skin{&renderer};
+    auto *canvas=new controls::Canvas(&skin);
+    canvas->setSize(600, 400);
+    auto *table=canvas->newChild<controls::DataTable>();
+    table->setBounds(10, 10, 400, 200);
+    table->setColumnCount(2);
+    table->setRowHeight(20);
+    table->setItemCount(100);
+    table->setRowBinder([](controls::DataTableRow *row, size_t item)
+        {
+            row->setCellText(0, std::to_string(item));
+        });
+    Events events;
+    table->onSelectionChange.add(&events, &Events::select);
+    auto frame=[&]()
+        {
+            canvas->updateCanvas();
+            canvas->renderCanvas();
+        };
+    auto key=[&](int key)
+        {
+            input::onKeyEvent(canvas, key, true);
+            input::onKeyEvent(canvas, key, false);
+            frame();
+        };
+    frame();
+    frame();
+
+    // the table takes the focus and the Tab stop, its pooled rows neither
+    CHECK(table->getKeyboardInputEnabled());
+    CHECK(table->isTabable());
+    for(controls::Base *row : table->getVirtualBody()->getRows())
+    {
+        CHECK_FALSE(row->getKeyboardInputEnabled());
+        CHECK_FALSE(row->isTabable());
+    }
+    controls::DataTableRow *third=table->rowForItem(2);
+    REQUIRE(third != nullptr);
+    const Point at=Scene::centreOf(third->getCell(1));
+    canvas->inputMouseMoved(at.x, at.y, 0, 0);
+    input::onMouseClicked(canvas, 0, true);
+    input::onMouseClicked(canvas, 0, false);
+    frame();
+    CHECK(KeyboardFocus == table);
+    CHECK(table->getSelectedItem() == 2);
+    events.selections.clear();
+
+    const size_t page=table->pageRows();
+    CHECK(page == size_t(table->getVirtualBody()->getViewportHeight()/20));
+    REQUIRE(page > 1);
+
+    auto check=[&](size_t item)
+        {
+            CAPTURE(item);
+            CHECK(table->getSelectedItem() == item);
+            controls::DataTableRow *row=table->rowForItem(item);
+            REQUIRE(row != nullptr);
+            CHECK(row->isSelected());
+            // fully in the viewport
+            const int top=row->getY();
+            CHECK(top >= 0);
+            CHECK(top+row->getHeight() <= table->getVirtualBody()->getViewportHeight());
+        };
+
+    key(keys::Down);
+    check(3);
+    key(keys::Up);
+    check(2);
+    key(keys::Up);
+    key(keys::Up);
+    check(0);
+    key(keys::Up);
+    check(0);
+    key(keys::PageDown);
+    check(page);
+    key(keys::PageDown);
+    check(2*page);
+    key(keys::PageUp);
+    check(page);
+    key(keys::End);
+    check(99);
+    key(keys::Down);
+    check(99);
+    key(keys::PageDown);
+    check(99);
+    key(keys::PageUp);
+    check(99-page);
+    key(keys::Home);
+    check(0);
+    key(keys::PageUp);
+    check(0);
+    CHECK(events.selections == std::vector<size_t>{3, 2, 1, 0, page, 2*page, page, 99, 99-page, 0});
+
+    // nothing selected: every key selects the first item, End the last
+    table->setSelectedItem(controls::DataTable::NoItem, false);
+    key(keys::Up);
+    check(0);
+    table->setSelectedItem(controls::DataTable::NoItem, false);
+    key(keys::End);
+    check(99);
+
+    // an empty table and a row-mode table leave the keys to their parents
+    table->setItemCount(0);
+    frame();
+    CHECK_FALSE(table->onKeyDown(true));
+    auto *rows=canvas->newChild<controls::DataTable>();
+    rows->setColumnCount(1);
+    rows->addRow();
+    rows->addRow();
+    CHECK_FALSE(rows->onKeyDown(true));
+    CHECK_FALSE(rows->onKeyend(true));
+    CHECK_FALSE(rows->getKeyboardInputEnabled());
+
+    HoveredControl=nullptr;
+    KeyboardFocus=nullptr;
+    MouseFocus=nullptr;
+    delete canvas;
+    platform::setTimeSource(nullptr);
+}
+
+TEST_CASE("TreeTable: Right Left star and Return expand collapse move and activate")
+{
+    Scene scene;
+    TreeTable *table=scene.table;
+    Events events;
+
+    table->onExpanded.add(&events, &Events::expand);
+    table->onCollapsed.add(&events, &Events::collapse);
+    table->onNodeActivated.add(&events, &Events::activate);
+    table->onSelectionChange.add(&events, &Events::select);
+    table->addNode(Root, 1);
+    table->addNode(1, 2);
+    table->addNode(2, 3);
+    table->addNode(2, 4);
+    table->addNode(1, 5);
+    table->addNode(Root, 6);
+    table->addNode(Root, 7, true); // advertised children, none supplied
+    scene.settle();
+    table->focus();
+
+    // nothing selected: the tree keys are not taken
+    CHECK_FALSE(table->onKeyRight(true));
+    CHECK_FALSE(table->onKeyLeft(true));
+    CHECK_FALSE(table->onKeyReturn(true));
+    CHECK_FALSE(table->onChar('*'));
+
+    REQUIRE(table->setSelectedNode(1));
+    // Right expands a collapsed parent, then moves to its first child
+    scene.key(keys::Right);
+    CHECK(table->isExpanded(1));
+    checkIndex(table, {1, 2, 5, 6, 7});
+    CHECK(table->getSelectedNode() == 1);
+    scene.key(keys::Right);
+    CHECK(table->getSelectedNode() == 2);
+    scene.key(keys::Right);
+    CHECK(table->isExpanded(2));
+    scene.key(keys::Right);
+    CHECK(table->getSelectedNode() == 3);
+    // at a leaf Right does nothing
+    scene.key(keys::Right);
+    CHECK(table->getSelectedNode() == 3);
+    checkIndex(table, {1, 2, 3, 4, 5, 6, 7});
+    CHECK(events.expanded == std::vector<NodeId>{1, 2});
+    CHECK(events.selections == std::vector<size_t>{2, 3});
+
+    // Down and Up are DataTable's, through the visible rows
+    scene.key(keys::Down);
+    CHECK(table->getSelectedNode() == 4);
+    scene.key(keys::Down);
+    CHECK(table->getSelectedNode() == 5);
+    scene.key(keys::Up);
+    scene.key(keys::Up);
+    CHECK(table->getSelectedNode() == 3);
+
+    // Left at a leaf moves to its parent, at an expanded node collapses it,
+    // at a collapsed one moves to its parent, at a collapsed root does nothing
+    scene.key(keys::Left);
+    CHECK(table->getSelectedNode() == 2);
+    scene.key(keys::Left);
+    CHECK_FALSE(table->isExpanded(2));
+    CHECK(table->getSelectedNode() == 2);
+    scene.key(keys::Left);
+    CHECK(table->getSelectedNode() == 1);
+    scene.key(keys::Left);
+    CHECK_FALSE(table->isExpanded(1));
+    checkIndex(table, {1, 6, 7});
+    scene.key(keys::Left);
+    CHECK(table->getSelectedNode() == 1);
+    checkIndex(table, {1, 6, 7});
+    CHECK(events.collapsed == std::vector<NodeId>{2, 1});
+    // a root leaf: neither key moves
+    REQUIRE(table->setSelectedNode(6));
+    scene.key(keys::Left);
+    scene.key(keys::Right);
+    CHECK(table->getSelectedNode() == 6);
+    checkIndex(table, {1, 6, 7});
+
+    // an advertised parent expands with nothing to show, then Right stops
+    REQUIRE(table->setSelectedNode(7));
+    scene.key(keys::Right);
+    CHECK(table->isExpanded(7));
+    scene.key(keys::Right);
+    CHECK(table->getSelectedNode() == 7);
+    checkIndex(table, {1, 6, 7});
+
+    // * expands the whole subtree once per node, building it at once
+    REQUIRE(table->setSelectedNode(1));
+    events.expanded.clear();
+    scene.character('*');
+    checkIndex(table, {1, 2, 3, 4, 5, 6, 7});
+    CHECK(events.expanded == std::vector<NodeId>{1, 2});
+    CHECK(table->getSelectedNode() == 1);
+    scene.character('*');
+    CHECK(events.expanded.size() == 2);
+
+    // Return activates the selected node, a parent as a leaf
+    scene.key(keys::Return);
+    REQUIRE(table->setSelectedNode(4));
+    scene.key(keys::Return);
+    CHECK(events.activated == std::vector<NodeId>{1, 4});
+    // an activation changes nothing else
+    checkIndex(table, {1, 2, 3, 4, 5, 6, 7});
+    CHECK(table->getSelectedNode() == 4);
 }

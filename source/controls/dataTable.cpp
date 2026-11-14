@@ -907,12 +907,21 @@ void DataTable::enterSourceMode()
         {
             DataTableRow *row=newSourceRow(parent);
 
+            // the table holds the keyboard focus, not a pooled row, which
+            // gives it up when it is bound to another item
+            row->setKeyboardInputEnabled(false);
+            row->setTabable(false);
             row->m_table=this;
             row->setCellCount(getColumnCount());
             return row;
         });
     m_virtualBody->setRowBinder([this](Base *row, size_t item) { bindRow(row, item); });
     m_body=m_virtualBody;
+
+    // a press on a row focuses the table (its first ancestor taking keys),
+    // which takes the row keys
+    setKeyboardInputEnabled(true);
+    setTabable(true);
 }
 
 DataTableRow *DataTable::newSourceRow(Base *parent)
@@ -1010,6 +1019,11 @@ void DataTable::setSelectedItem(size_t item, bool doEvents)
     if(row)
         row->setSelected(true, false);
 
+    selectedItemChanged(row, item, doEvents);
+}
+
+void DataTable::selectedItemChanged(DataTableRow *row, size_t item, bool doEvents)
+{
     if(!doEvents)
         return;
 
@@ -1018,6 +1032,104 @@ void DataTable::setSelectedItem(size_t item, bool doEvents)
     info.control=row;
     info.integer=item;
     onSelectionChange.call(this, info);
+}
+
+///////////////////////////////////////////////////////////////////////////
+// Source mode's row keys
+
+size_t DataTable::pageRows() const
+{
+    if(!m_virtualBody)
+        return 1;
+
+    return static_cast<size_t>(std::max(1, m_virtualBody->getViewportHeight()/m_rowHeight));
+}
+
+void DataTable::moveSelectionTo(size_t item)
+{
+    setSelectedItem(item, true);
+    scrollToItem(m_selectedItem);
+}
+
+// Up and Down a row, Home and End to the first and the last, PageUp and
+// PageDown the rows the viewport shows whole, the selection kept in view. With
+// nothing selected every one of them selects the first item but End, which
+// selects the last. A release of one of them is taken too, so it does not go
+// on to an ancestor; in row mode and on an empty table they go on.
+bool DataTable::rowKey(int key, bool down)
+{
+    const size_t count=getItemCount();
+
+    if(!m_virtualBody || count == 0)
+        return false;
+    if(!down)
+        return true;
+
+    const size_t last=count-1;
+    const size_t at=m_selectedItem;
+    const bool none=(at == NoItem);
+    size_t item=none?0:at;
+
+    switch(key)
+    {
+    case keys::Up:
+        if(!none && at > 0)
+            item=at-1;
+        break;
+    case keys::Down:
+        if(!none)
+            item=std::min(at+1, last);
+        break;
+    case keys::PageUp:
+        if(!none)
+            item=(at > pageRows())?at-pageRows():0;
+        break;
+    case keys::PageDown:
+        if(!none)
+            item=std::min(at+pageRows(), last);
+        break;
+    case keys::Home:
+        item=0;
+        break;
+    case keys::End:
+        item=last;
+        break;
+    default:
+        return false;
+    }
+
+    moveSelectionTo(item);
+    return true;
+}
+
+bool DataTable::onKeyUp(bool down)
+{
+    return rowKey(keys::Up, down);
+}
+
+bool DataTable::onKeyDown(bool down)
+{
+    return rowKey(keys::Down, down);
+}
+
+bool DataTable::onKeyHome(bool down)
+{
+    return rowKey(keys::Home, down);
+}
+
+bool DataTable::onKeyend(bool down)
+{
+    return rowKey(keys::End, down);
+}
+
+bool DataTable::onKeyPageUp(bool down)
+{
+    return rowKey(keys::PageUp, down);
+}
+
+bool DataTable::onKeyPageDown(bool down)
+{
+    return rowKey(keys::PageDown, down);
 }
 
 DataTableRow *DataTable::rowForItem(size_t item) const

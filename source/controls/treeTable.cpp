@@ -291,7 +291,10 @@ TreeTable::NodeId TreeTable::addNode(NodeId parentId, NodeId appId, bool hasChil
     }
 
     m_visible.insert(m_visible.begin()+at, {appId, m_nodes.back().depth});
-    visibleChanged(at);
+
+    const size_t selected=getSelectedItem();
+
+    visibleChanged(at, (selected != NoItem && selected >= at)?selected+1:selected);
     return appId;
 }
 
@@ -346,9 +349,15 @@ void TreeTable::appendVisible(std::vector<VisibleNode> &into,
 // The item count takes care of rows newly shown or hidden by a changed range.
 // Pooled rows still showing an index in the suffix now show another node:
 // refresh those alone. Rows before the insertion/removal keep their content.
-void TreeTable::visibleChanged(size_t firstChanged)
+// The selection's item is set on both sides of the count, so the count never
+// finds it past its end (which would drop it, with an event): while the old
+// count holds it, and again after (the item past the old count, or none).
+void TreeTable::visibleChanged(size_t firstChanged, size_t selected)
 {
+    if(selected < getItemCount())
+        DataTable::setSelectedItem(selected, false);
     DataTable::setItemCount(m_visible.size());
+    DataTable::setSelectedItem(selected, false);
 
     for(Base *control : getVirtualBody()->getRows())
     {
@@ -389,11 +398,14 @@ void TreeTable::setExpanded(NodeId id, bool expanded)
 
     const size_t item=itemForNode(id);
 
+    bool selectionMoved=false;
+
     if(item != NoItem)
     {
         syncExpanders(item+1);
 
         const size_t at=item+1;
+        const size_t selected=getSelectedItem();
 
         if(expanded)
         {
@@ -402,8 +414,10 @@ void TreeTable::setExpanded(NodeId id, bool expanded)
             appendVisible(children, node.children);
             if(!children.empty())
             {
+                const size_t count=children.size();
+
                 m_visible.insert(m_visible.begin()+at, children.begin(), children.end());
-                visibleChanged(at);
+                visibleChanged(at, (selected != NoItem && selected >= at)?selected+count:selected);
             }
         }
         else
@@ -412,13 +426,26 @@ void TreeTable::setExpanded(NodeId id, bool expanded)
 
             if(end > at)
             {
+                size_t moved=selected;
+
+                // a selected descendant hides: the collapsed node takes it
+                if(selected != NoItem && selected >= at && selected < end)
+                {
+                    moved=item;
+                    selectionMoved=true;
+                }
+                else if(selected != NoItem && selected >= end)
+                    moved=selected-(end-at);
+
                 m_visible.erase(m_visible.begin()+at, m_visible.begin()+end);
-                visibleChanged(at);
+                visibleChanged(at, moved);
             }
         }
     }
 
     expansionEvent(id, expanded);
+    if(selectionMoved)
+        selectionEvent();
 }
 
 // A bulk change builds the projection once and binds only its changed suffix,
@@ -449,15 +476,185 @@ void TreeTable::setAllExpanded(bool expanded)
         && visible[first].id == m_visible[first].id)
         ++first;
 
+    const NodeId selected=m_selectedNode;
+    const NodeId shown=(selected == NoNode)?NoNode:shownAncestor(selected);
+
     if(first < visible.size() || first < m_visible.size())
     {
         m_visible.swap(visible);
-        visibleChanged(first);
+        visibleChanged(first, (shown == NoNode)?NoItem:itemForNode(shown));
     }
     syncExpanders(first);
 
     for(NodeId id : changed)
         expansionEvent(id, expanded);
+    if(shown != selected)
+        selectionEvent();
+}
+
+TreeTable::NodeId TreeTable::shownAncestor(NodeId id) const
+{
+    NodeId shown=id;
+
+    for(const Node *node=getNode(id); node && node->parent != Root;)
+    {
+        node=getNode(node->parent);
+        if(node && !node->expanded)
+            shown=node->id;
+    }
+    return shown;
+}
+
+// Every node under it with children expanded, then its visible subtree built
+// once and put in place of the one it had.
+void TreeTable::expandSubtree(NodeId id)
+{
+    if(!getNode(id))
+        return;
+
+    std::vector<NodeId> changed;
+    std::vector<NodeId> pending{id};
+
+    while(!pending.empty())
+    {
+        Node &node=m_nodes[m_nodeIndex.at(pending.back())];
+
+        pending.pop_back();
+        if(node.hasChildren && !node.expanded)
+        {
+            node.expanded=true;
+            changed.push_back(node.id);
+        }
+        pending.insert(pending.end(), node.children.rbegin(), node.children.rend());
+    }
+    if(changed.empty())
+        return;
+
+    const size_t item=itemForNode(id);
+
+    if(item != NoItem)
+    {
+        syncExpanders(item+1);
+
+        const size_t at=item+1;
+        const size_t end=subtreeEnd(item);
+        const NodeId selectedNode=m_selectedNode;
+        size_t selected=getSelectedItem();
+        std::vector<VisibleNode> children;
+
+        appendVisible(children, getNode(id)->children);
+        m_visible.erase(m_visible.begin()+at, m_visible.begin()+end);
+        m_visible.insert(m_visible.begin()+at, children.begin(), children.end());
+
+        // a node shown before stays shown: one after the subtree shifts, one
+        // inside it is found in the new rows
+        if(selected != NoItem && selected >= end)
+            selected=selected-(end-at)+children.size();
+        else if(selected != NoItem && selected >= at)
+        {
+            for(size_t i=0; i < children.size(); ++i)
+            {
+                if(children[i].id == selectedNode)
+                    selected=at+i;
+            }
+        }
+        visibleChanged(at, selected);
+    }
+
+    for(NodeId changedId : changed)
+        expansionEvent(changedId, true);
+}
+
+bool TreeTable::setSelectedNode(NodeId id)
+{
+    if(id == NoNode)
+    {
+        DataTable::setSelectedItem(NoItem, false);
+        return true;
+    }
+
+    const size_t item=itemForNode(id);
+
+    if(item == NoItem)
+        return false;
+
+    DataTable::setSelectedItem(item, false);
+    return true;
+}
+
+// The item is the visible index: the node it shows is the selection.
+void TreeTable::selectedItemChanged(DataTableRow * /*row*/, size_t item, bool doEvents)
+{
+    m_selectedNode=nodeForItem(item);
+
+    if(doEvents)
+        selectionEvent();
+}
+
+void TreeTable::selectionEvent()
+{
+    event::Info info(this);
+
+    info.control=rowForItem(getSelectedItem());
+    info.integer=m_selectedNode;
+    onSelectionChange.call(this, info);
+}
+
+bool TreeTable::onKeyRight(bool down)
+{
+    const Node *node=getNode(m_selectedNode);
+
+    if(!node)
+        return false;
+    if(!down)
+        return true;
+
+    if(node->hasChildren && !node->expanded)
+        setExpanded(node->id, true);
+    else if(node->expanded && !node->children.empty())
+        moveSelectionTo(getSelectedItem()+1);
+    return true;
+}
+
+// The parent is the nearest row above at a lesser depth.
+bool TreeTable::onKeyLeft(bool down)
+{
+    const Node *node=getNode(m_selectedNode);
+
+    if(!node)
+        return false;
+    if(!down)
+        return true;
+
+    if(node->expanded)
+        setExpanded(node->id, false);
+    else if(node->parent != Root)
+    {
+        size_t item=getSelectedItem();
+
+        while(item > 0 && m_visible[item].depth >= node->depth)
+            --item;
+        moveSelectionTo(item);
+    }
+    return true;
+}
+
+bool TreeTable::onKeyReturn(bool down)
+{
+    if(m_selectedNode == NoNode)
+        return false;
+    if(down)
+        activateNode(m_selectedNode);
+    return true;
+}
+
+bool TreeTable::onChar(UnicodeChar c)
+{
+    if(c != '*' || m_selectedNode == NoNode)
+        return ParentClass::onChar(c);
+
+    expandSubtree(m_selectedNode);
+    return true;
 }
 
 void TreeTable::expandAll()

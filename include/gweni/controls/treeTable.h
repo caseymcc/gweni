@@ -154,9 +154,35 @@ public:
     //! Expands the node if it is collapsed, and collapses it if it is
     //! expanded (a leaf: nothing).
     void toggleExpanded(NodeId id);
-    //! Fired on Return or a double-click on a node with no children, with
-    //! the id as the info's `integer`.
+    //! Fired on Return (any node) or a double-click on a node with no
+    //! children, with the id as the info's `integer`.
     event::Caller onNodeActivated;
+
+    //! Expands the node and every node under it that has children, with one
+    //! onExpanded per node that changed, building the visible rows once.
+    void expandSubtree(NodeId id);
+
+    //! The selection is a node: it stays on it across expand, collapse and
+    //! scroll, and moves to the collapsed ancestor when one hides it, firing
+    //! onSelectionChange (DataTable's caller) with the id as the info's
+    //! `integer` (NoNode for none) and the row showing it, if any, as its
+    //! `control`. A click on a row and the row keys select its node, firing
+    //! it too.
+    NodeId getSelectedNode() const { return m_selectedNode; }
+    //! Selects the node with no event (NoNode: none). A node that is not
+    //! shown (an ancestor is collapsed) or unknown is refused, leaving the
+    //! selection as it was; it returns whether the node is now selected.
+    bool setSelectedNode(NodeId id);
+
+    //! The tree keys, besides DataTable's row keys: Right expands a collapsed
+    //! parent or else moves to its first child; Left collapses an expanded
+    //! node or else moves to its parent; Return activates the selected node;
+    //! `*` expands its whole subtree (onChar). With nothing selected they do
+    //! nothing.
+    bool onKeyRight(bool down) override;
+    bool onKeyLeft(bool down) override;
+    bool onKeyReturn(bool down) override;
+    bool onChar(UnicodeChar c) override;
 
     //! Changes expansion, firing onExpanded/onCollapsed once if it changed,
     //! even when the node is hidden by an ancestor. Leaves cannot expand.
@@ -177,6 +203,7 @@ public:
 
 protected:
     DataTableRow *newSourceRow(Base *parent) override;
+    void selectedItemChanged(DataTableRow *row, size_t item, bool doEvents) override;
 
 private:
     friend class TreeTableRow;
@@ -195,7 +222,15 @@ private:
 
     void appendVisible(std::vector<VisibleNode> &into, const std::vector<NodeId> &children) const;
     size_t subtreeEnd(size_t item) const;
-    void visibleChanged(size_t firstChanged);
+    //! The visible rows changed from firstChanged on, and the selected node
+    //! is now the item `selected` (or none): the item count, the selection's
+    //! item and the pooled rows of the suffix follow.
+    void visibleChanged(size_t firstChanged, size_t selected);
+    //! The topmost collapsed ancestor of the node, or the node itself when
+    //! every ancestor is expanded: the node that shows in its place.
+    NodeId shownAncestor(NodeId id) const;
+    //! Fires onSelectionChange for the node selected now.
+    void selectionEvent();
     void setAllExpanded(bool expanded);
     void expansionEvent(NodeId id, bool expanded);
 
@@ -205,6 +240,7 @@ private:
     std::vector<VisibleNode> m_visible;
     NodeBinder m_nodeBinder;
     int m_treeColumn=0;
+    NodeId m_selectedNode=NoNode;
 };
 
 }//namespace controls

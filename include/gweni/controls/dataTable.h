@@ -411,7 +411,31 @@ public:
     void calculateSize(skin::Base *skin, Dim dim) override;
     void arrange(skin::Base *skin, Dim dim) override;
 
+    //! Source mode's row keys, the table holding the keyboard focus (a press
+    //! on a row focuses it; Tab reaches it): Up and Down move the selection a
+    //! row, Home and End to the first and the last item, PageUp and PageDown
+    //! by pageRows(), each scrolling the new selection into view and firing
+    //! onSelectionChange. With nothing selected they select the first item
+    //! (End the last). In row mode, and on an empty table, they do nothing.
+    bool onKeyUp(bool down) override;
+    bool onKeyDown(bool down) override;
+    bool onKeyHome(bool down) override;
+    bool onKeyend(bool down) override;
+    bool onKeyPageUp(bool down) override;
+    bool onKeyPageDown(bool down) override;
+    //! Source mode: the rows the viewport shows whole, at least 1.
+    size_t pageRows() const;
+
 protected:
+    //! Source mode: the selection moved to the item (setSelectedItem, the
+    //! row showing it or null): fires onSelectionChange with doEvents. A
+    //! subclass that selects something else through the item (a TreeTable's
+    //! node) tells it here.
+    virtual void selectedItemChanged(DataTableRow *row, size_t item, bool doEvents);
+    //! Source mode: selects the item with events and scrolls it into view, as
+    //! a row key does.
+    void moveSelectionTo(size_t item);
+
     //! A requested size is the table's outer size: the body scrolls inside.
     bool sizedByRequest(Dim dim) const override { return hasRequestedSize(dim); }
     //! Source mode: makes one pooled row in the body's inner panel (the table
@@ -443,6 +467,7 @@ private:
     //! then the app's binder.
     void bindRow(controls::Base *row, size_t item);
     void itemRowPressed(DataTableRow *row);
+    bool rowKey(int key, bool down);
     void headerCellPressed(int column);
     void rowDeleted(DataTableRow *row);
     void restripe();
