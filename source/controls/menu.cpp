@@ -303,8 +303,8 @@ void Menu::openAt(const Point &cursor, MenuFocus focus)
     m_cursor=cursor;
     setPos(cursor.x, cursor.y);
 
-    if(focus == MenuFocus::FirstItem)
-        startKeyboardNavigation();
+    if(focus != MenuFocus::None)
+        startKeyboardNavigation(focus == MenuFocus::FirstItem);
 }
 
 void Menu::openNextTo(Base *anchor, PopupPlacement side, int gap, MenuFocus focus)
@@ -329,8 +329,8 @@ void Menu::openNextTo(Base *anchor, PopupPlacement side, int gap, MenuFocus focu
     invalidate();
     canvas->followAnchoredMenu(this);
 
-    if(focus == MenuFocus::FirstItem)
-        startKeyboardNavigation();
+    if(focus != MenuFocus::None)
+        startKeyboardNavigation(focus == MenuFocus::FirstItem);
 }
 
 bool Menu::followAnchor(Canvas *canvas)
@@ -399,7 +399,7 @@ void Menu::addDivider()
 
 // Keyboard navigation (startKeyboardNavigation()).
 
-void Menu::startKeyboardNavigation()
+void Menu::startKeyboardNavigation(bool highlightFirst)
 {
     if(hidden())
         return;
@@ -426,7 +426,7 @@ void Menu::startKeyboardNavigation()
 
     const std::vector<MenuItem *> items=navigableItems();
 
-    setHighlightedItem(items.empty() ? nullptr : items.front());
+    setHighlightedItem((items.empty() || !highlightFirst) ? nullptr : items.front());
 }
 
 void Menu::endKeyboardNavigation()

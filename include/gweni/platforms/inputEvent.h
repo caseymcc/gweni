@@ -36,6 +36,7 @@ enum: char
     Command=16,   // Mac command/clover
     PageUp=17,
     PageDown=18,
+    F4=19,
     KeysCount //!< number of keys
 };
 

@@ -22,13 +22,16 @@ namespace controls
 class MenuItem;
 
 //! Whether a Menu opened by openNextTo() or openAt() navigates by keyboard
-//! (Menu::startKeyboardNavigation): None, as every menu did before, or
+//! (Menu::startKeyboardNavigation): None, as every menu did before;
 //! FirstItem, taking the keyboard focus with its first enabled item
-//! highlighted.
+//! highlighted (an open from the keyboard); or Menu, taking the focus with
+//! nothing highlighted until a key or the mouse moves the highlight (an open
+//! from a click, WinUI's pointer open).
 enum class MenuFocus
 {
     None,
-    FirstItem
+    FirstItem,
+    Menu
 };
 
 class GWENI_EXPORT Menu: public ScrollControl
@@ -67,8 +70,8 @@ public:
     //! (canvas coordinates), flipped and kept inside the canvas by placement()
     //! once its size is known (in layout()). A setPos()/setBounds() after it
     //! places it there instead, kept inside the canvas.
-    //! \p focus FirstItem starts keyboard navigation once it is shown
-    //! (startKeyboardNavigation()).
+    //! \p focus FirstItem or Menu starts keyboard navigation once it is
+    //! shown (startKeyboardNavigation()).
     virtual void openAt(const Point &cursor, MenuFocus focus=MenuFocus::None);
     //! Shows it on the canvas and brings it to the front next to \p anchor (the
     //! MenuItem it is the menu of): on \p side of the anchor's canvas rect,
@@ -82,13 +85,14 @@ public:
     //! and closed when the anchor is hidden or deleted. A Right one whose
     //! anchor is in a menu that isLeftward() is placed as Left instead, so a
     //! submenu chain that flipped left goes on opening left. \p focus
-    //! FirstItem starts keyboard navigation once it is shown.
+    //! FirstItem or Menu starts keyboard navigation once it is shown.
     virtual void openNextTo(Base *anchor, PopupPlacement side, int gap,
         MenuFocus focus=MenuFocus::None);
 
     //! Keyboard navigation, for a shown menu: it takes the keyboard focus,
     //! keeping the control that had it to give it back when it is hidden, and
-    //! highlights its first enabled item. Up/Down move the highlight over the
+    //! highlights its first enabled item (none with \p highlightFirst false:
+    //! Down then highlights the first, Up the last). Up/Down move the highlight over the
     //! enabled, shown items (wrapping), Home/End go to the first/last,
     //! Return/Space choose the highlighted item as a click does (a submenu's
     //! item opens its submenu as Right does), Right opens the highlighted
@@ -99,7 +103,7 @@ public:
     //! onto an enabled item highlights it, so there is one highlight. Ends
     //! when it is hidden. A menu that never starts it takes no focus and no
     //! key, as before.
-    void startKeyboardNavigation();
+    void startKeyboardNavigation(bool highlightFirst=true);
     bool isKeyboardNavigating() const
     {
         return m_keyboardNavigation;

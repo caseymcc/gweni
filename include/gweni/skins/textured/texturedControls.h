@@ -80,6 +80,28 @@ struct Vertical
 //    std::vector<int> m_primitives;
 //};
 
+//! The Button surface for \p control's state: disabled (on or off), pressed
+//! (Button::isDepressed()), on (a toggle's, hovered or not), hovered, focused
+//! or normal. Every renderer drawing a Button's look picks it here.
+inline const tokyonight::Surface &buttonSurface(controls::Button *control)
+{
+    // a toggle that is on keeps its look until a press or disabling it;
+    // a plain button (LabelClickable included) is never on
+    const bool on=control->isToggle() && control->getToggleState();
+
+    if(control->isDisabled())
+        return on?tokyonight::ButtonOnDisabled:tokyonight::ButtonDisabled;
+    if(control->isDepressed())
+        return tokyonight::ButtonDown;
+    if(on)
+        return control->isHovered()?tokyonight::ButtonOnHover:tokyonight::ButtonOn;
+    if(control->isHovered())
+        return tokyonight::ButtonHover;
+    if(control->isFocussed())
+        return tokyonight::ButtonFocus;
+    return tokyonight::ButtonNormal;
+}
+
 template<typename _Type>
 class ButtonTemplate:public textured::ControlRegister<ButtonTemplate<_Type>>
 {
@@ -99,25 +121,9 @@ public:
             return;
 
         controls::Button *control=static_cast<controls::Button *>(baseControl);
-        const tokyonight::Surface *surface;
-        // a toggle that is on keeps its look until a press or disabling it;
-        // a plain button (LabelClickable included) is never on
-        bool on=control->isToggle() && control->getToggleState();
 
-        if(control->isDisabled())
-            surface=on?&tokyonight::ButtonOnDisabled:&tokyonight::ButtonDisabled;
-        else if(control->isDepressed())
-            surface=&tokyonight::ButtonDown;
-        else if(on)
-            surface=control->isHovered()?&tokyonight::ButtonOnHover:&tokyonight::ButtonOn;
-        else if(control->isHovered())
-            surface=&tokyonight::ButtonHover;
-        else if(control->isFocussed())
-            surface=&tokyonight::ButtonFocus;
-        else
-            surface=&tokyonight::ButtonNormal;
-
-        tokyonight::paintSurface(renderer, ThisClass::m_primitives.data(), baseControl, *surface);
+        tokyonight::paintSurface(renderer, ThisClass::m_primitives.data(), baseControl,
+            buttonSurface(control));
     }
 
     static constexpr std::string_view ButtonLabel="Button";
@@ -451,6 +457,24 @@ public:
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
     inline static const std::string_view name="MenuItem";
+};
+
+// A DropDownButton: the Button surface of its state in slot [0]
+// (buttonSurface: its open menu is its pressed look), and in slot [1] the down
+// chevron (style 5, kind 1, direction 0) in its text colour at
+// DropDownButton::chevronRect, at getZIndex()+1 over the surface.
+class DropDownButton:public textured::ControlRegister<DropDownButton>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    // the chevron is drawn at getZIndex()+1, over the surface
+    size_t depthLayers() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="DropDownButton";
 };
 
 // The chevron a MenuItem with a submenu shows at its right: one style 5 icon

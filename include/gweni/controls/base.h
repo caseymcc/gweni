@@ -947,6 +947,8 @@ public:
     virtual bool onKeyEscape(bool /*down*/) { return false; }
     virtual bool onKeyPageUp(bool /*down*/) { return false; }
     virtual bool onKeyPageDown(bool /*down*/) { return false; }
+    //! F4, which opens a drop-down (DropDownButton, SplitButton) as Alt+Down does.
+    virtual bool onKeyF4(bool /*down*/) { return false; }
 
     //! One frame of a caret's blink, for a control that draws a caret
     //! (internal::CaretBlink's animation calls it on the control it was

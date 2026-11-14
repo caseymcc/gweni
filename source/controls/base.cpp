@@ -4664,6 +4664,10 @@ bool Base::onKeyPress(int key, bool bPress)
         handled=onKeyPageDown(bPress);
         break;
 
+    case keys::F4:
+        handled=onKeyF4(bPress);
+        break;
+
     default:
         break;
     }

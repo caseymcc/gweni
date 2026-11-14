@@ -2250,7 +2250,7 @@ static const struct { const char *name; int key; } g_namedKeys[]=
     {"kp-enter", GLFW_KEY_KP_ENTER},     {"f9", GLFW_KEY_F9},
     {"f10", GLFW_KEY_F10},               {"f11", GLFW_KEY_F11},
     {"f12", GLFW_KEY_F12},               {"pageup", GLFW_KEY_PAGE_UP},
-    {"pagedown", GLFW_KEY_PAGE_DOWN},
+    {"pagedown", GLFW_KEY_PAGE_DOWN},    {"f4", GLFW_KEY_F4},
 };
 
 // The modifiers a --key chord may hold, with the mods bit GLFW reports for them.

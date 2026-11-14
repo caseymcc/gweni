@@ -231,6 +231,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/dockedTabControl.cpp
     include/gweni/controls/dragger.h
     source/controls/dragger.cpp
+    include/gweni/controls/dropDownButton.h
+    source/controls/dropDownButton.cpp
     include/gweni/controls/groupBox.h
     source/controls/groupBox.cpp
     include/gweni/controls/heightIndex.h

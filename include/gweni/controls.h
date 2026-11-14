@@ -37,6 +37,7 @@
 #include <gweni/controls/dialogs/query.h>
 #include <gweni/controls/dockBase.h>
 #include <gweni/controls/dockedTabControl.h>
+#include <gweni/controls/dropDownButton.h>
 #include <gweni/controls/dragNumber.h>
 #include <gweni/controls/dragger.h>
 #include <gweni/controls/groupBox.h>

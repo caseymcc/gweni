@@ -148,6 +148,9 @@ public:
         case GLFW_KEY_PAGE_DOWN:
             return keys::PageDown;
 
+        case GLFW_KEY_F4:
+            return keys::F4;
+
         case GLFW_KEY_LEFT_CONTROL:
             return keys::Control;
 

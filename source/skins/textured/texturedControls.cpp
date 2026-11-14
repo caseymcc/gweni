@@ -35,6 +35,7 @@
 #include "gweni/controls/navigationRail.h"
 #include "gweni/controls/splitterBar.h"
 #include "gweni/controls/menuItem.h"
+#include "gweni/controls/dropDownButton.h"
 #include "gweni/controls/bullet.h"
 #include "gweni/controls/windowButtons.h"
 #include "gweni/controls/dialogs/dialog.h"
@@ -578,6 +579,28 @@ gweni::Rect MenuItem::checkRect(controls::MenuItem *item)
         return gweni::Rect(0, 0, 0, 0);
 
     return gweni::Rect(r.x+(column-sz)/2, r.y+(r.h-sz)/2, sz, sz);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//DropDownButton
+void DropDownButton::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.size() < 2)
+        return;
+
+    controls::DropDownButton *button=static_cast<controls::DropDownButton *>(baseControl);
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, buttonSurface(button));
+
+    if(!baseControl->visible())
+    {
+        renderer->hidePrimitive(m_primitives[1]);
+        return;
+    }
+
+    // kind 1's directions: 0 down
+    renderer->drawIcon(m_primitives[1], controls::DropDownButton::chevronRect(baseControl->getRenderBounds()),
+        1, 0, button->getTextColor(), baseControl->getZIndex()+1);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -5024,6 +5047,7 @@ template class ControlRegister<ListBoxRow>;
 template class ControlRegister<Menu>;
 template class ControlRegister<MenuStrip>;
 template class ControlRegister<MenuItem>;
+template class ControlRegister<DropDownButton>;
 template class ControlRegister<RightArrow>;
 template class ControlRegister<Panel>;
 template class ControlRegister<PageControl>;
