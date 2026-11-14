@@ -522,6 +522,9 @@ std::unordered_map<std::string, gweni::Color*> TexturedSkin::textColorRegistry()
         {"SegmentNormal",&Colors.SegmentedButton.Normal},{"SegmentHover",&Colors.SegmentedButton.Hover},
         {"SegmentSelected",&Colors.SegmentedButton.Selected},{"SegmentDisabled",&Colors.SegmentedButton.Disabled},
         {"SegmentCheck",&Colors.SegmentedButton.Check},
+        {"StepperTitle",&Colors.Stepper.Title},{"StepperTitleCurrent",&Colors.Stepper.TitleCurrent},
+        {"StepperTitleDisabled",&Colors.Stepper.TitleDisabled},{"StepperSubtitle",&Colors.Stepper.Subtitle},
+        {"StepperErrorText",&Colors.Stepper.Error},{"StepperNumber",&Colors.Stepper.Number},
         {"ToastText",&Colors.Toast.Text},{"ToastInfo",&Colors.Toast.Info},
         {"ToastPositive",&Colors.Toast.Positive},{"ToastWarning",&Colors.Toast.Warning},
         {"ToastNegative",&Colors.Toast.Negative},
@@ -1424,6 +1427,13 @@ void TexturedSkin::setThemeColors()
     Colors.SegmentedButton.Selected=White;
     Colors.SegmentedButton.Disabled=Muted;
     Colors.SegmentedButton.Check=Blue;
+    // a step's title brighter while current, red in error
+    Colors.Stepper.Title=FgDark;
+    Colors.Stepper.TitleCurrent=Fg;
+    Colors.Stepper.TitleDisabled=Muted;
+    Colors.Stepper.Subtitle=Muted;
+    Colors.Stepper.Error=Red;
+    Colors.Stepper.Number=Fg;
 
     // Tokyo Night's sizes, set with its colours so a theme's "metrics" applies
     // over them.
