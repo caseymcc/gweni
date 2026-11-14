@@ -46,6 +46,7 @@ public:
 
     bool dragAndDrop_draggable() override;
     bool dragAndDrop_takesDescendantDrag(Base *descendant) override;
+    void dragAndDrop_pressed(int x, int y) override;
     draganddrop::Package *dragAndDrop_getPackage(int x, int y) override;
     void dragAndDrop_startDragging(draganddrop::Package *package, int x, int y) override;
     void dragAndDrop_endDragging(bool success, int x, int y) override;

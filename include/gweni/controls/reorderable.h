@@ -300,6 +300,16 @@ public:
     //! beginDrag for the item under the canvas point (x, y), from the list's
     //! own dragAndDrop_getPackage
     draganddrop::Package *beginDragAt(int x, int y);
+    //! A press at the canvas point (x, y) that may become a drag (the list's
+    //! dragAndDrop_pressed): the item under it is noted by its key (keyAt(),
+    //! an app's key function called here), or none when \p onItem is false or
+    //! no item is under it
+    void pressedAt(int x, int y, bool onItem=true);
+    //! beginDrag for the item pressedAt() noted, at its index now (indexOf()),
+    //! so an edit or a scroll between the press and the 5-unit move drags the
+    //! item pressed, not the one then under the press point; null when none
+    //! was noted or it is gone. The note is used up.
+    draganddrop::Package *beginPressedDrag();
     bool canAcceptPackage(draganddrop::Package *package);
     void hoverEnter(draganddrop::Package *package, int x, int y);
     void hover(draganddrop::Package *package, int x, int y);
@@ -334,7 +344,7 @@ protected:
     //! is its control id): then the gap is held as the item after it, so an
     //! edit the list cannot describe (itemsChanged) keeps it before that item;
     //! otherwise it is found from the cursor again. An app's key functions are
-    //! called only at a drag's start, its drop and a list change.
+    //! called only at a press, a drag's start, its drop and a list change.
     virtual bool cheapKeys() const { return false; }
 
     // The looks
@@ -348,6 +358,9 @@ protected:
 private:
 
     friend class ReorderGroup;
+
+    // beginDrag of the item at \p index, whose key is \p key
+    draganddrop::Package *beginDragKey(size_t index, uint64_t key);
 
     // the gap at the cursor's last point, checked against canDrop
     void updateGap(size_t gap, bool force);
@@ -386,6 +399,10 @@ private:
     uint64_t m_dragKey=0;
     size_t m_dragIndex=NoItem;
     size_t m_pendingIndex=NoItem;
+    // the item the last press was on (pressedAt), for beginPressedDrag
+    bool m_pressNoted=false;
+    bool m_pressOnItem=false;
+    uint64_t m_pressedKey=0;
 
     // as the target
     size_t m_gap=NoItem;
@@ -460,7 +477,8 @@ class VirtualList;
 
 //! The Reorderable of a VirtualList: its items, keyed by the app's own
 //! functions, key(index) and indexOf(key) (NoItem once the item is gone),
-//! asked only as a drag starts, as it drops and when the list changes during
+//! asked only at a press (key, for the item pressed), as a drag starts
+//! (indexOf, where that item is now), as it drops and when the list changes during
 //! it (setItemCount, refresh, and insertItems/removeItems, which keep the
 //! dragged index and the gap by arithmetic and ask nothing). The gap and the
 //! looks come from the list's geometry, index*rowHeight less the offset (in

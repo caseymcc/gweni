@@ -52,19 +52,23 @@ bool ScrollControl::dragAndDrop_takesDescendantDrag(Base *descendant)
     return false;
 }
 
-draganddrop::Package *ScrollControl::dragAndDrop_getPackage(int x, int y)
+void ScrollControl::dragAndDrop_pressed(int x, int y)
 {
     if(!m_reorderable)
-        return nullptr;
+        return;
 
     // a press outside the viewport (the inset band, a bar) drags nothing
     const Point local=canvasPosToLocal(Point(x, y));
+    const bool inViewport=(local.x >= m_viewport.x) && (local.y >= m_viewport.y)
+        && (local.x < m_viewport.x+m_viewport.w) && (local.y < m_viewport.y+m_viewport.h);
 
-    if(local.x < m_viewport.x || local.y < m_viewport.y || local.x >= m_viewport.x+m_viewport.w
-        || local.y >= m_viewport.y+m_viewport.h)
-        return nullptr;
+    m_reorderable->pressedAt(x, y, inViewport);
+}
 
-    return m_reorderable->beginDragAt(x, y);
+draganddrop::Package *ScrollControl::dragAndDrop_getPackage(int /*x*/, int /*y*/)
+{
+    // the item noted at the press, wherever it is now
+    return m_reorderable ? m_reorderable->beginPressedDrag() : nullptr;
 }
 
 void ScrollControl::dragAndDrop_startDragging(draganddrop::Package * /*package*/, int /*x*/, int /*y*/)

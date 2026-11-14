@@ -13,7 +13,10 @@
  *  a plain click. A press that a part of the card takes for a drag of its
  *  own (a Slider's thumb, a TextBox's selection) starts no card drag: the
  *  part keeps the mouse to its release. A press on the column's scroll bar
- *  starts no drag. The gap
+ *  starts no drag. The card dragged is the one pressed, keyed at the press:
+ *  a card added above it or a scroll between the press and the 5-unit move
+ *  drags it, not the card then under the press point, and one deleted
+ *  before the move starts no drag. The gap
  *  is the half-height rule over the cards' bounds and its bar is centred in
  *  the space between two cards. A drop within the column and one on another
  *  member of the group report the card's key and indexes, and gweni moves no
@@ -257,6 +260,59 @@ TEST_CASE("CardReorder: a press on a card or a part of it starts its drag, and a
         CHECK_FALSE(draganddrop::isDragging());
         scene.release();
         CHECK(card->getToggleState());
+    }
+}
+
+TEST_CASE("CardReorder: the card pressed is the one dragged, whatever the column did before the move")
+{
+    SUBCASE("a card added above between the press and the move")
+    {
+        Scene scene;
+        controls::Button *pressed=scene.todo.cards[2];
+        const Point at=Scene::on(pressed, CardHeight/4);
+
+        scene.press(at);
+        controls::Button *added=scene.card(scene.todo);
+        added->sendToBack();
+        scene.frame();
+
+        scene.move(Point(at.x+6, at.y));
+        REQUIRE(draganddrop::isDragging());
+        CHECK(scene.todo.reorder->dragKey() == CardReorder::keyOf(pressed));
+        CHECK(scene.todo.reorder->dragIndex() == 3);
+        scene.release();
+    }
+
+    SUBCASE("the column scrolled between the press and the move")
+    {
+        Scene scene(20);
+        controls::Button *pressed=scene.todo.cards[2];
+        const Point at=Scene::on(pressed, CardHeight/4);
+
+        scene.press(at);
+        scene.todo.list->setVerticalScrollOffset(CardHeight+CardGap);
+        scene.frame();
+        REQUIRE(scene.todo.list->getVerticalScrollOffset() == CardHeight+CardGap);
+        scene.move(Point(at.x+6, at.y));
+        REQUIRE(draganddrop::isDragging());
+        CHECK(scene.todo.reorder->dragKey() == CardReorder::keyOf(pressed));
+        scene.release();
+    }
+
+    SUBCASE("the pressed card deleted before the move starts no drag")
+    {
+        Scene scene;
+        controls::Button *pressed=scene.todo.cards[1];
+        const Point at=Scene::on(pressed, CardHeight/4);
+
+        scene.press(at);
+        delete pressed;
+        scene.todo.cards.erase(scene.todo.cards.begin()+1);
+        scene.frame();
+        scene.move(Point(at.x+6, at.y));
+        CHECK_FALSE(draganddrop::isDragging());
+        scene.release();
+        CHECK(scene.todo.drops.empty());
     }
 }
 

@@ -430,12 +430,49 @@ draganddrop::Package *Reorderable::beginDragAt(int x, int y)
     return beginDrag(itemAt(m_panel->canvasPosToLocal(Point(x, y))));
 }
 
+void Reorderable::pressedAt(int x, int y, bool onItem)
+{
+    m_pressNoted=true;
+    m_pressOnItem=false;
+
+    if(!onItem)
+        return;
+
+    const size_t index=itemAt(m_panel->canvasPosToLocal(Point(x, y)));
+
+    if(index >= itemCount())
+        return;
+
+    m_pressedKey=keyAt(index);
+    m_pressOnItem=true;
+}
+
+draganddrop::Package *Reorderable::beginPressedDrag()
+{
+    if(!m_pressNoted || !m_pressOnItem)
+    {
+        m_pressNoted=false;
+        return nullptr;
+    }
+
+    m_pressNoted=false;
+
+    const size_t index=indexOf(m_pressedKey);
+
+    if(index >= itemCount())
+        return nullptr;
+    return beginDragKey(index, m_pressedKey);
+}
+
 draganddrop::Package *Reorderable::beginDrag(size_t index)
 {
     if(index >= itemCount())
         return nullptr;
+    return beginDragKey(index, keyAt(index));
+}
 
-    const uint64_t key=keyAt(index);
+draganddrop::Package *Reorderable::beginDragKey(size_t index, uint64_t key)
+{
 
     if(m_canDrag && !m_canDrag(key))
         return nullptr;
