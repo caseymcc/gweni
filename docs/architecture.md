@@ -4284,7 +4284,9 @@ go of the pressed Button with no click; the hover is hit-tested again when the
 drag ends. A press on a part of an item (a Label in a card) starts its list's
 drag through `Base::dragAndDrop_takesDescendantDrag`, which only a reorderable
 `ScrollControl` answers for its inner panel's descendants, so a tab's close button
-still drags nothing. `draganddrop::currentCursor()` is the cursor the core asked
+still drags nothing; a part that took the mouse for a gesture of its own (a
+Slider's thumb, a TextBox's selection, a nested scroll bar: `MouseFocus` set and
+no Button) keeps it, and its list starts no drag. `draganddrop::currentCursor()` is the cursor the core asked
 for, since natively `platform::setCursor` does nothing.
 
 **`Reorderable`, the part a list owns.** `ScrollControl::setReorderable` gives a

@@ -254,6 +254,19 @@ static bool ShouldStartDraggingControl(int x, int y)
     if(iLength < 5)
         return false;
 
+    // A part of an item that took the mouse for a gesture of its own (a
+    // Slider's thumb, a TextBox's selection, a nested scroll bar) keeps it: the
+    // press is not the list's. A Button's press is only a click, which the
+    // item drag takes from it below.
+    gweni::controls::Base *holder=gweni::MouseFocus;
+
+    if(holder && (holder != LastPressedControl) && !gweni_cast<gweni::controls::Button>(holder)
+        && LastPressedControl->dragAndDrop_takesDescendantDrag(holder))
+    {
+        LastPressedControl=nullptr;
+        return false;
+    }
+
     // Create the dragging package
     CurrentPackage=LastPressedControl->dragAndDrop_getPackage(LastPressedPos.x,
         LastPressedPos.y);
