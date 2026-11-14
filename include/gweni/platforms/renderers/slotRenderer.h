@@ -379,7 +379,8 @@ public:
         gweni::Color color, int zIndex) override;
     //! Style 5, icon kind 9: the arc's distance evaluated in the fragment shader
     //! over the rect's quad, its start and sweep (arcStartBits, arcSweepBits) in
-    //! cx and cy and its stroke px in bx's high byte (Vertex).
+    //! cx and cy, its stroke px in bx's high byte, and the unit directions to its
+    //! start (border, by) and its end (dx, dy) as int16_t in 1/32767 (Vertex).
     void drawArc(size_t primitiveId, gweni::Rect rect, float startTurns, float sweepTurns,
         float thickness, gweni::Color color, int zIndex) override;
     //! Style 3: the capsule's distance evaluated in the fragment shader, over a quad
@@ -764,7 +765,8 @@ protected:
                          //its major count in the low byte, its stroke px in the high one
         uint16_t cx, cy; //color1 (bottom fill for vertical gradient, image tint for style 2) packed rg/ba;
                          //arc (style 5, kind 9): its start and sweep, 1/65536 of a turn
-                         //(arcStartBits, arcSweepBits: 65535 the whole ring);
+                         //(arcStartBits, arcSweepBits: 65535 the whole ring); its start's
+                         //and end's unit directions in border/by and dx/dy, int16_t/32767;
                          //line (style 3): its first endpoint, int16_t bits, in lx/ly's units
         uint16_t bx, by; //border color packed rg/ba; icon and arc stroke px in bx's high byte (style 5);
                          //line (style 3): its previous point with LineHasPrev, as cx/cy, else 0;

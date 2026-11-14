@@ -2277,6 +2277,13 @@ void SlotRenderer::drawArc(size_t primitiveId, gweni::Rect rect, float startTurn
 
     const uint16_t start=renderer::arcStartBits(startTurns);
     const uint16_t sweep=renderer::arcSweepBits(sweepTurns);
+    // the directions from the centre to the start and the end, clockwise from
+    // the top (y down), from the bits, as int16_t in 1/32767: the shader takes
+    // no sin, cos or atan, whose precision differs between backends
+    const double tau=6.283185307179586;
+    const double a0=tau*start/65536.0;
+    const double a1=a0+tau*(sweep == 0xffff?1.0:sweep/65535.0);
+    auto unit=[](double v) { return (uint16_t)(int16_t)std::lround(v*32767.0); };
     // whole device px, as a border is snapped
     const int stroke=std::min(std::max(1, snap(thickness)), 255);
 
@@ -2310,6 +2317,10 @@ void SlotRenderer::drawArc(size_t primitiveId, gweni::Rect rect, float startTurn
         v.cx=start;
         v.cy=sweep;
         v.bx=(uint16_t)(stroke<<8);
+        v.border=unit(std::sin(a0));
+        v.by=unit(-std::cos(a0));
+        v.dx=unit(std::sin(a1));
+        v.dy=unit(-std::cos(a1));
     };
 
     setArc(vertexIndex++, x0, y0, -hw, -hh);

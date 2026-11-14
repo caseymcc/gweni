@@ -96,6 +96,12 @@ vec4 gradientLevel(vec4 top, vec4 bottom)
     return vec4(level)/255.0;
 }
 
+// A 16-bit field's bits (0..65535, a whole float) read as int16_t.
+float signed16(float bits)
+{
+    return bits >= 32768.0 ? bits - 65536.0 : bits;
+}
+
 // Signed distance to a rounded box centered at the origin (negative inside).
 float sdRoundBox(vec2 p, vec2 b, float r)
 {
@@ -522,14 +528,18 @@ void main()
         {
             // Arc (drawArc): on the largest circle centred in the quad, its stroke,
             // the whole px drawArc packs into the border colour's red byte, inside
-            // the circle, round caps at both ends. Its start and sweep are color1's
-            // two fields, 1/65536 of a turn from the top clockwise (y is down), a
-            // sweep of 65535 the whole ring. In device px with the box filter and
-            // the constant aa of kinds 2-6, at the pixel centre rounded to the
-            // half px it is at (as kinds 0 and 1), so the arc drawn here is the
-            // arc moved, or drawn by another backend.
+            // the circle, round caps at both ends. Its sweep is color1's second
+            // field, 1/65536 of a turn, 65535 the whole ring; the directions from
+            // the centre to its start and its end (clockwise from the top, y down)
+            // are unit vectors drawArc worked out on the CPU, int16 in 1/32767:
+            // the start in border and the border colour's second field, the end in
+            // color3's two. No sin, cos or atan here: their precision differs
+            // between Mesa, lavapipe and SwiftShader, which moved a cap's pixels by
+            // up to 3 levels. In device px with the box filter and the constant aa
+            // of kinds 2-6, at the pixel centre rounded to the half px it is at (as
+            // kinds 0 and 1), so the arc drawn here is the arc moved, or drawn by
+            // another backend.
             float s = floor(vBorderColor.r*255.0 + 0.5);
-            float startBits = floor(vColor1.r*255.0 + 0.5)*256.0 + floor(vColor1.g*255.0 + 0.5);
             float sweepBits = floor(vColor1.b*255.0 + 0.5)*256.0 + floor(vColor1.a*255.0 + 0.5);
             float aa = max(0.5*(length(dFdx(vLocal)) + length(dFdy(vLocal))), 1e-4);
             vec2 q = floor(vLocal*2.0 + 0.5)*0.5;
@@ -540,21 +550,26 @@ void main()
 
             if(sweepBits < 65535.0)
             {
-                // where q is from the start, in turns clockwise: inside the sweep
-                // the ring's distance is the arc's, past it the nearer cap's
-                float start = startBits/65536.0;
-                float sweep = sweepBits/65535.0;
-                float t = dot(q, q) > 0.0 ? fract(atan(q.x, -q.y)*0.15915494 - start) : 0.0;
+                vec2 a0 = vec2(signed16(floor(vBorder + 0.5)),
+                    signed16(floor(vBorderColor.b*255.0 + 0.5)*256.0 + floor(vBorderColor.a*255.0 + 0.5)))/32767.0;
+                vec2 a1 = vec2(signed16(floor(vColor3.r*255.0 + 0.5)*256.0 + floor(vColor3.g*255.0 + 0.5)),
+                    signed16(floor(vColor3.b*255.0 + 0.5)*256.0 + floor(vColor3.a*255.0 + 0.5)))/32767.0;
+                // clockwise (y down) from a to b when a.x*b.y - a.y*b.x > 0
+                float fromStart = a0.x*q.y - a0.y*q.x;
+                float toEnd = q.x*a1.y - q.y*a1.x;
+                bool inside;
 
-                if(t > sweep)
-                {
-                    float a0 = start*6.2831853;
-                    float a1 = (start + sweep)*6.2831853;
-                    vec2 p0 = r*vec2(sin(a0), -cos(a0));
-                    vec2 p1 = r*vec2(sin(a1), -cos(a1));
+                // under half a turn: between the two directions, on their side;
+                // half a turn or more: outside the wedge it does not sweep
+                if(sweepBits < 32768.0)
+                    inside = fromStart >= 0.0 && toEnd >= 0.0 && dot(q, a0 + a1) > 0.0;
+                else
+                    inside = fromStart >= 0.0 || toEnd >= 0.0;
 
-                    d = min(length(q - p0), length(q - p1)) - 0.5*w;
-                }
+                // inside the sweep the ring's distance is the arc's, past it the
+                // nearer cap's
+                if(!inside)
+                    d = min(length(q - r*a0), length(q - r*a1)) - 0.5*w;
             }
             a = clamp(0.5 - d/aa, 0.0, 1.0);
         }

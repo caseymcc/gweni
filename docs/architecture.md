@@ -1944,18 +1944,23 @@ two programs and the draws. What follows describes both together:
   half-pixel local position as for every SDF style, `tx/ty` the colour, `bx`'s high
   byte the stroke px, `cx` the start and `cy` the sweep, each in 1/65536 of a turn
   (`renderer::arcStartBits`, the fraction rounded, and `arcSweepBits`, rounded with
-  65535 the whole ring), which the fragment shader reads back exactly from color1's
-  four bytes. Two calls with the same bits draw the same bytes, so a caller animating
-  an arc compares the bits to tell a step that draws nothing new (the Spinner does).
-  The shader takes the pixel centre rounded to the half px it is at (`vLocal`, as
-  kinds 0 and 1), its distance to the stroke's middle circle less half the stroke
-  (the ring), and outside the sweep (where it is from the start, `fract(atan(x, -y)/2π
-  - start)`, past the sweep) the distance to the nearer cap's centre less half the
-  stroke instead, which is the arc's exact distance; the coverage is the box filter
-  `clamp(0.5 - d/aa, 0, 1)`. A sweep of 65535 skips the caps, so the whole ring has no
-  seam. The two sides of the sweep's boundary give the same distance, so `atan`'s
-  precision, which differs between Mesa, lavapipe and SwiftShader, moves no level
-  there. `renderer::Base`'s default draws nothing, as `drawIcon`'s does;
+  65535 the whole ring), and the unit directions from the centre to the start
+  (`border`, `by`) and to the end (`dx`, `dy`), worked out from those bits on the CPU
+  and stored as `int16_t` in 1/32767, which the fragment shader reads back exactly
+  from the flat `vBorder`, the border colour's and color3's bytes. Two calls with the
+  same bits draw the same bytes, so a caller animating an arc compares the bits to tell
+  a step that draws nothing new (the Spinner does). The shader takes the pixel centre
+  rounded to the half px it is at (`vLocal`, as kinds 0 and 1) and its distance to the
+  stroke's middle circle less half the stroke (the ring); a pixel outside the sweep
+  (by the signs of its cross products with the two directions, and for a sweep under
+  half a turn its side of their sum) takes the distance to the nearer cap's centre less
+  half the stroke instead, which is the arc's exact distance; the coverage is the box
+  filter `clamp(0.5 - d/aa, 0, 1)`. A sweep of 65535 skips the caps, so the whole ring
+  has no seam. The shader computes no `sin`, `cos` or `atan`: with them (the first
+  version), SwiftShader's precision put a few cap pixels of SpinnerDemo at 2x 3 levels
+  from llvmpipe's, past `web_pixels_native_scale200`'s bound; with the directions from
+  the CPU every backend does the same arithmetic. `renderer::Base`'s default draws
+  nothing, as `drawIcon`'s does;
   `StubRenderer` records each call in `arcs`. `tests/arc.cpp` reads back every pixel of
   arcs at sweeps of 0.25 to 1 turn from a start in each quadrant against the same
   distance worked out on the CPU (within 2 levels), the start's direction, the stroke
