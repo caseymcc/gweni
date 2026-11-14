@@ -3760,6 +3760,68 @@ two programs and the draws. What follows describes both together:
   `tests/unit/navigationRail.cpp` pins it headless, and ControlTest's
   `--scenario navigation-rail` the costs and pixels of a hover, a click, Down and
   Return, a badge count, a collapse, its tooltip and the expand on NavigationRailDemo.
+- **Segmented buttons.** `controls::SegmentedButtons`
+  (`include/gweni/controls/segmentedButtons.h`) is one row of joined toggle segments
+  (Material's segmented button, WinUI's RadioButtons, a QButtonGroup of tool buttons).
+  `addSegment(text[, image, imageOnly], name)` returns a `SegmentedButton`, a
+  `Selectable` (so a Button) with text, `Button::setImage`'s image or both;
+  `setImageOnly(true)` leaves the text out of the segment and makes it the tooltip.
+  - *The selection.* Exclusive (the default) or Multi (`setMode`). The exclusive
+    selection is a `SelectableGroup`, reused, not copied (RadioButtonController's
+    radios keep their own checked state and the controller unchecks its children
+    itself, so there was nothing to share): every segment is a member while the row
+    is Exclusive, none while it is Multi, and `setAllowNone(true)` gives the members
+    their toggling back, so a click on the selected one clears it. An exclusive row
+    that does not allow none always has one selected once a segment exists: the first
+    added, and after a removal the next enabled one, else the one before.
+    `onSelectionChange` fires once per real change with the changed segment: the one
+    the selection reached (the one it left fires nothing: its deselect comes while the
+    group's selection is already the new one), the cleared one, or the toggled one.
+  - *The row.* Owner-placed in its `arrangeHorizontal`/`arrangeVertical`: each segment
+    its content width (or with `setEqualWidths(true)` the widest one's), all the
+    tallest one's height, and each one after the first starting `Joint` (1) unit left
+    of the previous one's right edge (`segmentPositions`). A segment places its own
+    Owner Text and image too, as one group centred in it: the check's room
+    (`CheckSize` and `CheckGap`, in every segment while the row `setShowCheck`s, so a
+    selection never changes a width), the image, the text, `SidePadding` in from its
+    sides. So a hover, a selection and a toggle lay nothing out.
+  - *The look.* The textured `SegmentedButton` renderer draws one rounded rect per
+    segment, rounded only at the row's ends through the edge mask: the first is square
+    on its right, the last on its left, the inner ones on both. A joint is its left
+    segment's border column alone: a segment after the first is drawn from `Joint`
+    units into its bounds with `NoBorderLeft`, so its fill starts where its left
+    neighbour's bounds end. Both snap that one logical x, so the joint is
+    `max(1, snap(border))` device px at any scale, as wide as the outer border, and a
+    segment's state never repaints a neighbour; for the same reason the border colour
+    is `Line` in every state (`Segment`, `SegmentHover`, `SegmentDown`, `SegmentOn`,
+    `SegmentOnHover`, `SegmentDisabled`, `SegmentOnDisabled`), the state shown by the
+    fill. A selected segment of a row that shows checks draws the check icon (kind 0)
+    at `getZIndex()+1` in `getCheckRect()` (`depthLayers()` 2). The segment holding
+    the keyboard focus is drawn over its whole bounds instead, with `SegmentFocus`'s
+    border on every side, covering its left joint (it is in front of its left
+    neighbour, and its right neighbour does not draw on their joint). It is not an
+    inset ring: style 4's alpha is the fill's times the shape's, so a rect with a
+    transparent fill shows no border either. The text is `Colors.SegmentedButton`'s
+    (`SegmentNormal`, `SegmentHover` (the normal one, so a hover writes no glyph),
+    `SegmentSelected`, `SegmentDisabled`; `SegmentCheck` the check's).
+  - *The keyboard.* The row is one Tab stop (`SegmentedButton::isTabable()` asks
+    `getTabStop()`: the focused segment, else the exclusive selection, else the first
+    enabled one), so Tab enters at the selection and Shift+Tab leaves from wherever
+    the focus moved. Left/Up and Right/Down step to the previous and next enabled
+    segment, Home/End to the ends, without wrapping; an Exclusive row's selection
+    moves with the focus, a Multi row's focus moves alone and Space/Return
+    (Selectable's) toggle the focused segment. The keys reach the row because a
+    segment does not take them and `Base::onKeyPress` passes an unhandled key up. A
+    disabled row disables every segment (`SegmentedButton::isDisabled()` asks the row
+    too, so each gets its own state back) and takes no key and no Tab.
+  - *The cost.* A hover writes the hovered segment's slot; an exclusive change the two
+    segments' slots and their Texts' glyphs (the colour); a multi toggle one
+    segment's fill and check; none lays out. `--scenario segmented` holds it on the
+    GPU pixels and the frame's counts, at scale 1 and 1.5, and measures every inner
+    joint as one run of the border colour as wide as the outer border.
+    `tests/unit/segmentedButtons.cpp` pins the selection, the events, the widths and
+    joints, the removal and the keyboard, `tests/unit/segmentedLook.cpp` the
+    renderer; SegmentedButtonsDemo shows each kind of row.
 - **Scale and the device-pixel grid.** Controls lay out in logical units (integers);
   `renderer::Base::translate()` turns them into device pixels at `scale()` (set by
   `Canvas::setScale`). It snaps **edges**, not origin and size apart: a point is
@@ -4704,12 +4766,12 @@ set by its bare name and one with some of them as `Name.field` per missing field
 the shipped theme with `"strict": true` added):
 
 ```
-theme strict: 177 of 181 surfaces not set: Badge, ButtonDisabled, ButtonDown, ...
-theme strict: 60 of 62 text colors not set: AxisTagText, BadgeText, ButtonDisabled, ...
+theme strict: 185 of 189 surfaces not set: Badge, ButtonDisabled, ButtonDown, ...
+theme strict: 65 of 67 text colors not set: AxisTagText, BadgeText, ButtonDisabled, ...
 ```
 
-(`theme strict: all 181 surfaces set` for a kind with no gaps, and a single
-`theme strict: all 181 surfaces and 62 text colors set` when there are none at all). A
+(`theme strict: all 189 surfaces set` for a kind with no gaps, and a single
+`theme strict: all 189 surfaces and 67 text colors set` when there are none at all). A
 rejected value counts as not set. A surface that is transparent at rest on purpose
 (`WindowButton`, `SelectableHover`: a transparent fill hides the slot) is magenta too
 until the theme sets it to `[0,0,0,0]`; the theme has not said what it looks like. The
