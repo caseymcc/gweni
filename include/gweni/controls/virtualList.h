@@ -325,6 +325,8 @@ private:
     bool remeasureStep();
     //! The row shows another item, or none: it gives up the mouse and the focus.
     void releaseRow(Base *control);
+    // an edit the list cannot describe to a reorder drag: it looks its item up
+    void reorderItemsChanged();
     void rowPressed(Base *row);
     //! The pooled rows' items, and a pending scrollToItem, after count items
     //! were inserted at at (count > 0) or removed from it (count < 0).

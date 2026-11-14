@@ -421,6 +421,51 @@ protected:
     bool cheapKeys() const override { return true; }
 };
 
+class VirtualList;
+
+//! The Reorderable of a VirtualList: its items, keyed by the app's own
+//! functions, key(index) and indexOf(key) (NoItem once the item is gone),
+//! asked only as a drag starts, as it drops and when the list changes during
+//! it (setItemCount, refresh, and insertItems/removeItems, which keep the
+//! dragged index and the gap by arithmetic and ask nothing). The gap and the
+//! looks come from the list's geometry, index*rowHeight less the offset (in
+//! variable mode its height index from the anchor), never from the pooled
+//! rows: the veil is over whichever row shows the dragged item, follows it
+//! as rows are bound to other items, and is hidden while it is out of view.
+//! A move or a scroll frame calls neither function.
+class GWENI_EXPORT VirtualListReorder: public Reorderable
+{
+public:
+    using KeyOf=std::function<uint64_t(size_t index)>;
+    using IndexOf=std::function<size_t(uint64_t key)>;
+
+    VirtualListReorder(VirtualList *list, KeyOf keyOf, IndexOf indexOf);
+
+    //! Makes one for \p list, gives it to the list (setReorderable) and
+    //! returns it
+    static VirtualListReorder *attach(VirtualList *list, KeyOf keyOf, IndexOf indexOf);
+
+protected:
+    size_t itemCount() const override;
+    uint64_t keyAt(size_t index) const override;
+    size_t indexOf(uint64_t key) const override;
+    size_t gapAt(Point local) const override;
+    int gapPosition(size_t gap) const override;
+    Rect itemRect(size_t index) const override;
+    size_t itemAt(Point local) const override;
+
+private:
+    // where the item's top is in the panel (the viewport), and its height
+    int64_t viewTop(size_t index) const;
+    int itemHeight(size_t index) const;
+    // the item whose span holds the panel's y (itemCount() past the last)
+    size_t itemAtY(int y) const;
+
+    VirtualList *m_virtualList;
+    KeyOf m_keyOf;
+    IndexOf m_indexOf;
+};
+
 }//namespace controls
 }//namespace gweni
 

@@ -278,6 +278,18 @@ static bool ShouldStartDraggingControl(int x, int y)
     }
 
     gweni::MouseFocus=nullptr;
+
+    // An item drag takes the hover away too: the input handler leaves it where
+    // it is while the drag lasts, and the pressed row of a pooled list may show
+    // another item once the list scrolls (it is hit-tested again at the end).
+    if(CurrentPackage->sourceList && gweni::HoveredControl)
+    {
+        gweni::controls::Base *hovered=gweni::HoveredControl;
+
+        gweni::HoveredControl=nullptr;
+        hovered->onMouseLeave();
+    }
+
     LastPressedControl=nullptr;
 
     // Some controls will want to decide whether they should be dragged at that

@@ -7,6 +7,8 @@
 #include <gweni/controls/checkBox.h>
 #include <gweni/controls/label.h>
 #include <gweni/controls/scrollControl.h>
+#include <gweni/controls/tabControl.h>
+#include <gweni/controls/virtualList.h>
 
 #include <algorithm>
 #include <string>
@@ -68,9 +70,13 @@ GWENI_CONTROL_CONSTRUCTOR(ReorderDemo)
     hint->setMargin(Margin(16, 2, 0, 0));
     hint->setText("Drag a card to reorder it or move it to another column. Escape cancels.");
 
-    auto *board=newChild<controls::Base>();
-    board->setDock(DockPosition::Center);
-    board->setMargin(Margin(10, 0, 10, 10));
+    m_pages=newChild<controls::TabControl>();
+    m_pages->setDock(DockPosition::Center);
+    m_pages->setMargin(Margin(10, 0, 10, 10));
+
+    m_boardTab=m_pages->addPage("Board");
+    auto *board=m_boardTab->getPage();
+    board->setPadding(Padding(8, 8, 8, 8));
 
     for(size_t index=0; index < ColumnCount; ++index)
     {
@@ -113,6 +119,78 @@ GWENI_CONTROL_CONSTRUCTOR(ReorderDemo)
     for(const char *title : DoneCards)
         addCard(Done, title);
     m_pinned=cards(Todo).front();
+
+    // the list page: 10 000 tasks, each keyed by its id
+    m_listsTab=m_pages->addPage("Lists");
+    auto *lists=m_listsTab->getPage();
+    lists->setPadding(Padding(8, 8, 8, 8));
+
+    auto *listBox=lists->newChild<controls::Base>();
+    listBox->setDock(DockPosition::Left);
+    listBox->setSizeFlags({SizeFlag::Fixed, SizeFlag::Expand});
+    listBox->setWidth(260);
+    listBox->setMargin(Margin(0, 0, 12, 0));
+
+    auto *listHeader=listBox->newChild<controls::Label>();
+    listHeader->setDock(DockPosition::Top);
+    listHeader->setText(std::to_string(ListItems)+" tasks, reordered by drag and drop");
+    listHeader->makeColorBright();
+    listHeader->setMargin(Margin(2, 0, 0, 6));
+
+    for(size_t i=0; i < ListItems; ++i)
+        m_listKeys.push_back(m_nextTask++);
+
+    m_list=listBox->newChild<controls::VirtualList>();
+    m_list->setDock(DockPosition::Center);
+    m_list->setRowBinder([this](controls::Base *row, size_t index)
+        {
+            if(controls::Label *label=gweni_cast<controls::Label>(row))
+                label->setText(taskText(m_listKeys[index]));
+        });
+    m_list->setItemCount(m_listKeys.size());
+
+    // the app's key functions: called as a drag starts, as it drops and when
+    // the list changes during it, never on a move or a scroll frame
+    m_listReorder=controls::VirtualListReorder::attach(m_list,
+        [this](size_t index) { return m_listKeys[index]; },
+        [this](uint64_t key) {
+            auto found=std::find(m_listKeys.begin(), m_listKeys.end(), key);
+            return (found == m_listKeys.end()) ? controls::VirtualList::NoItem
+                : static_cast<size_t>(found-m_listKeys.begin());
+        });
+    m_listReorder->setOnItemDropped([this](const controls::ItemDrop &drop) { applyListDrop(drop); });
+}
+
+String ReorderDemo::taskText(uint64_t key)
+{
+    return "Task #"+std::to_string(key);
+}
+
+void ReorderDemo::showBoard()
+{
+    m_boardTab->doAction();
+}
+
+void ReorderDemo::showLists()
+{
+    m_listsTab->doAction();
+}
+
+// Within the list: the task taken out at its index and put at the target
+// index, and the rows on screen bound again.
+void ReorderDemo::applyListDrop(const controls::ItemDrop &drop)
+{
+    m_drops.push_back(drop);
+
+    if(drop.sourceIndex >= m_listKeys.size())
+        return;
+
+    const uint64_t key=m_listKeys[drop.sourceIndex];
+
+    m_listKeys.erase(m_listKeys.begin()+static_cast<std::ptrdiff_t>(drop.sourceIndex));
+    m_listKeys.insert(m_listKeys.begin()+static_cast<std::ptrdiff_t>(std::min(drop.targetIndex,
+        m_listKeys.size())), key);
+    m_list->refresh();
 }
 
 std::vector<ReorderDemoCard *> ReorderDemo::cards(size_t column) const
@@ -191,6 +269,27 @@ void ReorderDemo::liveTick()
     {
         delete controls::Base::getControlById(m_liveCards.front());
         m_liveCards.erase(m_liveCards.begin());
+    }
+
+    // a task at the list's top, and the oldest live task gone past the cap
+    const uint64_t task=m_nextTask++;
+
+    m_listKeys.insert(m_listKeys.begin(), task);
+    m_list->insertItems(0, 1);
+    m_liveTasks.push_back(task);
+
+    while(m_liveTasks.size() > LiveCap)
+    {
+        auto found=std::find(m_listKeys.begin(), m_listKeys.end(), m_liveTasks.front());
+
+        if(found != m_listKeys.end())
+        {
+            const size_t index=static_cast<size_t>(found-m_listKeys.begin());
+
+            m_listKeys.erase(found);
+            m_list->removeItems(index, 1);
+        }
+        m_liveTasks.erase(m_liveTasks.begin());
     }
 }
 

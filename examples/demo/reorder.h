@@ -18,6 +18,9 @@ namespace controls
 class CheckBoxWithLabel;
 class Label;
 class ScrollControl;
+class TabButton;
+class TabControl;
+class VirtualList;
 }
 
 //! A task card: its title on the GroupBox surface.
@@ -34,13 +37,17 @@ private:
     controls::Label *m_title=nullptr;
 };
 
-//! Drag and drop reordering on a three-column board of cards, one
+//! Drag and drop reordering, on two pages. The Board: a three-column board
+//! of cards, one
 //! controls::CardReorder per column in one ReorderGroup: Todo is reordered
 //! within itself and takes no other column's cards, with nothing dropped above
 //! its pinned first card (canDrop); Running and Done take cards from any
 //! column but are not reordered within. The demo applies every drop to its
-//! cards. "Live updates" adds a card below the pinned one every LiveSeconds
-//! and, past LiveCap live cards, deletes the oldest.
+//! cards. The Lists: a VirtualList of ListItems tasks (a
+//! controls::VirtualListReorder keyed by each task's id), reordered within
+//! itself, the demo moving the task in its vector. "Live updates" adds, every
+//! LiveSeconds, a card below the pinned one and a task at the list's top and,
+//! past LiveCap live ones of each, deletes the oldest.
 class ReorderDemo: public controls::Base
 {
 public:
@@ -61,6 +68,7 @@ public:
     static constexpr size_t LiveCap=3;
     static constexpr int CardHeight=32;
     static constexpr int CardGap=6;
+    static constexpr size_t ListItems=10000;
 
     controls::ScrollControl *column(size_t index) const { return m_columns.at(index); }
     controls::CardReorder *columnReorder(size_t index) const { return m_reorders.at(index); }
@@ -74,6 +82,17 @@ public:
     //! Every drop the demo applied, in order
     const std::vector<controls::ItemDrop> &drops() const { return m_drops; }
 
+    controls::TabControl *pages() const { return m_pages; }
+    void showBoard();
+    void showLists();
+
+    controls::VirtualList *list() const { return m_list; }
+    controls::VirtualListReorder *listReorder() const { return m_listReorder; }
+    //! The list's task ids, in order
+    const std::vector<uint64_t> &listKeys() const { return m_listKeys; }
+    //! The text the list shows for a task
+    static String taskText(uint64_t key);
+
     controls::CheckBoxWithLabel *liveToggle() const { return m_liveToggle; }
     void setLiveUpdates(bool live);
     //! One step of the live updates: a card below the pinned one, and the
@@ -83,10 +102,19 @@ public:
 private:
     void onLiveChanged(event::Info info);
     void applyDrop(const controls::ItemDrop &drop);
+    void applyListDrop(const controls::ItemDrop &drop);
 
     std::vector<controls::ScrollControl *> m_columns;
     std::vector<controls::CardReorder *> m_reorders;
     controls::ReorderGroup m_group;
+    controls::TabControl *m_pages=nullptr;
+    controls::TabButton *m_boardTab=nullptr;
+    controls::TabButton *m_listsTab=nullptr;
+    controls::VirtualList *m_list=nullptr;
+    controls::VirtualListReorder *m_listReorder=nullptr;
+    std::vector<uint64_t> m_listKeys;
+    std::vector<uint64_t> m_liveTasks;
+    uint64_t m_nextTask=0;
     ReorderDemoCard *m_pinned=nullptr;
     std::vector<controls::ItemDrop> m_drops;
     controls::CheckBoxWithLabel *m_liveToggle=nullptr;

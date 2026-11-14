@@ -7,6 +7,7 @@
 
 #include <gweni/controls/virtualList.h>
 #include <gweni/controls/canvas.h>
+#include <gweni/controls/reorderable.h>
 #include <gweni/anim.h>
 #include <gweni/skin.h>
 #include <gweni/platforms/baseRender.h>
@@ -133,6 +134,7 @@ void VirtualList::setItemCount(size_t count)
         updateContentHeight();
         offsetFromAnchor();
         invalidate();
+        reorderItemsChanged();
         return;
     }
 
@@ -140,6 +142,7 @@ void VirtualList::setItemCount(size_t count)
     // which keeps the offset inside the new content
     updateContentHeight();
     invalidate();
+    reorderItemsChanged();
 }
 
 void VirtualList::insertItems(size_t at, size_t count)
@@ -170,6 +173,8 @@ void VirtualList::insertItems(size_t at, size_t count)
         updateContentHeight();
         offsetFromAnchor();
         invalidate();
+        if(Reorderable *reorder=getReorderable())
+            reorder->itemsInserted(at, count);
         return;
     }
 
@@ -186,6 +191,8 @@ void VirtualList::insertItems(size_t at, size_t count)
         ScrollControl::setVerticalScrollOffset(static_cast<int>(std::min<uint64_t>(
             static_cast<uint64_t>(offset)+static_cast<uint64_t>(count)*m_rowHeight, INT_MAX)));
     invalidate();
+    if(Reorderable *reorder=getReorderable())
+        reorder->itemsInserted(at, count);
 }
 
 void VirtualList::removeItems(size_t at, size_t count)
@@ -217,6 +224,8 @@ void VirtualList::removeItems(size_t at, size_t count)
         updateContentHeight();
         offsetFromAnchor();
         invalidate();
+        if(Reorderable *reorder=getReorderable())
+            reorder->itemsRemoved(at, count);
         return;
     }
 
@@ -237,6 +246,8 @@ void VirtualList::removeItems(size_t at, size_t count)
     if(newOffset != offset)
         ScrollControl::setVerticalScrollOffset(static_cast<int>(std::min<int64_t>(newOffset, INT_MAX)));
     invalidate();
+    if(Reorderable *reorder=getReorderable())
+        reorder->itemsRemoved(at, count);
 }
 
 // A row keeps its item through the shift, at the item's new index; a row of
@@ -655,6 +666,15 @@ void VirtualList::refresh()
     }
 
     invalidate();
+    // the items may be others now (an app's sort): a reorder drag looks its
+    // item up again
+    reorderItemsChanged();
+}
+
+void VirtualList::reorderItemsChanged()
+{
+    if(Reorderable *reorder=getReorderable())
+        reorder->itemsChanged();
 }
 
 void VirtualList::refreshItem(size_t index)
