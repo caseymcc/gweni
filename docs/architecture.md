@@ -1232,11 +1232,14 @@ side (`eraseFont`, `deleteTextureData`). The core's `end()` is `flush()`, so a
 wrapper such as `gweni_bench`'s `TimedFlush<Renderer>` times the flush of any backend
 by overriding `end()`.
 
-The vendored freetype-gl's headers include its `opengl.h` (`freetype-gl.h` does
-directly, and `text-buffer.h`, which the core lays coverage text out with,
-`text_buffer_add_text` into a CPU vector, through `vertex_buffer_t`'s GL names), so
-the GL headers are still on the core's include path, and on that of everything
-including `slotRenderer.h`, through them; the core calls only freetype-gl's CPU side.
+The vendored freetype-gl is GL-free (a gweni patch): the core lays coverage text
+out with `text_buffer_add_text` into a CPU vector, and `vertex_buffer_t` is that
+accumulator alone, with no GL buffer, VAO, upload or render, its `opengl.h` naming
+its own types (`ftgl_uint`, `FTGL_FLOAT`, ...) and including no GL header. So
+nothing GL is on the core's include path or that of anything including
+`slotRenderer.h` (`gweni_gl_free_header_check` compiles it, `depthView.h` and
+`vulkan.h` with every GL-family header an `#error`), and OpenGLCore links GL and
+GLEW (or GLES and EGL) itself.
 
 The GPU unit tests (`tests/`) take the shared renderer as a `SlotRenderer`
 (`test::gpuRenderer()`, `test::newRenderer()`, `test::clearView()`,
@@ -1253,8 +1256,18 @@ run ("renderer::Vulkan" below).
 
 `renderer::Vulkan` (`include/gweni/platforms/renderers/vulkan.h`,
 `source/platforms/renderers/Vulkan/`) is the Vulkan 1.3 backend of `SlotRenderer`,
-built with `GWENI_RENDER_VULKAN` (which, for now, needs `GWENI_RENDER_OPENGL_CORE`:
-the core, freetype-gl and the shader bodies are built with it). It draws every
+built with `GWENI_RENDER_VULKAN`, with or without `GWENI_RENDER_OPENGL_CORE`: the
+slot core it derives from (`SlotRenderer`, freetype-gl, glm, FreeType, the
+fallback font and `DepthView`) is built with either renderer and holds nothing
+GL. freetype-gl is GL-free in every tree (a gweni patch: its vertex buffers are
+CPU accumulators, its `opengl.h` includes no GL header), so `slotRenderer.h`,
+`depthView.h` and `vulkan.h` include no GL header anywhere, which
+`gweni_gl_free_header_check` holds them to; the shader bodies reach Vulkan as
+SPIR-V through `gweni_add_spirv`, and only OpenGLCore embeds them as text. A
+Vulkan-only build (`./generate.sh linux vulkan`, or an app taking gweni as a
+subproject, `docs/building.md` -> "gweni in a Vulkan app") needs the Vulkan
+headers, volk and `glslangValidator`, and the validation layer only for its
+tests. It draws every
 primitive style, with the clip boxes and the image pages, and text in every mode
 (coverage, LCD with dual-source blending, SDF) from the core's atlases and glyph
 slots, so `unittests_vulkan` runs every GPU unit case but the `gl_only` ones.
@@ -1623,8 +1636,7 @@ two programs and the draws. What follows describes both together:
   call newer than GLES 3.0 does not compile. The choice is made in one header,
   `include/gweni/platforms/renderers/glApi.h`, which every file calling GL includes
   (`GWENI_GL_ES` is a public compile definition of `gweni`, and Emscripten defines it
-  by itself there); freetype-gl gets the same switch from a gweni patch
-  (`freetype-gl_WITH_GLES3`, `FREETYPE_GL_GLES3` in its `opengl.h`), and
+  by itself there); freetype-gl includes no GL header at all (a gweni patch), and
   `GLFW_INCLUDE_NONE` keeps `<GLFW/glfw3.h>` from bringing the desktop `<GL/gl.h>`
   back. The examples' context (`examples/openglcore/capture.cpp`) is GLES 3.0 there: the
   surfaceless EGL one binds `EGL_OPENGL_ES_API` with an `EGL_OPENGL_ES3_BIT` config,
@@ -1683,7 +1695,8 @@ two programs and the draws. What follows describes both together:
   Touch, pointer events and an IME are not handled: a page loads on a phone, but only
   the mouse and the keyboard drive it. Building for wasm32 also showed two struct layouts that only agreed on
   x86-64 by luck, both fixed: freetype-gl's `vertex_buffer_t` with and without
-  `FREETYPE_GL_USE_VAO` (now a PUBLIC definition of the `freetype-gl` target), and
+  `FREETYPE_GL_USE_VAO` (now gone: freetype-gl has no VAO and one `vertex_buffer_t`
+  in every tree), and
   `json.h`'s `returnValue<uint64_t>`, which on x86-64 was the `size_t` specialisation.
 - **The browser against native.** The web tree's `web_*_native` tests
   (`tests/web/native.cmake`, run by `tests/web/native.mjs`) hold the browser to the

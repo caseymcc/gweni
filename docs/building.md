@@ -10,14 +10,16 @@ Builds run inside the build container (`./run_docker.sh` from a host; see
 ./generate.sh linux asan                  # build_linux_x64_debug_asan/, AddressSanitizer
 ./generate.sh linux profile               # build_linux_x64_profile/, for profiling
 ./generate.sh linux gles                  # build_linux_x64_debug_gles/, GLES 3.0 (see "GLES tree")
+./generate.sh linux vulkan                # build_linux_x64_debug_vulkan/, no GL (see "Vulkan-only tree")
 cmake --build build_linux_x64_debug -j
 ```
 
 Every tree `generate.sh` configures has the Vulkan build on
 (`GWENI_RENDER_VULKAN=ON`, with the vcpkg manifest feature `vulkan`: the Vulkan
 headers, the volk loader, glslang's `glslangValidator`, which compiles the
-shaders to SPIR-V at build time, and the Khronos validation layer). CMake's own
-default is off, so a plain CMake build needs none of it. For a GL-only tree:
+shaders to SPIR-V at build time, and the Khronos validation layer, which only
+the tests need). CMake's own default is off, so a plain CMake build needs none
+of it. For a GL-only tree:
 
 ```bash
 ./generate.sh linux -DGWENI_RENDER_VULKAN=OFF
@@ -99,6 +101,99 @@ NVIDIA's own driver), on X11 or XWayland. `vulkaninfo --summary`
 (`vulkan-tools`) lists what the loader finds. The exes take the first device
 with Vulkan 1.3, dynamic rendering and a graphics queue; one that cannot present
 to the window prints one line and exits 1.
+
+## Vulkan-only tree
+
+`renderer::Vulkan` does not need the GL renderer: it derives from the slot core
+(`SlotRenderer`, freetype-gl, glm, FreeType, the fallback font, `DepthView`),
+which is built with either renderer and holds nothing GL. `./generate.sh linux
+vulkan` configures `build_linux_x64_debug_vulkan/` with
+`-DGWENI_RENDER_OPENGL_CORE=OFF` and Vulkan on; it combines with `release`
+(`build_linux_x64_release_vulkan/`) and `asan`
+(`build_linux_x64_debug_vulkan_asan/`), and refuses `gles`, `web` and `profile`
+with one error line:
+
+```bash
+./generate.sh linux vulkan
+cmake --build build_linux_x64_debug_vulkan -j
+ctest --test-dir build_linux_x64_debug_vulkan -LE gpu
+mm run --lock render -- ctest --test-dir build_linux_x64_debug_vulkan -L gpu
+```
+
+Nothing in that tree finds or links GL, GLEW or EGL. It builds the library, the
+headless unit tests, the header checks, `vulkan_smoke` and `vulkan_frame` (one
+frame drawn with the textured skin on a validated device), and two checks that
+need no device: `vulkan_frame_no_gl` (no GL library in `vulkan_frame`'s
+`NEEDED`, no undefined `gl*`/`egl*`/`glew*` symbol) and `vulkan_cache_no_gl` (no
+`OPENGL_*`, `GLEW_*` or EGL entry in the tree's `CMakeCache.txt`). ControlTest,
+OpenGLCore, `gweni_unittests` and the bench are GL's (their capture code makes a
+GL context), so they are not built there; `unittests_vulkan` in the normal tree
+covers `renderer::Vulkan`. vcpkg still installs glew and glfw3 there, from
+gweni's own manifest; an app's manifest is its own (below).
+
+`gweni_gl_free_header_check`, part of `all` in every tree with either renderer,
+compiles `slotRenderer.h`, `depthView.h` and `vulkan.h` with an include
+directory of `#error` files in place of every GL-family header (`GL/`, `GLES*/`,
+`EGL/`, `KHR/`, `OpenGL/`, `glad/`, `GLFW/`) searched first, so a GL include
+reaching one of them fails the build naming the header.
+
+## gweni in a Vulkan app
+
+An app that draws with Vulkan alone takes gweni as a subproject:
+
+```cmake
+set(GWENI_RENDER_OPENGL_CORE OFF CACHE BOOL "")
+set(GWENI_RENDER_VULKAN ON CACHE BOOL "")
+add_subdirectory(external/gweni gweni)
+target_link_libraries(app PRIVATE gweni)
+```
+
+- `GWENI_BUILD_EXAMPLES` and `GWENI_BUILD_TESTS` default to OFF when gweni is
+  not the top-level project, so this builds the library alone. With
+  `GWENI_BUILD_TESTS` on, the tests need the validation layer too.
+- `GWENI_RENDER_OPENGL_CORE` is ON by default; turn it off, or GL, GLEW and
+  GLFW are found and linked.
+- `GWENI_SANITIZE`, `GWENI_FRAME_POINTERS` and `GWENI_DEBUG_LOGGING` are as in
+  gweni's own trees, off by default.
+- Configuring writes nothing under gweni's source tree. `<gweni/version.h>`
+  (`GWENI_VERSION`, `GWENI_VERSION_STR`) is generated into the build tree and is
+  on `gweni`'s include path; `cmake --install` installs it with the headers.
+
+The dependencies come from vcpkg, through the app's own manifest:
+`rapidjson`, `glm`, `freetype`, `libpng`, `libjpeg-turbo`, `vulkan-headers`,
+`volk` and `glslang` with its `tools` feature (`glslangValidator` compiles the
+shaders to SPIR-V at build time; `cmake/Vulkan.cmake` takes it from
+`${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/tools/glslang/`). It needs
+neither `glew`, `glfw3` nor `vulkan-validationlayers` (a heavy port, for gweni's
+tests alone).
+
+```json
+"dependencies": [
+    "rapidjson", "glm", "freetype", "libpng", "libjpeg-turbo",
+    "vulkan-headers", "volk",
+    { "name": "glslang", "features": [ "tools" ] }
+]
+```
+
+volk loads `libvulkan.so.1` at run time; nothing links libvulkan. gweni links
+vcpkg's static `volk::volk`, so an app that loads volk itself (`volkInitialize`,
+`volkLoadInstance`, `volkLoadDevice`) and links the same port shares one set of
+function pointers with it. `createVulkanDevice` makes a device for a test or a
+tool; an app with its own fills a `renderer::VulkanDevice` (Vulkan 1.3,
+`dynamicRendering` and `shaderDemoteToHelperInvocation` on, `dualSrcBlend`
+where the device has it) and has `renderer::Vulkan` draw into a `VulkanTarget`
+(`docs/architecture.md` -> "renderer::Vulkan (headless)").
+
+The textured skin loads its files from the `ResourcePaths` the renderer is
+given (`platform::CurrentPath("resources")`, `RelativeToExecutablePaths`, ...),
+so ship gweni's `resources/` with the app: `DefaultSkin.json` (the atlas
+description and the theme) and `DefaultSkin.png` (the atlas), `OpenSans.ttf`
+(the default face) and `DejaVuSansMono.ttf` (the mono face and the glyph
+fallback chain, loaded when used), with their `*-LICENSE.txt`. A missing skin
+config draws every surface magenta and a missing face draws in the built-in
+OpenSans, each with one line on stderr (`docs/architecture.md` -> "Missing
+resources"). `gwen.png`, `test16.png` and `LiberationSans-Regular.ttf` are the
+demos' alone.
 
 ## GLES tree
 
@@ -563,6 +658,12 @@ paths, not drawing) and `bench_smoke` is registered twice: on GL, and as
   compiled at build time. Like every Vulkan test it runs with only the vcpkg
   validation layer on the loader's layer path and the device pinned to
   lavapipe (`gweni_vulkan_test_environment` in `cmake/Vulkan.cmake`).
+- `vulkan_frame` (labels `gpu`, `vulkan`): one frame as a Vulkan-only app draws
+  it, with `gweni` alone linked: a validated device, a `VulkanTarget`, the
+  textured skin from `resources/` and a few controls; it fails if the frame
+  read back is one flat colour. In the Vulkan-only tree `vulkan_frame_no_gl`
+  and `vulkan_cache_no_gl` (no label, no device) check its ELF and the tree's
+  cache for GL (see "Vulkan-only tree").
 - `window_vulkan` (labels `gpu`, `vulkan`): the Vulkan window, under an Xvfb
   it starts itself and a minimal test window manager (`gweni_test_wm`):
   `ControlTest --renderer vulkan --window-test` presents ButtonDemo at
@@ -598,7 +699,7 @@ paths, not drawing) and `bench_smoke` is registered twice: on GL, and as
   in `tests/unit/`), one CTest test per case, e.g. the id-bank checks across
   skin swaps in `tests/unit/skinSwap.cpp`. No GL context, no `gpu` label.
 
-Two checks of the public headers run in the build itself, not in `ctest`.
+Three checks of the public headers run in the build itself, not in `ctest`.
 Every header under `include/gweni/` is compiled as the only include of its own
 translation unit (the target `gweni_header_check`, part of `all`; a backend's
 headers only in a tree that builds that backend), so a header that does not
@@ -606,6 +707,8 @@ include what it uses fails `cmake --build`, naming its
 `tests/header_check/gweni/<rel>.cpp`. And `gweni/controls.h` includes every
 header under `include/gweni/controls/`: a new control header must be added to
 it, or configuring fails with `controls.h does not include gweni/controls/<x>.h`.
+And `gweni_gl_free_header_check` compiles the headers a Vulkan app includes with
+every GL header poisoned (see "Vulkan-only tree").
 
 ## ASAN tree
 
