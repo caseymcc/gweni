@@ -225,11 +225,14 @@ bool ImagePanel::placeImage(ImageScaleMode mode, const gweni::Rect &bounds, floa
     }
 
     // that cut to the bounds and rounded to whole units, the UVs following the
-    // cut, so Fill and None crop through the UVs rather than a clip
-    const int left=std::max(bounds.x, (int)std::lround(x));
-    const int top=std::max(bounds.y, (int)std::lround(y));
-    const int right=std::min(bounds.x+bounds.w, (int)std::lround(x+w));
-    const int bottom=std::min(bounds.y+bounds.h, (int)std::lround(y+h));
+    // cut, so Fill and None crop through the UVs rather than a clip. Half up on
+    // both sides of 0 (lround goes away from it), so an image is its own width
+    // wherever its bounds start
+    auto whole=[](float v) { return (int)std::floor((double)v+0.5); };
+    const int left=std::max(bounds.x, whole(x));
+    const int top=std::max(bounds.y, whole(y));
+    const int right=std::min(bounds.x+bounds.w, whole(x+w));
+    const int bottom=std::min(bounds.y+bounds.h, whole(y+h));
 
     if(right <= left || bottom <= top)
         return false;
