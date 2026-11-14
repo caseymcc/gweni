@@ -31,6 +31,7 @@
 #include "gweni/controls/textBox.h"
 #include "gweni/controls/separator.h"
 #include "gweni/controls/segmentedButtons.h"
+#include "gweni/controls/stepper.h"
 #include "gweni/controls/selectable.h"
 #include "gweni/controls/navigationRail.h"
 #include "gweni/controls/splitterBar.h"
@@ -1080,6 +1081,128 @@ void SegmentedButton::update(renderer::Base *renderer, controls::Base *baseContr
     }
     else
         renderer->hidePrimitive(m_primitives[1]);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//StepperStep
+void StepperStep::generate(renderer::Base *renderer, controls::Base *baseControl)
+{
+    ControlRegister<StepperStep>::generate(renderer, baseControl);
+
+    if(!m_hasText)
+    {
+        renderer->generateTextPrimitive(m_textId);
+        m_hasText=true;
+        m_textShown=true;
+    }
+}
+
+void StepperStep::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.size() < 2 || !m_hasText)
+        return;
+
+    controls::StepperStep *step=static_cast<controls::StepperStep *>(baseControl);
+    const controls::StepLook look=step->getLook();
+    const bool clickable=step->getMouseInputEnabled() && !step->isDisabled();
+    const bool hovered=clickable && (step->isHovered() || step->isDepressed());
+    const tokyonight::Surface *surface=&tokyonight::StepperIndicator;
+
+    switch(look)
+    {
+    case controls::StepLook::Current:
+        surface=hovered?&tokyonight::StepperIndicatorCurrentHover:&tokyonight::StepperIndicatorCurrent;
+        break;
+    case controls::StepLook::Done:
+        surface=hovered?&tokyonight::StepperIndicatorDoneHover:&tokyonight::StepperIndicatorDone;
+        break;
+    case controls::StepLook::Error:
+        surface=hovered?&tokyonight::StepperIndicatorErrorHover:&tokyonight::StepperIndicatorError;
+        break;
+    case controls::StepLook::Disabled:
+        surface=&tokyonight::StepperIndicatorDisabled;
+        break;
+    default:
+        surface=hovered?&tokyonight::StepperIndicatorHover:&tokyonight::StepperIndicator;
+        break;
+    }
+
+    const Rect &bounds=step->getRenderBounds();
+    const Rect indicator=step->getIndicatorRect();
+    const Rect circle(bounds.x+indicator.x, bounds.y+indicator.y, indicator.w, indicator.h);
+    tokyonight::Surface circleSurface=*surface;
+
+    if(clickable && step->isFocussed())
+    {
+        circleSurface.border=tokyonight::StepperIndicatorFocus.border;
+        circleSurface.borderWidth=tokyonight::StepperIndicatorFocus.borderWidth;
+    }
+    circleSurface.radius=std::min(circleSurface.radius, 0.5f*float(std::min(circle.w, circle.h)));
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, circleSurface, circle);
+
+    const bool visible=baseControl->visible();
+    const gweni::Color &color=step->getSkin()->Colors.Stepper.Number;
+    const int z=baseControl->getZIndex()+1;
+
+    if(visible && (look == controls::StepLook::Done))
+    {
+        // the check in the middle half of the circle
+        const int inset=circle.w/4;
+
+        renderer->drawIcon(m_primitives[1], Rect(circle.x+inset, circle.y+inset, circle.w-2*inset,
+            circle.h-2*inset), 0, 0, color, z);
+    }
+    else
+        renderer->hidePrimitive(m_primitives[1]);
+
+    const bool textShown=visible && (look != controls::StepLook::Done);
+
+    if(textShown)
+    {
+        renderer->setDrawColor(color);
+        renderer->renderText(m_textId, step->getFont(), step->indicatorTextOrigin(), z, step->getIndicatorText());
+    }
+    const unsigned int stateChange=baseControl->getStateChange();
+
+    if((textShown != m_textShown) || (stateChange & controls::StateChange_Visibility)
+        || (stateChange & controls::StateChange_Created))
+    {
+        if(textShown)
+            renderer->showText(m_textId);
+        else
+            renderer->hideText(m_textId);
+        m_textShown=textShown;
+    }
+}
+
+void StepperStep::remove(renderer::Base *renderer, controls::Base *baseControl)
+{
+    ControlRegister<StepperStep>::remove(renderer, baseControl);
+
+    if(m_hasText)
+    {
+        renderer->releaseTextPrimitive(m_textId);
+        m_hasText=false;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////
+//StepperConnector
+void StepperConnector::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    controls::StepperConnector *connector=static_cast<controls::StepperConnector *>(baseControl);
+    const Rect &bounds=connector->getRenderBounds();
+    const tokyonight::Surface &surface=connector->isDone()?tokyonight::StepperConnectorDone:
+        tokyonight::StepperConnector;
+
+    if(connector->visible() && (bounds.w > 0) && (bounds.h > 0))
+        renderer->drawIcon(m_primitives[0], bounds, 6, connector->isVertical()?1:0, surface.top,
+            connector->getZIndex());
+    else
+        renderer->hidePrimitive(m_primitives[0]);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -5048,6 +5171,8 @@ template class ControlRegister<Selectable>;
 template class ControlRegister<NavigationRail>;
 template class ControlRegister<NavigationItem>;
 template class ControlRegister<SegmentedButton>;
+template class ControlRegister<StepperStep>;
+template class ControlRegister<StepperConnector>;
 template class ControlRegister<Separator>;
 template class ControlRegister<Bullet>;
 template class ControlRegister<InspectorHighlight>;

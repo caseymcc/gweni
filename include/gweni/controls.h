@@ -91,6 +91,7 @@
 #include <gweni/controls/spinner.h>
 #include <gweni/controls/splitterBar.h>
 #include <gweni/controls/statusBar.h>
+#include <gweni/controls/stepper.h>
 #include <gweni/controls/switch.h>
 #include <gweni/controls/tabButton.h>
 #include <gweni/controls/tabControl.h>

@@ -480,6 +480,17 @@ public:
             gweni::Color Disabled{0x80, 0x80, 0x80};
             gweni::Color Check{0xff, 0xff, 0xff};
         } SegmentedButton;
+        //! A Stepper step's title by its look, its subtitle and "Optional"
+        //! caption, and the indicator's number, "!" and check.
+        struct Stepper_t
+        {
+            gweni::Color Title{0, 0, 0};
+            gweni::Color TitleCurrent{0, 0, 0};
+            gweni::Color TitleDisabled{0x80, 0x80, 0x80};
+            gweni::Color Subtitle{0x80, 0x80, 0x80};
+            gweni::Color Error{0xff, 0, 0};
+            gweni::Color Number{0xff, 0xff, 0xff};
+        } Stepper;
 
         //! A Chip's text, by its tone and by its palette entry.
         struct Chip_t

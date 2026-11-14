@@ -1311,6 +1311,52 @@ public:
     inline static const std::string_view name="SegmentedButton";
 };
 
+// A Stepper's step: [0] its indicator circle (StepperIndicator, ...Current,
+// ...Done, ...Error, ...Disabled by its look, each but Disabled's ...Hover
+// while a clickable step is hovered, StepperIndicatorFocus's border while it
+// has the focus), [1] the check (icon kind 0) at getZIndex()+1 while it shows
+// as done, and a text run of its own at getZIndex()+1 for the number or "!"
+// (StepperNumber), hidden while done. The title and captions are its Texts.
+class StepperStep:public textured::ControlRegister<StepperStep>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    // the check and the number are drawn at getZIndex()+1, over the circle
+    size_t depthLayers() override { return 2; }
+
+    void generate(renderer::Base *renderer, controls::Base *baseControl) override;
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
+    void appendIds(std::vector<size_t> &primitiveIds, std::vector<size_t> &textIds) const override
+    {
+        ControlRegister<StepperStep>::appendIds(primitiveIds, textIds);
+        if(m_hasText)
+            textIds.push_back(m_textId);
+    }
+
+    inline static const std::string_view name="StepperStep";
+
+private:
+    bool m_hasText=false;
+    bool m_textShown=false;
+    size_t m_textId=0;
+};
+
+// A Stepper's connector: one 1-unit rule (icon kind 6) through its middle,
+// horizontal or vertical, in StepperConnector's or StepperConnectorDone's top
+// colour.
+class StepperConnector:public textured::ControlRegister<StepperConnector>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="StepperConnector";
+};
+
 // A Chart's legend row: [0] its background as a Selectable's (hidden at rest,
 // SelectableHover and SelectableDown; a legend row is never selected), and [1]
 // its swatch at getZIndex()+1, ChartLegendRow::getSwatchRect() in its series'

@@ -310,6 +310,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/selectable.cpp
     include/gweni/controls/segmentedButtons.h
     source/controls/segmentedButtons.cpp
+    include/gweni/controls/stepper.h
+    source/controls/stepper.cpp
     include/gweni/controls/separator.h
     source/controls/separator.cpp
     include/gweni/controls/slider.h

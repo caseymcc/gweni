@@ -262,6 +262,25 @@ inline Surface SegmentOnDisabled{ Color(0x2a,0x35,0x5a), Color(0x22,0x2b,0x47), 
 // gives the fill).
 inline Surface SegmentFocus     { SurfHi,                Surf,                  Blue,  Radius, BorderW };
 
+// A Stepper's step indicator, a circle (the radius is its most), by its look
+// and hovered where the stepper is non-linear; StepperIndicatorFocus's border
+// (only it is read) rings a focused one. The connector between two steps is
+// a 1-unit rule in its surface's top colour, StepperConnectorDone's into a
+// done step.
+inline constexpr float StepperRadius=32.0f;
+inline Surface StepperIndicator            { SurfHi,                Surf,                  Line,        StepperRadius, BorderW };
+inline Surface StepperIndicatorHover       { SurfHover,             SurfHi,                Muted,       StepperRadius, BorderW };
+inline Surface StepperIndicatorCurrent     { DarkBlue,              Color(0x34,0x4d,0x8c), Blue,        StepperRadius, BorderW };
+inline Surface StepperIndicatorCurrentHover{ Color(0x4a,0x6a,0xbd), Color(0x3f,0x5c,0xa6), Blue,        StepperRadius, BorderW };
+inline Surface StepperIndicatorDone        { Color(0x33,0x46,0x7a), Color(0x28,0x34,0x57), Blue,        StepperRadius, BorderW };
+inline Surface StepperIndicatorDoneHover   { Color(0x3d,0x55,0x94), Color(0x31,0x42,0x6e), Blue,        StepperRadius, BorderW };
+inline Surface StepperIndicatorError       { Color(0x5a,0x2a,0x3a), Color(0x4a,0x22,0x30), Red,         StepperRadius, BorderW };
+inline Surface StepperIndicatorErrorHover  { Color(0x6e,0x33,0x46), Color(0x5a,0x2a,0x3a), Red,         StepperRadius, BorderW };
+inline Surface StepperIndicatorDisabled    { BgStorm,               Color(0x1f,0x22,0x33), BgHighlight, StepperRadius, BorderW };
+inline Surface StepperIndicatorFocus       { BgDark,                BgDark,                Cyan,        StepperRadius, BorderW };
+inline Surface StepperConnector            { Line,                  Line,                  Line,        0.0f,          0.0f };
+inline Surface StepperConnectorDone        { Blue,                  Blue,                  Blue,        0.0f,          0.0f };
+
 // A PropertyRow's label column: flat and square, so only top is read. A dark
 // fill at rest, lifted while the row is hovered, blue-tinted while its value
 // is edited; the label's text (Properties.Label_*) reads over each.
@@ -494,6 +513,12 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"SelectableSelectedHover",&SelectableSelectedHover},{"SelectableSelectedDisabled",&SelectableSelectedDisabled},
         {"Segment",&Segment},{"SegmentHover",&SegmentHover},{"SegmentDown",&SegmentDown},{"SegmentOn",&SegmentOn},
         {"SegmentOnHover",&SegmentOnHover},{"SegmentDisabled",&SegmentDisabled},{"SegmentOnDisabled",&SegmentOnDisabled},
+        {"StepperIndicator",&StepperIndicator},{"StepperIndicatorHover",&StepperIndicatorHover},
+        {"StepperIndicatorCurrent",&StepperIndicatorCurrent},{"StepperIndicatorCurrentHover",&StepperIndicatorCurrentHover},
+        {"StepperIndicatorDone",&StepperIndicatorDone},{"StepperIndicatorDoneHover",&StepperIndicatorDoneHover},
+        {"StepperIndicatorError",&StepperIndicatorError},{"StepperIndicatorErrorHover",&StepperIndicatorErrorHover},
+        {"StepperIndicatorDisabled",&StepperIndicatorDisabled},{"StepperIndicatorFocus",&StepperIndicatorFocus},
+        {"StepperConnector",&StepperConnector},{"StepperConnectorDone",&StepperConnectorDone},
         {"SegmentFocus",&SegmentFocus},
         {"PropertyColumn",&PropertyColumn},{"PropertyColumnHover",&PropertyColumnHover},
         {"PropertyColumnEditing",&PropertyColumnEditing},
