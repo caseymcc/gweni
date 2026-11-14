@@ -519,6 +519,9 @@ std::unordered_map<std::string, gweni::Color*> TexturedSkin::textColorRegistry()
         {"NavItemText",&Colors.NavigationItem.Normal},
         {"NavItemSelectedText",&Colors.NavigationItem.Selected},
         {"NavItemDisabledText",&Colors.NavigationItem.Disabled},
+        {"SegmentNormal",&Colors.SegmentedButton.Normal},{"SegmentHover",&Colors.SegmentedButton.Hover},
+        {"SegmentSelected",&Colors.SegmentedButton.Selected},{"SegmentDisabled",&Colors.SegmentedButton.Disabled},
+        {"SegmentCheck",&Colors.SegmentedButton.Check},
         {"ToastText",&Colors.Toast.Text},{"ToastInfo",&Colors.Toast.Info},
         {"ToastPositive",&Colors.Toast.Positive},{"ToastWarning",&Colors.Toast.Warning},
         {"ToastNegative",&Colors.Toast.Negative},
@@ -1408,6 +1411,12 @@ void TexturedSkin::setThemeColors()
     Colors.NavigationItem.Normal=Fg;
     Colors.NavigationItem.Selected=Cyan;
     Colors.NavigationItem.Disabled=Muted;
+    // a segment's as a Selectable's, its check the accent
+    Colors.SegmentedButton.Normal=Fg;
+    Colors.SegmentedButton.Hover=Fg;
+    Colors.SegmentedButton.Selected=White;
+    Colors.SegmentedButton.Disabled=Muted;
+    Colors.SegmentedButton.Check=Blue;
 
     // Tokyo Night's sizes, set with its colours so a theme's "metrics" applies
     // over them.

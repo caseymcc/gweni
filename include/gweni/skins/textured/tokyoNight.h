@@ -239,6 +239,18 @@ inline Surface SelectableSelected     { SurfHi,                Surf,            
 inline Surface SelectableSelectedHover{ SurfHover,             SurfHi,                Blue,    RadiusSm, BorderW };
 inline Surface SelectableSelectedDisabled{ BgStorm,            Color(0x1f,0x22,0x33), BgHighlight, RadiusSm, BorderW };
 
+// A SegmentedButtons row's segments: a button's fill, the selected ones the
+// accent-tinted fill of a toggle Button that is on. The border is Line in
+// every state, since a joint between two segments is drawn by the left one
+// alone and must read the same whatever state the right one is in.
+inline Surface Segment          { SurfHi,                Surf,                  Line,  Radius, BorderW };
+inline Surface SegmentHover     { SurfHover,             SurfHi,                Line,  Radius, BorderW };
+inline Surface SegmentDown      { Surf,                  BgStorm,               Line,  Radius, BorderW };
+inline Surface SegmentOn        { Color(0x33,0x46,0x7a), Color(0x28,0x34,0x57), Line,  Radius, BorderW };
+inline Surface SegmentOnHover   { Color(0x3d,0x55,0x94), Color(0x31,0x42,0x6e), Line,  Radius, BorderW };
+inline Surface SegmentDisabled  { BgStorm,               Color(0x1f,0x22,0x33), Line,  Radius, BorderW };
+inline Surface SegmentOnDisabled{ Color(0x2a,0x35,0x5a), Color(0x22,0x2b,0x47), Line,  Radius, BorderW };
+
 // A PropertyRow's label column: flat and square, so only top is read. A dark
 // fill at rest, lifted while the row is hovered, blue-tinted while its value
 // is edited; the label's text (Properties.Label_*) reads over each.
@@ -464,6 +476,8 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"Separator",&Separator},
         {"SelectableHover",&SelectableHover},{"SelectableDown",&SelectableDown},{"SelectableSelected",&SelectableSelected},
         {"SelectableSelectedHover",&SelectableSelectedHover},{"SelectableSelectedDisabled",&SelectableSelectedDisabled},
+        {"Segment",&Segment},{"SegmentHover",&SegmentHover},{"SegmentDown",&SegmentDown},{"SegmentOn",&SegmentOn},
+        {"SegmentOnHover",&SegmentOnHover},{"SegmentDisabled",&SegmentDisabled},{"SegmentOnDisabled",&SegmentOnDisabled},
         {"PropertyColumn",&PropertyColumn},{"PropertyColumnHover",&PropertyColumnHover},
         {"PropertyColumnEditing",&PropertyColumnEditing},
         {"DataTableHeader",&DataTableHeader},{"DataTableHeaderHover",&DataTableHeaderHover},

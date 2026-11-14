@@ -1283,6 +1283,29 @@ public:
     inline static const std::string_view name="NavigationItem";
 };
 
+// A SegmentedButtons segment: [0] its fill (Segment, SegmentHover,
+// SegmentDown, SegmentOn, SegmentOnHover, SegmentDisabled,
+// SegmentOnDisabled), rounded only at the row's ends; and [1] the check icon
+// (kind 0) at getZIndex()+1 in getCheckRect(), shown while it is selected in a
+// row that shows checks (SegmentCheck, SegmentDisabled's text colour while
+// disabled). A segment after the first starts on its left neighbour's right
+// border column, which the neighbour draws: it is drawn from a Joint further
+// right, with no border on its left side, so every joint is one border column
+// at any scale and a segment's state never repaints its neighbours.
+class SegmentedButton:public textured::ControlRegister<SegmentedButton>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    // the check is drawn at getZIndex()+1, over the fill
+    size_t depthLayers() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="SegmentedButton";
+};
+
 // A Chart's legend row: [0] its background as a Selectable's (hidden at rest,
 // SelectableHover and SelectableDown; a legend row is never selected), and [1]
 // its swatch at getZIndex()+1, ChartLegendRow::getSwatchRect() in its series'

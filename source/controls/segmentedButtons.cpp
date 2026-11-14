@@ -65,11 +65,26 @@ void SegmentedButton::setCheckRoom(bool room)
 
     m_checkRoom=room;
     invalidate();
+    redraw();
 }
 
 bool SegmentedButton::isDisabled()
 {
     return ParentClass::isDisabled() || (m_row && m_row->isDisabled());
+}
+
+void SegmentedButton::updateColors()
+{
+    const auto &colors=getSkin()->Colors.SegmentedButton;
+
+    if(isDisabled())
+        setTextColor(colors.Disabled);
+    else if(isSelected())
+        setTextColor(colors.Selected);
+    else if(isHovered())
+        setTextColor(colors.Hover);
+    else
+        setTextColor(colors.Normal);
 }
 
 bool SegmentedButton::textShows() const
@@ -188,6 +203,8 @@ SegmentedButton *SegmentedButtons::addSegment(const String &text, const String &
         segment->setToggleable(m_allowNone);
         ensureSelection(segmentCount()-1);
     }
+    segment->updateColors();
+    restyleSegments();
     invalidate();
     return segment;
 }
@@ -218,6 +235,7 @@ void SegmentedButtons::removeSegment(int index)
 
     if(wasSelected && (m_mode == Mode::Exclusive))
         ensureSelection(index);
+    restyleSegments();
 }
 
 void SegmentedButtons::removeSegment(SegmentedButton *segment)
@@ -431,6 +449,13 @@ void SegmentedButtons::onChildRemoved(Base *child)
     m_group.remove(segment);
     if(wasSelected && (m_mode == Mode::Exclusive))
         ensureSelection(index);
+    restyleSegments();
+}
+
+void SegmentedButtons::restyleSegments()
+{
+    for(SegmentedButton *segment : m_segments)
+        segment->redraw();
 }
 
 int SegmentedButtons::segmentPositions(const std::vector<int> &widths, std::vector<int> &x)

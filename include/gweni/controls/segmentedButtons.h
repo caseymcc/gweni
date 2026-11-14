@@ -72,6 +72,9 @@ public:
     //! Disabled by its own setDisabled() or by its row's.
     bool isDisabled() override;
 
+    //! The skin's SegmentedButton text colour for its state.
+    void updateColors() override;
+
     void calculateSize(skin::Base *skin, Dim dim) override;
 
 protected:
@@ -218,6 +221,8 @@ protected:
     //! selects the enabled segment nearest \p from (after it first), else
     //! any.
     void ensureSelection(int from=0);
+    //! Repaints every segment: which of them are the row's ends changed.
+    void restyleSegments();
     //! Each segment's width, as placed.
     void segmentWidths(std::vector<int> &widths) const;
 

@@ -29,6 +29,7 @@
 #include "gweni/controls/switch.h"
 #include "gweni/controls/textBox.h"
 #include "gweni/controls/separator.h"
+#include "gweni/controls/segmentedButtons.h"
 #include "gweni/controls/selectable.h"
 #include "gweni/controls/navigationRail.h"
 #include "gweni/controls/splitterBar.h"
@@ -1001,6 +1002,58 @@ void NavigationItem::update(renderer::Base *renderer, controls::Base *baseContro
     }
     else
         renderer->hidePrimitive(m_primitives[0]);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//SegmentedButton
+void SegmentedButton::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.size() < 2)
+        return;
+
+    controls::SegmentedButton *segment=static_cast<controls::SegmentedButton *>(baseControl);
+    controls::SegmentedButtons *row=segment->getSegmentedButtons();
+    const bool disabled=segment->isDisabled();
+    const bool selected=segment->isSelected();
+    const tokyonight::Surface *surface=&tokyonight::Segment;
+
+    if(disabled)
+        surface=selected?&tokyonight::SegmentOnDisabled:&tokyonight::SegmentDisabled;
+    else if(segment->isDepressed())
+        surface=&tokyonight::SegmentDown;
+    else if(selected)
+        surface=segment->isHovered()?&tokyonight::SegmentOnHover:&tokyonight::SegmentOn;
+    else if(segment->isHovered())
+        surface=&tokyonight::SegmentHover;
+
+    const int index=row?row->indexOf(segment):0;
+    const int last=row?row->segmentCount()-1:0;
+    gweni::Rect rect=baseControl->getRenderBounds();
+    uint8_t edges=0;
+
+    // the left neighbour draws the shared column
+    if(index > 0)
+    {
+        edges|=renderer::SquareTopLeft|renderer::SquareBottomLeft|renderer::NoBorderLeft;
+        rect.x+=controls::SegmentedButtons::Joint;
+        rect.w-=controls::SegmentedButtons::Joint;
+    }
+    if(index < last)
+        edges|=renderer::SquareTopRight|renderer::SquareBottomRight;
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, *surface, rect, edges);
+
+    if(baseControl->visible() && selected && segment->hasCheckRoom())
+    {
+        const gweni::Rect &bounds=baseControl->getRenderBounds();
+        const gweni::Rect &check=segment->getCheckRect();
+        const auto &colors=baseControl->getSkin()->Colors.SegmentedButton;
+
+        renderer->drawIcon(m_primitives[1], gweni::Rect(bounds.x+check.x, bounds.y+check.y, check.w, check.h), 0,
+            0, disabled?colors.Disabled:colors.Check, baseControl->getZIndex()+1);
+    }
+    else
+        renderer->hidePrimitive(m_primitives[1]);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -4886,6 +4939,7 @@ template class ControlRegister<LogViewRow>;
 template class ControlRegister<Selectable>;
 template class ControlRegister<NavigationRail>;
 template class ControlRegister<NavigationItem>;
+template class ControlRegister<SegmentedButton>;
 template class ControlRegister<Separator>;
 template class ControlRegister<Bullet>;
 template class ControlRegister<InspectorHighlight>;
