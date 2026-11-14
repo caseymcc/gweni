@@ -4269,7 +4269,8 @@ two programs and the draws. What follows describes both together:
   - *The orientations.* The stepper owner-places its steps, connectors and body in its
     `arrange()`, before `Base::arrange` (SegmentedButtons' reason). Horizontal (the
     default): the steps in a row, each its own width, the connectors sharing what is
-    left (at least `ConnectorMinLength`, `ConnectorGap` from each step), the body under
+    left (`ConnectorGap` from each step; the preferred width gives each
+    `ConnectorMinLength`, and a stepper given less shortens them), the body under
     the whole header `HeaderGap` down, filling the rest of the stepper's height.
     Vertical (`setOrientation`): the steps in a column `StepSpacing` apart, the body
     under the current step, indented to its title, each connector from under its

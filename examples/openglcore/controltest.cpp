@@ -1137,7 +1137,8 @@
  *                 gives the frame before Next back; the veto writes the Error
  *                 step's ids alone, lays nothing out and changes no pixel
  *                 outside it; Next past the disabled step reads Finish and
- *                 writes only the two steps, the pages and Next; the hover
+ *                 writes only the two steps, the connector into the one left
+ *                 (now done), the pages and Next; the hover
  *                 writes the step's one slot and no glyph; the vertical click
  *                 lays out in one pass inside the stepper, changing no pixel
  *                 outside its column; settled frames write nothing; the demo
