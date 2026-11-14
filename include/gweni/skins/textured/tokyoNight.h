@@ -327,8 +327,8 @@ inline Surface TimelineBarHover { Color(0xff,0xff,0xff,0x40), Color(0xff,0xff,0x
 inline Surface StatsOverlay   { Color(0x16,0x16,0x1e,0xe0), Color(0x16,0x16,0x1e,0xe0), BgHighlight, Radius, BorderW };
 
 // A reorder drag (controls::Reorderable): the bar in the gap the dragged item
-// would land in, and the veil over the dragged item's own place, its fill
-// darkened (its text, drawn after every slot, shows over it).
+// would land in, and the veil over the dragged item's own place, a placeholder
+// (the item's text is behind it in depth, so it does not show through).
 inline Surface DropIndicator  { Blue,                    Blue,                    Blue,  1.0f, 0.0f };
 inline Surface DragSource     { Color(0x16,0x16,0x1e,0xc0), Color(0x16,0x16,0x1e,0xc0), DarkBlue, RadiusSm, BorderW };
 

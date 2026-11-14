@@ -3,6 +3,8 @@
 set(GWENI_DEMO_SOURCES
     demo/board.cpp
     demo/board.h
+    demo/reorder.cpp
+    demo/reorder.h
     demo/button.cpp
     demo/button.h
     demo/checkBox.cpp

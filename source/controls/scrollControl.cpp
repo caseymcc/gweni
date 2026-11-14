@@ -6,6 +6,7 @@
 
 
 #include <gweni/controls/scrollControl.h>
+#include <gweni/controls/reorderable.h>
 #include <gweni/controls/scrollBar.h>
 #include <gweni/controls/verticalScrollBar.h>
 #include <gweni/controls/horizontalScrollBar.h>
@@ -18,6 +19,93 @@ namespace gweni
 {
 namespace controls
 {
+
+// Null first, then deleted: a drag the Reorderable cancels as it goes calls
+// this control's hooks back, which then find none.
+ScrollControl::~ScrollControl()
+{
+    m_reorderable.reset();
+}
+
+void ScrollControl::setReorderable(std::unique_ptr<Reorderable> reorderable)
+{
+    m_reorderable.reset();
+    m_reorderable=std::move(reorderable);
+}
+
+bool ScrollControl::dragAndDrop_draggable()
+{
+    return m_reorderable != nullptr;
+}
+
+bool ScrollControl::dragAndDrop_takesDescendantDrag(Base *descendant)
+{
+    if(!m_reorderable || !m_innerPanel)
+        return false;
+
+    // inside the inner panel, not a bar
+    for(Base *control=descendant; control && (control != this); control=control->getActualParent())
+    {
+        if(control == m_innerPanel)
+            return true;
+    }
+    return false;
+}
+
+draganddrop::Package *ScrollControl::dragAndDrop_getPackage(int x, int y)
+{
+    if(!m_reorderable)
+        return nullptr;
+
+    // a press outside the viewport (the inset band, a bar) drags nothing
+    const Point local=canvasPosToLocal(Point(x, y));
+
+    if(local.x < m_viewport.x || local.y < m_viewport.y || local.x >= m_viewport.x+m_viewport.w
+        || local.y >= m_viewport.y+m_viewport.h)
+        return nullptr;
+
+    return m_reorderable->beginDragAt(x, y);
+}
+
+void ScrollControl::dragAndDrop_startDragging(draganddrop::Package * /*package*/, int /*x*/, int /*y*/)
+{
+    if(m_reorderable)
+        m_reorderable->startDragging();
+}
+
+void ScrollControl::dragAndDrop_endDragging(bool success, int /*x*/, int /*y*/)
+{
+    if(m_reorderable)
+        m_reorderable->endDragging(success);
+}
+
+bool ScrollControl::dragAndDrop_canAcceptPackage(draganddrop::Package *package)
+{
+    return m_reorderable && m_reorderable->canAcceptPackage(package);
+}
+
+void ScrollControl::dragAndDrop_hoverEnter(draganddrop::Package *package, int x, int y)
+{
+    if(m_reorderable)
+        m_reorderable->hoverEnter(package, x, y);
+}
+
+void ScrollControl::dragAndDrop_hover(draganddrop::Package *package, int x, int y)
+{
+    if(m_reorderable)
+        m_reorderable->hover(package, x, y);
+}
+
+void ScrollControl::dragAndDrop_hoverLeave(draganddrop::Package *package)
+{
+    if(m_reorderable)
+        m_reorderable->hoverLeave(package);
+}
+
+bool ScrollControl::dragAndDrop_handleDrop(draganddrop::Package *package, int x, int y)
+{
+    return m_reorderable && m_reorderable->handleDrop(package, x, y);
+}
 
 GWENI_CONTROL_CONSTRUCTOR(ScrollControl)
 {
@@ -366,6 +454,10 @@ void ScrollControl::arrange(skin::Base *skin, Dim dim)
         if(!child->hidden())
             child->doArrange(skin, Dim::Y);
     }
+
+    // a drag's looks follow the items this pass placed
+    if(m_reorderable)
+        m_reorderable->listArranged(skin);
 
     postLayout(skin);
 }

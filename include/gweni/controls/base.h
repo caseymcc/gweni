@@ -1695,6 +1695,12 @@ public:
     virtual void dragAndDrop_setPackage(bool draggable, const String &name="",
         void *userData=nullptr);
     virtual bool dragAndDrop_draggable();
+    //! Whether a press on \p descendant, which is not draggable itself, may
+    //! start this control's drag: a reorderable list's (ScrollControl's) item
+    //! under the press, whatever part of the item was pressed. False by
+    //! default, so a part of a draggable control (a tab's close button) starts
+    //! no drag of it.
+    virtual bool dragAndDrop_takesDescendantDrag(Base * /*descendant*/) { return false; }
     virtual bool dragAndDrop_shouldStartDrag() { return true; }
 
     virtual void dragAndDrop_startDragging(draganddrop::Package * /*package*/, int /*x*/,

@@ -8,6 +8,7 @@
 #include <gweni/gweni.h>
 #include <gweni/dragAndDrop.h>
 #include <gweni/utility.h>
+#include <gweni/controls/button.h>
 #include <gweni/controls/canvas.h>
 #include <gweni/platforms/platform.h>
 
@@ -202,8 +203,26 @@ bool nnMouseButton(gweni::controls::Base *hoveredControl, int x, int y, bool dow
     if(!hoveredControl)
         return false;
 
+    // The pressed control, or the nearest ancestor that takes drags from its
+    // descendants (a reorderable list, whose item may be pressed anywhere).
     if(!hoveredControl->dragAndDrop_draggable())
-        return false;
+    {
+        gweni::controls::Base *pressed=hoveredControl;
+
+        hoveredControl=nullptr;
+
+        for(gweni::controls::Base *control=pressed->getParent(); control; control=control->getParent())
+        {
+            if(control->dragAndDrop_takesDescendantDrag(pressed) && control->dragAndDrop_draggable())
+            {
+                hoveredControl=control;
+                break;
+            }
+        }
+
+        if(!hoveredControl)
+            return false;
+    }
 
     // Store the last clicked on control. Don't do anything yet,
     // we'll check it in OnMouseMoved, and if it moves further than
@@ -241,6 +260,16 @@ static bool ShouldStartDraggingControl(int x, int y)
     // pressed row's.
     SourceControl=CurrentPackage->sourceList ? CurrentPackage->sourceList : LastPressedControl;
     DragCanvas=LastPressedControl->getCanvas();
+
+    // An item drag takes the press from the control holding it (a card's
+    // Button, a row): it is let go without a click, as a pooled row given
+    // another item is (VirtualList::releaseRow).
+    if(CurrentPackage->sourceList && gweni::MouseFocus)
+    {
+        if(gweni::controls::Button *button=gweni_cast<gweni::controls::Button>(gweni::MouseFocus))
+            button->setDepressed(false);
+    }
+
     gweni::MouseFocus=nullptr;
     LastPressedControl=nullptr;
 

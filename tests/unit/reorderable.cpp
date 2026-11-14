@@ -105,10 +105,10 @@ public:
     void gapChanged() override { ++gapChanges; }
     void dragChanged() override { ++dragChanges; }
 
-    //! The item under the canvas point \p y, as a row would hand it out
-    size_t itemAtLocal(int y) const
+    //! The item under \p local, as a row would hand it out
+    size_t itemAt(Point local) const override
     {
-        return (y < 0) ? NoItem : static_cast<size_t>(y/ItemHeight);
+        return (local.y < 0) ? NoItem : static_cast<size_t>(local.y/ItemHeight);
     }
 };
 
@@ -129,7 +129,7 @@ public:
     bool dragAndDrop_draggable() override { return reorder != nullptr; }
     draganddrop::Package *dragAndDrop_getPackage(int x, int y) override
     {
-        return reorder ? reorder->beginDrag(reorder->itemAtLocal(canvasPosToLocal(Point(x, y)).y)) : nullptr;
+        return reorder ? reorder->beginDragAt(x, y) : nullptr;
     }
     void dragAndDrop_startDragging(draganddrop::Package *, int, int) override
     {

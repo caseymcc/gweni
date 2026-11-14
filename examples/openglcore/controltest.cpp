@@ -1283,6 +1283,7 @@
 #include <demo/zoomPanel.h>
 #include <demo/flow.h>
 #include <demo/board.h>
+#include <demo/reorder.h>
 #include <gweni/controls/board.h>
 #include <gweni/controls/boardColumn.h>
 #include <gweni/controls/layout/flow.h>
@@ -1402,7 +1403,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
     X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo) X(InspectorDemo) X(ThemeEditorDemo) \
-    X(StatsOverlayDemo) X(ZoomPanelDemo) X(NodeGraphDemo) X(FlowDemo) X(BoardDemo)
+    X(StatsOverlayDemo) X(ZoomPanelDemo) X(NodeGraphDemo) X(FlowDemo) X(BoardDemo) X(ReorderDemo)
 
 static const char *const g_controlNames[]=
 {
