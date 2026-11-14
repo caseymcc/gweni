@@ -15,6 +15,7 @@
 #include <gweni/controls/scrollControl.h>
 #include <gweni/text/undoStack.h>
 
+#include <functional>
 #include <memory>
 
 namespace gweni
@@ -26,6 +27,25 @@ class Animation;
 
 namespace controls
 {
+
+//! When a TextBox's validator runs (TextBox::setValidator): on every change of
+//! its text, when it loses the keyboard focus, or both (Change|FocusLoss).
+//! Return in a single-line box runs it whichever is set.
+enum class ValidateOn: unsigned int
+{
+    Change=1,
+    FocusLoss=2
+};
+
+inline ValidateOn operator|(ValidateOn a, ValidateOn b)
+{
+    return static_cast<ValidateOn>(static_cast<unsigned int>(a)|static_cast<unsigned int>(b));
+}
+
+inline bool operator&(ValidateOn a, ValidateOn b)
+{
+    return (static_cast<unsigned int>(a)&static_cast<unsigned int>(b)) != 0;
+}
 
 class GWENI_EXPORT TextBox:public Label
 {
@@ -83,7 +103,8 @@ public:
     //! Its room (getMessageRoom()) is added to the box's requested height
     //! (requestedSizeExtra) and to its bottom padding, below the field
     //! padding the app sets (getPadding() and setPadding() are the field's),
-    //! from the first setError, setHelperText or setReserveMessageLine(true)
+    //! from the first setError, setHelperText, setValidator or
+    //! setReserveMessageLine(true)
     //! on, so a field grows once, and from then on a message set, changed or
     //! cleared lays out the box alone.
     //! \{
@@ -100,9 +121,24 @@ public:
     virtual void setHelperText(const String &text);
     const String &getHelperText() const;
 
+    //! The error text for a text, empty for a valid one.
+    using Validator=std::function<String(const String &)>;
+
+    //! Checks the text (getText(), a PasswordTextBox's password, after a
+    //! TextBoxNumeric's filtering) and puts its result on the error through
+    //! setError, \p when: in onTextChanged, before onTextChangedCaller fires,
+    //! and/or as the focus is lost, before onLostFocusCaller fires; Return in
+    //! a single-line box runs it in either case, before onReturnPressedCaller.
+    //! Setting one runs nothing. A null one removes it, keeping the error.
+    void setValidator(Validator validator, ValidateOn when=ValidateOn::FocusLoss);
+    bool hasValidator() const;
+    //! Runs the validator now (a form's Submit) and returns whether the field
+    //! is valid: without a validator, whether it has no error.
+    bool validate();
+
     //! Keeps the message line's room in the box's height whether or not it
     //! shows anything, so the first message lays out the box alone too. Off
-    //! gives the room back only while nothing is shown.
+    //! gives the room back only while nothing is shown and no validator is set.
     void setReserveMessageLine(bool reserve);
     bool reservesMessageLine() const;
 

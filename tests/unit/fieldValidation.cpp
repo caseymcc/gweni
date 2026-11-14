@@ -17,6 +17,13 @@
  *  box was asked for, above the line. The message is not content (not
  *  getText(), a press on it leaves the caret and the selection), and a
  *  PasswordTextBox shows it in clear text.
+ *
+ *  The validator: set, it runs nothing and reserves the line; on Change it
+ *  runs in each text change, on the text after a TextBoxNumeric's filtering
+ *  (a refused letter never reaches it); on FocusLoss typing does not run it
+ *  and losing the focus, Tab included, does; Return runs it in either mode,
+ *  before onReturnPressedCaller; validate() runs it on demand and says whether
+ *  the field is valid; a null one removes it and keeps the error.
  */
 #include "headlessFixture.h"
 
@@ -27,6 +34,8 @@
 #include <doctest/doctest.h>
 
 #include <string>
+#include <type_traits>
+#include <vector>
 
 using namespace gweni;
 
@@ -70,6 +79,20 @@ struct Scene
         T *box=canvas->newChild<T>(name);
         box->setPos(10, y);
         return box;
+    }
+
+    void type(const char *text)
+    {
+        for(const char *c=text; *c; ++c)
+            canvas->inputCharacter(static_cast<UnicodeChar>(*c));
+        frame();
+    }
+
+    void key(int k)
+    {
+        input::onKeyEvent(canvas, k, true);
+        input::onKeyEvent(canvas, k, false);
+        frame();
     }
 
     // a press and a release at a point in canvas coordinates
@@ -249,7 +272,165 @@ void checkNotContent()
     CHECK(box->getCursorPos() == 5);
 }
 
+// Digits work in every field, a TextBoxNumeric's included: two at most.
+struct Rule
+{
+    int calls=0;
+    std::vector<String> seen;
+
+    controls::TextBox::Validator make()
+    {
+        return [this](const String &text) -> String
+        {
+            ++calls;
+            seen.push_back(text);
+            if(text.empty())
+                return "required";
+            return text.size() > 2?"two digits at most":"";
+        };
+    }
+};
+
+template<typename T>
+void checkValidateOnChange()
+{
+    Scene scene;
+    T *box=scene.template field<T>("box", 10);
+    Rule rule;
+
+    box->setText("");
+    box->setValidator(rule.make(), controls::ValidateOn::Change);
+    // setting it runs nothing, and reserves the line
+    CHECK(rule.calls == 0);
+    CHECK(box->reservesMessageLine());
+    CHECK_FALSE(box->hasError());
+    box->focus();
+    scene.settle();
+
+    scene.type("1");
+    CHECK_FALSE(box->hasError());
+    scene.type("23");
+    CHECK(box->getError() == "two digits at most");
+    CHECK(box->getMessageText()->getText() == "two digits at most");
+    scene.key(keys::Backspace);
+    CHECK_FALSE(box->hasError());
+    REQUIRE_FALSE(rule.seen.empty());
+    CHECK(rule.seen.back() == "12");
+
+    // a letter a TextBoxNumeric refuses never reaches the validator
+    const int calls=rule.calls;
+    scene.type("x");
+    if(std::is_base_of<controls::TextBoxNumeric, T>::value)
+        CHECK(rule.calls == calls);
+    else
+        CHECK(rule.seen.back() == "12x");
+}
+
+template<typename T>
+void checkValidateOnFocusLoss()
+{
+    Scene scene;
+    T *box=scene.template field<T>("box", 10);
+    T *other=scene.template field<T>("other", 60);
+    Rule rule;
+
+    box->setText("");
+    box->setValidator(rule.make());
+    box->focus();
+    scene.settle();
+
+    // typing does not run it, losing the focus does
+    scene.type("123");
+    CHECK(rule.calls == 0);
+    CHECK_FALSE(box->hasError());
+    other->focus();
+    scene.frame();
+    CHECK(rule.calls == 1);
+    CHECK(box->getError() == "two digits at most");
+
+    // Tab off an emptied box
+    box->focus();
+    box->setText("");
+    scene.frame();
+    CHECK(rule.calls == 1);
+    scene.key(keys::Tab);
+    CHECK_FALSE(box->isFocussed());
+    CHECK(box->getError() == "required");
+
+    // validate() on demand
+    box->setText("7");
+    CHECK(box->hasError());
+    CHECK(box->validate());
+    CHECK_FALSE(box->hasError());
+    box->setText("");
+    CHECK_FALSE(box->validate());
+    CHECK(box->getError() == "required");
+
+    // removed, the error stays and nothing runs it again
+    const int calls=rule.calls;
+    box->setValidator(nullptr);
+    CHECK_FALSE(box->hasValidator());
+    CHECK(box->getError() == "required");
+    box->setText("5");
+    box->focus();
+    other->focus();
+    scene.frame();
+    CHECK(rule.calls == calls);
+    CHECK(box->getError() == "required");
+    CHECK_FALSE(box->validate());
+}
+
+// Return runs it whether it is set for Change or for FocusLoss, before
+// onReturnPressedCaller fires.
+template<typename T>
+void checkValidateOnReturn(controls::ValidateOn when)
+{
+    Scene scene;
+    T *box=scene.template field<T>("box", 10);
+    Rule rule;
+
+    box->setText("");
+    box->setValidator(rule.make(), when);
+    box->focus();
+    scene.settle();
+    box->setText("12345", false);
+    rule.calls=0;
+
+    struct Enter: event::Handler
+    {
+        controls::TextBox *box;
+        bool hadError=false;
+        void entered(event::Info) { hadError=box->hasError(); }
+    } enter;
+    enter.box=box;
+    box->onReturnPressedCaller.add(&enter, &Enter::entered);
+
+    scene.key(keys::Return);
+    CHECK(rule.calls >= 1);
+    CHECK(box->hasError());
+    CHECK(enter.hadError);
+}
+
 } // namespace
+
+TEST_CASE_TEMPLATE("Field validation: a Change validator runs on each text change", T,
+    controls::TextBox, controls::PasswordTextBox, controls::TextBoxNumeric, controls::NumericUpDown)
+{
+    checkValidateOnChange<T>();
+}
+
+TEST_CASE_TEMPLATE("Field validation: a FocusLoss validator runs as the focus goes, and validate()", T,
+    controls::TextBox, controls::PasswordTextBox, controls::TextBoxNumeric, controls::NumericUpDown)
+{
+    checkValidateOnFocusLoss<T>();
+}
+
+TEST_CASE_TEMPLATE("Field validation: Return runs the validator in either mode", T,
+    controls::TextBox, controls::PasswordTextBox, controls::TextBoxNumeric, controls::NumericUpDown)
+{
+    checkValidateOnReturn<T>(controls::ValidateOn::Change);
+    checkValidateOnReturn<T>(controls::ValidateOn::FocusLoss);
+}
 
 TEST_CASE_TEMPLATE("Field validation: set and clear, onErrorChanged once per change", T,
     controls::TextBox, controls::PasswordTextBox, controls::TextBoxNumeric, controls::NumericUpDown)

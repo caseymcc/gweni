@@ -75,6 +75,8 @@ struct TextBox::MessageLine
     std::unique_ptr<gweni::Font> font;
     String error;
     String helper;
+    Validator validator;
+    ValidateOn validateOn=ValidateOn::FocusLoss;
     //! The app's padding; the box's own is this plus room at the bottom.
     Padding fieldPadding;
     bool reserved=false;
@@ -504,11 +506,44 @@ const String &TextBox::getHelperText() const
     return m_message?m_message->helper:none;
 }
 
+void TextBox::setValidator(Validator validator, ValidateOn when)
+{
+    if(!validator)
+    {
+        if(m_message)
+            m_message->validator=nullptr;
+        return;
+    }
+
+    MessageLine &line=messageLine();
+
+    line.validator=std::move(validator);
+    line.validateOn=when;
+}
+
+bool TextBox::hasValidator() const
+{
+    return m_message && m_message->validator;
+}
+
+// The app's setError and the validator's result take the same path. A copy,
+// as the validator may replace itself.
+bool TextBox::validate()
+{
+    if(hasValidator())
+    {
+        const Validator validator=m_message->validator;
+
+        setError(validator(getText()));
+    }
+    return !hasError();
+}
+
 void TextBox::setReserveMessageLine(bool reserve)
 {
     if(reserve)
         messageLine();
-    else if(m_message && getMessage().empty())
+    else if(m_message && getMessage().empty() && !m_message->validator)
         setMessageReserved(false);
 }
 
@@ -617,6 +652,10 @@ void TextBox::onLostKeyboardFocus()
     m_caretBlink.stop(this);
     // typing after the focus comes back is a step of its own
     m_undo.seal();
+
+    if(hasValidator() && (m_message->validateOn & ValidateOn::FocusLoss))
+        validate();
+
     onLostFocusCaller.call(this);
 }
 
@@ -1149,11 +1188,17 @@ void TextBox::onTextChanged()
     m_cursorPos=snapPos(getText(), std::min(m_cursorPos, textLength()));
     m_cursorEnd=snapPos(getText(), std::min(m_cursorEnd, textLength()));
 
+    if(hasValidator() && (m_message->validateOn & ValidateOn::Change))
+        validate();
+
     onTextChangedCaller.call(this);
 }
 
+// Return is a change and a focus loss at once: the validator runs on the text
+// as it is entered (a NumericUpDown's clamped), whichever ValidateOn is set.
 void TextBox::onEnter()
 {
+    validate();
     onReturnPressedCaller.call(this);
 }
 
