@@ -279,11 +279,45 @@ void Calendar::displayedMonthChanged()
     onDisplayedMonthChanged.call(this);
 }
 
-int Calendar::decadeFirstYear() const
+// The year before the decade holding \p year.
+static int decadeFirstYearOf(int year)
 {
-    const int decade=(m_year >= 0)?(m_year/10)*10:-(((-m_year)+9)/10)*10;
+    const int decade=(year >= 0)?(year/10)*10:-(((-year)+9)/10)*10;
 
     return decade-1;
+}
+
+int Calendar::decadeFirstYear() const
+{
+    return decadeFirstYearOf(m_year);
+}
+
+Date Calendar::clampToLimits(const Date &date) const
+{
+    if(m_max && (date > *m_max))
+        return *m_max;
+    if(m_min && (date < *m_min))
+        return *m_min;
+    return date;
+}
+
+void Calendar::viewSpan(int year, int month, Date &first, Date &last) const
+{
+    switch(m_view)
+    {
+    case View::Month:
+        first=Date(year, month, 1);
+        last=first.lastOfMonth();
+        break;
+    case View::Year:
+        first=Date(year, 1, 1);
+        last=Date(year, 12, 31);
+        break;
+    case View::Decade:
+        first=Date(decadeFirstYearOf(year)+1, 1, 1);
+        last=Date(decadeFirstYearOf(year)+10, 12, 31);
+        break;
+    }
 }
 
 bool Calendar::isInLimits(const Date &date) const
@@ -308,32 +342,22 @@ bool Calendar::isYearEnabled(int year) const
     return !(m_max && (Date(year, 1, 1) > *m_max)) && !(m_min && (Date(year, 12, 31) < *m_min));
 }
 
+// Only the limit on the side of travel stops a button, so a view past the
+// other limit (zoomed out from a month outside them) can go back to them.
 bool Calendar::canShowPrevious() const
 {
-    switch(m_view)
-    {
-    case View::Month:
-        return !m_min || !(Date(m_year, m_month, 1).addDays(-1) < *m_min);
-    case View::Year:
-        return isYearEnabled(m_year-1);
-    case View::Decade:
-        return isYearEnabled(decadeFirstYear());
-    }
-    return false;
+    Date first, last;
+
+    viewSpan(m_year, m_month, first, last);
+    return !m_min || !(first.addDays(-1) < *m_min);
 }
 
 bool Calendar::canShowNext() const
 {
-    switch(m_view)
-    {
-    case View::Month:
-        return !m_max || !(Date(m_year, m_month, 1).addMonths(1) > *m_max);
-    case View::Year:
-        return isYearEnabled(m_year+1);
-    case View::Decade:
-        return isYearEnabled(decadeFirstYear()+ZoomCount-1);
-    }
-    return false;
+    Date first, last;
+
+    viewSpan(m_year, m_month, first, last);
+    return !m_max || !(last.addDays(1) > *m_max);
 }
 
 bool Calendar::showPrevious()
@@ -342,8 +366,13 @@ bool Calendar::showPrevious()
         return false;
 
     const int months=(m_view == View::Month)?1:(m_view == View::Year)?12:120;
-    const Date previous=Date(m_year, m_month, 1).addMonths(-months);
+    Date previous=Date(m_year, m_month, 1).addMonths(-months);
+    Date first, last;
 
+    // a view still wholly past the maximum goes to the maximum's at once
+    viewSpan(previous.year, previous.month, first, last);
+    if(m_max && (first > *m_max))
+        previous=*m_max;
     setDisplayedMonth(previous.year, previous.month);
     return true;
 }
@@ -354,8 +383,13 @@ bool Calendar::showNext()
         return false;
 
     const int months=(m_view == View::Month)?1:(m_view == View::Year)?12:120;
-    const Date next=Date(m_year, m_month, 1).addMonths(months);
+    Date next=Date(m_year, m_month, 1).addMonths(months);
+    Date first, last;
 
+    // a view still wholly before the minimum goes to the minimum's at once
+    viewSpan(next.year, next.month, first, last);
+    if(m_min && (last < *m_min))
+        next=*m_min;
     setDisplayedMonth(next.year, next.month);
     return true;
 }
@@ -791,10 +825,14 @@ bool Calendar::moveCursor(int64_t step, int unit)
         target=from.addYears(step);
 
     const int direction=(step < 0)?-1:1;
+    // a cursor past the limits (in a view shown outside them) travelling
+    // toward them goes onto the limit it reaches first
+    const Date limit=clampToLimits(from);
+    const bool towardLimit=(direction < 0)?(limit < from):(from < limit);
 
     if(m_view == View::Month)
     {
-        if(!moveCursorTo(target, direction))
+        if(!moveCursorTo(target, direction) && !(towardLimit && moveCursorTo(limit, direction)))
             return false;
     }
     else
@@ -803,9 +841,12 @@ bool Calendar::moveCursor(int64_t step, int unit)
         const bool enabled=(m_view == View::Year)?isMonthEnabled(target.year, target.month)
             :isYearEnabled(target.year);
 
-        if(!enabled)
+        if(enabled)
+            m_cursor=target;
+        else if(towardLimit)
+            m_cursor=limit;
+        else
             return false;
-        m_cursor=target;
     }
     if(m_cursor != from)
         cursorMoved();
@@ -930,12 +971,14 @@ bool Calendar::pageCursor(int direction)
     Date target=input::isShiftDown()?m_cursor.addYears(direction):m_cursor.addMonths(direction);
     int search=direction;
 
-    if((direction > 0) && m_max && (target > *m_max))
+    // past the limit on the side of travel the page stops at it, and from
+    // past the other one it goes onto that one
+    if(m_max && (target > *m_max))
     {
         target=*m_max;
         search=-1;
     }
-    else if((direction < 0) && m_min && (target < *m_min))
+    else if(m_min && (target < *m_min))
     {
         target=*m_min;
         search=1;

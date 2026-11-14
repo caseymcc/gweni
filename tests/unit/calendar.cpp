@@ -930,3 +930,68 @@ TEST_CASE("Calendar: zooming in puts the cursor on an enabled month and day of w
     CHECK(calendar->getCursor().month == 8);
     CHECK_FALSE(calendar->getCell(calendar->getCursor().month-1)->getLook().disabled);
 }
+
+TEST_CASE("Calendar: the year and decade views get back inside limits the shown year is past")
+{
+    Scene scene;
+    Calendar *calendar=scene.calendar(2026, 11);
+
+    // the reviewer's case: a maximum years before the month shown
+    calendar->setDateLimits(std::nullopt, Date(2008, 6, 1));
+    scene.click(calendar->getTitle());
+    REQUIRE(calendar->getView() == Calendar::View::Year);
+    // Previous goes back to the maximum's year at once
+    CHECK_FALSE(calendar->getPreviousButton()->isDisabled());
+    CHECK(calendar->getNextButton()->isDisabled());
+    scene.click(calendar->getPreviousButton());
+    CHECK(calendar->getDisplayedYear() == 2008);
+    CHECK_FALSE(calendar->getCell(5)->getLook().disabled);
+
+    // the decade view of 2026: every year disabled, but Previous is not, and
+    // goes to the maximum's decade
+    calendar->setView(Calendar::View::Month);
+    calendar->setDisplayedMonth(2026, 11);
+    scene.click(calendar->getTitle());
+    scene.click(calendar->getTitle());
+    REQUIRE(calendar->getView() == Calendar::View::Decade);
+    CHECK_FALSE(calendar->getPreviousButton()->isDisabled());
+    scene.click(calendar->getPreviousButton());
+    CHECK(calendar->getDisplayedYear() == 2008);
+    scene.click(calendar->getCell(2008-calendar->decadeFirstYear()));
+    REQUIRE(calendar->getView() == Calendar::View::Year);
+    scene.click(calendar->getCell(5));
+    REQUIRE(calendar->getView() == Calendar::View::Month);
+    CHECK(calendar->getDisplayedYear() == 2008);
+    CHECK(calendar->getDisplayedMonth() == 6);
+
+    // the keys: from the 2026 decade a Left moves the cursor onto the
+    // maximum, in its decade, and Return zooms in
+    calendar->setDisplayedMonth(2026, 11);
+    calendar->setCursor(Date(2026, 11, 11));
+    calendar->setView(Calendar::View::Decade);
+    calendar->focus();
+    scene.key(keys::Right);
+    CHECK(calendar->getCursor().year == 2026);
+    scene.key(keys::Left);
+    CHECK(calendar->getCursor().year == 2008);
+    CHECK(calendar->getDisplayedYear() == 2008);
+    scene.key(keys::Return);
+    CHECK(calendar->getView() == Calendar::View::Year);
+
+    // the month view: PageUp from past the maximum goes onto it
+    calendar->setView(Calendar::View::Month);
+    calendar->setDisplayedMonth(2026, 11);
+    calendar->setCursor(Date(2026, 11, 11));
+    scene.key(keys::PageUp);
+    CHECK(calendar->getCursor().toIso() == "2008-06-01");
+    CHECK(calendar->getDisplayedMonth() == 6);
+
+    // and a minimum years after it, the other way
+    calendar->setDateLimits(Date(2040, 3, 10), std::nullopt);
+    calendar->setDisplayedMonth(2026, 11);
+    calendar->setView(Calendar::View::Year);
+    CHECK(calendar->getPreviousButton()->isDisabled());
+    scene.click(calendar->getNextButton());
+    CHECK(calendar->getDisplayedYear() == 2040);
+    CHECK_FALSE(calendar->getCell(2)->getLook().disabled);
+}
