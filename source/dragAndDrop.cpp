@@ -29,6 +29,9 @@ static gweni::controls::Canvas *DragCanvas=nullptr;
 static gweni::Point LastDragPos;
 static int Cursor=cursor::Normal;
 static bool DropRefused=false;
+// the canvas whose next left release a cancel left pending: the button that
+// held the drag is still down, and its release must reach no control
+static gweni::controls::Canvas *ReleaseCanvas=nullptr;
 
 static void setCursor(int type)
 {
@@ -87,12 +90,17 @@ static void ended(gweni::controls::Canvas *canvas)
         canvas->hoverMayHaveMoved();
 }
 
-bool cancel()
+// Ends the live drag with no drop. \p byRelease: the release itself cancels
+// it (over nothing that takes it), so no release is left pending.
+static bool cancelDrag(bool byRelease)
 {
     LastPressedControl=nullptr;
 
     if(!CurrentPackage)
         return false;
+
+    if(!byRelease)
+        ReleaseCanvas=DragCanvas;
 
     Package *package=CurrentPackage;
     gweni::controls::Base *source=SourceControl;
@@ -120,8 +128,28 @@ bool cancel()
     return true;
 }
 
+bool cancel()
+{
+    return cancelDrag(false);
+}
+
+bool takeCancelledRelease(gweni::controls::Canvas *canvas, bool down)
+{
+    if(!ReleaseCanvas || (canvas != ReleaseCanvas))
+        return false;
+
+    ReleaseCanvas=nullptr;
+
+    // a press: the release was lost (let go off the window), and this press
+    // is the user's next click
+    return !down;
+}
+
 void controlDeleted(gweni::controls::Base *control)
 {
+    if(control == ReleaseCanvas)
+        ReleaseCanvas=nullptr;
+
     if(CurrentPackage && (control == DragCanvas))
     {
         // the canvas goes: nothing it holds may be called
@@ -167,7 +195,7 @@ static bool OnDrop(int x, int y)
     // released over nothing that accepts it, or where its target refuses it:
     // a cancel
     if(!target || DropRefused)
-        return cancel();
+        return cancelDrag(true);
 
     gweni::controls::Base *source=SourceControl;
     gweni::controls::Canvas *canvas=DragCanvas;

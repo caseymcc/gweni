@@ -4273,7 +4273,12 @@ goes to a live drag ahead of the shown popup and the focus (`input::onKeyEvent`)
 its release going nowhere; a release over nothing that takes the package, or where
 its target refuses it (`setDropRefused`, the cursor `No`), cancels; an item drag's
 list hidden (checked in the update phase) or deleted cancels. A cancel calls no
-`handleDrop` and ends the source's drag with `false`. The move frames redraw
+`handleDrop` and ends the source's drag with `false`. A cancel the release did
+not make (Escape, the list hidden or deleted, the item gone) leaves the button
+that held the drag down, and its release on that canvas is taken as a drop's is
+(`draganddrop::takeCancelledRelease`), so it reaches no control under the mouse:
+not a scroll bar's track, not another card's Button with no press of its own; a
+left press first (the release lost off the window) forgets it. The move frames redraw
 nothing of their own (the old `redraw()` of the hovered control on every move is
 gone, which cost a TabStrip drag two controls and a layout pass a move). While a
 drag is live the input handler leaves the hover where it is and the core

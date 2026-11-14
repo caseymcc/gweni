@@ -39,7 +39,15 @@ GWENI_EXPORT gweni::controls::Canvas *dragCanvas();
 //! source its dragAndDrop_endDragging(false, ...); no handleDrop is called. A
 //! press that has not started a drag yet is forgotten too. Returns whether a
 //! drag was live.
+//! The button that held the drag is still down: its release on the drag's
+//! canvas is taken (takeCancelledRelease()) and reaches no control.
 GWENI_EXPORT bool cancel();
+
+//! A left button event on \p canvas after cancel() ended a drag there: the
+//! release (\p down false) is taken, and true returned, so the input handler
+//! delivers it nowhere, as a drop's release is not. A press (the release was
+//! lost off the window) only forgets the pending release and returns false.
+GWENI_EXPORT bool takeCancelledRelease(gweni::controls::Canvas *canvas, bool down);
 
 //! The cursor the drag core last asked the platform for while a drag was live
 //! (cursor::No over nothing that accepts the package, cursor::Normal over a
