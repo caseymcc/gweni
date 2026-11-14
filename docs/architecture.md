@@ -2069,6 +2069,56 @@ two programs and the draws. What follows describes both together:
   change reaches through `redraw()` once `KeyboardFocus` has moved; `onLostKeyboardFocus`
   runs before it has (`Base::focus`), and after it has in `Base::unfocus`, which is how the
   canvas drops the focus of a hidden or input-disabled box (`input::dropLostKeyboardFocus`).
+- **The field validation state.** A `TextBox` (and so `PasswordTextBox`, `TextBoxNumeric`
+  and `NumericUpDown`) has an error (`setError`, `clearError`, `hasError`, `getError`,
+  `onErrorChanged` once per change of the text), a helper text (`setHelperText`) and a
+  validator (`setValidator(fn, ValidateOn)`, `validate()`), all shown on one message line
+  under the field. Its state is a `TextBox::MessageLine` on the heap, made by the first
+  use, so a box with none holds a null pointer and lays out, draws and counts exactly as
+  before.
+  - *The line.* An `internal::Text` child, `Placement::Owner` and `doNotIncludeInSize()`,
+    in the box's font one size smaller (a font of its own, replaced on every change, as a
+    Text tells a new font by its pointer), placed by `TextBox::arrange` in each axis before
+    the children are: x at the field padding's left, as wide as the box from there, so a
+    longer message is cut by the box's clip (a Label clips its children to its bounds),
+    and y at the field part's bottom plus a 2-unit gap. It is not content: not
+    `getText()`, never masked (a `PasswordTextBox` masks `m_text` alone), and a press or
+    double-click on it (`TextBox::onMessageLine`) moves no caret and takes no selection.
+    Its colour follows the skin (`internal::SkinTextColor::ErrorText`, else `HelperText`),
+    so a theme edit reaches it.
+  - *Its room.* `getMessageRoom()`, the line's font's line height plus the gap, measured in
+    the box's Y measure (`TextBox::updateMessageRoom`, one counted measure), goes into two
+    places: the bottom padding (`m_padding`, which every docked or aligned child is laid
+    out in, so the text, the caret and a NumericUpDown's Right-docked buttons stay in the
+    field part; `getPadding()` and `setPadding()` are the app's field padding), and the
+    request, through `Base::requestedSizeExtra(dim)` (0 by default): every rule that reads
+    the request (`preferredFromContent`, `dockNoneSize`, `layoutCellSize`, the Fixed
+    minimum and maximum) reads `Base::requestedSize(dim)`, the request plus it, so a box
+    asked to be 200x20 is 20 plus the room high, its field part (`getFieldHeight()`) 20.
+    The room is reserved from the first `setHelperText`, `setValidator`,
+    `setReserveMessageLine(true)` or `setError`, and kept: the first one lays out the box's
+    parent's path (its size changed), and from then on a message set, changed or cleared is
+    the Text's new string and a `redraw()` of the box, one layout pass entering the way
+    down to the box and its subtree, its frame's slot and the message's glyphs written.
+    `setReserveMessageLine(false)` gives the room back only while nothing is shown and no
+    validator is set.
+  - *The validator* returns the error text (empty for valid), and its result goes through
+    `setError`, the app's path. `ValidateOn::Change` runs it in `onTextChanged` (after a
+    `TextBoxNumeric`'s `isTextAllowed` filtering, before `onTextChangedCaller`),
+    `ValidateOn::FocusLoss` (the default) in `onLostKeyboardFocus` (before
+    `onLostFocusCaller`), both with `Change|FocusLoss`; Return in a single-line box runs it
+    in either mode, in `TextBox::onEnter` (after a NumericUpDown's clamp, before
+    `onReturnPressedCaller`). Setting one runs nothing; `setValidator(nullptr)` removes it
+    and keeps the error.
+  - *The look.* The textured `TextBox` renderer draws the frame over the field part alone
+    and, while `hasError()`, picks `TextBoxError` (the theme's `Red` border),
+    `TextBoxErrorFocus` (the same red, 2 units thick) and `TextBoxErrorDisabled` (the red
+    mixed halfway with the disabled fill in `tokyoNight.h`: a border's alpha does not blend
+    with the fill under it); the message colours are `Colors.ErrorText` (`Red`) and
+    `Colors.HelperText` (`FgDark`), `"ErrorText"`/`"HelperText"` in `"textColors"`.
+  `tests/unit/fieldValidation.cpp` holds it over the four field types, and
+  `controltest_field_validation` (FieldValidationDemo) holds the costs on the real
+  renderer.
 - **The document and undo model.** `text::Document` (`include/gweni/text/document.h`) is
   a text as a `std::vector<String>` of lines, split on `'\n'` (`"\r\n"` is read as
   `"\n"`, always at least one line). A position is `(line, byte)`, and line i is O(1)
