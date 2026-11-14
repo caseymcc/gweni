@@ -33,14 +33,20 @@ void ScrollControl::setReorderable(std::unique_ptr<Reorderable> reorderable)
     m_reorderable=std::move(reorderable);
 }
 
+// Each drag-and-drop hook is the Reorderable's while the list has one, and
+// Base's otherwise, so dragAndDrop_setPackage and Base's drop still work on a
+// ScrollControl an app drags or drops onto itself.
+
 bool ScrollControl::dragAndDrop_draggable()
 {
-    return m_reorderable != nullptr;
+    return m_reorderable ? true : ParentClass::dragAndDrop_draggable();
 }
 
 bool ScrollControl::dragAndDrop_takesDescendantDrag(Base *descendant)
 {
-    if(!m_reorderable || !m_innerPanel)
+    if(!m_reorderable)
+        return ParentClass::dragAndDrop_takesDescendantDrag(descendant);
+    if(!m_innerPanel)
         return false;
 
     // inside the inner panel, not a bar
@@ -55,7 +61,10 @@ bool ScrollControl::dragAndDrop_takesDescendantDrag(Base *descendant)
 void ScrollControl::dragAndDrop_pressed(int x, int y)
 {
     if(!m_reorderable)
+    {
+        ParentClass::dragAndDrop_pressed(x, y);
         return;
+    }
 
     // a press outside the viewport (the inset band, a bar) drags nothing
     const Point local=canvasPosToLocal(Point(x, y));
@@ -65,50 +74,62 @@ void ScrollControl::dragAndDrop_pressed(int x, int y)
     m_reorderable->pressedAt(x, y, inViewport);
 }
 
-draganddrop::Package *ScrollControl::dragAndDrop_getPackage(int /*x*/, int /*y*/)
+draganddrop::Package *ScrollControl::dragAndDrop_getPackage(int x, int y)
 {
     // the item noted at the press, wherever it is now
-    return m_reorderable ? m_reorderable->beginPressedDrag() : nullptr;
+    return m_reorderable ? m_reorderable->beginPressedDrag() : ParentClass::dragAndDrop_getPackage(x, y);
 }
 
-void ScrollControl::dragAndDrop_startDragging(draganddrop::Package * /*package*/, int /*x*/, int /*y*/)
+void ScrollControl::dragAndDrop_startDragging(draganddrop::Package *package, int x, int y)
 {
     if(m_reorderable)
         m_reorderable->startDragging();
+    else
+        ParentClass::dragAndDrop_startDragging(package, x, y);
 }
 
-void ScrollControl::dragAndDrop_endDragging(bool success, int /*x*/, int /*y*/)
+void ScrollControl::dragAndDrop_endDragging(bool success, int x, int y)
 {
     if(m_reorderable)
         m_reorderable->endDragging(success);
+    else
+        ParentClass::dragAndDrop_endDragging(success, x, y);
 }
 
 bool ScrollControl::dragAndDrop_canAcceptPackage(draganddrop::Package *package)
 {
-    return m_reorderable && m_reorderable->canAcceptPackage(package);
+    return m_reorderable ? m_reorderable->canAcceptPackage(package)
+        : ParentClass::dragAndDrop_canAcceptPackage(package);
 }
 
 void ScrollControl::dragAndDrop_hoverEnter(draganddrop::Package *package, int x, int y)
 {
     if(m_reorderable)
         m_reorderable->hoverEnter(package, x, y);
+    else
+        ParentClass::dragAndDrop_hoverEnter(package, x, y);
 }
 
 void ScrollControl::dragAndDrop_hover(draganddrop::Package *package, int x, int y)
 {
     if(m_reorderable)
         m_reorderable->hover(package, x, y);
+    else
+        ParentClass::dragAndDrop_hover(package, x, y);
 }
 
 void ScrollControl::dragAndDrop_hoverLeave(draganddrop::Package *package)
 {
     if(m_reorderable)
         m_reorderable->hoverLeave(package);
+    else
+        ParentClass::dragAndDrop_hoverLeave(package);
 }
 
 bool ScrollControl::dragAndDrop_handleDrop(draganddrop::Package *package, int x, int y)
 {
-    return m_reorderable && m_reorderable->handleDrop(package, x, y);
+    return m_reorderable ? m_reorderable->handleDrop(package, x, y)
+        : ParentClass::dragAndDrop_handleDrop(package, x, y);
 }
 
 GWENI_CONTROL_CONSTRUCTOR(ScrollControl)
