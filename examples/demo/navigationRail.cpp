@@ -1,3 +1,9 @@
+/*
+  * Gweni
+  * Copyright (c) 2010 Facepunch Studios
+  * See license in gweni.h
+ */
+
 #include "demo/navigationRail.h"
 #include "gweni/controls/badge.h"
 #include "gweni/controls/button.h"
