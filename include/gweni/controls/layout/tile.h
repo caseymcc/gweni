@@ -11,6 +11,8 @@
 
 #include <gweni/controls/base.h>
 
+#include <algorithm>
+
 namespace gweni
 {
 namespace controls
@@ -66,6 +68,50 @@ public:
         ParentClass::arrange(skin, dim);
     }
 
+    //! X: one tile and the padding. Y: the rows at the width the X arrange
+    //! gave it (the cells a row holds, columns(), over the shown children)
+    //! times the tile height, and the padding, so a ScrollControl around it
+    //! scrolls to its last row. A Y measure before this pass's X arrange (a
+    //! ScrollControl's, at the old width) keeps the last height.
+    void calculateSize(skin::Base *skin, Dim dim) override
+    {
+        const Padding &padding=getPadding();
+
+        ParentClass::calculateSize(skin, dim);
+        if(dim == Dim::X)
+        {
+            m_preferredSize.width=preferredFromContent(m_tileSize.x+padding.left+padding.right, Dim::X);
+            return;
+        }
+        if(inLayoutPass() && !laidOutThisPass(Dim::X))
+            return;
+
+        int shown=0;
+
+        for(auto &&child : getChildren())
+        {
+            if(!child->hidden())
+                ++shown;
+        }
+
+        const int columns=this->columns();
+        const int rows=(shown+columns-1)/columns;
+
+        m_preferredSize.height=preferredFromContent(rows*m_tileSize.y+padding.top+padding.bottom, Dim::Y);
+    }
+
+    //! The cells a row holds at the width now, as arrange() wraps them: a new
+    //! row once a cell would pass the content box, at least one a row
+    int columns() const
+    {
+        const Padding &padding=getPadding();
+        const int content=getWidth()-padding.left-padding.right;
+
+        if(m_tileSize.x <= 0)
+            return 1;
+        return std::max(1, content/m_tileSize.x);
+    }
+
     void onChildAdded(Base *child) override
     {
         child->setPlacement(Placement::Owner);
@@ -80,12 +126,15 @@ public:
 
     void setTileSize(int x, int y)
     {
+        if(m_tileSize.x == x && m_tileSize.y == y)
+            return;
         m_tileSize=Point(x, y);
+        invalidate();
     }
 
 private:
 
-    Point m_tileSize;
+    Point m_tileSize{0, 0};
 };
 
 
