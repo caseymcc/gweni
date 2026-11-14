@@ -10,6 +10,7 @@
 #include <gweni/skin.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <string>
 
 namespace gweni
@@ -22,6 +23,22 @@ namespace
 
 const char *const ErrorMark="!";
 const char *const OptionalCaption="Optional";
+const char *const NextText="Next";
+const char *const FinishText="Finish";
+const char *const BackText="Back";
+//! The units above the navigation bar.
+constexpr int NavigationGap=8;
+
+// A navigation button: wider than its text, as a dialog's, focusable and a
+// Tab stop.
+void navigationButton(Button *button, const char *text, DockPosition dock)
+{
+    button->setText(text);
+    button->setDock(dock);
+    button->setPadding(Padding(16, 3, 16, 3));
+    button->setKeyboardInputEnabled(true);
+    button->setTabable(true);
+}
 
 }//namespace
 
@@ -153,6 +170,72 @@ void StepperStep::updateColors()
         m_optionalText->setTextColor((m_look == StepLook::Disabled)?colors.TitleDisabled:colors.Subtitle);
 }
 
+void StepperStep::onPress(event::Info info)
+{
+    if(!m_stepper || m_stepper->isLinear() || isDisabled())
+        return;
+
+    ParentClass::onPress(info);
+    m_stepper->goTo(m_index);
+}
+
+bool StepperStep::onKeySpace(bool down)
+{
+    if(!m_stepper || m_stepper->isLinear())
+        return false;
+    if(down && !isDisabled())
+        m_stepper->goTo(m_index);
+    return true;
+}
+
+bool StepperStep::onKeyReturn(bool down)
+{
+    return onKeySpace(down);
+}
+
+// Left/Right in a horizontal stepper, Up/Down in a vertical one; the other
+// pair goes on up.
+bool StepperStep::onKeyLeft(bool down)
+{
+    if(!m_stepper || m_stepper->isLinear() || m_stepper->isVertical())
+        return false;
+    if(down)
+        m_stepper->moveFocus(-1);
+    return true;
+}
+
+bool StepperStep::onKeyRight(bool down)
+{
+    if(!m_stepper || m_stepper->isLinear() || m_stepper->isVertical())
+        return false;
+    if(down)
+        m_stepper->moveFocus(1);
+    return true;
+}
+
+bool StepperStep::onKeyUp(bool down)
+{
+    if(!m_stepper || m_stepper->isLinear() || !m_stepper->isVertical())
+        return false;
+    if(down)
+        m_stepper->moveFocus(-1);
+    return true;
+}
+
+bool StepperStep::onKeyDown(bool down)
+{
+    if(!m_stepper || m_stepper->isLinear() || !m_stepper->isVertical())
+        return false;
+    if(down)
+        m_stepper->moveFocus(1);
+    return true;
+}
+
+bool StepperStep::isTabable()
+{
+    return m_stepper && (m_stepper->getTabStop() == this);
+}
+
 int StepperStep::titleBlockHeight() const
 {
     int height=m_text->getPreferredSize().height;
@@ -265,6 +348,15 @@ GWENI_CONTROL_CONSTRUCTOR(Stepper)
 {
     m_body=newChild<Base>();
     m_body->setPlacement(Placement::Owner);
+    m_navigation=m_body->newChild<Base>();
+    m_navigation->setDock(DockPosition::Bottom);
+    m_navigation->setMargin(Margin(0, NavigationGap, 0, 0));
+    m_back=m_navigation->newChild<Button>();
+    navigationButton(m_back, BackText, DockPosition::Left);
+    m_back->onPressCaller.add(this, &ThisClass::onBackPressed);
+    m_next=m_navigation->newChild<Button>();
+    navigationButton(m_next, FinishText, DockPosition::Right);
+    m_next->onPressCaller.add(this, &ThisClass::onNextPressed);
     m_pageArea=m_body->newChild<Base>();
     m_pageArea->setDock(DockPosition::Center);
 }
@@ -298,6 +390,7 @@ Base *Stepper::addStep(const String &title, const String &subtitle)
     step->setText(title);
     step->setSubtitle(subtitle);
     m_steps.push_back(step);
+    updateStepInput(step);
 
     Step data;
 
@@ -342,7 +435,13 @@ void Stepper::setStepState(int index, StepState state)
         return;
 
     step.state=state;
-    m_steps[static_cast<size_t>(index)]->setDisabled(state == StepState::Disabled);
+
+    StepperStep *control=m_steps[static_cast<size_t>(index)];
+
+    control->setDisabled(state == StepState::Disabled);
+    updateStepInput(control);
+    if((state == StepState::Disabled) && (KeyboardFocus == control))
+        control->unfocus();
     updateLooks();
 }
 
@@ -418,6 +517,192 @@ void Stepper::setOrientation(Orientation orientation)
     invalidate();
 }
 
+void Stepper::updateStepInput(StepperStep *step)
+{
+    const bool input=!m_linear && !step->isDisabled();
+
+    step->setMouseInputEnabled(input);
+    step->setKeyboardInputEnabled(input);
+    step->setCursor(input?cursor::Finger:cursor::Normal);
+}
+
+void Stepper::setLinear(bool linear)
+{
+    if(linear == m_linear)
+        return;
+
+    m_linear=linear;
+    for(StepperStep *step : m_steps)
+    {
+        updateStepInput(step);
+        if(linear && (KeyboardFocus == step))
+            step->unfocus();
+        // the hover look is the clickable steps'
+        step->redraw();
+    }
+}
+
+void Stepper::setShowNavigation(bool show)
+{
+    m_navigation->setHidden(!show);
+}
+
+bool Stepper::showsNavigation() const
+{
+    return !m_navigation->hidden();
+}
+
+int Stepper::nearestEnabled(int direction) const
+{
+    for(int i=m_current+direction; (i >= 0) && (i < getStepCount()); i+=direction)
+    {
+        if(getStepState(i) != StepState::Disabled)
+            return i;
+    }
+    return -1;
+}
+
+bool Stepper::isAtLastStep() const
+{
+    return nearestEnabled(1) < 0;
+}
+
+// A handler may itself move the stepper (or ask again, nesting): the answer
+// is its own call's, and a change made meanwhile wins over this one.
+bool Stepper::askChange(int from, int to)
+{
+    const bool outerVetoed=m_changeVetoed;
+    const int outerFrom=m_changingFrom;
+    const int outerTo=m_changingTo;
+
+    m_changeVetoed=false;
+    m_changingFrom=from;
+    m_changingTo=to;
+
+    event::Info info(this);
+
+    info.point=Point(from, to);
+    info.integer=static_cast<size_t>(to);
+    onStepChanging.call(this, info);
+
+    const bool vetoed=m_changeVetoed;
+
+    m_changeVetoed=outerVetoed;
+    m_changingFrom=outerFrom;
+    m_changingTo=outerTo;
+    return !vetoed && (m_current == from);
+}
+
+bool Stepper::goTo(int index)
+{
+    if((index < 0) || (index >= getStepCount()) || (index == m_current)
+        || (getStepState(index) == StepState::Disabled))
+        return false;
+
+    const int from=m_current;
+
+    if(!askChange(from, index))
+        return false;
+    // a handler may have disabled it
+    if(getStepState(index) == StepState::Disabled)
+        return false;
+
+    setCurrentStep(index);
+
+    event::Info info(this);
+
+    info.point=Point(from, index);
+    info.integer=static_cast<size_t>(index);
+    onStepChanged.call(this, info);
+    return true;
+}
+
+bool Stepper::next()
+{
+    if(m_steps.empty())
+        return false;
+
+    const int to=nearestEnabled(1);
+
+    if(to >= 0)
+        return goTo(to);
+
+    // Finish: asked as a change past the last step
+    if(!askChange(m_current, getStepCount()))
+        return false;
+    onFinish.call(this);
+    return true;
+}
+
+bool Stepper::back()
+{
+    const int to=nearestEnabled(-1);
+
+    return (to >= 0) && goTo(to);
+}
+
+void Stepper::onNextPressed(event::Info)
+{
+    next();
+}
+
+void Stepper::onBackPressed(event::Info)
+{
+    back();
+}
+
+StepperStep *Stepper::getTabStop() const
+{
+    if(m_linear)
+        return nullptr;
+
+    for(StepperStep *step : m_steps)
+    {
+        if((KeyboardFocus == step) && !step->isDisabled())
+            return step;
+    }
+    if(StepperStep *current=getStep(m_current))
+    {
+        if(!current->isDisabled())
+            return current;
+    }
+    for(StepperStep *step : m_steps)
+    {
+        if(!step->isDisabled())
+            return step;
+    }
+    return nullptr;
+}
+
+bool Stepper::moveFocus(int steps)
+{
+    StepperStep *from=getTabStop();
+
+    if(!from)
+        return false;
+
+    const int direction=(steps < 0)?-1:1;
+    int index=from->getIndex();
+
+    for(int left=std::abs(steps); left > 0; --left)
+    {
+        int next=index+direction;
+
+        while((next >= 0) && (next < getStepCount()) && m_steps[static_cast<size_t>(next)]->isDisabled())
+            next+=direction;
+        if((next < 0) || (next >= getStepCount()))
+            break;
+        index=next;
+    }
+
+    StepperStep *target=m_steps[static_cast<size_t>(index)];
+
+    if(target == from && KeyboardFocus == from)
+        return false;
+    target->focus();
+    return true;
+}
+
 void Stepper::updateLooks()
 {
     for(int i=0; i < getStepCount(); ++i)
@@ -425,6 +710,8 @@ void Stepper::updateLooks()
     // a connector into a done step takes the done colour
     for(size_t i=0; i < m_connectors.size(); ++i)
         m_connectors[i]->setDone(getStepLook(static_cast<int>(i)+1) == StepLook::Done);
+    // Button::setText marks and lays out only a new string
+    m_next->setText(isAtLastStep()?FinishText:NextText);
 }
 
 void Stepper::calculateSize(skin::Base *skin, Dim dim)
