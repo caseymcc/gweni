@@ -371,6 +371,13 @@ protected:
     //! The cursor to \p target, or the first enabled date from it going
     //! \p direction (+1 or -1) a day at a time; nothing past the limits.
     bool moveCursorTo(const Date &target, int direction);
+    //! The first enabled day of \p year / \p month from \p day (clamped to it), else the last
+    //! enabled one before it; \p day itself if the month has none. Never leaves the month.
+    Date enabledDayIn(int year, int month, int day) const;
+    //! Keeps the cursor on what the view shows and enables: an enabled day of the month
+    //! (enabledDayIn), the nearest enabled month of the year, the nearest enabled year of
+    //! the decade. Called when the month shown, the view, the limits or the filter change.
+    void fitCursor();
     //! The cursor moved: shows its month (year, decade) and rebinds.
     void cursorMoved();
     //! The cursor to what a pressed cell shows: its day, or its month or year

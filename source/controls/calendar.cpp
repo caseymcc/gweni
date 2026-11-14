@@ -193,32 +193,84 @@ void Calendar::setDisplayedMonth(int year, int month)
 
     m_year=year;
     m_month=month;
-    // the cursor follows into the month shown, to its day there (the first
-    // enabled one from it, else the last before it)
-    if((m_cursor.year != year) || (m_cursor.month != month))
-    {
-        const Date target(year, month, std::min(m_cursor.day, Date::daysInMonth(year, month)));
-        Date found=target;
-
-        for(int direction : {1, -1})
-        {
-            bool done=false;
-
-            for(Date date=target; (date.year == year) && (date.month == month); date=date.addDays(direction))
-            {
-                if(isDateEnabled(date))
-                {
-                    found=date;
-                    done=true;
-                    break;
-                }
-            }
-            if(done)
-                break;
-        }
-        m_cursor=found;
-    }
+    fitCursor();
     displayedMonthChanged();
+}
+
+Date Calendar::enabledDayIn(int year, int month, int day) const
+{
+    const Date target(year, month, std::min(std::max(day, 1), Date::daysInMonth(year, month)));
+
+    // the first enabled day from it, else the last before it, inside the month
+    for(int direction : {1, -1})
+    {
+        for(Date date=target; (date.year == year) && (date.month == month); date=date.addDays(direction))
+        {
+            if(isDateEnabled(date))
+                return date;
+        }
+    }
+    return target;
+}
+
+void Calendar::fitCursor()
+{
+    const auto clampedDay=[this](int year, int month)
+    {
+        return Date(year, month, std::min(m_cursor.day, Date::daysInMonth(year, month)));
+    };
+
+    switch(m_view)
+    {
+    case View::Month:
+        m_cursor=enabledDayIn(m_year, m_month, m_cursor.day);
+        break;
+    case View::Year:
+    {
+        // the cursor's month in the year shown, else the nearest enabled one
+        int month=m_cursor.month;
+
+        for(int offset=0; offset < 12; ++offset)
+        {
+            if((month+offset <= 12) && isMonthEnabled(m_year, month+offset))
+            {
+                month+=offset;
+                break;
+            }
+            if((month-offset >= 1) && isMonthEnabled(m_year, month-offset))
+            {
+                month-=offset;
+                break;
+            }
+        }
+        m_cursor=clampedDay(m_year, month);
+        break;
+    }
+    case View::Decade:
+    {
+        // the cursor's year if the decade shows it, else the year shown; then
+        // the nearest enabled year of the decade
+        const int first=decadeFirstYear()+1;
+        const int last=first+9;
+        int year=((m_cursor.year >= first) && (m_cursor.year <= last))?m_cursor.year:m_year;
+
+        for(int offset=0; offset < 10; ++offset)
+        {
+            if((year+offset <= last) && isYearEnabled(year+offset))
+            {
+                year+=offset;
+                break;
+            }
+            if((year-offset >= first) && isYearEnabled(year-offset))
+            {
+                year-=offset;
+                break;
+            }
+        }
+        m_cursor=clampedDay(year, m_cursor.month);
+        break;
+    }
+    }
 }
 
 void Calendar::displayedMonthChanged()
@@ -350,8 +402,8 @@ void Calendar::zoomInOn(const Date &date)
         if(!isYearEnabled(date.year))
             return;
         m_view=View::Year;
-        m_cursor=Date(date.year, m_cursor.month, std::min(m_cursor.day, Date::daysInMonth(date.year, m_cursor.month)));
         m_year=date.year;
+        m_cursor=Date(date.year, m_cursor.month, std::min(m_cursor.day, Date::daysInMonth(date.year, m_cursor.month)));
     }
     else if(m_view == View::Year)
     {
@@ -360,19 +412,11 @@ void Calendar::zoomInOn(const Date &date)
         m_view=View::Month;
         m_year=date.year;
         m_month=date.month;
-        m_cursor=Date(date.year, date.month, std::min(m_cursor.day, Date::daysInMonth(date.year, date.month)));
-        // onto an enabled day of that month, if it has one
-        if(!isDateEnabled(m_cursor))
-        {
-            const Date from=m_cursor;
-
-            if(!moveCursorTo(from, 1) && !moveCursorTo(from, -1))
-                m_cursor=from;
-        }
     }
     else
         return;
 
+    fitCursor();
     m_preview.reset();
     viewChanged();
     onDisplayedMonthChanged.call(this);
@@ -403,12 +447,14 @@ void Calendar::setDateLimits(std::optional<Date> min, std::optional<Date> max)
 
     m_min=min;
     m_max=max;
+    fitCursor();
     rebind();
 }
 
 void Calendar::setDateFilter(std::function<bool(const Date &)> filter)
 {
     m_filter=std::move(filter);
+    fitCursor();
     rebind();
 }
 
