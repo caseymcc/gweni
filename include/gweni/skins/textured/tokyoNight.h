@@ -326,6 +326,12 @@ inline Surface TimelineBarHover { Color(0xff,0xff,0xff,0x40), Color(0xff,0xff,0x
 // the app's fills show dimly through it.
 inline Surface StatsOverlay   { Color(0x16,0x16,0x1e,0xe0), Color(0x16,0x16,0x1e,0xe0), BgHighlight, Radius, BorderW };
 
+// A reorder drag (controls::Reorderable): the bar in the gap the dragged item
+// would land in, and the veil over the dragged item's own place, its fill
+// darkened (its text, drawn after every slot, shows over it).
+inline Surface DropIndicator  { Blue,                    Blue,                    Blue,  1.0f, 0.0f };
+inline Surface DragSource     { Color(0x16,0x16,0x1e,0xc0), Color(0x16,0x16,0x1e,0xc0), DarkBlue, RadiusSm, BorderW };
+
 // A DragNumber: a field filled like a button, not inset like a TextBox (it is
 // dragged, not typed into, until its edit box comes up), lit while hovered,
 // its border blue with the focus and cyan while it is being dragged.
@@ -472,6 +478,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"TimelineFrame",&TimelineFrame},{"TimelineLane",&TimelineLane},{"TimelineGrid",&TimelineGrid},
         {"TimelineAxis",&TimelineAxis},{"TimelineBar",&TimelineBar},{"TimelineBarHover",&TimelineBarHover},
         {"StatsOverlay",&StatsOverlay},
+        {"DropIndicator",&DropIndicator},{"DragSource",&DragSource},
         {"DragNumber",&DragNumber},{"DragNumberHover",&DragNumberHover},{"DragNumberFocus",&DragNumberFocus},
         {"DragNumberDown",&DragNumberDown},{"DragNumberDisabled",&DragNumberDisabled},
         {"VectorTagX",&VectorTagX},{"VectorTagY",&VectorTagY},{"VectorTagZ",&VectorTagZ},

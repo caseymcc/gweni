@@ -1409,6 +1409,46 @@ void InspectorHighlight::update(renderer::Base *renderer, controls::Base *baseCo
 }
 
 ///////////////////////////////////////////////////////////////////////////
+//DropIndicator
+void DropIndicator::generate(renderer::Base *renderer, controls::Base *baseControl)
+{
+    generatePrimitives(renderer, requiredPrimitives());
+}
+
+void DropIndicator::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::DropIndicator);
+}
+
+void DropIndicator::remove(renderer::Base *renderer, controls::Base *baseControl)
+{
+    releasePrimitives(renderer);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//DragSourceVeil
+void DragSourceVeil::generate(renderer::Base *renderer, controls::Base *baseControl)
+{
+    generatePrimitives(renderer, requiredPrimitives());
+}
+
+void DragSourceVeil::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::DragSource);
+}
+
+void DragSourceVeil::remove(renderer::Base *renderer, controls::Base *baseControl)
+{
+    releasePrimitives(renderer);
+}
+
+///////////////////////////////////////////////////////////////////////////
 //StatsOverlay
 void StatsOverlay::generate(renderer::Base *renderer, controls::Base *baseControl)
 {
@@ -4886,6 +4926,8 @@ template class ControlRegister<Separator>;
 template class ControlRegister<Bullet>;
 template class ControlRegister<InspectorHighlight>;
 template class ControlRegister<StatsOverlay>;
+template class ControlRegister<DropIndicator>;
+template class ControlRegister<DragSourceVeil>;
 template class ControlRegister<Dialog>;
 template class ControlRegister<DialogTitleBar>;
 template class ControlRegister<DialogFooter>;

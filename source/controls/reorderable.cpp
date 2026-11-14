@@ -15,6 +15,25 @@ namespace gweni
 namespace controls
 {
 
+namespace internal
+{
+
+GWENI_CONTROL_CONSTRUCTOR(DropIndicator)
+{
+    setPlacement(Placement::Owner);
+    setMouseInputEnabled(false);
+    setKeyboardInputEnabled(false);
+}
+
+GWENI_CONTROL_CONSTRUCTOR(DragSourceVeil)
+{
+    setPlacement(Placement::Owner);
+    setMouseInputEnabled(false);
+    setKeyboardInputEnabled(false);
+}
+
+}//namespace internal
+
 const char *const Reorderable::PackageName="gweni:ReorderItem";
 
 // One drag at a time: its source and the list showing its gap.
@@ -48,8 +67,9 @@ void ReorderGroup::remove(Reorderable *member)
     member->m_group=nullptr;
 }
 
-Reorderable::Reorderable(Base *list):
-    m_list(list)
+Reorderable::Reorderable(Base *list, Base *panel):
+    m_list(list),
+    m_panel(panel ? panel : list)
 {
     m_package.name=PackageName;
     m_package.draggable=true;
@@ -74,6 +94,112 @@ Reorderable::~Reorderable()
         if(draganddrop::CurrentPackage == &m_package)
             draganddrop::cancel();
     }
+
+    delete getIndicator();
+    delete getSourceVeil();
+}
+
+internal::DropIndicator *Reorderable::getIndicator() const
+{
+    return gweni_cast<internal::DropIndicator>(Base::getControlById(m_indicatorId));
+}
+
+internal::DragSourceVeil *Reorderable::getSourceVeil() const
+{
+    return gweni_cast<internal::DragSourceVeil>(Base::getControlById(m_veilId));
+}
+
+template<typename Look>
+Look *Reorderable::look(size_t &id)
+{
+    Look *control=gweni_cast<Look>(Base::getControlById(id));
+
+    // made the first time it shows (again, if the app cleared the panel)
+    if(!control || (control->getParent() != m_panel))
+    {
+        control=m_panel->newChild<Look>();
+        id=control->getControlId();
+    }
+
+    // Kept after the panel's items, so numbered after them, the indicator
+    // after the veil: reordered only when something was added after them.
+    Base *tail[2]={nullptr, nullptr};
+    size_t count=0;
+
+    if(internal::DragSourceVeil *veil=getSourceVeil())
+        tail[count++]=veil;
+    if(internal::DropIndicator *indicator=getIndicator())
+        tail[count++]=indicator;
+
+    const Base::List &children=m_panel->getChildren();
+    bool inPlace=(children.size() >= count);
+    auto at=children.rbegin();
+
+    for(size_t i=count; inPlace && (i > 0); --i, ++at)
+        inPlace=(*at == tail[i-1]);
+
+    if(!inPlace)
+    {
+        for(size_t i=0; i < count; ++i)
+            tail[i]->bringToFront();
+    }
+    return control;
+}
+
+void Reorderable::placeLooks()
+{
+    if((s_target == this) || getIndicator())
+        placeIndicator();
+    if((s_source == this) || getSourceVeil())
+        placeVeil();
+}
+
+void Reorderable::placeIndicator()
+{
+    if(!showsGap())
+    {
+        if(internal::DropIndicator *indicator=getIndicator())
+            indicator->setHidden(true);
+        return;
+    }
+
+    internal::DropIndicator *indicator=look<internal::DropIndicator>(m_indicatorId);
+
+    indicator->place(Rect(0, gapPosition(m_gap)-IndicatorThickness/2, m_panel->getWidth(),
+        IndicatorThickness));
+    indicator->setHidden(false);
+}
+
+void Reorderable::placeVeil()
+{
+    Rect rect;
+
+    if((s_source == this) && (m_dragIndex != NoItem))
+        rect=itemRect(m_dragIndex);
+
+    if((rect.w <= 0) || (rect.h <= 0))
+    {
+        if(internal::DragSourceVeil *veil=getSourceVeil())
+            veil->setHidden(true);
+        return;
+    }
+
+    internal::DragSourceVeil *veil=look<internal::DragSourceVeil>(m_veilId);
+
+    veil->place(rect);
+    veil->setHidden(false);
+}
+
+void Reorderable::gapMoved()
+{
+    placeIndicator();
+    gapChanged();
+}
+
+void Reorderable::dragMoved()
+{
+    placeVeil();
+    dragChanged();
 }
 
 bool Reorderable::accepts(const Reorderable *source) const
@@ -139,7 +265,7 @@ void Reorderable::startDragging()
     m_dragKey=m_package.key;
     m_dragIndex=m_pendingIndex;
     m_pendingIndex=NoItem;
-    dragChanged();
+    dragMoved();
 }
 
 void Reorderable::endDragging(bool /*success*/)
@@ -157,10 +283,10 @@ void Reorderable::endAsSource()
     if(Reorderable *target=s_target)
     {
         s_target=nullptr;
-        target->gapChanged();
+        target->gapMoved();
     }
 
-    dragChanged();
+    dragMoved();
 }
 
 void Reorderable::hoverEnter(draganddrop::Package *package, int x, int y)
@@ -176,7 +302,7 @@ void Reorderable::hover(draganddrop::Package * /*package*/, int x, int y)
     if(s_target != this)
         return;
 
-    m_lastPoint=m_list->canvasPosToLocal(Point(x, y));
+    m_lastPoint=m_panel->canvasPosToLocal(Point(x, y));
     updateGap(gapAt(m_lastPoint), false);
 }
 
@@ -188,7 +314,7 @@ void Reorderable::hoverLeave(draganddrop::Package * /*package*/)
     // the gap is kept for handleDrop, which the core calls after the leave;
     // it is no longer shown
     s_target=nullptr;
-    gapChanged();
+    gapMoved();
 }
 
 void Reorderable::updateGap(size_t gap, bool force)
@@ -215,7 +341,7 @@ void Reorderable::setGapState(size_t gap, bool allowed)
 
     m_gap=gap;
     m_gapAllowed=allowed;
-    gapChanged();
+    gapMoved();
 }
 
 void Reorderable::itemsInserted(size_t at, size_t count)
@@ -224,13 +350,16 @@ void Reorderable::itemsInserted(size_t at, size_t count)
         return;
 
     if((s_source == this) && (m_dragIndex != NoItem) && (at <= m_dragIndex))
+    {
         m_dragIndex+=count;
+        placeVeil();
+    }
 
     // the gap stays before the item it was before
     if((s_target == this) && (m_gap != NoItem) && (at <= m_gap))
     {
         m_gap+=count;
-        gapChanged();
+        gapMoved();
     }
 }
 
@@ -249,13 +378,16 @@ void Reorderable::itemsRemoved(size_t at, size_t count)
         }
 
         if(m_dragIndex >= at+count)
+        {
             m_dragIndex-=count;
+            placeVeil();
+        }
     }
 
     if((s_target == this) && (m_gap != NoItem) && (m_gap > at))
     {
         m_gap=(m_gap >= at+count) ? m_gap-count : at;
-        gapChanged();
+        gapMoved();
     }
 }
 
@@ -270,6 +402,7 @@ void Reorderable::itemsChanged()
             draganddrop::cancel();
             return;
         }
+        placeVeil();
     }
 
     // the gap is found again where the cursor was, and checked again (the

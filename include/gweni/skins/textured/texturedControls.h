@@ -2083,6 +2083,34 @@ public:
     inline static const std::string_view name="InspectorHighlight";
 };
 
+//! controls::internal::DropIndicator, a reorder drag's bar in the gap: one
+//! tokyonight::DropIndicator surface.
+class DropIndicator:public textured::ControlRegister<DropIndicator>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void generate(renderer::Base *renderer, controls::Base *baseControl) override;
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="DropIndicator";
+};
+
+//! controls::internal::DragSourceVeil, over a reorder drag's item where it was:
+//! one tokyonight::DragSource surface.
+class DragSourceVeil:public textured::ControlRegister<DragSourceVeil>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void generate(renderer::Base *renderer, controls::Base *baseControl) override;
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="DragSourceVeil";
+};
+
 //! gweni::tools::StatsOverlay, the stats panel in the canvas's corner: one
 //! tokyonight::StatsOverlay surface.
 class StatsOverlay:public textured::ControlRegister<StatsOverlay>

@@ -8,6 +8,7 @@
 #define _gweni_controls_reorderable_h_
 
 #include <gweni/uiTypes.h>
+#include <gweni/controls/base.h>
 #include <gweni/platforms/platformTypes.h>
 
 #include <cstddef>
@@ -21,9 +22,41 @@ namespace gweni
 namespace controls
 {
 
-class Base;
 class Reorderable;
 class ReorderGroup;
+
+namespace internal
+{
+
+//! A reorder drag's bar in the gap the item would land in: a child of the
+//! target list's panel, owner-placed by its Reorderable, numbered last, one
+//! slot (the textured skin's DropIndicator surface). Takes no mouse input.
+class GWENI_EXPORT DropIndicator: public controls::Base
+{
+public:
+    GWENI_CONTROL(DropIndicator, controls::Base);
+
+public:
+    //! Its bounds in its panel, as its Reorderable places it
+    void place(const Rect &bounds) { placeChild(this, bounds); }
+};
+
+//! The veil over a reorder drag's item where it is in the source list (the
+//! DragSource look): a child of the source list's panel, owner-placed over the
+//! item's rect by its Reorderable, numbered last, one slot. Placed from the
+//! item's index, not attached to the row that shows it, so on a list of
+//! pooled rows it is over whichever row holds the item, and hidden while the
+//! item is out of view.
+class GWENI_EXPORT DragSourceVeil: public controls::Base
+{
+public:
+    GWENI_CONTROL(DragSourceVeil, controls::Base);
+
+public:
+    void place(const Rect &bounds) { placeChild(this, bounds); }
+};
+
+}//namespace internal
 
 //! One reorder drop, as Reorderable::setOnItemDropped's handler gets it: the
 //! item `key` of `source`, at `sourceIndex` there as the drop happens, dropped
@@ -88,9 +121,22 @@ private:
 //! it takes is checked against setCanDrop's function when the gap changes; a
 //! refused gap shows nothing, the cursor is cursor::No and a release there
 //! cancels.
+//!
+//! The looks are two controls in the list's panel (the control whose
+//! coordinates the adapter's geometry is in: a ScrollControl's inner panel),
+//! made the first time they show and kept as its last children, so they are
+//! numbered after (drawn over) its rows: an internal::DropIndicator, a
+//! IndicatorThickness bar across the panel at the shown gap's position, and an
+//! internal::DragSourceVeil over the dragged item's rect while it has one.
+//! Each is one slot: a gap change writes the bar's slot alone, and a move that
+//! keeps the gap writes nothing. The list calls placeLooks() once its items
+//! have moved (its layout, a scroll), so they follow them.
 class GWENI_EXPORT Reorderable
 {
 public:
+
+    //! The drop indicator's height, its middle at the gap's position
+    static constexpr int IndicatorThickness=2;
 
     //! No item, no gap
     static constexpr size_t NoItem=std::numeric_limits<size_t>::max();
@@ -104,7 +150,9 @@ public:
     //! The package name of a reorder drag
     static const char *const PackageName;
 
-    explicit Reorderable(Base *list);
+    //! \p panel is the control the gaps and items are placed in, the list
+    //! itself if null.
+    explicit Reorderable(Base *list, Base *panel=nullptr);
     virtual ~Reorderable();
 
     Reorderable(const Reorderable &)=delete;
@@ -112,6 +160,17 @@ public:
 
     //! The list control this is the reorder part of, the drag's source list
     Base *getList() const { return m_list; }
+    //! The control the gaps and items are in, which holds the looks
+    Base *getPanel() const { return m_panel; }
+
+    //! The looks, null until they first show
+    internal::DropIndicator *getIndicator() const;
+    internal::DragSourceVeil *getSourceVeil() const;
+
+    //! Places the looks again from the adapter's geometry: the list's items
+    //! moved (its layout, a scroll) while it is the drag's source or target.
+    //! Does nothing otherwise.
+    void placeLooks();
 
     //! Whether it takes its own items back at another place (default true)
     void setReorderWithin(bool reorder) { m_reorderWithin=reorder; }
@@ -191,17 +250,24 @@ protected:
     virtual uint64_t keyAt(size_t index) const=0;
     //! The item's index, NoItem when it is gone
     virtual size_t indexOf(uint64_t key) const=0;
-    //! The gap (0..itemCount()) nearer \p local, a point in the list's own
+    //! The gap (0..itemCount()) nearer \p local, a point in the panel's
     //! coordinates, by the half-height rule
     virtual size_t gapAt(Point local) const=0;
+    //! The y, in the panel, the bar of gap \p gap is centred on: the boundary
+    //! between the items either side of it
+    virtual int gapPosition(size_t gap) const=0;
+    //! The item's rect in the panel, empty while it is not shown (a pooled
+    //! list's item out of view)
+    virtual Rect itemRect(size_t index) const=0;
     //! Whether it may take its own items at this moment (a sorted table: no)
     virtual bool reorderWithinNow() const { return true; }
 
     // The looks
 
-    //! The shown gap changed (showsGap(), gap()): the indicator follows it
+    //! The shown gap changed (showsGap(), gap()), after the indicator was
+    //! placed for it
     virtual void gapChanged() {}
-    //! This list's item drag began or ended: the dragged item's look follows it
+    //! This list's item drag began or ended, after the veil was placed for it
     virtual void dragChanged() {}
 
 private:
@@ -212,8 +278,19 @@ private:
     void updateGap(size_t gap, bool force);
     void setGapState(size_t gap, bool allowed);
     void endAsSource();
+    // the looks follow the state, then the adapter hears of it
+    void gapMoved();
+    void dragMoved();
+    void placeIndicator();
+    void placeVeil();
+    // a look made and kept after every other child of the panel
+    template<typename Look>
+    Look *look(size_t &id);
 
     Base *m_list;
+    Base *m_panel;
+    size_t m_indicatorId=0;
+    size_t m_veilId=0;
     draganddrop::Package m_package;
     ReorderGroup *m_group=nullptr;
     bool m_reorderWithin=true;
