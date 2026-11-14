@@ -34,7 +34,7 @@ void VerticalSlider::updateBarFromValue()
     const int travel=std::max(0, getHeight()-m_sliderBar->getHeight());
 
     placeChildPos(m_sliderBar, m_sliderBar->getX(),
-        std::clamp(static_cast<int>(std::lround(travel*(1.f-m_value))), 0, travel));
+        thumbOffset(travel, 1.f-m_value));
 }
 
 // The thumb jumps to the click, kept on the track: computed, like the value.

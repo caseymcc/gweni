@@ -32,7 +32,7 @@ void HorizontalSlider::updateBarFromValue()
 {
     const int travel=std::max(0, getWidth()-m_sliderBar->getWidth());
 
-    placeChildPos(m_sliderBar, std::clamp(static_cast<int>(std::lround(travel*m_value)), 0, travel),
+    placeChildPos(m_sliderBar, thumbOffset(travel, m_value),
         m_sliderBar->getY());
 }
 
