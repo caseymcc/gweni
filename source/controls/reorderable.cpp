@@ -8,6 +8,7 @@
 #include <gweni/controls/base.h>
 #include <gweni/controls/canvas.h>
 #include <gweni/controls/scrollControl.h>
+#include <gweni/controls/virtualList.h>
 #include <gweni/anim.h>
 #include <gweni/dragAndDrop.h>
 #include <gweni/platforms/platform.h>
@@ -827,6 +828,136 @@ size_t CardReorder::itemAt(Point local) const
         ++index;
     }
     return NoItem;
+}
+
+VirtualListReorder::VirtualListReorder(VirtualList *list, KeyOf keyOf, IndexOf indexOf):
+    Reorderable(list, const_cast<Base *>(list->getInnerPanel())),
+    m_virtualList(list),
+    m_keyOf(std::move(keyOf)),
+    m_indexOf(std::move(indexOf))
+{}
+
+VirtualListReorder *VirtualListReorder::attach(VirtualList *list, KeyOf keyOf, IndexOf indexOf)
+{
+    auto reorder=std::make_unique<VirtualListReorder>(list, std::move(keyOf), std::move(indexOf));
+    VirtualListReorder *result=reorder.get();
+
+    list->setReorderable(std::move(reorder));
+    return result;
+}
+
+size_t VirtualListReorder::itemCount() const
+{
+    return m_virtualList->getItemCount();
+}
+
+uint64_t VirtualListReorder::keyAt(size_t index) const
+{
+    return m_keyOf ? m_keyOf(index) : static_cast<uint64_t>(index);
+}
+
+size_t VirtualListReorder::indexOf(uint64_t key) const
+{
+    if(!m_indexOf)
+        return (key < itemCount()) ? static_cast<size_t>(key) : NoItem;
+
+    const size_t index=m_indexOf(key);
+    return (index < itemCount()) ? index : NoItem;
+}
+
+// The rows are placed in the viewport (the inner panel does not scroll):
+// item i's top is index*rowHeight less the offset, or in variable mode its
+// height index's offset less the anchor's, as the last layout placed them.
+int64_t VirtualListReorder::viewTop(size_t index) const
+{
+    if(m_virtualList->isVariableHeight())
+    {
+        const HeightIndex &heights=m_virtualList->getHeightIndex();
+        const size_t anchor=std::min(m_virtualList->getAnchorItem(), heights.size());
+
+        return heights.offsetOf(std::min(index, heights.size()))-heights.offsetOf(anchor)
+            -m_virtualList->getAnchorOffset();
+    }
+
+    return static_cast<int64_t>(index)*m_virtualList->getRowHeight()
+        -m_virtualList->getVerticalScrollOffset();
+}
+
+int VirtualListReorder::itemHeight(size_t index) const
+{
+    if(m_virtualList->isVariableHeight())
+    {
+        const HeightIndex &heights=m_virtualList->getHeightIndex();
+        return (index < heights.size()) ? heights.height(index) : 0;
+    }
+    return m_virtualList->getRowHeight();
+}
+
+size_t VirtualListReorder::itemAtY(int y) const
+{
+    const size_t count=itemCount();
+
+    if(count == 0)
+        return 0;
+
+    if(m_virtualList->isVariableHeight())
+    {
+        const HeightIndex &heights=m_virtualList->getHeightIndex();
+        const size_t anchor=std::min(m_virtualList->getAnchorItem(), heights.size());
+        const int64_t content=y+heights.offsetOf(anchor)+m_virtualList->getAnchorOffset();
+
+        return std::min(heights.itemAt(content), count);
+    }
+
+    const int64_t content=static_cast<int64_t>(y)+m_virtualList->getVerticalScrollOffset();
+
+    if(content < 0)
+        return 0;
+    return std::min(static_cast<size_t>(content/m_virtualList->getRowHeight()), count);
+}
+
+size_t VirtualListReorder::gapAt(Point local) const
+{
+    const size_t count=itemCount();
+    const size_t item=itemAtY(local.y);
+
+    if(item >= count)
+        return count;
+
+    // the half-height rule on the item under the cursor
+    const int64_t top=viewTop(item);
+    return (local.y < top+itemHeight(item)/2) ? item : item+1;
+}
+
+int VirtualListReorder::gapPosition(size_t gap) const
+{
+    const int64_t y=viewTop(std::min(gap, itemCount()));
+
+    // kept inside the 16-bit range a placed control has, far off the panel
+    return static_cast<int>(std::clamp<int64_t>(y, -30000, 30000));
+}
+
+Rect VirtualListReorder::itemRect(size_t index) const
+{
+    if(index >= itemCount())
+        return Rect();
+
+    const int64_t top=viewTop(index);
+    const int height=itemHeight(index);
+    const int viewport=m_virtualList->getViewportHeight();
+
+    // out of view: no veil (no row shows it)
+    if(top+height <= 0 || top >= viewport)
+        return Rect();
+
+    return Rect(0, static_cast<int>(top), getPanel()->getWidth(), height);
+}
+
+size_t VirtualListReorder::itemAt(Point local) const
+{
+    const size_t item=itemAtY(local.y);
+
+    return (item < itemCount()) ? item : NoItem;
 }
 
 }//namespace controls
