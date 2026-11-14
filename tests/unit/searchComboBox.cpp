@@ -127,7 +127,11 @@
  *  chip's x whose onSelectionChange handler focuses another control has the
  *  query typed taken as a chip by a second onSelectionChange, not nested in
  *  the first. A multi-select Add row's onSelectionChange sees the field and
- *  the query empty and no Add row, as an option pick's does.
+ *  the query empty and no Add row, as an option pick's does. An onCustomValue
+ *  handler throwing in that deferred lost focus throws to the box's caller
+ *  (no std::terminate). A refill after Down has scrolled the list
+ *  highlights its first row in view. A refused Add row followed by an
+ *  option's pick is no longer refused.
  */
 #include "headlessFixture.h"
 
@@ -138,6 +142,9 @@
 #include <gweni/controls/textBox.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/platform.h>
+
+#include <algorithm>
+#include <stdexcept>
 
 #include <doctest/doctest.h>
 
@@ -2646,4 +2653,81 @@ TEST_CASE("SearchComboBox: a multi-select Add row's onSelectionChange comes with
     CHECK(seen[0] == "query='' add=0 field=''");
     CHECK(seen[1] == seen[0]);
     CHECK(box->getSelectedValues() == std::vector<String>{"zzz", "layout"});
+}
+
+TEST_CASE("SearchComboBox: an onCustomValue handler throwing in the lost focus after an onTextChanged one throws to the caller")
+{
+    Scene scene;
+    SearchComboBox *box=freeText(scene, {"web-1", "web-2"});
+    controls::TextBox *other=scene.canvas->newChild<controls::TextBox>();
+    Reacts texts;
+    Reacts customs;
+    bool caught=false;
+
+    other->setBounds(20, 300, 100, 20);
+    scene.frame();
+    box->getField()->focus();
+    texts.listen(box->onTextChangedCaller);
+    customs.listen(box->onCustomValue);
+    texts.run=[&](event::Info) { other->focus(); };
+    customs.run=[&](event::Info) { throw std::runtime_error("bad value"); };
+    try
+    {
+        scene.canvas->inputCharacter(static_cast<UnicodeChar>('x'));
+    }
+    catch(const std::runtime_error &)
+    {
+        caught=true;
+    }
+    CHECK(caught);
+    CHECK(customs.calls == 1);
+    CHECK(KeyboardFocus == other);
+}
+
+TEST_CASE("SearchComboBox: a refill after Down scrolled the list highlights its first row in view")
+{
+    Scene scene;
+    SearchComboBox *box=filterable(scene, {"a"});
+    std::vector<SearchComboBox::Option> results;
+
+    for(int i=0; i < 30; ++i)
+        results.push_back({"web-"+std::to_string(i), ""});
+    box->setOptions(results);
+    scene.frame();
+    box->getField()->focus();
+    box->getField()->onSelectAll(box->getField());
+    type(scene, "web");
+    for(int i=0; i < 12; ++i)
+        scene.key(keys::Down);
+    REQUIRE(box->getOptionsList()->firstVisibleItem() > 0);
+    // the server's results for "web" arrive
+    std::reverse(results.begin(), results.end());
+    box->setOptions(results);
+    scene.frame();
+    CHECK(box->getHighlightedIndex() == 0);
+    CHECK(box->getOptionsList()->firstVisibleItem() == 0);
+    CHECK(rowText(box, 0) == "web-29");
+}
+
+TEST_CASE("SearchComboBox: a refused Add row and then an option's pick is no longer refused")
+{
+    Scene scene;
+    SearchComboBox *box=freeText(scene, {"badge", "other"});
+    Reacts customs;
+
+    box->setMultiSelect(true);
+    scene.frame();
+    box->getField()->focus();
+    customs.listen(box->onCustomValue);
+    customs.run=[&](event::Info) { box->refuseCustomValue(); };
+    type(scene, "bad");
+    scene.key(keys::Down);
+    REQUIRE(box->isAddRowHighlighted());
+    scene.key(keys::Return);
+    REQUIRE(box->isCustomValueRefused());
+    scene.key(keys::Up);
+    scene.key(keys::Return);
+    CHECK(box->getSelectedValues() == std::vector<String>{"badge"});
+    CHECK(box->getField()->getText() == "");
+    CHECK(!box->isCustomValueRefused());
 }

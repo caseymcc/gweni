@@ -600,11 +600,19 @@ SearchComboBox::Busy::Busy(SearchComboBox &box):
     ++m_box.m_busy;
 }
 
-// A handler that threw: the lost focus is left for the next edit or focus.
-SearchComboBox::Busy::~Busy()
+// The settle runs the box's handlers, so a throw from one goes on to the
+// caller (noexcept(false)); it runs only when nothing is unwinding. A
+// handler that threw: the lost focus it left noted is dropped, not taken by
+// a later, unrelated end of the box's work.
+SearchComboBox::Busy::~Busy() noexcept(false)
 {
-    if((--m_box.m_busy == 0) && (std::uncaught_exceptions() == m_exceptions))
+    if(--m_box.m_busy != 0)
+        return;
+
+    if(std::uncaught_exceptions() == m_exceptions)
         m_box.settleLostFocus();
+    else
+        m_box.m_lostFocusPending=false;
 }
 
 // A handler opening a dialog or moving the focus takes the focus from the
@@ -841,6 +849,10 @@ void SearchComboBox::optionsChanged()
         m_rows->setItemCount(shownRowCount());
         // the options may be others than the rows were bound with
         m_rows->refresh();
+        // the row Return picks in view: a refill after a scroll (an async
+        // search's results) would leave it above the viewport
+        if(m_highlightPos != VirtualList::NoItem)
+            m_rows->scrollToItem(m_highlightPos);
     }
 }
 
@@ -1686,11 +1698,13 @@ void SearchComboBox::afterMultiPick(int option, const Base *focused)
     focusInputUnlessMoved(focused);
 }
 
-// The query, not the field: a free-text pick has emptied the field already.
+// The field emptied whatever it holds, a refusal over with it.
 void SearchComboBox::clearQuery()
 {
     if(!m_filterable)
         return;
+
+    setRefused(false);
 
     if(!m_field->getText().empty())
         m_field->showText(String());

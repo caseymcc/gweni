@@ -4526,8 +4526,10 @@ two programs and the draws. What follows describes both together:
   nothing (the field shows the value, is empty, or is refused); after an edit or a
   chip's x it takes what was typed. `onCustomValue` must come first (its refusal
   decides the rest); after it the box focuses its input only if the keyboard focus is
-  where it was before the pick (`focusInputUnlessMoved()`). A handler that throws
-  leaves the noted lost focus untaken.
+  where it was before the pick (`focusInputUnlessMoved()`). A handler's throw goes on
+  to the box's caller (`~Busy()` is `noexcept(false)`, and settles only when nothing
+  unwinds), and the lost focus it left noted is dropped. A refill (`setOptions()`, an
+  async search's results) highlights the first shown row and scrolls it into view.
 
   **Multi-select** (`setMultiSelect(true)`) holds picks in order, each an
   owner-placed, removable `Chip` that takes no keyboard (a press on it keeps the

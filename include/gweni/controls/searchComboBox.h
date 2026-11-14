@@ -337,10 +337,11 @@ public:
     //! delayedDelete(), as any control. Each event comes after the box's own
     //! work (the list closed, the field showing the value), so a handler may
     //! move the focus (the next field of a form) or open a dialog: the box
-    //! leaves the focus where it put it, and what the field losing the focus
-    //! to it does (the list closed, the value shown, a free-text box taking
-    //! or refusing what it holds) is done once, after the handler and the
-    //! box's work, never inside the handler.
+    //! leaves the focus where it put it: the field losing the focus to it
+    //! closes the list at once, and the rest of what a lost focus does (the
+    //! value shown, a free-text box taking or refusing what it holds) is
+    //! done once, after the handler and the box's work, never inside the
+    //! handler. A handler's throw goes on to the box's caller.
     gweni::event::Caller onSelection;
     //! Fired once per edit of the field (the info's string is its text),
     //! after the list has opened or filtered for it; a handler refilling the
@@ -500,7 +501,7 @@ protected:
     struct Busy
     {
         explicit Busy(SearchComboBox &box);
-        ~Busy();
+        ~Busy() noexcept(false);
 
         Busy(const Busy &)=delete;
         Busy &operator=(const Busy &)=delete;
@@ -520,8 +521,8 @@ protected:
     //! What the field losing the focus does: the list closed, a free-text
     //! box taking its text (resolveText()), any other showing the value.
     void loseFocus();
-    //! The query over: the field emptied (no edit) and, open, the list
-    //! showing every option again.
+    //! The query over: the field emptied (no edit, no refusal) and, open,
+    //! the list showing every option again.
     void clearQuery();
     //! The focus to the input (focusInput()) unless an event moved it from
     //! \p focused, the keyboard focus before the box's work began.
