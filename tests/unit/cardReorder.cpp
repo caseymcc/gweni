@@ -18,7 +18,9 @@
  *  drags it, not the card then under the press point, and one deleted
  *  before the move starts no drag. The gap
  *  is the half-height rule over the cards' bounds and its bar is centred in
- *  the space between two cards. A drop within the column and one on another
+ *  the space between two cards, or at the viewport's edge, wholly inside it,
+ *  when that space is scrolled past it (tall cards, the one under the cursor
+ *  partly out, the cursor in its outer half clear of the auto-scroll band). A drop within the column and one on another
  *  member of the group report the card's key and indexes, and gweni moves no
  *  card. A card the app adds above the gap during the drag keeps the gap
  *  before the card it was before, the bar following it, in one layout pass,
@@ -466,6 +468,111 @@ TEST_CASE("CardReorder: the gap is the half-height rule over the cards, its bar 
     CHECK(veil->getBounds().y == cards[0]->getY());
     CHECK(veil->getBounds().h == CardHeight);
     scene.release();
+}
+
+// A gap's boundary outside the viewport: the card under the cursor partly
+// scrolled out, the cursor in its outer half but clear of the auto-scroll
+// band, so nothing scrolls. The bar of the gap a release drops at is drawn
+// inside the viewport, at its edge, not placed past it and clipped away.
+TEST_CASE("CardReorder: the bar of a gap past the viewport's edge lies inside the viewport")
+{
+    Scene scene(0);
+    std::vector<controls::Button *> &cards=scene.todo.cards;
+    controls::ScrollControl *list=scene.todo.list;
+
+    for(int i=0; i < 6; ++i)
+    {
+        controls::Button *card=scene.card(scene.todo);
+        card->setHeight(100);
+        cards.push_back(card);
+    }
+    scene.frame();
+
+    // the viewport's top and bottom on the canvas
+    auto viewTop=[list]() { return list->localPosToCanvas(Point(0, list->getViewport().y)).y; };
+    auto viewBottom=[list]() { return list->localPosToCanvas(Point(0, list->getViewport().y+list->getViewport().h)).y; };
+    // the card whose top lies in [from, to) on the canvas, if any
+    auto cardTopIn=[&cards](int from, int to) -> controls::Button *
+    {
+        for(controls::Button *card : cards)
+        {
+            const int top=card->localPosToCanvas(Point(0, 0)).y;
+
+            if(top >= from && top < to)
+                return card;
+        }
+        return nullptr;
+    };
+
+    auto checkBar=[&scene, &viewTop, &viewBottom](size_t gap)
+    {
+        REQUIRE(scene.todo.reorder->gap() == gap);
+        REQUIRE(scene.todo.reorder->indicatorShown());
+        CHECK(draganddrop::currentCursor() == cursor::Normal);
+        controls::Base *indicator=scene.todo.reorder->getIndicator();
+        const int barTop=indicator->localPosToCanvas(Point(0, 0)).y;
+        CHECK(indicator->getHeight() == Reorderable::IndicatorThickness);
+        CHECK(barTop >= viewTop());
+        CHECK(barTop+indicator->getHeight() <= viewBottom());
+    };
+
+    SUBCASE("above the viewport's top")
+    {
+        list->setVerticalScrollOffset(114);
+        scene.frame();
+        // card 1's top above the viewport, 30 units below it in its upper half
+        REQUIRE(cards[1]->localPosToCanvas(Point(0, 0)).y < viewTop());
+        REQUIRE(cards[1]->localPosToCanvas(Point(0, 50)).y > viewTop()+30);
+
+        scene.startDrag(cards[3]);
+        REQUIRE(draganddrop::isDragging());
+        const Point at(list->localPosToCanvas(Point(50, 0)).x, viewTop()+30);
+        scene.move(at);
+        checkBar(1);
+        for(int i=0; i < 10; ++i)
+            scene.step();
+        CHECK(list->getVerticalScrollOffset() == 114);
+        checkBar(1);
+        scene.release();
+        REQUIRE(scene.todo.drops.size() == 1);
+        CHECK(scene.todo.drops[0].targetIndex == 1);
+    }
+
+    SUBCASE("below the viewport's bottom")
+    {
+        // a card whose middle is more than 30 units above the viewport's
+        // bottom and whose bottom is below it
+        controls::Button *straddling=nullptr;
+
+        for(int offset=0; offset < 300 && !straddling; ++offset)
+        {
+            list->setVerticalScrollOffset(offset);
+            scene.frame();
+            straddling=cardTopIn(viewBottom()-99, viewBottom()-80);
+        }
+        REQUIRE(straddling != nullptr);
+        const int offset=list->getVerticalScrollOffset();
+        size_t index=0;
+
+        while(cards[index] != straddling)
+            ++index;
+        REQUIRE(index > 0);
+
+        scene.startDrag(cards[index-1]);
+        REQUIRE(draganddrop::isDragging());
+        const Point at(list->localPosToCanvas(Point(50, 0)).x, viewBottom()-30);
+        REQUIRE(at.y > straddling->localPosToCanvas(Point(0, 50)).y);
+        scene.move(at);
+        checkBar(index+1);
+        for(int i=0; i < 10; ++i)
+            scene.step();
+        CHECK(list->getVerticalScrollOffset() == offset);
+        checkBar(index+1);
+        scene.release();
+        REQUIRE(scene.todo.drops.size() == 1);
+        // after the dragged card's removal from above it
+        CHECK(scene.todo.drops[0].targetIndex == index);
+    }
 }
 
 TEST_CASE("CardReorder: drops within the column and on the other one report the card and its indexes")

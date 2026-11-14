@@ -472,6 +472,10 @@ protected:
     Rect itemRect(size_t index) const override;
     size_t itemAt(Point local) const override;
     bool cheapKeys() const override { return true; }
+
+private:
+    //! The boundary gapPosition() keeps inside the viewport
+    int gapBoundary(size_t gap) const;
 };
 
 class VirtualList;

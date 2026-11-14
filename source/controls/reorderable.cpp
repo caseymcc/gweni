@@ -978,7 +978,7 @@ size_t CardReorder::gapAt(Point local) const
     return index;
 }
 
-int CardReorder::gapPosition(size_t gap) const
+int CardReorder::gapBoundary(size_t gap) const
 {
     const std::vector<Base *> items=cards();
 
@@ -1004,6 +1004,28 @@ int CardReorder::gapPosition(size_t gap) const
 
     // the middle of the space between them, rounded down
     return (above->getY()+above->getHeight()+below->getY())/2;
+}
+
+int CardReorder::gapPosition(size_t gap) const
+{
+    int y=gapBoundary(gap);
+    const ScrollControl *scroller=scrollerOf(getList());
+    const Base *panel=getPanel();
+
+    // a boundary past the viewport's top or bottom edge (the card under the
+    // cursor partly scrolled out, the cursor in its outer half): the bar at
+    // that edge, wholly inside, since a release drops at this gap
+    if(scroller && (panel == scroller->getInnerPanel()))
+    {
+        const Rect &viewport=scroller->getViewport();
+        const int half=IndicatorThickness/2;
+        const int top=viewport.y-panel->getY();
+        const int bottom=top+viewport.h;
+
+        if(bottom-top >= IndicatorThickness)
+            y=std::clamp(y, top+half, bottom-half);
+    }
+    return y;
 }
 
 Rect CardReorder::itemRect(size_t index) const
@@ -1143,15 +1165,12 @@ int VirtualListReorder::gapPosition(size_t gap) const
     const int64_t viewport=m_virtualList->getViewportHeight();
     const int64_t half=IndicatorThickness/2;
 
-    // a boundary at the viewport's top or bottom edge: the bar wholly inside
-    // it, not half cut off over the list's border (as CardReorder's ends)
-    if(y >= 0 && y < half)
-        y=half;
-    else if(y <= viewport && y > viewport-half)
-        y=viewport-half;
-
-    // kept inside the 16-bit range a placed control has, far off the panel
-    return static_cast<int>(std::clamp<int64_t>(y, -30000, 30000));
+    // a boundary at or past the viewport's top or bottom edge (the item under
+    // the cursor partly scrolled out, the cursor in its outer half): the bar
+    // wholly inside it, since a release drops at this gap (as CardReorder's)
+    if(viewport >= IndicatorThickness)
+        y=std::clamp<int64_t>(y, half, viewport-half);
+    return static_cast<int>(y);
 }
 
 Rect VirtualListReorder::itemRect(size_t index) const
