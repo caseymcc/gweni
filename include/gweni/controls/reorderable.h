@@ -128,10 +128,12 @@ private:
 //!
 //! The looks are two controls in the list's panel (the control whose
 //! coordinates the adapter's geometry is in: a ScrollControl's inner panel),
-//! made the first time they show and kept as its last children, so they are
+//! made when needed and kept as its last children, so they are
 //! numbered after (drawn over) its rows: an internal::DropIndicator, a
 //! IndicatorThickness bar across the panel at the shown gap's position, and an
 //! internal::DragSourceVeil over the dragged item's rect while it has one.
+//! The indicator is prepared as the target is entered, parked even for a
+//! refused gap, so a gap first allowed during layout only moves it.
 //! Each is one slot: a gap change writes the bar's slot alone, and a move that
 //! keeps the gap writes nothing. The list calls placeLooks() once its items
 //! have moved (its layout, a scroll), so they follow them.
@@ -172,7 +174,8 @@ public:
     //! The control the gaps and items are in, which holds the looks
     Base *getPanel() const { return m_panel; }
 
-    //! The looks, null until they first show
+    //! The looks, null until the first target entry (indicator) or shown item
+    //! drag (veil)
     internal::DropIndicator *getIndicator() const;
     internal::DragSourceVeil *getSourceVeil() const;
     //! Whether the looks show now: visible, and not parked (a look whose list

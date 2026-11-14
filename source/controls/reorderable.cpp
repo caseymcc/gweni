@@ -162,7 +162,7 @@ Look *Reorderable::look(size_t &id)
     const bool editSeen=(treeSerialOf(m_list) == m_treeSerial);
     Look *control=gweni_cast<Look>(Base::getControlById(id));
 
-    // made the first time it shows (again, if the app cleared the panel)
+    // made the first time it is needed (again, if the app cleared the panel)
     if(!control || (control->getActualParent() != m_panel))
     {
         control=m_panel->newChild<Look>();
@@ -460,6 +460,14 @@ void Reorderable::hoverEnter(draganddrop::Package *package, int x, int y)
     m_gap=NoItem;
     m_gapAllowed=false;
     m_treeSerial=treeSerialOf(m_list);
+
+    // Prepare the bar in the input phase, even for a refused gap. An
+    // auto-scroll or item edit can first allow it during listArranged:
+    // moving the parked bar then creates no child and changes no visibility.
+    internal::DropIndicator *indicator=look<internal::DropIndicator>(m_indicatorId);
+    parkLook(indicator);
+    indicator->setHidden(false);
+
     hover(package, x, y);
 }
 

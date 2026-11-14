@@ -4338,8 +4338,8 @@ applying the drop is a plain edit. The adapters:
   click goes ascending, descending and back to no sort, a table without reordering
   alternating as before.
 
-**The looks.** Two one-slot controls in the list's panel, made the first time they
-show and kept as its last children (numbered after the rows, the indicator last),
+**The looks.** Two one-slot controls in the list's panel, made when needed
+and kept as its last children (numbered after the rows, the indicator last),
 owner-placed from the adapter's geometry and held by control id, so an app that
 clears the panel leaves nothing dangling: `internal::DropIndicator`, a 2-unit bar
 across the panel at the gap (theme surface `DropIndicator`), and
@@ -4352,8 +4352,11 @@ the item in depth, and a glyph is drawn after every slot, so the item's text
 fails the depth test there: the item shows as a placeholder, its fill and text
 covered. A look's visibility changed inside a layout pass dirties layout again,
 so while its list is in the drag a look that shows nothing (a refused gap, the
-item scrolled out) is parked far above the panel, a pure move, and a hide that
-comes in a pass (a list edit cancelling the drag) is posted to the next update
+item scrolled out) is parked far above the panel, a pure move. The indicator is
+created or unhidden and parked when the target is entered, even for a refused
+gap, so auto-scroll or a live edit first allowing that gap during layout only
+moves it. A hide during a pass (a list edit cancelling the drag) is posted to
+the next update
 (`indicatorShown()`, `veilShown()` say whether one shows). `ScrollControl::arrange`
 ends with `Reorderable::listArranged()`, which resolves the edits, finds the gap
 again under a resting cursor once the list scrolled and places the looks; they
