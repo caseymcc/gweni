@@ -66,6 +66,7 @@
 
 #include <doctest/doctest.h>
 
+#include <string>
 #include <vector>
 
 using namespace gweni;
@@ -711,6 +712,53 @@ TEST_CASE("CardReorder: a drop handler that takes reordering off the source colu
         scene.release();
         CHECK(scene.running.drops.size() == 1);
         CHECK_FALSE(draganddrop::isDragging());
+        scene.frame();
+    }
+}
+
+// The handler is the Reorderable's own member: a handler that deletes the
+// Reorderable (its list deleted, or reordering taken off it) must not destroy
+// itself while it runs. Its captures are read after the deletion, so the ASAN
+// tree reports a use after free if the call runs on the member.
+TEST_CASE("CardReorder: a drop handler that deletes its own column or Reorderable runs to its end")
+{
+    SUBCASE("a drop within the column, the column deleted")
+    {
+        Scene scene;
+        size_t seen=0;
+        scene.todo.reorder->setOnItemDropped([&scene, &seen, tag=std::string(64, 'x')](const ItemDrop &) {
+            // the app rebuilds the column from its model: the old one goes
+            delete scene.todo.list;
+            scene.todo=Column();
+            seen=tag.size();
+        });
+        scene.startDrag(scene.todo.cards[0]);
+        scene.move(Scene::on(scene.todo.cards[3], 25));
+        REQUIRE(draganddrop::isDragging());
+
+        scene.release();
+        CHECK(seen == 64);
+        CHECK_FALSE(draganddrop::isDragging());
+        scene.frame();
+    }
+
+    SUBCASE("a drop on the other column, reordering taken off it")
+    {
+        Scene scene;
+        size_t seen=0;
+        scene.running.reorder->setOnItemDropped([&scene, &seen, tag=std::string(64, 'x')](const ItemDrop &) {
+            scene.running.list->setReorderable(nullptr);
+            scene.running.reorder=nullptr;
+            seen=tag.size();
+        });
+        scene.startDrag(scene.todo.cards[1]);
+        scene.move(Scene::on(scene.running.cards[0], 3));
+        REQUIRE(draganddrop::isDragging());
+
+        scene.release();
+        CHECK(seen == 64);
+        CHECK_FALSE(draganddrop::isDragging());
+        CHECK(scene.running.list->getReorderable() == nullptr);
         scene.frame();
     }
 }
