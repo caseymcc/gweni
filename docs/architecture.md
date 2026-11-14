@@ -4037,8 +4037,10 @@ two programs and the draws. What follows describes both together:
     over the weekday row's and the grid's room, the weekday row and the other 30 cells
     hidden, so the calendar keeps its size; there the arrows move a month or a year
     (Up/Down four), PageUp/PageDown a year or a decade, and a month or a year with no
-    date inside the limits is disabled (the filter is not asked). Zooming out and back
-    in gives the month's frame back, byte for byte.
+    date inside the limits is disabled (the filter is not asked). A view change moves
+    the cells under a resting mouse, so it calls `Canvas::hoverMayHaveMoved()` and the
+    hover goes to the cell under the mouse once the layout has placed them. Zooming out
+    and back in gives the month's frame back, byte for byte.
   `tests/unit/calendar.cpp` pins the grid for every first weekday, the month change,
   the limits and the filter, every key, both selections and the views headless;
   `--scenario calendar` holds the costs and pixels on CalendarDemo, whose four

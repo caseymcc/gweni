@@ -1076,8 +1076,9 @@
  *                 showPrevious(), the range calendar's 17th clicked, the mouse
  *                 onto the 26th and a click on it, the limited calendar's
  *                 12th clicked and Right, Right, Down, Left, PageDown, Home,
- *                 PageDown and PageDown, the Sunday calendar's title clicked
- *                 twice and its 2026 and November clicked; last the label
+ *                 PageDown and PageDown, the Sunday calendar's title and its
+ *                 Apr clicked, then its title twice and its 2026 and November
+ *                 clicked, the mouse left where each click was; last the label
  *                 updating again and a click on the 25th. One line
  *                   calendar hover=yes|no ... ids_back=yes|no hover_prims=N ...
  *                 reports the checks: the hover writes the cell's one slot, no
@@ -1093,8 +1094,9 @@
  *                 click writes only the cells whose look changed and the
  *                 clicked one; the keys move the cursor over the weekend and
  *                 to the maximum, and PageDown at the limit writes and changes
- *                 nothing; zooming out and back in gives the month's frame
- *                 back; the label names the selection; settled frames write
+ *                 nothing; after each click that changes the view the hovered
+ *                 control is the one under the mouse (zoom_hover); zooming
+ *                 out and back in gives the month's frame back; the label names the selection; settled frames write
  *                 nothing; the demo gives every id back. Exits non-zero if any
  *                 check is no.
  *    virtual-list VirtualListDemo with its list at 1 000 and then 100 000
@@ -13074,8 +13076,34 @@ static bool runCalendarScenario(Session &s, const std::string &shotDir, bool &pa
     const std::vector<uint8_t> monthPixels=pixels;
     const gweni::Point title=centre(sunday->getTitle());
 
+    // each view change moves the cells under a resting mouse, so the hover
+    // is hit-tested again (Canvas::hoverMayHaveMoved): what the frame after
+    // the click hovers is what is under the mouse
+    std::string staleHover;
+    const auto checkHover=[&s, &staleHover](const char *after)
+    {
+        gweni::controls::Base *under=s.canvas->getControlAt(s.mouse.x, s.mouse.y);
+
+        if((gweni::HoveredControl != under) && staleHover.empty())
+            staleHover=std::string("after ")+after+" the hovered control is "
+                +(gweni::HoveredControl?gweni::HoveredControl->getTypeName():"none")+", not the "
+                +(under?under->getTypeName():"none")+" under the mouse";
+    };
+
+    // first a detour through April: its year-view cell's place holds another
+    // day cell in the month view, so the click leaves the mouse on a cell
+    // that is not the one it pressed
     clickMouse(s, title.x, title.y);
     renderFrames(s, 1);
+    clickMouse(s, centre(sunday->getCell(3)).x, centre(sunday->getCell(3)).y);
+    renderFrames(s, 1);
+    checkHover("the click on Apr");
+
+    const bool april=(sunday->getView() == Calendar::View::Month) && (sunday->getDisplayedMonth() == 4);
+
+    clickMouse(s, title.x, title.y);
+    renderFrames(s, 1);
+    checkHover("the title's first click");
 
     const bool yearView=(sunday->getView() == Calendar::View::Year) && (sunday->getTitle()->getText() == "2026");
 
@@ -13091,11 +13119,15 @@ static bool runCalendarScenario(Session &s, const std::string &shotDir, bool &pa
 
     clickMouse(s, centre(year).x, centre(year).y);
     renderFrames(s, 1);
+    checkHover("the click on 2026");
 
     gweni::controls::Base *november=sunday->getCell(10);
 
     clickMouse(s, centre(november).x, centre(november).y);
     renderFrames(s, 1);
+    checkHover("the click on Nov");
+    checks.check("zoom_hover", april && staleHover.empty(),
+        april?staleHover:"a click on Apr in the year view did not show April");
     forgetMouse(s);
     if(gweni::KeyboardFocus)
         gweni::KeyboardFocus->unfocus();
