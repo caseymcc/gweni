@@ -42,7 +42,11 @@
  *  change in visible card count. Hiding the dragged card cancels.
  *  A wheel during the drag scrolls the column under the pointer, leaving the
  *  source column and hover alone. The gap follows the scrolled cards and the
- *  drop reports the dragged key and that new gap.
+ *  drop reports the dragged key and that new gap. A wheel that scrolls the
+ *  page holding the columns finds the target and gap again at the resting
+ *  cursor in the next frame, each in one pass: the gap among the cards now
+ *  under it, no target once the columns have gone from under it (a release
+ *  then cancels), the other column once it is there.
  *
  *  Auto-scroll, on the stepped canvas clock (1/60 s a frame): the cursor
  *  resting in the bottom band of an overflowing column's viewport scrolls it
@@ -1184,6 +1188,225 @@ TEST_CASE("CardReorder: the wheel during a drag scrolls the column under the poi
     CHECK(scene.running.drops[0].key == key);
     CHECK(scene.running.drops[0].sourceIndex == 2);
     CHECK(scene.running.drops[0].targetIndex == 4);
+}
+
+namespace
+{
+
+//! A vertically scrolling page of two fitting 4-card columns, 150 high and
+//! docked Top one below the other, in one group, then a 600-high spacer: a
+//! wheel over a column bubbles to the page, which scrolls both.
+struct PageScene
+{
+    test::StubRenderer renderer;
+    test::StubSkin skin{&renderer};
+    controls::Canvas *canvas=nullptr;
+    controls::ScrollControl *page=nullptr;
+    float clock=10.0f;
+    Column upper;
+    Column lower;
+    controls::ReorderGroup group;
+
+    PageScene()
+    {
+        platform::setTimeSource([this]() { return clock; });
+        canvas=new controls::Canvas(&skin);
+        canvas->setSize(400, 300);
+        page=canvas->newChild<controls::ScrollControl>();
+        page->setDock(DockPosition::Center);
+        page->setScroll(false, true);
+        column(upper);
+        column(lower);
+        group.add(upper.reorder);
+        group.add(lower.reorder);
+        controls::Base *spacer=page->newChild<controls::Base>();
+        spacer->setDock(DockPosition::Top);
+        spacer->setSizeFlags({SizeFlag::Expand, SizeFlag::Fixed});
+        spacer->setHeight(600);
+        frame();
+        frame();
+    }
+
+    PageScene(const PageScene &)=delete;
+    PageScene &operator=(const PageScene &)=delete;
+
+    ~PageScene()
+    {
+        draganddrop::cancel();
+        input::onMouseClicked(canvas, 0, false);
+        HoveredControl=nullptr;
+        KeyboardFocus=nullptr;
+        MouseFocus=nullptr;
+        delete canvas;
+        platform::setTimeSource(nullptr);
+    }
+
+    void column(Column &column)
+    {
+        column.list=page->newChild<controls::ScrollControl>();
+        column.list->setDock(DockPosition::Top);
+        column.list->setSizeFlags({SizeFlag::Expand, SizeFlag::Fixed});
+        column.list->setHeight(150);
+        column.list->setScroll(false, true);
+        column.reorder=CardReorder::attach(column.list);
+        column.reorder->setOnItemDropped([&column](const ItemDrop &drop) { column.drops.push_back(drop); });
+
+        for(int i=0; i < 4; ++i)
+        {
+            controls::Button *card=column.list->newChild<controls::Button>();
+            card->setDock(DockPosition::Top);
+            card->setSizeFlags({SizeFlag::Expand, SizeFlag::Fixed});
+            card->setHeight(CardHeight);
+            card->setMargin(Margin(0, 0, 0, CardGap));
+            column.cards.push_back(card);
+        }
+    }
+
+    void frame()
+    {
+        canvas->updateCanvas();
+        canvas->renderCanvas();
+    }
+
+    void move(Point to)
+    {
+        canvas->inputMouseMoved(to.x, to.y, 0, 0);
+        frame();
+    }
+
+    void startDrag(controls::Base *card)
+    {
+        const Point at=Scene::on(card, card->getHeight()/4);
+        clock+=1.0f;
+        move(at);
+        input::onMouseClicked(canvas, 0, true);
+        frame();
+        move(Point(at.x+6, at.y));
+    }
+
+    //! \p notches wheel notches down, each followed by a frame, then one more
+    //! frame; every frame laid out in one update-phase pass at most, and
+    //! the frame after each notch's work for the idle loop
+    void wheel(int notches)
+    {
+        for(int i=0; i < notches; ++i)
+        {
+            CHECK(canvas->inputMouseWheel(-120));
+            frame();
+            // the target is found again in the next frame: an idle loop
+            // draws it
+            CHECK(canvas->nextWorkTime() == controls::Canvas::WorkNow);
+            CHECK(canvas->getLayoutStats().passes <= 1);
+            CHECK_FALSE(canvas->getLayoutStats().renderLayout);
+        }
+        frame();
+        CHECK(canvas->getLayoutStats().passes <= 1);
+        CHECK_FALSE(canvas->getLayoutStats().renderLayout);
+    }
+
+    void release()
+    {
+        input::onMouseClicked(canvas, 0, false);
+        frame();
+    }
+};
+
+//! The gap the half-height rule gives at canvas height \p y over \p column's
+//! cards where they are now
+size_t gapAt(const Column &column, int y)
+{
+    size_t gap=0;
+
+    for(controls::Button *card : column.cards)
+    {
+        if(card->localPosToCanvas(Point(0, card->getHeight()/2)).y < y)
+            ++gap;
+    }
+    return gap;
+}
+
+}//namespace
+
+TEST_CASE("CardReorder: a wheel that scrolls the page under a resting drag moves the gap to the cursor")
+{
+    PageScene scene;
+    controls::ScrollControl *upper=scene.upper.list;
+
+    scene.startDrag(scene.upper.cards[0]);
+    REQUIRE(draganddrop::isDragging());
+    const Point cursor=Scene::on(scene.upper.cards[2], 20);
+    scene.move(cursor);
+    REQUIRE(scene.upper.reorder->gap() == 3);
+    const int columnTop=upper->localPosToCanvas(Point(0, 0)).y;
+
+    scene.wheel(1);
+    REQUIRE(scene.page->getVerticalScrollOffset() > 0);
+    REQUIRE(upper->localPosToCanvas(Point(0, 0)).y < columnTop);
+    CHECK(Reorderable::dropTarget() == scene.upper.reorder);
+    const size_t expected=gapAt(scene.upper, cursor.y);
+    REQUIRE(expected == 4);
+    CHECK(scene.upper.reorder->gap() == expected);
+    CHECK(scene.upper.reorder->indicatorShown());
+    CHECK(HoveredControl == nullptr);
+
+    scene.release();
+    REQUIRE(scene.upper.drops.size() == 1);
+    CHECK(scene.upper.drops[0].sourceIndex == 0);
+    CHECK(scene.upper.drops[0].targetIndex == 3);
+}
+
+TEST_CASE("CardReorder: wheels that carry the column from under the cursor leave no target")
+{
+    PageScene scene;
+    controls::ScrollControl *upper=scene.upper.list;
+
+    scene.startDrag(scene.upper.cards[0]);
+    REQUIRE(draganddrop::isDragging());
+    const Point cursor=Scene::on(scene.upper.cards[2], 20);
+    scene.move(cursor);
+    REQUIRE(scene.upper.reorder->indicatorShown());
+
+    // both columns go up past the cursor, which rests over the spacer
+    scene.wheel(8);
+    REQUIRE(scene.lower.list->localPosToCanvas(Point(0, 150)).y < cursor.y);
+    CHECK(Reorderable::dropTarget() == nullptr);
+    CHECK_FALSE(scene.upper.reorder->indicatorShown());
+    CHECK_FALSE(scene.lower.reorder->indicatorShown());
+    CHECK(draganddrop::currentCursor() == cursor::No);
+    CHECK(draganddrop::isDragging());
+    CHECK(upper->getVerticalScrollOffset() == 0);
+
+    scene.release();
+    CHECK(scene.upper.drops.empty());
+    CHECK(scene.lower.drops.empty());
+    CHECK_FALSE(draganddrop::isDragging());
+}
+
+TEST_CASE("CardReorder: a wheel that brings another column under the cursor makes it the target")
+{
+    PageScene scene;
+
+    scene.startDrag(scene.upper.cards[1]);
+    REQUIRE(draganddrop::isDragging());
+    // below the upper column's last card: its end gap
+    const Point cursor=scene.upper.list->localPosToCanvas(Point(75, 142));
+    scene.move(cursor);
+    REQUIRE(Reorderable::dropTarget() == scene.upper.reorder);
+    REQUIRE(scene.upper.reorder->gap() == 4);
+
+    scene.wheel(1);
+    REQUIRE(scene.lower.list->localPosToCanvas(Point(0, 0)).y < cursor.y);
+    CHECK(Reorderable::dropTarget() == scene.lower.reorder);
+    CHECK_FALSE(scene.upper.reorder->indicatorShown());
+    CHECK(scene.lower.reorder->indicatorShown());
+    CHECK(scene.lower.reorder->gap() == gapAt(scene.lower, cursor.y));
+    CHECK(draganddrop::currentCursor() == cursor::Normal);
+
+    scene.release();
+    CHECK(scene.upper.drops.empty());
+    REQUIRE(scene.lower.drops.size() == 1);
+    CHECK(scene.lower.drops[0].sourceIndex == 1);
+    CHECK(scene.lower.drops[0].targetIndex == gapAt(scene.lower, cursor.y));
 }
 
 TEST_CASE("CardReorder: the cursor resting in the bottom band scrolls the column, faster deeper in")
