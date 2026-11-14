@@ -39,6 +39,7 @@ public:
 public:
     //! Its bounds in its panel, as its Reorderable places it
     void place(const Rect &bounds) { placeChild(this, bounds); }
+    static bool layingOut() { return inLayoutPass(); }
 };
 
 //! The veil over a reorder drag's item where it is in the source list (the
@@ -56,6 +57,7 @@ public:
 
 public:
     void place(const Rect &bounds) { placeChild(this, bounds); }
+    static bool layingOut() { return inLayoutPass(); }
 };
 
 }//namespace internal
@@ -173,6 +175,11 @@ public:
     //! The looks, null until they first show
     internal::DropIndicator *getIndicator() const;
     internal::DragSourceVeil *getSourceVeil() const;
+    //! Whether the looks show now: visible, and not parked (a look whose list
+    //! is in the drag but shows nothing waits far above the panel, so a layout
+    //! pass that shows or hides it moves it only)
+    bool indicatorShown() const;
+    bool veilShown() const;
 
     //! Places the looks again from the adapter's geometry: the list's items
     //! moved (its layout, a scroll) while it is the drag's source or target.

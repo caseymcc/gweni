@@ -207,15 +207,11 @@ void Reorderable::listArranged(skin::Base *skin)
         {
             m_treeSerial=serial;
             itemsChanged();
-
-            // the dragged item was gone: the drag is over
-            if((s_source != this) && (s_target != this))
-            {
-                placeLooks();
-                return;
-            }
         }
     }
+
+    // (the dragged item gone, the drag is over: the looks are parked below,
+    // and the panel arranged again all the same)
 
     // the list scrolled under the resting cursor (the auto-scroll, a wheel):
     // the gap is the one at the cursor now, and the auto-scroll goes on or
@@ -246,12 +242,73 @@ void Reorderable::placeLooks()
         placeVeil();
 }
 
+// Where a look waits while its list is in the drag but it shows nothing: far
+// above the panel (clipped away), a pure move, which lays nothing out again.
+// A look is hidden only once its list is out of the drag, and a hide that
+// comes during a layout pass (a drag cancelled by a list edit) is posted to
+// the next update, as a visibility change in a pass dirties layout again.
+static constexpr int ParkedY=-20000;
+
+template<typename Look>
+static void parkLook(Look *look)
+{
+    if(look->getY() != ParkedY)
+        look->place(Rect(0, ParkedY, look->getWidth(), look->getHeight()));
+}
+
+template<typename Look>
+static void hideLook(Look *look)
+{
+    if(!look || look->hidden())
+        return;
+
+    if(!Look::layingOut())
+    {
+        look->setHidden(true);
+        return;
+    }
+
+    parkLook(look);
+
+    const size_t id=look->getControlId();
+
+    if(Canvas *canvas=look->getCanvas())
+    {
+        canvas->post([id]() {
+            if(Base *control=Base::getControlById(id))
+            {
+                // shown again by then for another drag: placed, left alone
+                if(control->getY() == ParkedY)
+                    control->setHidden(true);
+            }
+        });
+    }
+}
+
+bool Reorderable::indicatorShown() const
+{
+    internal::DropIndicator *indicator=getIndicator();
+    return indicator && indicator->visible() && (indicator->getY() != ParkedY);
+}
+
+bool Reorderable::veilShown() const
+{
+    internal::DragSourceVeil *veil=getSourceVeil();
+    return veil && veil->visible() && (veil->getY() != ParkedY);
+}
+
 void Reorderable::placeIndicator()
 {
     if(!showsGap())
     {
-        if(internal::DropIndicator *indicator=getIndicator())
-            indicator->setHidden(true);
+        internal::DropIndicator *indicator=getIndicator();
+
+        // the target with no gap shown (a refused one): parked, so a gap shown
+        // again in a layout pass changes no visibility
+        if(indicator && (s_target == this) && !indicator->hidden())
+            parkLook(indicator);
+        else
+            hideLook(indicator);
         return;
     }
 
@@ -271,8 +328,13 @@ void Reorderable::placeVeil()
 
     if((rect.w <= 0) || (rect.h <= 0))
     {
-        if(internal::DragSourceVeil *veil=getSourceVeil())
-            veil->setHidden(true);
+        internal::DragSourceVeil *veil=getSourceVeil();
+
+        // the item out of view while it is dragged: parked
+        if(veil && (s_source == this) && !veil->hidden())
+            parkLook(veil);
+        else
+            hideLook(veil);
         return;
     }
 

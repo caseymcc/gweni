@@ -737,9 +737,9 @@ TEST_CASE("Reorderable: the drop indicator is a bar at the shown gap and the vei
     CHECK(veil->getParent() == scene.a);
 
     // the gap before item 1: a 2-unit bar centred on y 20, across the list
-    CHECK(indicator->visible());
+    CHECK(a->indicatorShown());
     CHECK(str(indicator->getBounds()) == str(Rect(0, ItemHeight-1, 100, Reorderable::IndicatorThickness)));
-    CHECK(veil->visible());
+    CHECK(a->veilShown());
     CHECK(str(veil->getBounds()) == str(Rect(0, ItemHeight, 100, ItemHeight)));
     // the panel's last children, the indicator last; neither takes the mouse
     CHECK(scene.a->getChildren().back() == indicator);
@@ -755,11 +755,11 @@ TEST_CASE("Reorderable: the drop indicator is a bar at the shown gap and the vei
     scene.move(scene.on(scene.b, 30));
     CHECK_FALSE(indicator->visible());
     CHECK(scene.b->reorder->getIndicator() == nullptr);
-    CHECK(veil->visible());
+    CHECK(a->veilShown());
 
     // back, and released: both hidden, still the same controls
     scene.move(scene.on(scene.a, 3*ItemHeight+2));
-    CHECK(indicator->visible());
+    CHECK(a->indicatorShown());
     scene.release();
     CHECK(a->getIndicator() == indicator);
     CHECK(a->getSourceVeil() == veil);
@@ -771,7 +771,7 @@ TEST_CASE("Reorderable: the drop indicator is a bar at the shown gap and the vei
     CHECK(a->getIndicator() == indicator);
     CHECK(a->getSourceVeil() == veil);
     CHECK(str(veil->getBounds()) == str(Rect(0, 2*ItemHeight, 100, ItemHeight)));
-    CHECK(veil->visible());
+    CHECK(a->veilShown());
 }
 
 TEST_CASE("Reorderable: a move that keeps the gap changes no control, and a gap change only the indicator")
@@ -842,10 +842,10 @@ TEST_CASE("Reorderable: the veil follows the dragged item's index and hides whil
     // item is out of view and the veil hidden, back in view and shown
     a->shownItems=2;
     a->placeLooks();
-    CHECK_FALSE(veil->visible());
+    CHECK_FALSE(a->veilShown());
     a->shownItems=Reorderable::NoItem;
     a->placeLooks();
-    CHECK(veil->visible());
+    CHECK(a->veilShown());
 
     // an edit the list cannot describe: found again by key
     a->keys={2, 100, 101, 1, 3, 4};

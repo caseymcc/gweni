@@ -232,11 +232,12 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # edits, the fields' messages, the segmented buttons' selections, the
     # tree table's expands, collapses and keys, the split and drop-down
     # buttons' menus, the range slider's drags and keys, the
-    # steppers' step changes, the code view's copy button and a RichText
+    # steppers' step changes, the code view's copy button, a RichText and
+    # the reorder drags' looks and drops
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
             dialog toast flow switch spinner navigation-rail board field-validation segmented
-            tree-table split-button range-slider stepper code-view rich-text)
+            tree-table split-button range-slider stepper code-view rich-text reorder)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail")
@@ -581,6 +582,19 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_board 120
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario board --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/board@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # ReorderDemo: drag and drop reordering (ControlTest's --scenario reorder
+    # comment lists the checks): a reorder within Todo writing only the drop
+    # indicator on a gap change and nothing on a move that keeps it, Todo to
+    # Running, cancels by Escape and by a release outside giving the frame
+    # before the press back, a refused drop (No cursor, no indicator), live
+    # inserts and a deleted card, the task list's auto-scroll with the clock
+    # stepping (twice, the same offsets and pixels), and a sorted table
+    # refusing its own rows while one drops into the list
+    gweni_whole_app_test(controltest_reorder 180
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario reorder --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/reorder@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # ChipBadgeDemo: a badge's new count writes its slots alone and lays out
