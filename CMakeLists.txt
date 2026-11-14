@@ -306,6 +306,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/scrollControl.cpp
     include/gweni/controls/selectable.h
     source/controls/selectable.cpp
+    include/gweni/controls/segmentedButtons.h
+    source/controls/segmentedButtons.cpp
     include/gweni/controls/separator.h
     source/controls/separator.cpp
     include/gweni/controls/slider.h
