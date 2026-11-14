@@ -463,10 +463,12 @@ void Menu::endKeyboardNavigation()
         target=getControlById(menu->m_focusReturn);
     }
 
-    if(target && target->visible())
+    // one that takes no keyboard input (a DropDownButton being disabled) is
+    // skipped, as the canvas would drop it (input::dropLostKeyboardFocus)
+    if(target && target->visible() && target->getKeyboardInputEnabled())
         target->focus();
 
-    // refused (a modal), gone or hidden: nothing keeps it
+    // refused (a modal), gone, hidden or taking no keys: nothing keeps it
     if(KeyboardFocus == this)
         unfocus();
 }

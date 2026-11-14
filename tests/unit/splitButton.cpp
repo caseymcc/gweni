@@ -28,6 +28,10 @@
  *  - an item, chosen by Return or by a click, whose handler opens a dialog:
  *    the dialog closed, the focus is back on the button (the menu had given
  *    it back before the handler ran);
+ *  - a dialog opened while its menu holds the focus, by a canvas accelerator
+ *    (Ctrl+O) or directly (as a timer or a post would), the menu opened by
+ *    Space or a click: the dialog closed, the focus is back on the button
+ *    (Canvas::pushModal closes the menus before it reads the focus);
  *  - deleting the button deletes its menu, also one set to delete itself on
  *    close and taken off the canvas (a use-after-free here shows under ASAN).
  *
@@ -51,7 +55,8 @@
  *    that part's slots alone, and the control's focus draws ButtonFocus in
  *    both parts; the divider takes the parts' border colour while the
  *    control is focused (ButtonFocus's) or disabled (the disabled main part's),
- *    redrawn by those changes, and SplitButtonDivider otherwise;
+ *    redrawn by those changes and by the app's toggle of a disabled toggle
+ *    one (ButtonOnDisabled's while on), and SplitButtonDivider otherwise;
  *  - a press on the open arrow part let go off it leaves the menu open with
  *    the focus on the control, and Escape, Alt+Down or F4 closes it, and
  *    Space or Return closes it and presses the main part once;
@@ -837,6 +842,55 @@ TEST_CASE("DropDownButton: an item opening a dialog, chosen by Return or a click
     }
 }
 
+TEST_CASE("DropDownButton: a dialog opened by an accelerator or directly while its menu holds the focus gives the focus back to the button")
+{
+    // byAccelerator: a canvas Ctrl+O, typed with the menu focused; else the
+    // dialog opened straight away, as a canvas timer or a post would
+    for(bool byAccelerator : {false, true})
+    {
+        for(bool byClick : {false, true})
+        {
+            CAPTURE(byAccelerator);
+            CAPTURE(byClick);
+            Scene scene;
+            controls::DropDownButton *button=scene.dropDown(40, 40);
+            DialogOpener opener;
+
+            opener.canvas=scene.canvas;
+            scene.canvas->addAccelerator("CTRL+O", &DialogOpener::open, &opener);
+            scene.frame();
+
+            if(byClick)
+                scene.click(button);
+            else
+            {
+                button->focus();
+                scene.key(keys::Space);
+            }
+            REQUIRE(button->isMenuOpen());
+            REQUIRE((KeyboardFocus == button->getMenu()));
+
+            if(byAccelerator)
+            {
+                scene.canvas->inputModifierKey(keys::Control, true);
+                scene.canvas->inputCharacter('o');
+                scene.canvas->inputModifierKey(keys::Control, false);
+            }
+            else
+                opener.open(event::Info(nullptr));
+            scene.frame();
+            REQUIRE(opener.opened == 1);
+            CHECK_FALSE(button->isMenuOpen());
+            REQUIRE(scene.canvas->modalCount() == 1);
+
+            scene.key(keys::Escape);
+            scene.frame();
+            CHECK(scene.canvas->modalCount() == 0);
+            CHECK((KeyboardFocus == button));
+        }
+    }
+}
+
 TEST_CASE("DropDownButton: deleting it deletes a menu that deletes itself on close, off the canvas")
 {
     Scene scene;
@@ -882,6 +936,18 @@ TEST_CASE("SplitButton: the divider takes the parts' border colour while focused
     split->setDisabled(false);
     scene.frame();
     CHECK((scene.renderer.lastTop(divider) == tn::SplitButtonDivider.top));
+
+    // a disabled toggle the app turns on and off: the divider follows the
+    // disabled main part's border, ButtonOnDisabled's while it is on
+    split->setIsToggle(true);
+    split->setDisabled(true);
+    scene.frame();
+    split->setToggleState(true);
+    scene.frame();
+    CHECK((scene.renderer.lastTop(divider) == tn::ButtonOnDisabled.border));
+    split->setToggleState(false);
+    scene.frame();
+    CHECK((scene.renderer.lastTop(divider) == tn::ButtonDisabled.border));
 }
 
 TEST_CASE("SplitButton: a press on the open arrow let go off it, then Escape, Alt+Down or F4 closes the menu")
@@ -1045,6 +1111,16 @@ TEST_CASE("DropDownButton and SplitButton: disabled, a click focuses neither, an
         control->setDisabled(true);
         CHECK_FALSE(control->isFocussed());
         scene.frame();
+        CHECK_FALSE(control->isFocussed());
+        control->setDisabled(false);
+    }
+
+    // disabled while it holds the focus itself, no menu open: dropped at once
+    for(controls::Base *control : {static_cast<controls::Base *>(other), static_cast<controls::Base *>(split)})
+    {
+        control->focus();
+        REQUIRE(control->isFocussed());
+        control->setDisabled(true);
         CHECK_FALSE(control->isFocussed());
     }
 }

@@ -1738,6 +1738,12 @@ void Canvas::pushModal(Base *control, Base *focusReturn)
     if(control->getParent() != this)
         control->setParent(this);
 
+    // what was open over the app goes, as for a press outside it; first, so
+    // a navigating menu that held the focus has given it back to its opener
+    // (a hidden menu is no control to give it back to)
+    closePopup();
+    closeMenus();
+
     size_t focusId=0;
 
     if(focusReturn)
@@ -1748,10 +1754,6 @@ void Canvas::pushModal(Base *control, Base *focusReturn)
         // the top modal was deleted with the focus in it, and its focus
         // has not come back yet: this one gives it back instead
         focusId=m_modalFocusRestore;
-
-    // what was open over the app goes, as for a press outside it
-    closePopup();
-    closeMenus();
 
     m_modals.push_back({control, focusId});
 

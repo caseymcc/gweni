@@ -220,6 +220,10 @@ void SplitButton::onMainPressed(event::Info)
 
 void SplitButton::onMainToggled(event::Info)
 {
+    // the divider takes the disabled main part's border, which is the
+    // toggle state's (ButtonDisabled or ButtonOnDisabled)
+    if(isDisabled())
+        redraw();
     onToggle.call(this);
 }
 

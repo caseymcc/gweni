@@ -542,8 +542,12 @@ it on to the control it took it from, and a pick in a submenu gives the focus ba
 the button that opened the first menu. A chosen item closes the menus before its
 `onMenuItemSelected` runs, so the focus is back on the opener by then, and a dialog the
 handler opens records the opener as the control to give it back to, not a menu hidden
-by the time the dialog closes. A control that is gone, hidden or refused by a
-modal gets nothing and the focus is dropped. Not yet: a highlight moved past the
+by the time the dialog closes. So does any modal pushed while a navigating menu holds
+the focus (a canvas accelerator's dialog, a timer's, a post's): `Canvas::pushModal`
+closes the popup and the menus before it reads the focus, so what it records is the
+control the menu gave it back to. A control that is gone, hidden, taking no keyboard
+input (a DropDownButton being disabled) or refused by a modal gets nothing and the
+focus is dropped. Not yet: a highlight moved past the
 viewport of a menu that scrolls does not scroll it into view.
 
 #### The split and drop-down buttons
