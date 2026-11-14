@@ -921,10 +921,30 @@ struct AddOnChange: public event::Handler
     }
 };
 
+// Deletes the third segment outright on the first change, as an app's
+// handler may: the row then holds a segment fewer, and the mode change must
+// not read the deleted one (its own list of segments is a copy).
+struct DeleteOnChange: public event::Handler
+{
+    SegmentedButtons *row=nullptr;
+    int calls=0;
+
+    void changed(event::Info)
+    {
+        ++calls;
+        if(calls == 1)
+            delete row->getSegment(2);
+    }
+};
+
 // setMode(Exclusive) deselects all but the first selected segment, each a
 // change the app's handler sees: one that adds or removes a segment then
 // must not leave the mode change walking a stale list (an ASAN tree reports
-// a heap-use-after-free for the add otherwise).
+// a heap-use-after-free for the add otherwise, and for the delete when the
+// mode change asks the deleted segment whether it is still the row's:
+// break: segmentedButtons.cpp setMode, `indexOf(segment) < 0` ->
+// `!isOwnSegment(segment)` in both loops; the ASAN tree's "deleted" subcase
+// aborts with heap-use-after-free in isOwnSegment called from setMode).
 TEST_CASE("SegmentedButtons: a handler adding or removing a segment during setMode(Exclusive) leaves one selected")
 {
     Scene scene;
@@ -962,6 +982,24 @@ TEST_CASE("SegmentedButtons: a handler adding or removing a segment during setMo
         CHECK(remover.calls == 2);
         CHECK(row->segmentCount() == 3);
         CHECK(row->getSegment(1)->getText() == "C");
+        CHECK(row->getSelectedIndices() == std::vector<int>{0});
+        scene.frame();
+        delete row;
+    }
+    SUBCASE("deleted")
+    {
+        SegmentedButtons *row=scene.row({"A", "B", "C", "D"});
+        DeleteOnChange deleter;
+
+        row->setMode(SegmentedButtons::Mode::Multi);
+        row->setSelected(1, true);
+        deleter.row=row;
+        row->onSelectionChange.add(&deleter, &DeleteOnChange::changed);
+
+        row->setMode(SegmentedButtons::Mode::Exclusive);
+        CHECK(deleter.calls == 1);
+        CHECK(row->segmentCount() == 3);
+        CHECK(row->getSegment(2)->getText() == "D");
         CHECK(row->getSelectedIndices() == std::vector<int>{0});
         scene.frame();
         delete row;
