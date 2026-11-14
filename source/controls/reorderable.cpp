@@ -206,8 +206,15 @@ void Reorderable::listArranged(skin::Base *skin)
     if(cheapKeys())
     {
         const unsigned serial=treeSerialOf(m_list);
+        const size_t count=itemCount();
+        // Visibility changes do not move the canvas's tree serial, but
+        // change a card's index. A hide/show pair can keep the count too:
+        // check the dragged key and the card after the gap as well.
+        const bool sourceMoved=(s_source == this) && (indexOf(m_dragKey) != m_dragIndex);
+        const bool gapShifted=(s_target == this) && (m_gap != NoItem)
+            && (m_gapAtEnd ? (m_gap != count) : (indexOf(m_gapKey) != m_gap));
 
-        if(serial != m_treeSerial)
+        if((serial != m_treeSerial) || (count != m_itemCount) || sourceMoved || gapShifted)
         {
             m_treeSerial=serial;
             itemsChanged();
@@ -429,6 +436,8 @@ void Reorderable::startDragging()
     m_dragIndex=m_pendingIndex;
     m_pendingIndex=NoItem;
     m_treeSerial=treeSerialOf(m_list);
+    if(cheapKeys())
+        m_itemCount=itemCount();
     dragMoved();
 }
 
@@ -460,6 +469,8 @@ void Reorderable::hoverEnter(draganddrop::Package *package, int x, int y)
     m_gap=NoItem;
     m_gapAllowed=false;
     m_treeSerial=treeSerialOf(m_list);
+    if(cheapKeys())
+        m_itemCount=itemCount();
 
     // Prepare the bar in the input phase, even for a refused gap. An
     // auto-scroll or item edit can first allow it during listArranged:
@@ -701,6 +712,9 @@ void Reorderable::itemsRemoved(size_t at, size_t count)
 
 void Reorderable::itemsChanged()
 {
+    if(cheapKeys() && ((s_source == this) || (s_target == this)))
+        m_itemCount=itemCount();
+
     if(s_source == this)
     {
         m_dragIndex=indexOf(m_dragKey);

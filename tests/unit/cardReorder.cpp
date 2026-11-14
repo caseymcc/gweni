@@ -30,6 +30,10 @@
  *  target at the next update (the No cursor; a release drops nothing into
  *  it). A card the app adds in the same input phase as a move that changes
  *  the gap is seen: the dragged index and the veil follow it.
+ *  Hiding or showing a card during the drag re-resolves the dragged index
+ *  and the gap before its card, re-checks the drop rule and places the veil
+ *  on the dragged card in one pass. This includes a hide/show pair with no
+ *  change in visible card count. Hiding the dragged card cancels.
  *
  *  Auto-scroll, on the stepped canvas clock (1/60 s a frame): the cursor
  *  resting in the bottom band of an overflowing column's viewport scrolls it
@@ -511,6 +515,154 @@ TEST_CASE("CardReorder: a card added in the input phase of a gap-changing move i
     CHECK(draganddrop::isDragging());
     CHECK(scene.todo.reorder->dragIndex() == 4);
     CHECK(scene.todo.reorder->getSourceVeil()->getY() == cards[3]->getY());
+}
+
+TEST_CASE("CardReorder: hiding and showing a card above the drag updates its index, veil and rule")
+{
+    Scene scene(6);
+    Column &column=scene.todo;
+    size_t ruleCalls=0;
+    column.reorder->setCanDrop([&ruleCalls](Reorderable *, uint64_t, Reorderable *, size_t index) {
+        ++ruleCalls;
+        return index >= 2;
+    });
+    scene.startDrag(column.cards[3]);
+    scene.move(Scene::on(column.cards[2], 3));
+    REQUIRE(column.reorder->dragIndex() == 3);
+    REQUIRE(column.reorder->gap() == 2);
+    REQUIRE(column.reorder->indicatorShown());
+    const unsigned serial=scene.canvas->treeSerial();
+    const size_t calls=ruleCalls;
+
+    column.cards[0]->hide();
+    scene.frame();
+    CHECK(scene.canvas->treeSerial() == serial);
+    CHECK(scene.canvas->getLayoutStats().passes == 1);
+    CHECK(draganddrop::isDragging());
+    CHECK(column.reorder->dragKey() == CardReorder::keyOf(column.cards[3]));
+    CHECK(column.reorder->dragIndex() == 2);
+    CHECK(column.reorder->getSourceVeil()->getY() == column.cards[3]->getY());
+    CHECK(column.reorder->gap() == 1);
+    CHECK(ruleCalls > calls);
+    CHECK_FALSE(column.reorder->indicatorShown());
+    CHECK(draganddrop::currentCursor() == cursor::No);
+
+    column.cards[0]->show();
+    scene.frame();
+    CHECK(scene.canvas->getLayoutStats().passes == 1);
+    CHECK(column.reorder->dragIndex() == 3);
+    CHECK(column.reorder->getSourceVeil()->getY() == column.cards[3]->getY());
+    CHECK(column.reorder->gap() == 2);
+    CHECK(column.reorder->indicatorShown());
+    CHECK(draganddrop::currentCursor() == cursor::Normal);
+    const size_t afterShow=ruleCalls;
+    column.list->invalidate();
+    scene.frame();
+    CHECK(ruleCalls == afterShow);
+
+    scene.release();
+    REQUIRE(column.drops.size() == 1);
+    CHECK(column.drops[0].sourceIndex == 3);
+    CHECK(column.drops[0].targetIndex == 2);
+}
+
+TEST_CASE("CardReorder: a hide and show with the same card count keeps the drag on its key")
+{
+    Scene scene(6);
+    Column &column=scene.todo;
+    column.cards[4]->hide();
+    scene.frame();
+    scene.startDrag(column.cards[3]);
+    scene.move(Scene::on(column.cards[2], 3));
+    REQUIRE(column.reorder->dragIndex() == 3);
+    const size_t count=column.reorder->cards().size();
+    const unsigned serial=scene.canvas->treeSerial();
+
+    column.cards[0]->hide();
+    column.cards[4]->show();
+    scene.frame();
+    CHECK(scene.canvas->treeSerial() == serial);
+    CHECK(column.reorder->cards().size() == count);
+    CHECK(scene.canvas->getLayoutStats().passes == 1);
+    CHECK(draganddrop::isDragging());
+    CHECK(column.reorder->dragIndex() == 2);
+    CHECK(column.reorder->getSourceVeil()->getY() == column.cards[3]->getY());
+    CHECK(column.reorder->gap() == 1);
+    scene.release();
+    REQUIRE(column.drops.size() == 1);
+    CHECK(column.drops[0].key == CardReorder::keyOf(column.cards[3]));
+    CHECK(column.drops[0].sourceIndex == 2);
+    CHECK(column.drops[0].targetIndex == 1);
+}
+
+TEST_CASE("CardReorder: target cards hidden or shown keep the gap and rule before the same card")
+{
+    Scene scene;
+    Column &target=scene.running;
+    controls::Button *other=nullptr;
+
+    SUBCASE("the visible count changes") {}
+    SUBCASE("the visible count stays the same")
+    {
+        other=scene.card(target);
+        other->hide();
+        scene.frame();
+    }
+
+    target.reorder->setCanDrop([](Reorderable *, uint64_t, Reorderable *, size_t index) {
+        return index >= 2;
+    });
+    scene.startDrag(scene.todo.cards[3]);
+    scene.move(Scene::on(target.cards[2], 3));
+    REQUIRE(target.reorder->gap() == 2);
+    REQUIRE(target.reorder->indicatorShown());
+    const unsigned serial=scene.canvas->treeSerial();
+
+    target.cards[0]->hide();
+    if(other)
+        other->show();
+    scene.frame();
+    CHECK(scene.canvas->treeSerial() == serial);
+    CHECK(scene.canvas->getLayoutStats().passes == 1);
+    CHECK(draganddrop::isDragging());
+    CHECK(target.reorder->gap() == 1);
+    CHECK_FALSE(target.reorder->indicatorShown());
+    CHECK(draganddrop::currentCursor() == cursor::No);
+
+    target.cards[0]->show();
+    if(other)
+        other->hide();
+    scene.frame();
+    CHECK(scene.canvas->getLayoutStats().passes == 1);
+    CHECK(target.reorder->gap() == 2);
+    CHECK(target.reorder->indicatorShown());
+    CHECK(target.reorder->getIndicator()->getY() == target.cards[2]->getY()-CardGap/2
+        -Reorderable::IndicatorThickness/2);
+    CHECK(draganddrop::currentCursor() == cursor::Normal);
+    scene.release();
+    REQUIRE(target.drops.size() == 1);
+    CHECK(target.drops[0].sourceIndex == 3);
+    CHECK(target.drops[0].targetIndex == 2);
+}
+
+TEST_CASE("CardReorder: hiding the dragged card cancels with no drop")
+{
+    Scene scene;
+    scene.startDrag(scene.todo.cards[1]);
+    scene.move(Scene::on(scene.running.cards[2], 3));
+    REQUIRE(draganddrop::isDragging());
+
+    scene.todo.cards[1]->hide();
+    scene.frame();
+    CHECK(scene.canvas->getLayoutStats().passes == 1);
+    CHECK_FALSE(draganddrop::isDragging());
+    CHECK_FALSE(scene.todo.reorder->veilShown());
+    CHECK_FALSE(scene.running.reorder->indicatorShown());
+    // A visibility change posted by a cancel during layout settles too.
+    scene.frame();
+    scene.release();
+    CHECK(scene.todo.drops.empty());
+    CHECK(scene.running.drops.empty());
 }
 
 TEST_CASE("CardReorder: a drop handler that takes reordering off the source column or deletes it ends the drag")
