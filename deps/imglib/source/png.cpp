@@ -245,7 +245,17 @@ void readBuffer(png_structp png_ptr, png_bytep data, png_size_t length)
     bufferInfo->index+=length;
 }
 
-bool loadPngBuffer(ImageWrapper image, const uint8_t *buffer, size_t bufferSize)
+//The buffer loader's libpng handlers: an error longjmps to loadPngBuffer's setjmp as libpng's own
+//handler does, without printing it, and a warning is dropped
+void pngSilentError(png_structp png_ptr, png_const_charp)
+{
+    png_longjmp(png_ptr, 1);
+}
+
+void pngSilentWarning(png_structp, png_const_charp)
+{}
+
+bool loadPngBuffer(ImageWrapper image, const uint8_t *buffer, size_t bufferSize, size_t maxPixels)
 {
     //png_sig_cmp reads 8 bytes whatever the size
     if((buffer==nullptr)||(bufferSize<8))
@@ -262,7 +272,7 @@ bool loadPngBuffer(ImageWrapper image, const uint8_t *buffer, size_t bufferSize)
 
     BufferInfo bufferInfo(buffer, bufferSize, 8);
 
-    png_structp png_ptr=png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    png_structp png_ptr=png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, pngSilentError, pngSilentWarning);
 
     if(png_ptr)
         info_ptr=png_create_info_struct(png_ptr);
@@ -275,7 +285,9 @@ bool loadPngBuffer(ImageWrapper image, const uint8_t *buffer, size_t bufferSize)
             png_set_sig_bytes(png_ptr, 8);
             png_read_info(png_ptr, info_ptr);
 
-            if(setupPngRead(png_ptr, info_ptr, image))
+            const size_t pixels=(size_t)png_get_image_width(png_ptr, info_ptr)*png_get_image_height(png_ptr, info_ptr);
+
+            if(((maxPixels==0)||(pixels<=maxPixels))&&setupPngRead(png_ptr, info_ptr, image))
             {
                 row_pointers=getRowPointers(image);
 

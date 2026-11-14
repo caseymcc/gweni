@@ -50,6 +50,7 @@ set(imglib_headers
     include/imglib/imageIo.h
     include/imglib/match.h
     include/imglib/ppm.h
+    include/imglib/probe.h
     include/imglib/simpleImage.h
     include/imglib/transform.h
 )
@@ -59,6 +60,7 @@ set(imglib_sources
     source/image.cpp
     source/match.cpp
     source/ppm.cpp
+    source/probe.cpp
     source/simpleImage.cpp
     source/transform.cpp
 )

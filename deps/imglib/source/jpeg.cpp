@@ -1,6 +1,7 @@
 #include "imglib/jpeg.h"
 
 #include <jpeglib.h>
+#include <jerror.h>
 
 #include <vector>
 #include <cassert>
@@ -139,6 +140,94 @@ bool loadJpeg(ImageWrapper image, const char *filename)
     jpeg_destroy_decompress(&jpegDecompress);
 
     fclose(file);
+    return success;
+}
+
+//The buffer loader's error manager: error_exit longjmps as JpegErrorManager's does, nothing is
+//printed, and the premature-end warning (libjpeg's fill for data that stops early) is recorded,
+//so a truncated buffer fails instead of decoding as grey rows
+struct JpegBufferErrorManager
+{
+    JpegErrorManager base;
+    bool truncated;
+};
+
+void jpegSilentOutput(j_common_ptr)
+{}
+
+void jpegBufferEmit(j_common_ptr info, int level)
+{
+    JpegBufferErrorManager *error=(JpegBufferErrorManager *)info->err;
+
+    if(level<0)
+    {
+        if(info->err->msg_code==JWRN_JPEG_EOF)
+            error->truncated=true;
+        info->err->num_warnings++;
+    }
+}
+
+bool loadJpegBuffer(ImageWrapper image, const uint8_t *buffer, size_t bufferSize, unsigned int scaleDenom,
+    size_t maxPixels)
+{
+    //SOI and the start of a marker; libjpeg would also reject a shorter or other buffer, but with an error
+    if((buffer==nullptr)||(bufferSize<3)||(buffer[0]!=0xff)||(buffer[1]!=0xd8)||(buffer[2]!=0xff))
+        return false;
+
+    jpeg_decompress_struct jpegDecompress;
+    JpegBufferErrorManager jerr;
+    //volatile so their values survive a longjmp back into this frame
+    volatile bool success=false;
+    volatile bool created=false;
+
+    jpegDecompress.err=jpeg_std_error(&jerr.base.pub);
+    jerr.base.pub.error_exit=jpegErrorExit;
+    jerr.base.pub.output_message=jpegSilentOutput;
+    jerr.base.pub.emit_message=jpegBufferEmit;
+    jerr.truncated=false;
+
+    if(setjmp(jerr.base.jmpBuffer)==0)
+    {
+        jpeg_create_decompress(&jpegDecompress);
+        created=true;
+
+        jpeg_mem_src(&jpegDecompress, buffer, (unsigned long)bufferSize);
+        jpeg_read_header(&jpegDecompress, TRUE);
+
+        if((scaleDenom==2)||(scaleDenom==4)||(scaleDenom==8))
+        {
+            jpegDecompress.scale_num=1;
+            jpegDecompress.scale_denom=scaleDenom;
+        }
+        jpeg_calc_output_dimensions(&jpegDecompress);
+
+        Format format=getFormat(jpegDecompress.out_color_space);
+        Depth depth=Depth::Bit8;
+        const size_t pixels=(size_t)jpegDecompress.output_width*jpegDecompress.output_height;
+
+        if((format!=Format::Unknown)&&((maxPixels==0)||(pixels<=maxPixels))&&!jerr.truncated)
+        {
+            jpeg_start_decompress(&jpegDecompress);
+
+            if(image.resize(format, depth, jpegDecompress.output_width, jpegDecompress.output_height))
+            {
+                size_t row_stride=image.stride()*sizeOfPixel(format, depth);
+                uint8_t *bufferLinePos=image.data();
+
+                while(jpegDecompress.output_scanline < jpegDecompress.output_height)
+                {
+                    jpeg_read_scanlines(&jpegDecompress, (JSAMPARRAY)&bufferLinePos, 1);
+                    bufferLinePos+=row_stride;
+                }
+
+                jpeg_finish_decompress(&jpegDecompress);
+                success=!jerr.truncated;
+            }
+        }
+    }
+
+    if(created)
+        jpeg_destroy_decompress(&jpegDecompress);
     return success;
 }
 
