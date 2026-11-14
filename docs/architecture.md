@@ -3582,6 +3582,61 @@ two programs and the draws. What follows describes both together:
   tells a control its `visible()` changed. `tests/unit/switch.cpp` pins the control;
   `--scenario switch` (`controltest_switch`) its slots, pixels and animations on
   SwitchDemo.
+
+- **The navigation rail.** `controls::NavigationRail`
+  (`include/gweni/controls/navigationRail.h`) is a side rail of pages (Material's
+  NavigationRail, WinUI's NavigationView) put together from what exists: docked Left,
+  filling its parent's height, it holds a header slot docked Top (`setHeader`, which
+  takes the control over and deletes the one it replaces), a footer docked Bottom
+  (`getFooter()`, any controls) and the items between them (`internal::NavigationRailItems`,
+  the rail's inner panel, so `newChild()` on the rail makes a main item). Both item
+  containers enrol a `NavigationItem` in the rail's one `SelectableGroup` as it is
+  added (`onChildAdded`) and take it out as it leaves, so a footer item made with
+  `getFooter()->newChild<NavigationItem>()` is in the same group as `addItem`'s.
+  - *Items.* `NavigationItem` is a `Selectable` that is not toggleable (a click on the
+    selected row keeps it selected), with an `ImagePanel` icon (`setImage`, loaded by
+    name as `Button::setImage` does; an empty name hides it, but keeps it, since it is
+    the badge's anchor) and a `Label` child of its own, both owner-placed in its
+    `arrange()`: the Selectable's own Text stays empty and hidden, so the label is a
+    control the rail can hide without hiding the row. `setSelected(item)` (only an
+    item of this rail; null clears it) and `getSelected()` go through the group, and
+    `onSelectionChange` fires once per real change, `control` the new item.
+  - *Collapse.* The app decides (`setCollapsed`, `isCollapsed`, `onCollapsedChanged`);
+    the rail watches no width. Collapsed, each label is hidden (`setHidden`, never
+    deleted) and its text is the item's tooltip (`setToolTipText`, kept in step by
+    `setText`), and the rail's preferred width is `IconSize` plus the row padding;
+    expanded, the tooltips are cleared, the labels shown, and the width is the widest
+    shown item's preferred width, or `setExpandedWidth`'s. A collapse or expand is
+    one `invalidate()` of the rail with the labels' visibility, so it lays out in one
+    pass entering the rail's subtree and its parent's path, and marks only the labels'
+    visibility and the items' new bounds. NavigationRailDemo collapses its rail below
+    560 units from its own X arrange, before it docks the rail (inside a
+    `PlacementScope`, the rail measured again there), so a resize across the width is
+    one pass too.
+  - *Badges.* `NavigationItem::setBadgeCount(n)` and `setBadgeDot(bool)` make a
+    `Badge` (#609) on first use and `attach()` it to the icon's top-right corner, so it
+    shows collapsed and expanded alike and a count change is the Badge's own: its slots
+    alone, and a layout of the way down to it only when its size changes.
+  - *Keyboard.* The rail is one Tab stop (the items take no keyboard input). Its focus
+    enters at the selected item (the first enabled one if that is disabled or hidden),
+    kept as a logical focus by control id (`getFocused()`, `isNavigationFocused()`);
+    Up and Down move it through the main and the footer items, wrapping, Home and End
+    to the ends, skipping disabled and hidden items; Return and Space select the focused
+    item, Material's behaviour (WinUI selects on focus): moving the focus selects no
+    page, so an app does not build pages the user only passes over.
+  - *The look.* The textured `NavigationRail` renderer paints the `NavigationRail`
+    surface in one slot, and `NavigationItem`'s renderer one slot per row: hidden when
+    the row is idle (`Selectable`'s rule), else `NavItemHover`, `NavItemDown`,
+    `NavItemFocus`/`NavItemFocusHover`, `NavItemSelected` and its `Hover`, `Focus`,
+    `FocusHover` and `Disabled` variants. The selection's indicator is a bar on the
+    leading edge drawn in the same slot: a selected surface's 3-unit border, with the
+    edge mask keeping it off the top, right and bottom and squaring the left corners.
+    The label's colour is `NavItemText`, `NavItemSelectedText` or `NavItemDisabledText`
+    (`Colors.NavigationItem`), so a hover writes the row's slot alone and a selection
+    the two rows' slots and their labels' glyphs, laying nothing out.
+  `tests/unit/navigationRail.cpp` pins it headless, and ControlTest's
+  `--scenario navigation-rail` the costs and pixels of a hover, a click, Down and
+  Return, a badge count, a collapse, its tooltip and the expand on NavigationRailDemo.
 - **Scale and the device-pixel grid.** Controls lay out in logical units (integers);
   `renderer::Base::translate()` turns them into device pixels at `scale()` (set by
   `Canvas::setScale`). It snaps **edges**, not origin and size apart: a point is
