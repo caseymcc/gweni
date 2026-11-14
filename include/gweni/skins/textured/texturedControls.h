@@ -1779,7 +1779,8 @@ public:
 
 // controls::Spinner: its arc (SpinnerArc's top colour, or SpinnerStopped's as a
 // whole still ring while stopped) at getZIndex()+1, and its track
-// (setShowTrack: a whole ring in SpinnerTrack's top colour) at getZIndex(),
+// (setShowTrack: a whole ring in SpinnerTrack's top colour, while it spins)
+// at getZIndex(),
 // each one drawArc slot on the largest circle in its bounds, the stroke its
 // getThickness(). Without a track that slot is hidden, so a spinning frame
 // writes the arc's slot alone.

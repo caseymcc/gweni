@@ -3980,7 +3980,9 @@ void Spinner::update(renderer::Base *renderer, controls::Base *baseControl)
     const float thickness=control->getThickness();
     const int z=baseControl->getZIndex();
 
-    if(control->showsTrack())
+    // stopped, the still ring covers the track: two rings on one circle would
+    // show the track's edge round it
+    if(control->showsTrack() && control->isSpinning())
         renderer->drawArc(m_primitives[0], bounds, 0.0f, 1.0f, thickness, tokyonight::SpinnerTrack.top, z);
     else
         renderer->hidePrimitive(m_primitives[0]);

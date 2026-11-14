@@ -29,7 +29,8 @@
  *    input       no keyboard input, no tab stop, no mouse (a hit test finds
  *                its parent) until a tooltip is set, which makes it hovered.
  *    track       setShowTrack draws a whole ring in SpinnerTrack's colour at
- *                its z, behind the arc.
+ *                its z, behind the arc, while it spins; stopped and shown, the
+ *                still ring is drawn alone.
  */
 #include "headlessFixture.h"
 
@@ -442,7 +443,7 @@ TEST_CASE("Spinner: it takes no keys, no tab and no mouse until a tooltip is set
     CHECK_FALSE(s->getMouseInputEnabled());
 }
 
-TEST_CASE("Spinner: setShowTrack draws a whole ring in SpinnerTrack's colour behind the arc")
+TEST_CASE("Spinner: setShowTrack draws a whole ring in SpinnerTrack's colour behind the arc while it spins")
 {
     Scene scene;
     controls::Spinner *s=scene.spinner();
@@ -459,4 +460,11 @@ TEST_CASE("Spinner: setShowTrack draws a whole ring in SpinnerTrack's colour beh
     CHECK(track[0].sweepTurns == 1.0f);
     CHECK(track[0].zIndex == s->getZIndex());
     CHECK(sameColor(track[0].color, skin::textured::tokyonight::SpinnerTrack.top));
+
+    // stopped where it stays shown, the still ring alone: no track under it
+    s->setHideWhenStopped(false);
+    s->stop();
+    scene.frame(1.0/60.0);
+    CHECK(scene.arcsInto(Scene::slot(s, 0)).empty());
+    CHECK(scene.arcsInto(Scene::slot(s, 1)).size() == 1);
 }

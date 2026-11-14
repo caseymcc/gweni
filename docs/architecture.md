@@ -3769,7 +3769,9 @@ two programs and the draws. What follows describes both together:
   Spinner): an arc turning round a ring while something runs, drawn by the textured
   `Spinner` renderer as one `drawArc` slot at `getZIndex()+1` in `SpinnerArc`'s top
   colour, with an optional track ring behind it (`setShowTrack`: a whole ring at
-  `getZIndex()` in `SpinnerTrack`'s, a slot hidden otherwise; `depthLayers()` 2).
+  `getZIndex()` in `SpinnerTrack`'s while it spins, a slot hidden otherwise: a
+  stopped one's still ring on the same circle would show the track's edge round it;
+  `depthLayers()` 2).
   **Its motion is Material's**, not a fixed sweep: the base turns at `setSpeed()` turns
   a second (1), and over each cycle of `CycleTurns` (1.5) base turns the head runs
   `MaxSweep - MinSweep` (0.64) turns ahead, eased, then the tail catches it up, so the
