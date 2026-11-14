@@ -56,12 +56,17 @@ void Slider::setDisabled(bool active)
 // disabled; read again here, so a theme changed at run time reaches it.
 void Slider::updateColors()
 {
-    if(!m_valueText)
+    updateValueTextColor(m_valueText, this);
+}
+
+void Slider::updateValueTextColor(internal::Text *text, Base *owner)
+{
+    if(!text)
         return;
-    if(isDisabled())
-        m_valueText->setTextColor(getSkin()->Colors.Button.Disabled);
+    if(owner->isDisabled())
+        text->setTextColor(owner->getSkin()->Colors.Button.Disabled);
     else
-        m_valueText->setSkinTextColor(internal::SkinTextColor::LabelDefault);
+        text->setSkinTextColor(internal::SkinTextColor::LabelDefault);
 }
 
 void Slider::onMoved(event::Info)
@@ -89,54 +94,37 @@ void Slider::calculateSize(skin::Base *skin, Dim dim)
 {
     ParentClass::calculateSize(skin, dim);
 
-    if(!m_valueText)
-    {
-        m_valueColumn=0;
-        return;
-    }
+    const int content=valueTextSize(dim, isHorizontal(), m_valueText, m_valueFormat, m_min, m_max,
+        dim == Dim::X?m_requestedBounds.w:m_requestedBounds.h, m_valueColumn,
+        [this](const Font &font, const String &text) { return measureText(font, text); });
 
-    if(isHorizontal())
-    {
-        // the text's line inside the track's 1-unit border
-        if(dim == Dim::Y)
-            m_preferredSize.height=preferredFromContent(std::max(m_requestedBounds.h,
-                m_valueText->getPreferredSize().height+2), Dim::Y);
-        return;
-    }
-
-    if(dim != Dim::X)
-        return;
-
-    // Measured from the range, not the value shown, so a drag never changes it.
-    const gweni::Font &font=m_valueText->getFont();
-
-    m_valueColumn=std::max(measureText(font, formatValue(m_valueFormat, m_min)).x,
-        measureText(font, formatValue(m_valueFormat, m_max)).x);
-    m_preferredSize.width=preferredFromContent(m_requestedBounds.w+ValueTextGap+m_valueColumn, Dim::X);
+    if(m_valueText)
+        m_preferredSize.value[int(dim)]=preferredFromContent(content, dim);
 }
 
 gweni::Rect Slider::getTrackBounds()
 {
-    gweni::Rect r=getRenderBounds();
+    return valueTextTrackBounds(getRenderBounds(), isHorizontal(), m_valueText != nullptr, m_valueColumn);
+}
 
-    if(m_valueText && !isHorizontal())
-        r.w=std::max(0, r.w-ValueTextGap-m_valueColumn);
+Rect Slider::valueTextTrackBounds(Rect bounds, bool horizontal, bool hasText, int column)
+{
+    if(hasText && !horizontal)
+        bounds.w=std::max(0, bounds.w-ValueTextGap-column);
+    return bounds;
+}
 
-    return r;
+Rect Slider::valueTextBounds(int width, int height, int trackWidth, bool horizontal, const Size &size)
+{
+    return Rect(horizontal?(width-size.width)/2:trackWidth+ValueTextGap,
+        (height-size.height)/2, size.width, size.height);
 }
 
 void Slider::placeValueText()
 {
-    if(!m_valueText)
-        return;
-
-    const Size &size=m_valueText->getPreferredSize();
-    const int y=(getHeight()-size.height)/2;
-
-    if(isHorizontal())
-        placeChild(m_valueText, (getWidth()-size.width)/2, y, size.width, size.height);
-    else
-        placeChild(m_valueText, getTrackBounds().w+ValueTextGap, y, size.width, size.height);
+    if(m_valueText)
+        placeChild(m_valueText, valueTextBounds(getWidth(), getHeight(), getTrackBounds().w,
+            isHorizontal(), m_valueText->getPreferredSize()));
 }
 
 // One conversion of a double, with the flags, width and precision snprintf

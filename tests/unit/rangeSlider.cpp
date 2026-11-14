@@ -22,6 +22,9 @@
  *    then onLowChanged or onHighChanged, and never from set*;
  *  - the per-thumb and joined value texts are set only when their strings
  *    change (a drag that keeps them sets none);
+ *  - a z relabel of the parent moves the thumbs' drawn layers in that frame,
+ *    even when the thumbs keep their own labels; a text width change never
+ *    redraws the other thumb; disabling in a value callback ends the drag;
  *  - the geometry, horizontal and vertical: the thumbs' bounds, the travel,
  *    the fill between their centres, a vertical text column;
  *  - disabled, a press, a drag and keys change nothing and take no focus;
@@ -593,30 +596,64 @@ public:
     }
 };
 
+//! Keeps the clock and canvas alive through a failed REQUIRE too.
+struct TexturedScene
+{
+    RangeRecorder renderer;
+    RangeSkin skin{&renderer};
+    float clock=nextClock();
+    std::unique_ptr<controls::Canvas> canvas;
+    controls::Base *before=nullptr;
+    controls::RangeSlider *slider=nullptr;
+
+    TexturedScene()
+    {
+        platform::setTimeSource([this]() { return clock; });
+        canvas=std::make_unique<controls::Canvas>(&skin);
+        canvas->setSize(400, 400);
+        before=canvas->newChild<controls::Base>();
+        before->setBounds(0, 0, 10, 10);
+        slider=canvas->newChild<controls::RangeSlider>();
+        slider->setBounds(Origin, Origin, 100+Thumb, 20);
+        slider->setRange(0, 100);
+        slider->setValues(40, 60);
+    }
+
+    ~TexturedScene()
+    {
+        HoveredControl=nullptr;
+        KeyboardFocus=nullptr;
+        MouseFocus=nullptr;
+        canvas.reset();
+        platform::setTimeSource(nullptr);
+    }
+
+    void frame()
+    {
+        canvas->updateCanvas();
+        canvas->renderCanvas();
+    }
+
+    static size_t slotOf(controls::Base *control, size_t i=0)
+    {
+        return control->getSkinControl()->getPrimitives().at(i);
+    }
+};
+
 }//namespace
 
 TEST_CASE("RangeSlider: the textured thumbs' layers, focus look and written slots")
 {
-    RangeRecorder renderer;
-    RangeSkin skin(&renderer);
-    float clock=nextClock();
-
-    platform::setTimeSource([&clock]() { return clock; });
-
-    controls::Canvas *canvas=new controls::Canvas(&skin);
-    canvas->setSize(400, 400);
-
-    controls::RangeSlider *slider=canvas->newChild<controls::RangeSlider>();
-    slider->setBounds(Origin, Origin, 100+Thumb, 20);
-    slider->setRange(0, 100);
-    slider->setValues(40, 60);
+    TexturedScene s;
+    auto &renderer=s.renderer;
+    auto *canvas=s.canvas.get();
+    auto *slider=s.slider;
 
     auto frame=[&]() {
         renderer.draws.clear();
-        canvas->updateCanvas();
-        canvas->renderCanvas();
+        s.frame();
     };
-    auto slotOf=[](controls::Base *control, size_t i) { return control->getSkinControl()->getPrimitives().at(i); };
+    auto slotOf=TexturedScene::slotOf;
 
     frame();
     frame();
@@ -672,7 +709,7 @@ TEST_CASE("RangeSlider: the textured thumbs' layers, focus look and written slot
     CHECK(renderer.writtenPrimitiveIds().empty());
 
     // a drag step writes the thumb's and the fill's
-    clock+=1.0f;
+    s.clock+=1.0f;
     canvas->inputMouseButton(0, true);
     frame();
     canvas->inputMouseMoved(onHigh.x+1, onHigh.y, 1, 0);
@@ -691,9 +728,86 @@ TEST_CASE("RangeSlider: the textured thumbs' layers, focus look and written slot
     canvas->inputMouseButton(0, false);
     frame();
 
-    HoveredControl=nullptr;
-    KeyboardFocus=nullptr;
-    MouseFocus=nullptr;
-    delete canvas;
-    platform::setTimeSource(nullptr);
+}
+
+TEST_CASE("RangeSlider: thumbs follow a relabelled parent depth")
+{
+    TexturedScene s;
+    auto *slider=s.slider;
+    s.frame();
+    s.frame();
+    const size_t low=TexturedScene::slotOf(slider->getThumb(0));
+    const size_t high=TexturedScene::slotOf(slider->getThumb(1));
+    const size_t fill=TexturedScene::slotOf(slider, 1);
+    const int z=slider->getZIndex();
+    const int lowZ=slider->getThumb(0)->getZIndex();
+    const int highZ=slider->getThumb(1)->getZIndex();
+
+    // Exhaust the free gap before the slider without moving its children.
+    for(int i=0; i<10; ++i)
+        s.before->newChild<controls::Base>()->setBounds(0, 0, 1, 1);
+    s.frame();
+    const int relabelled=slider->getZIndex();
+    REQUIRE(relabelled != z);
+    REQUIRE(slider->getThumb(0)->getZIndex() == lowZ);
+    REQUIRE(slider->getThumb(1)->getZIndex() == highZ);
+    REQUIRE(s.renderer.last(fill));
+    REQUIRE(s.renderer.last(low));
+    REQUIRE(s.renderer.last(high));
+    CHECK(s.renderer.last(fill)->z == relabelled+1);
+    CHECK(s.renderer.last(low)->z == relabelled+2);
+    CHECK(s.renderer.last(high)->z == relabelled+3);
+    // Correct in that frame, with nothing carried to the next one.
+    s.frame();
+    CHECK(s.renderer.writtenPrimitiveIds().empty());
+}
+
+TEST_CASE("RangeSlider: a text width change leaves the other thumb untouched")
+{
+    TexturedScene s;
+    auto *slider=s.slider;
+    slider->setHorizontal(false);
+    slider->setSize(20, 100+Thumb);
+    slider->setRange(-50, 50);
+    slider->setValues(-10, 30);
+    slider->setValueFormat("%.0f");
+    s.frame();
+    s.frame();
+    const size_t other=TexturedScene::slotOf(slider->getThumb(1));
+    const int oldWidth=slider->getValueTextControl(0)->getWidth();
+
+    controls::resetChangeStats();
+    slider->thumbStepped(0, 1);
+    s.frame();
+    CHECK(slider->getValueText(0) == "-9");
+    REQUIRE(slider->getValueTextControl(0)->getWidth() < oldWidth);
+    const auto &written=s.renderer.writtenPrimitiveIds();
+    CHECK(std::count(written.begin(), written.end(), other) == 0);
+    CHECK(controls::getChangeStats().controls <= 3);
+    s.frame();
+    CHECK(s.renderer.writtenPrimitiveIds().empty());
+}
+
+TEST_CASE("RangeSlider: disabling from a track press callback cancels its drag")
+{
+    Scene s;
+    auto *slider=s.slider;
+    slider->setValues(20, 80);
+    s.frame();
+    struct Disable: event::Handler
+    {
+        void changed(event::Info info) { info.control->setDisabled(true); }
+    } disable;
+    slider->onValueChanged.add(&disable, &Disable::changed);
+    s.moveTo(s.at(35+Thumb/2));
+    s.press();
+    REQUIRE(slider->isDisabled());
+    CHECK(slider->getLow() == doctest::Approx(35));
+    CHECK(slider->getDraggedThumb() == -1);
+    CHECK(!slider->getThumb(0)->isDepressed());
+    CHECK(MouseFocus != slider->getThumb(0));
+    s.moveTo(s.at(45+Thumb/2));
+    CHECK(slider->getLow() == doctest::Approx(35));
+    CHECK(s.changes.size() == 1);
+    s.release();
 }
