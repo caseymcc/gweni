@@ -8,6 +8,7 @@
 #include <gweni/controls/calendar.h>
 #include <gweni/controls/label.h>
 #include <gweni/controls/scrollBarButton.h>
+#include <gweni/gweni.h>
 #include <gweni/inputHandler.h>
 #include <gweni/skin.h>
 
@@ -862,43 +863,44 @@ bool Calendar::onKeyend(bool down)
 
 bool Calendar::onKeyPageUp(bool down)
 {
-    if(!down)
-        return true;
-
-    const bool year=input::isShiftDown();
-
-    if(m_view == View::Month)
-    {
-        // a month (a year) back, the day clamped, then off a disabled date
-        // going on back
-        const Date target=year?m_cursor.addYears(-1):m_cursor.addMonths(-1);
-        const Date from=m_cursor;
-
-        if(moveCursorTo(target, -1) && (m_cursor != from))
-            cursorMoved();
-    }
-    else
-        moveCursor((m_view == View::Year)?-12:-120, 1);
-    return true;
+    return down?pageCursor(-1):true;
 }
 
 bool Calendar::onKeyPageDown(bool down)
 {
-    if(!down)
-        return true;
+    return down?pageCursor(1):true;
+}
 
-    const bool year=input::isShiftDown();
+// A month (with Shift a year) on or back, the day clamped, then off a disabled
+// date going on the same way; a page past a limit stops at the limit (the last
+// enabled date before it), so PageDown at the limit does nothing. The zoomed-out
+// views page a year or a decade.
+bool Calendar::pageCursor(int direction)
+{
+    if(m_view != View::Month)
+        return moveCursor(direction*((m_view == View::Year)?12:120), 1);
 
-    if(m_view == View::Month)
+    const Date from=m_cursor;
+    Date target=input::isShiftDown()?m_cursor.addYears(direction):m_cursor.addMonths(direction);
+    int search=direction;
+
+    if((direction > 0) && m_max && (target > *m_max))
     {
-        const Date target=year?m_cursor.addYears(1):m_cursor.addMonths(1);
-        const Date from=m_cursor;
-
-        if(moveCursorTo(target, 1) && (m_cursor != from))
-            cursorMoved();
+        target=*m_max;
+        search=-1;
     }
-    else
-        moveCursor((m_view == View::Year)?12:120, 1);
+    else if((direction < 0) && m_min && (target < *m_min))
+    {
+        target=*m_min;
+        search=1;
+    }
+    if(!moveCursorTo(target, search))
+        return true;
+    // a clamped page that found nothing enabled past the cursor stays
+    if((direction > 0)?(m_cursor < from):(m_cursor > from))
+        m_cursor=from;
+    if(m_cursor != from)
+        cursorMoved();
     return true;
 }
 
@@ -919,9 +921,18 @@ bool Calendar::onKeyReturn(bool down)
     return onKeySpace(down);
 }
 
+// A press on a cell gives the calendar the focus before the cell hears of it
+// (the input handler focuses the nearest keyboard-enabled ancestor), so the
+// cursor goes to the pressed cell here: the focus rings it, not the cursor's
+// old date for the one frame before the click.
 void Calendar::onKeyboardFocus()
 {
     ParentClass::onKeyboardFocus();
+
+    const internal::CalendarCell *cell=gweni_cast<internal::CalendarCell>(HoveredControl);
+
+    if(input::isLeftMouseDown() && cell && (cell->m_calendar == this) && !cell->getLook().disabled)
+        cursorToCell(cell);
     rebind();
 }
 
@@ -946,7 +957,26 @@ void Calendar::onCellDown(event::Info info)
 
     if(!cell || (cell->m_calendar != this))
         return;
-    focus();
+
+    cursorToCell(cell);
+    if(isFocussed())
+        rebind();
+    else
+        focus();
+}
+
+void Calendar::cursorToCell(const internal::CalendarCell *cell)
+{
+    const Date &date=cell->getDate();
+
+    if(m_view == View::Month)
+        m_cursor=date;
+    else
+    {
+        const int month=(m_view == View::Year)?date.month:m_cursor.month;
+
+        m_cursor=Date(date.year, month, std::min(m_cursor.day, Date::daysInMonth(date.year, month)));
+    }
 }
 
 void Calendar::onCellPress(event::Info info)

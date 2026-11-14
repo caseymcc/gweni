@@ -128,6 +128,8 @@ set(GWENI_DEMO_SOURCES
     demo/stepper.h
     demo/searchCombo.cpp
     demo/searchCombo.h
+    demo/calendar.cpp
+    demo/calendar.h
     demo/nodeGraph.cpp
     demo/nodeGraph.h
     demo/flow.cpp

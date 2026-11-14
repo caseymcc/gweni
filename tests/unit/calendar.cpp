@@ -31,8 +31,9 @@
  *  with Shift, crossing month and year ends (showing the month it lands in,
  *  the day clamped to a shorter month); Space and Return select at it. With
  *  limits and a weekend filter it passes over the disabled dates in its
- *  direction and a move that would leave the limits does nothing (PageDown at
- *  the limit included).
+ *  direction; an arrow that would leave the limits does nothing, and Home,
+ *  End and a page past a limit stop at the nearest enabled date inside it, so
+ *  PageDown at the limit does nothing.
  *
  *  Range: the first click sets the start (drawn as both ends), the hover then
  *  previews the range to the hovered date, the second click sets the end,
@@ -598,13 +599,19 @@ TEST_CASE("Calendar: the keys pass over disabled dates and stop at the limits")
         {keys::Left, Date(2026, 11, 13)},     // and back
         {keys::Down, Date(2026, 11, 20)},
         {keys::Down, Date(2026, 11, 20)},     // the 27th is past the maximum
-        {keys::PageDown, Date(2026, 11, 20)}, // so is December
+        {keys::PageDown, Date(2026, 11, 25)}, // December is: the page stops at the maximum
+        {keys::PageDown, Date(2026, 11, 25)}, // and at the limit does nothing
+        {keys::Left, Date(2026, 11, 24)},
         {keys::End, Date(2026, 11, 25)},      // the last enabled day
         {keys::Right, Date(2026, 11, 25)},    // the 26th is past the maximum
         {keys::Home, Date(2026, 11, 5)},      // the first enabled day
         {keys::Left, Date(2026, 11, 5)},      // the 4th is before the minimum
         {keys::Up, Date(2026, 11, 5)},
-        {keys::PageUp, Date(2026, 11, 5)},
+        {keys::PageUp, Date(2026, 11, 5)},    // at the minimum
+        {keys::Right, Date(2026, 11, 6)},
+        {keys::PageUp, Date(2026, 11, 5)},    // October is before it: the page stops there
+        {keys::Right, Date(2026, 11, 6)},
+        {keys::Left, Date(2026, 11, 5)},
         {keys::Right, Date(2026, 11, 6)},
         {keys::Right, Date(2026, 11, 9)},
     };
@@ -746,7 +753,11 @@ TEST_CASE("Calendar: the title zooms out to the year and the decade, a cell zoom
         {
             REQUIRE(cell->getText() == calendar->getShortMonthName(i+1));
             REQUIRE((cell->getDate() == Date(2026, i+1, 1)));
-            REQUIRE(cell->getWidth() == Calendar::Columns*Calendar::CellWidth/Calendar::ZoomColumns);
+            // a quarter of the grid's width, the units left over spread
+            const int quarter=Calendar::Columns*Calendar::CellWidth/Calendar::ZoomColumns;
+
+            REQUIRE(cell->getWidth() >= quarter);
+            REQUIRE(cell->getWidth() <= quarter+1);
         }
     }
     for(int column=0; column < Calendar::Columns; ++column)

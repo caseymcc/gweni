@@ -204,14 +204,14 @@ public:
 
     //! Units: a cell, the header row, the weekday row and the room around and
     //! between them.
-    static constexpr int CellWidth=32;
-    static constexpr int CellHeight=28;
-    static constexpr int HeaderHeight=28;
-    static constexpr int WeekdayHeight=20;
-    static constexpr int Gap=4;
-    static constexpr int Inset=6;
+    static constexpr int CellWidth=30;
+    static constexpr int CellHeight=24;
+    static constexpr int HeaderHeight=24;
+    static constexpr int WeekdayHeight=18;
+    static constexpr int Gap=2;
+    static constexpr int Inset=4;
     //! The previous and next buttons' square.
-    static constexpr int ButtonSize=24;
+    static constexpr int ButtonSize=20;
 
     //! The month shown, \p month 1-12 (an invalid month is ignored), in the
     //! Month view or as the Year view's year. The cursor follows into it if it
@@ -373,6 +373,11 @@ protected:
     bool moveCursorTo(const Date &target, int direction);
     //! The cursor moved: shows its month (year, decade) and rebinds.
     void cursorMoved();
+    //! The cursor to what a pressed cell shows: its day, or its month or year
+    //! with the cursor's day kept.
+    void cursorToCell(const internal::CalendarCell *cell);
+    //! PageUp (-1) and PageDown (1), the view's way.
+    bool pageCursor(int direction);
     //! A key's press, the view's way; consumes the release.
     bool cursorKey(bool down, int64_t daySteps, int64_t viewSteps);
 

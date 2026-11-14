@@ -244,12 +244,13 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # tree table's expands, collapses and keys, the split and drop-down
     # buttons' menus, the range slider's drags and keys, the
     # steppers' step changes, the code view's copy button, a RichText, the
-    # SearchComboBox's keystrokes, picks and chip wrap, and the reorder drags'
-    # looks and drops
+    # SearchComboBox's keystrokes, picks and chip wrap, the reorder drags'
+    # looks and drops, and the calendar's months and views
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
             dialog toast flow switch spinner navigation-rail board field-validation segmented
-            tree-table split-button range-slider stepper code-view rich-text search-combo reorder)
+            tree-table split-button range-slider stepper code-view rich-text search-combo reorder
+            calendar)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail")
@@ -735,6 +736,16 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_search_combo 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario search-combo --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/search_combo@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # CalendarDemo: a hover writes its cell (and the one the mouse left), a
+    # selection the two cells, a month change the 42 cells and the title with
+    # no control made, a range's second click the cells whose look changed,
+    # the keys move the cursor and PageDown at the limit does nothing, and the
+    # zoomed-out views give the month's frame back
+    gweni_whole_app_test(controltest_calendar 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario calendar --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/calendar@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # gweni::tools::Inspector over the settled Demo, opened and closed by F12:
