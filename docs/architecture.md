@@ -4379,7 +4379,9 @@ so while its list is in the drag a look that shows nothing (a refused gap, the
 item scrolled out) is parked far above the panel, a pure move. The indicator is
 created or unhidden and parked when the target is entered, even for a refused
 gap, so auto-scroll or a live edit first allowing that gap during layout only
-moves it. A hide during a pass (a list edit cancelling the drag) is posted to
+moves it; the veil likewise when the drag starts, even with the item out of view
+(live inserts or a scroll since the press), so auto-scroll or a wheel bringing it
+into view during layout only moves it. A hide during a pass (a list edit cancelling the drag) is posted to
 the next update
 (`indicatorShown()`, `veilShown()` say whether one shows). `ScrollControl::arrange`
 ends with `Reorderable::listArranged()`, which resolves the edits, finds the gap
