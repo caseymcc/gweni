@@ -44,6 +44,8 @@ set(GWENI_DEMO_SOURCES
     demo/codeEditor.h
     demo/dataTableVirtual.cpp
     demo/dataTableVirtual.h
+    demo/treeTable.cpp
+    demo/treeTable.h
     demo/demo.cpp
     demo/demo.h
     demo/groupBox.cpp

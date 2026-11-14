@@ -47,6 +47,7 @@
 #include "demo/dataTable.h"
 #include "demo/codeEditor.h"
 #include "demo/dataTableVirtual.h"
+#include "demo/treeTable.h"
 #include "demo/groupBox.h"
 #include "demo/imagePanel.h"
 #include "demo/label.h"
@@ -234,6 +235,7 @@ void Demo::init(const String &name)
         addDemo<VirtualListVariableDemo>(cat, "VirtualListVariableDemo", "Wrapped list");
         addDemo<DataTableDemo>(cat, "DataTableDemo", "Data table");
         addDemo<DataTableVirtualDemo>(cat, "DataTableVirtualDemo", "Data table, 100k");
+        addDemo<TreeTableDemo>(cat, "TreeTableDemo", "Tree table, 100k");
         addDemo<CodeEditorDemo>(cat, "CodeEditorDemo", "Code editor");
         addDemo<LogViewDemo>(cat, "LogViewDemo", "Log view");
         addDemo<ContextMenuDemo>(cat, "ContextMenuDemo", "Context menu");

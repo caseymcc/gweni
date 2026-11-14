@@ -229,10 +229,12 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # badges' counts and anchor moves, the dialogs, the toasts, a Flow's
     # resizes and rebuilds, the switches' toggles, the spinners' stops and
     # hides, the navigation rail's collapse/selection, the board's wheels and
-    # edits, the fields' messages and the segmented buttons' selections
+    # edits, the fields' messages, the segmented buttons' selections and the
+    # tree table's expands, collapses and keys
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
-            dialog toast flow switch spinner navigation-rail board field-validation segmented)
+            dialog toast flow switch spinner navigation-rail board field-validation segmented
+            tree-table)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail")
@@ -387,6 +389,18 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     gweni_whole_app_test(controltest_data_table_virtual 120
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario data-table-virtual --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/data-table-virtual@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # TreeTableDemo at 1 000 and 100 000 nodes: the pool, the subtree, the ids
+    # and the counters of a folder expanded and collapsed by its expander, a
+    # one-row scroll and a selection moved by Down the same at both, a settled
+    # frame writing nothing, the expand, the collapse and the scroll writing no
+    # more than the shown rows' slots (and the thumb's) in one layout pass, Down
+    # writing the two rows' slots alone and a grip drag giving its column its
+    # width in one pass; exits non-zero on any failed check
+    gweni_whole_app_test(controltest_tree_table 120
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario tree-table --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/tree-table@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # keys handled in one frame, after an edit and before the layout that

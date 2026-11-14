@@ -51,6 +51,7 @@ GWENI_DEMO_TRANSPARENT(ToastDemo)
 GWENI_DEMO_TRANSPARENT(CrossSplitterDemo)
 GWENI_DEMO_TRANSPARENT(DataTableDemo)
 GWENI_DEMO_TRANSPARENT(DataTableVirtualDemo)
+GWENI_DEMO_TRANSPARENT(TreeTableDemo)
 GWENI_DEMO_TRANSPARENT(GroupBoxDemo)
 GWENI_DEMO_TRANSPARENT(ImagePanelDemo)
 GWENI_DEMO_TRANSPARENT(LabelDemo)
@@ -189,6 +190,7 @@ template class ControlRegister<ToastDemo>;
 template class ControlRegister<CrossSplitterDemo>;
 template class ControlRegister<DataTableDemo>;
 template class ControlRegister<DataTableVirtualDemo>;
+template class ControlRegister<TreeTableDemo>;
 template class ControlRegister<GroupBoxDemo>;
 template class ControlRegister<ImagePanelDemo>;
 template class ControlRegister<LabelDemo>;

@@ -1159,6 +1159,32 @@
  *                 drag gives the column its width, each in one pass with no
  *                 z renumber or layout request; the demo gives every
  *                 primitive id back. Exits non-zero if any check is no.
+ *    tree-table   TreeTableDemo at 1 000 and then 100 000 nodes, the clock
+ *                 frozen: a settled frame, the root's second folder expanded
+ *                 and collapsed by clicks on its expander, a one-row scroll,
+ *                 a click on that folder's row and Down, and the Size
+ *                 column's grip dragged 30 units, each followed by settled
+ *                 frames (tree-table-1000.png, tree-table-100000.png). One
+ *                 line per count
+ *                   tree-table nodes=N items=N rows=N subtree=N prim_ids=N
+ *                          idle_slots=0 ... expand_prim_slots=N ...
+ *                          down_foreign=0 ids_left=0
+ *                 and one line
+ *                   tree-table same_cost=yes|no settled=yes|no toggled=yes|no
+ *                          rows_only=yes|no down_two_rows=yes|no
+ *                          drag_one_pass=yes|no ids_back=yes|no
+ *                 the checks: the visible rows, the pool, the table's
+ *                 subtree, the ids and the expand's, collapse's, scroll's and
+ *                 Down's counters are the same at both counts; settled frames
+ *                 write and change nothing; the clicks expand and collapse
+ *                 the folder; the expand, collapse and scroll write no more
+ *                 than the shown rows' slots and glyphs (and the bar's thumb,
+ *                 which the item count moves), enter no more than the table's
+ *                 subtree and the two controls above it, renumber no z and
+ *                 lay out in one pass; Down selects the next node writing the
+ *                 two rows' slots alone; the drag gives the column its width
+ *                 in one pass; the demo gives every primitive id back. Exits
+ *                 non-zero if any check is no.
  *    hide-show    one control (default ButtonDemo) built into a host page, a
  *                 plain Base docked to fill the canvas as PageControl::addPage
  *                 makes the shell's pages, the clock frozen. On a new canvas
@@ -1273,6 +1299,7 @@
 #include <gweni/controls/codeEditor.h>
 #include <gweni/controls/virtualList.h>
 #include <gweni/controls/dataTable.h>
+#include <gweni/controls/treeTable.h>
 #include <gweni/controls/properties.h>
 #include <gweni/controls/zoomPanel.h>
 #include <gweni/tools/depthView.h>
@@ -1333,6 +1360,7 @@
 #include <demo/dataTable.h>
 #include <demo/codeEditor.h>
 #include <demo/dataTableVirtual.h>
+#include <demo/treeTable.h>
 #include <demo/groupBox.h>
 #include <demo/imagePanel.h>
 #include <demo/label.h>
@@ -1488,7 +1516,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(ChartAreasDemo) X(TimelineDemo) X(ComboBoxDemo) \
-    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(NavigationRailDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(SegmentedButtonsDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
+    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(NavigationRailDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(TreeTableDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(SegmentedButtonsDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(SwitchDemo) X(SpinnerDemo) X(FieldValidationDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
@@ -1582,7 +1610,8 @@ static void printUsage(std::ostream &out)
          "                     | context-menu | popup | dialog | toast\n"
          "                     | virtual-list\n"
          "                     | virtual-list-variable\n"
-         "                     | data-table-virtual | hide-show | demo-labels\n"
+         "                     | data-table-virtual | tree-table | hide-show\n"
+         "                     | demo-labels\n"
          "                     | plot-histogram | plot-lines | chart | timeline\n"
          "                     | inspector\n"
          "                     | stats-overlay | depth-view | zoom-panel\n"
@@ -1605,6 +1634,8 @@ static void printUsage(std::ostream &out)
          "                     on screen),\n"
          "                     data-table-virtual the same for a DataTable's\n"
          "                     records (and a sort and a column drag in one pass),\n"
+         "                     tree-table the same for a TreeTable's nodes (an\n"
+         "                     expand, a collapse, a scroll and Down),\n"
          "                     hide-show whether a demo hidden and shown again, and\n"
          "                     one built hidden and shown, are the one built shown,\n"
          "                     demo-labels whether every demo-list label fits,\n"
@@ -2637,7 +2668,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 // Scenarios
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
-    ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, HideShow, DemoLabels, PlotHistogram,
+    ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, TreeTable, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
     ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented };
 
@@ -2660,6 +2691,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "virtual-list") scenario=Scenario::VirtualList;
     else if(name == "virtual-list-variable") scenario=Scenario::VirtualListVariable;
     else if(name == "data-table-virtual") scenario=Scenario::DataTableVirtual;
+    else if(name == "tree-table") scenario=Scenario::TreeTable;
     else if(name == "hide-show") scenario=Scenario::HideShow;
     else if(name == "demo-labels") scenario=Scenario::DemoLabels;
     else if(name == "plot-histogram") scenario=Scenario::PlotHistogram;
@@ -16379,6 +16411,277 @@ static bool runDataTableVirtualScenario(Session &s, const std::string &shotDir, 
 }
 
 //-----------------------------------------------------------------------------
+// --scenario tree-table: TreeTableDemo at 1 000 and 100 000 nodes
+//
+// The tree's visible rows are a flattened index over DataTable's source mode,
+// whose body is a VirtualList of pooled rows, so as for the data table what a
+// frame does is the same at both counts: the controls and ids it holds, a
+// settled frame (nothing), a folder expanded and collapsed by a click on its
+// expander, a one-row scroll and a selection moved by Down, each within the
+// table's subtree and its shown rows' slots. The demo's tree is numbered
+// breadth first, so its top rows are the same nodes at both counts. Down
+// writes the two rows' slots alone, and a drag of a column's grip gives the
+// column its width in one pass.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+struct TreeTableRun
+{
+    size_t nodes=0;
+    size_t items=0;         // visible rows at the start
+    size_t rows=0;          // the pool
+    size_t subtree=0;       // controls under the table, the table included
+    size_t primIds=0;       // live primitive ids the demo holds
+    size_t idleSlots=0;     // slots the settled frames wrote
+    size_t idleChanged=0;   // and controls they changed
+    size_t idsLeft=0;       // live primitive ids left once the demo is gone
+    VirtualListStep expand, collapse, row, down, drag;
+    bool expanded=false;    // the click on the expander expanded the folder
+    bool collapsed=false;   // and the second collapsed it
+    bool moved=false;       // Down selected the next node
+    size_t downForeign=0;   // slots Down wrote outside the two rows
+    bool resized=false;     // the drag gave the column its width
+};
+
+}//namespace
+
+static void settleTreeTable(Session &s, gweni::controls::VirtualList *body, TreeTableRun &run)
+{
+    for(int i=0; i<2; ++i)
+    {
+        const VirtualListStep idle=virtualListFrame(s, body);
+
+        run.idleSlots+=idle.primSlots+idle.textSlots;
+        run.idleChanged+=idle.changed;
+    }
+}
+
+// A step's frame, noting whether it moved the vertical bar's thumb (the item
+// count changed), which then rewrites its one slot outside the rows.
+static VirtualListStep treeTableFrame(Session &s, gweni::controls::VirtualList *body,
+    const gweni::Rect &thumbBefore, gweni::controls::Base *thumb)
+{
+    VirtualListStep step=virtualListFrame(s, body);
+
+    step.thumbMoved=thumb && !(thumb->getBounds() == thumbBefore);
+    return step;
+}
+
+static bool runTreeTable(Session &s, const std::string &shotDir, size_t nodes, TreeTableRun &run)
+{
+    using gweni::controls::TreeTable;
+    using gweni::controls::TreeTableRow;
+
+    const size_t idsBefore=livePrimitiveIds();
+    gweni::controls::Base *control=addControl(s, "TreeTableDemo");
+    auto *demo=gweni::gweni_cast<gweni::TreeTableDemo>(control);
+
+    if(!demo)
+    {
+        std::cerr<<"ControlTest: tree-table: no TreeTableDemo\n";
+        return false;
+    }
+
+    s.label="TreeTableDemo-"+std::to_string(nodes);
+    demo->setNodeCount(nodes);
+    // the label's new text is the demo's work, not the selection's
+    demo->setShowSelection(false);
+    renderFrames(s, s.frames);
+
+    TreeTable *table=demo->m_table;
+    gweni::controls::VirtualList *body=table->getVirtualBody();
+    // the root's second folder, collapsed, under its open first folder
+    const TreeTable::NodeId folder=gweni::TreeTableDemo::RootCount+1;
+    const size_t folderItem=table->itemForNode(folder);
+    auto *folderRow=gweni::gweni_cast<TreeTableRow>(table->rowForItem(folderItem));
+
+    if(!folderRow || folderRow->getExpander()->hidden() || table->isExpanded(folder))
+    {
+        std::cerr<<"ControlTest: tree-table: TreeTableDemo does not show folder "<<folder
+            <<" collapsed with its expander\n";
+        return false;
+    }
+
+    run.nodes=table->getNodeCount();
+    run.items=table->getItemCount();
+    run.rows=body->getRows().size();
+    run.subtree=subtreeControls(table);
+    run.primIds=livePrimitiveIds()-idsBefore;
+    settleTreeTable(s, body, run);
+
+    gweni::controls::Base *bar=findControl(body, "VerticalScrollBar");
+    gweni::controls::Base *thumb=bar?findControl(bar, "ScrollBarBar"):nullptr;
+
+    // the mouse onto the folder's expander (its hover), then a click on it
+    // expands the folder and a second collapses it
+    const gweni::Point expanderAt=centreOf(folderRow->getExpander());
+
+    moveMouse(s, expanderAt.x, expanderAt.y);
+    renderFrames(s, 1);
+    settleTreeTable(s, body, run);
+
+    gweni::Rect thumbBefore=thumb?thumb->getBounds():gweni::Rect();
+
+    clickMouse(s, expanderAt.x, expanderAt.y);
+    run.expand=treeTableFrame(s, body, thumbBefore, thumb);
+    run.expanded=table->isExpanded(folder) && table->getItemCount() == run.items+gweni::TreeTableDemo::Fanout;
+    settleTreeTable(s, body, run);
+
+    thumbBefore=thumb?thumb->getBounds():gweni::Rect();
+    clickMouse(s, expanderAt.x, expanderAt.y);
+    run.collapse=treeTableFrame(s, body, thumbBefore, thumb);
+    run.collapsed=!table->isExpanded(folder) && table->getItemCount() == run.items;
+    settleTreeTable(s, body, run);
+
+    // the mouse off the table
+    moveMouse(s, 2, s.size.y-2);
+    renderFrames(s, 1);
+    settleTreeTable(s, body, run);
+
+    body->scrollByRows(1);
+    run.row=virtualListFrame(s, body);
+    settleTreeTable(s, body, run);
+
+    // a click on the folder's row selects it and focuses the table, and Down
+    // moves the selection to the next node, writing those two rows alone
+    folderRow=gweni::gweni_cast<TreeTableRow>(table->rowForItem(table->itemForNode(folder)));
+    if(!folderRow)
+    {
+        std::cerr<<"ControlTest: tree-table: folder "<<folder<<" is not on screen after the scroll\n";
+        return false;
+    }
+    const gweni::Point rowAt=centreOf(folderRow->getCell(1));
+
+    clickMouse(s, rowAt.x, rowAt.y);
+    renderFrames(s, 1);
+    settleTreeTable(s, body, run);
+
+    const size_t fromItem=table->getSelectedItem();
+
+    glfwKey(s, GLFW_KEY_DOWN, GLFW_PRESS, 0);
+    glfwKey(s, GLFW_KEY_DOWN, GLFW_RELEASE, 0);
+    run.down=virtualListFrame(s, body);
+    run.moved=table->getSelectedNode() == folder+1 && table->getSelectedItem() == fromItem+1;
+    {
+        std::set<size_t> primitives, texts;
+
+        if(gweni::controls::Base *from=table->rowForItem(fromItem))
+            subtreeIds(from, primitives, texts);
+        if(gweni::controls::Base *to=table->rowForItem(fromItem+1))
+            subtreeIds(to, primitives, texts);
+        for(size_t id : s.renderer->writtenPrimitiveIds())
+        {
+            if(!primitives.count(id))
+                ++run.downForeign;
+        }
+        for(const gweni::renderer::WrittenText &text : s.renderer->writtenTextIds())
+        {
+            if(!texts.count(text.textId))
+                run.downForeign+=text.glyphSlots;
+        }
+    }
+    settleTreeTable(s, body, run);
+
+    // the Size column's grip dragged 30 units right
+    gweni::controls::internal::DataTableColumnGrip *grip=table->getHeader()->getCells().at(1)->getGrip();
+    const gweni::Point gripAt=centreOf(grip);
+    const int width=table->getColumnWidth(1);
+
+    mouseDown(s, gripAt.x, gripAt.y, true);
+    moveMouse(s, gripAt.x+30, gripAt.y);
+    mouseUp(s, gripAt.x+30, gripAt.y);
+    run.drag=virtualListFrame(s, body);
+    settleTreeTable(s, body, run);
+    run.resized=table->getColumnWidth(1) == width+30;
+
+    forgetMouse(s);
+    renderFrames(s, s.frames);
+
+    const bool shot=shoot(s, shotDir+"/tree-table-"+std::to_string(nodes)+".png");
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+    run.idsLeft=livePrimitiveIds()-idsBefore;
+    return shot;
+}
+
+static bool runTreeTableScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    TreeTableRun small, large;
+    bool ok=runTreeTable(s, shotDir, 1000, small);
+
+    ok=runTreeTable(s, shotDir, 100000, large) && ok;
+
+    // the table's subtree and the canvas and demo above it, the shown rows'
+    // slots and the thumb's one slot when the item count moved it
+    auto withinRows=[](const TreeTableRun &run, const VirtualListStep &step)
+    {
+        return step.passes == 1 && step.zVisited == 0 && step.requests == 0
+            && step.visited <= run.subtree+2 && step.changed <= run.subtree
+            && step.primSlots+step.textSlots > 0
+            && step.primSlots <= step.rowPrims+(step.thumbMoved?1:0) && step.textSlots <= step.rowGlyphs;
+    };
+    const bool sameCost=small.items == large.items && small.rows == large.rows && small.subtree == large.subtree
+        && small.primIds == large.primIds && small.expand == large.expand && small.collapse == large.collapse
+        && small.expand.thumbMoved == large.expand.thumbMoved
+        && small.collapse.thumbMoved == large.collapse.thumbMoved
+        && small.row == large.row && small.down == large.down;
+    const bool settled=small.idleSlots == 0 && small.idleChanged == 0
+        && large.idleSlots == 0 && large.idleChanged == 0;
+    const bool toggled=small.expanded && small.collapsed && large.expanded && large.collapsed;
+    const bool rowsOnly=withinRows(small, small.expand) && withinRows(small, small.collapse)
+        && withinRows(small, small.row) && withinRows(large, large.expand)
+        && withinRows(large, large.collapse) && withinRows(large, large.row);
+    auto twoRows=[](const TreeTableRun &run)
+    {
+        return run.moved && run.downForeign == 0 && run.down.primSlots > 0 && run.down.passes <= 1
+            && run.down.zVisited == 0 && run.down.requests == 0;
+    };
+    const bool downTwoRows=twoRows(small) && twoRows(large);
+    auto onePass=[](const VirtualListStep &step)
+    {
+        return step.passes == 1 && step.zVisited == 0 && step.requests == 0;
+    };
+    const bool dragOnePass=small.resized && large.resized && onePass(small.drag) && onePass(large.drag);
+    const bool idsBack=small.idsLeft == 0 && large.idsLeft == 0;
+
+    for(const TreeTableRun *run : {&small, &large})
+    {
+        std::cout<<"tree-table nodes="<<run->nodes<<" items="<<run->items<<" rows="<<run->rows
+                 <<" subtree="<<run->subtree<<" prim_ids="<<run->primIds<<" idle_slots="<<run->idleSlots
+                 <<" idle_changed="<<run->idleChanged;
+        printVirtualListStep("expand", run->expand);
+        printVirtualListStep("collapse", run->collapse);
+        printVirtualListStep("row", run->row);
+        printVirtualListStep("down", run->down);
+        printVirtualListStep("drag", run->drag);
+        std::cout<<" down_foreign="<<run->downForeign<<" ids_left="<<run->idsLeft<<"\n";
+    }
+
+    passed=sameCost && settled && toggled && rowsOnly && downTwoRows && dragOnePass && idsBack;
+
+    std::cout<<"tree-table same_cost="<<(sameCost?"yes":"no")<<" settled="<<(settled?"yes":"no")
+             <<" toggled="<<(toggled?"yes":"no")<<" rows_only="<<(rowsOnly?"yes":"no")
+             <<" down_two_rows="<<(downTwoRows?"yes":"no")<<" drag_one_pass="<<(dragOnePass?"yes":"no")
+             <<" ids_back="<<(idsBack?"yes":"no")<<"\n";
+    if(!passed)
+        std::cerr<<"ControlTest: tree-table: "
+                 <<(!sameCost ? "a frame at 100 000 nodes did not cost what it did at 1 000"
+                     : !settled ? "a settled frame wrote slots or changed controls"
+                     : !toggled ? "a click on the folder's expander did not expand and collapse it"
+                     : !rowsOnly ? "an expand, a collapse or a scroll wrote more than its shown rows' slots,"
+                         " entered more than the table, renumbered z or took more than one layout pass"
+                     : !downTwoRows ? "Down did not move the selection writing the two rows' slots alone"
+                     : !dragOnePass ? "a grip drag did not resize its column in one layout pass"
+                     : "the demo did not give its primitive ids back")<<"\n";
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // --scenario typing: the keyboard, through the GLFW translator
 //
 // Every keystroke is a synthesised GLFW event fed to gweni::input::GLFW3, the
@@ -18365,6 +18668,15 @@ int main(int argc, char *argv[])
             ok=runDataTableVirtualScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a frame cost more at 100 000 records, or a sort or drag took two passes
+            break;
+        }
+
+        case Scenario::TreeTable:
+        {
+            bool passed=false;
+            ok=runTreeTableScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a frame cost more at 100 000 nodes, or wrote outside its rows
             break;
         }
 
