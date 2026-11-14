@@ -1988,9 +1988,10 @@ two programs and the draws. What follows describes both together:
   `ControlTest --stats` and `gweni_bench`), up to the device's most array layers (256 at
   least on GLES 3.0 and WebGL 2), past which a load fails. So any number of images draw in
   the one draw, in slot order (the 8 image units it replaced drew the missing image for a
-  ninth). An image larger than the largest page is loaded as the first level of its mip
-  chain that fits (a 4000 px side as 2000). The 5 pages and the clip boxes take 6 of the
-  program's 16 texture units. A fully transparent texel is discarded,
+  ninth). An image larger than the largest page loads only with a max size, as the first
+  level of its mip chain that fits it and the page (a 4000 px side as 2000 at a max size
+  of 2048 or more); with none, as every file load, it fails. The 5 pages and the clip
+  boxes take 6 of the program's 16 texture units. A fully transparent texel is discarded,
   so it writes no depth; a partly transparent one still depends on slot order, which is
   why `ImagePanel` takes its primitive id on its first render, after its parent's skin
   took its own.

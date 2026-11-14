@@ -1,3 +1,9 @@
+/*
+  * Gweni
+  * Copyright (c) 2010 Facepunch Studios
+  * See license in gweni.h
+ */
+
 #include "demo/imageGrid.h"
 #include "gweni/controls/button.h"
 #include "gweni/controls/groupBox.h"
