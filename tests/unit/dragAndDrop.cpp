@@ -28,12 +28,17 @@
  *  ends the hover goes to what is under the mouse.
  *  A wheel during a tab drag goes to the control under the pointer, for
  *  vertical, horizontal and Shift+wheel input, without moving the hover.
+ *  A ScrollControl with no Reorderable keeps Base's drag and drop: a package
+ *  set with dragAndDrop_setPackage makes it draggable and is the one it hands
+ *  out, and a subclass that accepts a package takes its drop as Base does
+ *  (the source made its child).
  */
 #include "headlessFixture.h"
 
 #include <gweni/gweni.h>
 #include <gweni/controls/dockBase.h>
 #include <gweni/controls/dockedTabControl.h>
+#include <gweni/controls/scrollControl.h>
 #include <gweni/controls/tabControl.h>
 #include <gweni/controls/tabTitleBar.h>
 #include <gweni/dragAndDrop.h>
@@ -697,4 +702,51 @@ TEST_CASE("dragAndDrop: a press moved less than 5 units starts no drag")
     // and once released, a move starts nothing either
     scene.move(Point(from.x+20, from.y));
     CHECK_FALSE(draganddrop::isDragging());
+}
+
+namespace
+{
+
+//! A ScrollControl an app made a drop target of, with no Reorderable
+class PanelTarget: public controls::ScrollControl
+{
+public:
+    GWENI_CONTROL_INLINE(PanelTarget, controls::ScrollControl)
+    {}
+
+    bool dragAndDrop_canAcceptPackage(draganddrop::Package *package) override
+    {
+        return package && (package->name == "panel");
+    }
+};
+
+}//namespace
+
+TEST_CASE("dragAndDrop: a ScrollControl with no Reorderable keeps Base's drag and drop")
+{
+    Scene scene;
+    controls::ScrollControl *source=scene.canvas->newChild<controls::ScrollControl>();
+    PanelTarget *target=scene.canvas->newChild<PanelTarget>();
+
+    source->setBounds(10, 10, 100, 100);
+    target->setBounds(200, 10, 100, 100);
+    scene.frame();
+
+    // nothing set: not draggable, no package, as Base
+    CHECK_FALSE(source->dragAndDrop_draggable());
+    CHECK(source->dragAndDrop_getPackage(20, 20) == nullptr);
+
+    source->dragAndDrop_setPackage(true, "panel");
+    REQUIRE(source->dragAndDrop_draggable());
+    draganddrop::Package *package=source->dragAndDrop_getPackage(20, 20);
+    REQUIRE(package != nullptr);
+    CHECK(package->name == "panel");
+    CHECK(package->sourceList == nullptr);
+
+    REQUIRE(target->dragAndDrop_canAcceptPackage(package));
+    REQUIRE(draganddrop::start(source, package));
+    CHECK(target->dragAndDrop_handleDrop(package, 210, 20));
+    CHECK(source->getParent() == target);
+    draganddrop::cancel();
+    input::onMouseClicked(scene.canvas, 0, false);
 }
