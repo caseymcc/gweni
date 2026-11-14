@@ -460,6 +460,12 @@ TEST_CASE("CardReorder: a drag sets the Normal cursor as it starts, over a curso
 {
     Scene scene;
     std::vector<int> asked;
+    // Clear the observer before its captured vector and Scene are destroyed,
+    // including when REQUIRE aborts the test and Scene cancels the drag.
+    struct ResetCursorHandler
+    {
+        ~ResetCursorHandler() { platform::setCursorHandler(nullptr); }
+    } resetCursorHandler;
     platform::setCursorHandler([&asked](unsigned char cursor) { asked.push_back(cursor); });
 
     // a card with a cursor of its own (a LabelClickable's Finger, a TextBox's
@@ -473,7 +479,6 @@ TEST_CASE("CardReorder: a drag sets the Normal cursor as it starts, over a curso
     CHECK_FALSE(asked.empty());
     CHECK((asked.empty() ? -1 : asked.back()) == cursor::Normal);
     scene.release();
-    platform::setCursorHandler(nullptr);
 }
 
 TEST_CASE("CardReorder: a target column hidden during the drag is the target no more")
