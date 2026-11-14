@@ -17,6 +17,8 @@
 #include "gweni/config.h"
 #include "gweni/export.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <list>
@@ -451,6 +453,22 @@ public:
     virtual void setGlyphFallback(const gweni::String &face, const std::vector<gweni::String> &chain) {}
 
     virtual gweni::Texture::Status loadTexture(gweni::Texture &texture)=0;
+    //! An image from encoded bytes (a PNG or JPEG, the format found from its first
+    //! bytes) or from rows of RGBA8 texels stride bytes apart, kept at a longest
+    //! side of at most maxSize image px (0: as it is). A loader that loads no
+    //! images from memory fails them (renderer::SlotRenderer's is the one).
+    virtual gweni::Texture::Status loadTexture(gweni::Texture &texture, const uint8_t *bytes, size_t size,
+        int maxSize=0)
+    {
+        return gweni::Texture::Status::ErrorBadData;
+    }
+    virtual gweni::Texture::Status loadTexturePixels(gweni::Texture &texture, int width, int height, size_t stride,
+        const uint8_t *rgba, int maxSize=0)
+    {
+        return gweni::Texture::Status::ErrorBadData;
+    }
+    //! The textures loaded and not freed yet, for a leak check (0 where not counted)
+    virtual size_t loadedTextureCount() const { return 0; }
     virtual void freeTexture(const gweni::Texture &texture)=0;
     virtual gweni::TextureData getTextureData(const gweni::Texture &texture) const=0;
 

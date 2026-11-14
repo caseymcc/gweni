@@ -20,8 +20,9 @@
  *  which grows (copying its layers) as they load and gives a freed layer to the
  *  next load, also while frames drawing from the old page are in flight; a
  *  translucent image over another in the same draw; and an image of
- *  each size class, one larger than the largest page loaded at the first level
- *  of its mip chain that fits.
+ *  each size class, one larger than the largest page failing as a file and
+ *  loaded from its bytes with a max size at the first level of its mip chain
+ *  that fits.
  */
 #include <doctest/doctest.h>
 
@@ -39,6 +40,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <fstream>
+#include <iterator>
 #include <cstdlib>
 #include <memory>
 #include <string>
@@ -323,7 +326,9 @@ const std::string &runToken()
 //! so no two seeds draw the same pixels.
 struct GeneratedTexture
 {
-    GeneratedTexture(int seed, int size, uint8_t alpha=255)
+    //! With maxSize above 0 the PNG's bytes are loaded through the decoding
+    //! loadTexture, kept at that longest side
+    GeneratedTexture(int seed, int size, uint8_t alpha=255, int maxSize=0)
         : seed(seed)
         , alpha(alpha)
     {
@@ -344,7 +349,15 @@ struct GeneratedTexture
         path=(fs::temp_directory_path()/("gweni-imageRects-"+runToken()+"-"+std::to_string(seed)+".png")).string();
         REQUIRE(imglib::savePng(image, path.c_str()));
         texture.name=path;
-        status=gweni::test::gpuRenderer().loadTexture(texture);
+        if(maxSize > 0)
+        {
+            std::ifstream file(path, std::ios::binary);
+            const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+            status=gweni::test::gpuRenderer().loadTexture(texture, bytes.data(), bytes.size(), maxSize);
+        }
+        else
+            status=gweni::test::gpuRenderer().loadTexture(texture);
     }
 
     ~GeneratedTexture()
@@ -519,7 +532,8 @@ TEST_CASE("Image (style 2): a translucent image over another in one draw blends 
 TEST_CASE("Image (style 2): an image of each class draws its own texels, the largest reduced to the largest page")
 {
     // one image per page, 1:1 in a 64x64 block of each, and one larger than the
-    // largest page, loaded as the first level of its mip chain that fits
+    // largest page, which fails as a file and loads from its bytes with a max
+    // size of the largest page's side, as the first level of its mip chain that fits
     struct Sized
     {
         int size;
@@ -531,7 +545,16 @@ TEST_CASE("Image (style 2): an image of each class draws its own texels, the lar
     for(const Sized &sized:sizes)
     {
         INFO("size ", sized.size);
-        GeneratedTexture image(sized.size & 0xff, sized.size);
+        const bool larger=sized.size > SlotRenderer::kMaxImageSide;
+
+        if(larger)
+        {
+            GeneratedTexture file(sized.size & 0xff, sized.size);
+
+            CHECK((file.status == Texture::Status::ErrorBadData));
+        }
+
+        GeneratedTexture image(sized.size & 0xff, sized.size, 255, larger?SlotRenderer::kMaxImageSide:0);
         REQUIRE(image.loaded());
 
         size_t imageClass=0;

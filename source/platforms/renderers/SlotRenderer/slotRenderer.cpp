@@ -689,6 +689,34 @@ bool SlotRenderer::ensureFont(const Font &requested, float px)
     return true;
 }
 
+ImageMipLevel imageMipLevel(const uint8_t *above, int aboveWidth, int aboveHeight, int depth)
+{
+    ImageMipLevel level;
+
+    level.width=std::max(aboveWidth/2, 1);
+    level.height=std::max(aboveHeight/2, 1);
+    level.texels.resize((size_t)level.width*level.height*depth);
+
+    const size_t rowBytes=(size_t)aboveWidth*depth;
+    uint8_t *out=level.texels.data();
+
+    for(int y=0; y<level.height; ++y)
+    {
+        const uint8_t *row0=above+(size_t)std::min(2*y, aboveHeight-1)*rowBytes;
+        const uint8_t *row1=above+(size_t)std::min(2*y+1, aboveHeight-1)*rowBytes;
+
+        for(int x=0; x<level.width; ++x)
+        {
+            const size_t x0=(size_t)std::min(2*x, aboveWidth-1)*depth;
+            const size_t x1=(size_t)std::min(2*x+1, aboveWidth-1)*depth;
+
+            for(int c=0; c<depth; ++c)
+                *out++=(uint8_t)((row0[x0+c]+row0[x1+c]+row1[x0+c]+row1[x1+c]+2)/4);
+        }
+    }
+    return level;
+}
+
 std::vector<ImageMipLevel> imageMipChain(const uint8_t *texels, int width, int height, int depth)
 {
     std::vector<ImageMipLevel> levels;
@@ -698,30 +726,7 @@ std::vector<ImageMipLevel> imageMipChain(const uint8_t *texels, int width, int h
 
     while(aboveWidth > 1 || aboveHeight > 1)
     {
-        ImageMipLevel level;
-
-        level.width=std::max(aboveWidth/2, 1);
-        level.height=std::max(aboveHeight/2, 1);
-        level.texels.resize((size_t)level.width*level.height*depth);
-
-        const size_t rowBytes=(size_t)aboveWidth*depth;
-        uint8_t *out=level.texels.data();
-
-        for(int y=0; y<level.height; ++y)
-        {
-            const uint8_t *row0=above+(size_t)std::min(2*y, aboveHeight-1)*rowBytes;
-            const uint8_t *row1=above+(size_t)std::min(2*y+1, aboveHeight-1)*rowBytes;
-
-            for(int x=0; x<level.width; ++x)
-            {
-                const size_t x0=(size_t)std::min(2*x, aboveWidth-1)*depth;
-                const size_t x1=(size_t)std::min(2*x+1, aboveWidth-1)*depth;
-
-                for(int c=0; c<depth; ++c)
-                    *out++=(uint8_t)((row0[x0+c]+row0[x1+c]+row1[x0+c]+row1[x1+c]+2)/4);
-            }
-        }
-        levels.push_back(std::move(level));
+        levels.push_back(imageMipLevel(above, aboveWidth, aboveHeight, depth));
         above=levels.back().texels.data();
         aboveWidth=levels.back().width;
         aboveHeight=levels.back().height;
@@ -729,79 +734,189 @@ std::vector<ImageMipLevel> imageMipChain(const uint8_t *texels, int width, int h
     return levels;
 }
 
-Texture::Status SlotRenderer::loadTexture(Texture &texture)
+namespace
+{
+
+//! The pixels a load decodes at most, before any reduction (kMaxImagePixels)
+bool overPixelLimit(size_t width, size_t height)
+{
+    return (width > SlotRenderer::kMaxImagePixels) || (height > SlotRenderer::kMaxImagePixels) ||
+        (width*height > SlotRenderer::kMaxImagePixels);
+}
+
+//! The longest side a load keeps: maxSize, at most the largest image page's side
+int keptSide(int maxSize)
+{
+    return (maxSize > 0)?std::min(maxSize, SlotRenderer::kMaxImageSide):SlotRenderer::kMaxImageSide;
+}
+
+}//namespace
+
+Texture::Status SlotRenderer::beginTextureLoad(Texture &texture)
 {
     freeTexture(texture);
     // only a successful load hands out a slot; a failed one leaves the texture
     // unloaded, so it is drawn as missing and freeing it does nothing
     texture.dataIndex=std::numeric_limits<size_t>::max();
     m_lastTexture=std::numeric_limits<size_t>::max();
+    return Texture::Status::Unloaded;
+}
+
+Texture::Status SlotRenderer::failTextureLoad(SlotTextureData *texData, const char *what, const char *source)
+{
+    if(texData)
+    {
+        texData->m_readData.clear();
+        texData->m_readData.shrink_to_fit();
+        m_freeTextureData.push_back(texData->m_index);
+    }
+    gweni::log::write(log::Level::Error, "Texture %s: %s", what, source);
+    return Texture::Status::ErrorBadData;
+}
+
+Texture::Status SlotRenderer::loadTexture(Texture &texture)
+{
+    beginTextureLoad(texture);
 
     const String filename=getResourcePaths().getPath(ResourcePaths::Type::Texture, texture.name);
+    std::ifstream file(filename, std::ios::binary);
+
+    if(!file)
+    {
+        gweni::log::write(log::Level::Error, "Texture file not found: %s", filename.c_str());
+        return Texture::Status::ErrorFileNotFound;
+    }
+
+    const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+    // a directory opens and reads nothing
+    if(bytes.empty())
+    {
+        gweni::log::write(log::Level::Error, "Texture file not found: %s", filename.c_str());
+        return Texture::Status::ErrorFileNotFound;
+    }
+    return loadEncodedTexture(texture, bytes.data(), bytes.size(), 0, filename.c_str());
+}
+
+Texture::Status SlotRenderer::loadTexture(Texture &texture, const uint8_t *bytes, size_t size, int maxSize)
+{
+    beginTextureLoad(texture);
+    return loadEncodedTexture(texture, bytes, size, maxSize, "image bytes");
+}
+
+Texture::Status SlotRenderer::loadEncodedTexture(Texture &texture, const uint8_t *bytes, size_t size, int maxSize,
+    const char *source)
+{
+    imglib::ImageHeader header;
+
+    // the size from the header, before any pixel buffer is allocated
+    if(!imglib::probeImage(bytes, size, header))
+    {
+        return failTextureLoad(nullptr, (header.format == imglib::FileFormat::Unknown)?
+            "is no PNG or JPEG":"has a bad header", source);
+    }
+    if(overPixelLimit(header.width, header.height))
+        return failTextureLoad(nullptr, "is over the 64 megapixel decode limit", source);
+
+    const int side=keptSide(maxSize);
+    const size_t longer=std::max(header.width, header.height);
+
+    if((maxSize <= 0) && (longer > (size_t)kMaxImageSide))
+        return failTextureLoad(nullptr, "is larger than the largest image page and has no max size", source);
+
+    imglib::BufferLoadOptions options;
+
+    // a JPEG decodes straight at 1/2, 1/4 or 1/8 while that still holds the
+    // side kept (libjpeg rounds each side up), so its full size is never
+    // allocated; a PNG decodes whole and is reduced below
+    options.maxPixels=kMaxImagePixels;
+    if(header.format == imglib::FileFormat::Jpeg)
+    {
+        while((options.scaleDenom < 8) && ((longer+options.scaleDenom*2-1)/(options.scaleDenom*2) >= (size_t)side))
+            options.scaleDenom*=2;
+    }
 
     SlotTextureData &texData=*getFreeTextureData();
 
-    bool loaded=imglib::load(texData, filename.c_str());
+    if(!imglib::loadBuffer(texData, bytes, size, options) || texData.m_readData.empty() ||
+        (texData.width <= 0) || (texData.height <= 0))
+        return failTextureLoad(&texData, "failed to decode", source);
+    m_lastDecodedSize=Point((int)texData.width, (int)texData.height);
+    return finishTextureLoad(texture, texData, maxSize, source);
+}
 
-    //    int width, height, n;
-    //    {
-    //        unsigned char *image = stbi_load(filename.c_str(), &width, &height, &n, 4);
-    //        texData.m_readData = deleted_unique_ptr<unsigned char>(image, [](unsigned char* mem) { if (mem) stbi_image_free(mem); });
-    //    }
+Texture::Status SlotRenderer::loadTexturePixels(Texture &texture, int width, int height, size_t stride,
+    const uint8_t *rgba, int maxSize)
+{
+    beginTextureLoad(texture);
 
-    // Image failed to load. The loaders resize before reading pixels, so a late
-    // failure leaves a non-empty buffer; either way hand the slot back.
-    if(!loaded || texData.m_readData.empty())
+    const char *source="RGBA pixels";
+
+    if(!rgba || (width <= 0) || (height <= 0) || (stride < (size_t)width*4))
+        return failTextureLoad(nullptr, "has no pixels or a stride shorter than its rows", source);
+    if(overPixelLimit((size_t)width, (size_t)height))
+        return failTextureLoad(nullptr, "is over the 64 megapixel decode limit", source);
+    if((maxSize <= 0) && (std::max(width, height) > kMaxImageSide))
+        return failTextureLoad(nullptr, "is larger than the largest image page and has no max size", source);
+
+    SlotTextureData &texData=*getFreeTextureData();
+
+    texData.width=(float)width;
+    texData.height=(float)height;
+    texData.m_readData.resize((size_t)width*height*4);
+    for(int y=0; y<height; ++y)
+        memcpy(texData.m_readData.data()+(size_t)y*width*4, rgba+(size_t)y*stride, (size_t)width*4);
+    m_lastDecodedSize=Point(width, height);
+    return finishTextureLoad(texture, texData, maxSize, source);
+}
+
+Texture::Status SlotRenderer::finishTextureLoad(Texture &texture, SlotTextureData &texData, int maxSize,
+    const char *source)
+{
+    const size_t pixels=(size_t)texData.width*(size_t)texData.height;
+    const size_t channels=texData.m_readData.size()/pixels;
+
+    // RGBA8: RGB with alpha 1, as GL sampled an RGB8 texture; grey and grey with
+    // alpha into each colour channel
+    if((channels != 4) || (texData.m_readData.size() != pixels*4))
     {
-        bool notFound=texData.m_readData.empty();
+        if((channels < 1) || (channels > 3) || (texData.m_readData.size() != pixels*channels))
+            return failTextureLoad(&texData, "has a pixel format that is not drawn", source);
 
-        texData.m_readData.clear();
-        m_freeTextureData.push_back(texData.m_index);
-
-        if(notFound)
-        {
-            gweni::log::write(log::Level::Error, "Texture file not found: %s", filename.c_str());
-            return Texture::Status::ErrorFileNotFound;
-        }
-        gweni::log::write(log::Level::Error, "Texture file failed to load: %s", filename.c_str());
-        return Texture::Status::ErrorBadData;
-    }
-
-
-    imglib::Format imgFormat=imglib::format(texData);
-
-    // RGBA, or RGB sampled with alpha 1; nothing else is drawn
-    if((imgFormat != imglib::Format::RGBA) && (imgFormat != imglib::Format::RGB))
-    {
-        texData.m_readData.clear();
-        m_freeTextureData.push_back(texData.m_index);
-        gweni::log::write(log::Level::Error, "Texture format not supported: %s", filename.c_str());
-        return Texture::Status::ErrorBadData;
-    }
-
-    // RGBA8, an RGB image with alpha 1, as GL sampled an RGB8 texture
-    if(imgFormat == imglib::Format::RGB)
-    {
-        const size_t pixels=(size_t)texData.width*(size_t)texData.height;
         std::vector<unsigned char> rgba(pixels*4);
+        const unsigned char *in=texData.m_readData.data();
 
-        for(size_t i=0; i<pixels; ++i)
+        for(size_t i=0; i<pixels; ++i, in+=channels)
         {
-            rgba[i*4+0]=texData.m_readData[i*3+0];
-            rgba[i*4+1]=texData.m_readData[i*3+1];
-            rgba[i*4+2]=texData.m_readData[i*3+2];
-            rgba[i*4+3]=255;
+            const bool grey=(channels < 3);
+
+            rgba[i*4+0]=in[0];
+            rgba[i*4+1]=grey?in[0]:in[1];
+            rgba[i*4+2]=grey?in[0]:in[2];
+            rgba[i*4+3]=(channels == 2)?in[1]:255;
         }
         texData.m_readData.swap(rgba);
     }
 
-    if(!placeImage(texData))
+    // the largest level of the image's mip chain that fits the side kept, each
+    // level freeing the one above, so the full size is gone before the upload
+    const int side=keptSide(maxSize);
+    int width=(int)texData.width;
+    int height=(int)texData.height;
+
+    while(std::max(width, height) > side)
     {
-        texData.m_readData.clear();
-        m_freeTextureData.push_back(texData.m_index);
-        gweni::log::write(log::Level::Error, "Texture has no image layer left: %s", filename.c_str());
-        return Texture::Status::ErrorBadData;
+        ImageMipLevel level=imageMipLevel(texData.m_readData.data(), width, height, 4);
+
+        texData.m_readData.swap(level.texels);
+        width=level.width;
+        height=level.height;
     }
+    texData.width=(float)width;
+    texData.height=(float)height;
+
+    if(!placeImage(texData))
+        return failTextureLoad(&texData, "has no image layer left", source);
 
     texData.readable=texture.readable;
     if(!texture.readable)
@@ -810,6 +925,7 @@ Texture::Status SlotRenderer::loadTexture(Texture &texture)
         texData.m_readData.shrink_to_fit();
     }
 
+    ++m_loadedTextures;
     m_lastTexture=texData.m_index;
     texture.dataIndex=texData.m_index;
     return Texture::Status::Loaded;
@@ -825,11 +941,12 @@ void SlotRenderer::freeTexture(const gweni::Texture &texture)
     if((texture.dataIndex < m_textureData.size()) && (m_textureData[texture.dataIndex]))
     {
         // the layer may be handed out again; a slot still drawing it draws that image
+        if(m_textureData[texture.dataIndex]->m_layer != NoImageLayer)
+            --m_loadedTextures;
         m_freeTextureData.push_back(texture.dataIndex);
         deleteTextureData(m_textureData[texture.dataIndex]);
         m_textureData[texture.dataIndex]=nullptr;
     }
-    m_textures.erase(texture);
 }
 
 void SlotRenderer::deleteTextureData(SlotTextureData *textureData)
@@ -884,23 +1001,11 @@ size_t SlotRenderer::allocateImageLayer(size_t imageClass)
 
 bool SlotRenderer::placeImage(SlotTextureData &texData)
 {
-    int width=(int)texData.width;
-    int height=(int)texData.height;
+    const int width=(int)texData.width;
+    const int height=(int)texData.height;
 
-    if(width <= 0 || height <= 0)
+    if(width <= 0 || height <= 0 || std::max(width, height) > kMaxImageSide)
         return false;
-
-    std::vector<ImageMipLevel> levels=imageMipChain(texData.m_readData.data(), width, height, 4);
-    // the first level that fits the largest page: level 0 itself, or one of the
-    // chain, which is then the image (the chain below it is that level's own)
-    size_t first=0;
-
-    while(std::max(width, height) > kMaxImageSide)
-    {
-        width=levels[first].width;
-        height=levels[first].height;
-        ++first;
-    }
 
     const size_t imageClass=imageClassFor(width, height);
     const size_t layer=allocateImageLayer(imageClass);
@@ -908,15 +1013,9 @@ bool SlotRenderer::placeImage(SlotTextureData &texData)
     if(layer == NoImageLayer)
         return false;
 
-    if(first > 0)
-    {
-        texData.m_readData.swap(levels[first-1].texels);
-        texData.width=(float)width;
-        texData.height=(float)height;
-    }
-    uploadImageLayer(imageClass, layer, width, height, texData.m_readData.data(), levels.data()+first,
-        levels.size()-first);
+    const std::vector<ImageMipLevel> levels=imageMipChain(texData.m_readData.data(), width, height, 4);
 
+    uploadImageLayer(imageClass, layer, width, height, texData.m_readData.data(), levels.data(), levels.size());
     texData.m_imageClass=imageClass;
     texData.m_layer=layer;
     return true;
@@ -1010,46 +1109,20 @@ bool SlotRenderer::readFontAtlas(const Font &requested, std::vector<uint8_t> &rg
 
 TextureData SlotRenderer::getTextureData(const Texture &texture) const
 {
-//    if(m_lastTexture != nullptr && m_lastTexture->first == texture)
-//        return m_lastTexture->second;
-//
-//    auto it=m_textures.find(texture);
-//    if(it != m_textures.cend())
-//    {
-//        return it->second;
-//    }
-//    // Texture not loaded :(
-//    return TextureData();
-    return *m_textureData[texture.dataIndex];
+    // a texture is its dataIndex: an unloaded or freed one has no data
+    if((texture.dataIndex < m_textureData.size()) && m_textureData[texture.dataIndex] &&
+        (m_textureData[texture.dataIndex]->m_layer != NoImageLayer))
+        return *m_textureData[texture.dataIndex];
+    return TextureData();
 }
 
 bool SlotRenderer::ensureTexture(const gweni::Texture &texture)
 {
-//    if(m_lastTexture != nullptr)
-    if(m_lastTexture != std::numeric_limits<size_t>::max())
-    {
-        if(m_lastTexture == texture.dataIndex)
-            return true;
-    }
-
-    // Was it loaded before?
-//    auto it=m_textures.find(texture);
-//    if(it != m_textures.end())
-//    {
-//        m_lastTexture=&(*it);
-//        return true;
-//    }
-    if(texture.dataIndex != std::numeric_limits<size_t>::max())
-    {
-        m_lastTexture=texture.dataIndex;
-        return true;
-    }
-
-    // No, try load to it
-
-    // LoadTexture sets m_lastTexture, if exist
-//    return loadTexture(texture) == Texture::Status::Loaded;
-    return false;
+    if((texture.dataIndex >= m_textureData.size()) || !m_textureData[texture.dataIndex] ||
+        (m_textureData[texture.dataIndex]->m_layer == NoImageLayer))
+        return false;
+    m_lastTexture=texture.dataIndex;
+    return true;
 }
 
 //-------------------------------------------------------------------------------
@@ -1178,7 +1251,7 @@ void SlotRenderer::releaseResources()
     }
     m_textureData.clear();
     m_freeTextureData.clear();
-    m_textures.clear();
+    m_loadedTextures=0;
     destroyImagePages();
     for(ImagePage &page:m_imagePages)
         page=ImagePage();

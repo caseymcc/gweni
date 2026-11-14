@@ -88,6 +88,8 @@ struct ImageMipLevel
 //! Where the level above is 1 texel wide (high), the box takes that column (row)
 //! twice; where it is an odd size, its last column (row) is in no box.
 std::vector<ImageMipLevel> imageMipChain(const uint8_t *texels, int width, int height, int depth);
+//! The next level of imageMipChain's chain of the width x height level `above`
+ImageMipLevel imageMipLevel(const uint8_t *above, int width, int height, int depth);
 
 //! How text below the SDF threshold is anti-aliased (SlotRenderer::setTextAA).
 enum class TextAA
@@ -456,7 +458,29 @@ public:
     void freeFont(const gweni::Font &font) override;
     bool ensureFont(const gweni::Font &font) override;
 
+    //! A file under the resources (its bytes through the decoding loadTexture's,
+    //! with no max size). An image larger than kMaxImageSide fails.
     Texture::Status loadTexture(gweni::Texture &texture) override;
+    //! A PNG or JPEG in memory, the format found from its first bytes, kept at a
+    //! longest side of at most maxSize image px (0: as it is, at most
+    //! kMaxImageSide), reduced through its mip chain: the largest level that fits
+    //! (a JPEG decoded at 1/2, 1/4 or 1/8 where that still fits, so its full size
+    //! is never allocated; a PNG's full size freed before the return). The size
+    //! comes from the header first, and an image of more than kMaxImagePixels, or
+    //! larger than kMaxImageSide with no maxSize, fails before any pixel buffer is
+    //! allocated. Any failure is ErrorBadData and one log line.
+    Texture::Status loadTexture(gweni::Texture &texture, const uint8_t *bytes, size_t size, int maxSize=0) override;
+    //! Rows of width RGBA8 texels, stride bytes apart, kept as the bytes loader
+    //! keeps a decoded image
+    Texture::Status loadTexturePixels(gweni::Texture &texture, int width, int height, size_t stride,
+        const uint8_t *rgba, int maxSize=0) override;
+    //! The textures loaded and not freed yet (each holds an image layer)
+    size_t loadedTextureCount() const override { return m_loadedTextures; }
+    //! The size the last load that got that far decoded (or copied) its pixels at,
+    //! before any reduction: a JPEG's reduced decode, a PNG's full size
+    gweni::Point lastDecodedSize() const { return m_lastDecodedSize; }
+    //! A load decodes at most this many pixels (64 megapixels), before any reduction
+    static constexpr size_t kMaxImagePixels=size_t(64) << 20;
     void freeTexture(const gweni::Texture &texture) override;
     TextureData getTextureData(const gweni::Texture &texture) const override;
     bool ensureTexture(const gweni::Texture &texture) override;
@@ -480,7 +504,7 @@ public:
     //! freeTexture, which puts it back on its page's free list. A page with no
     //! layer free grows: made again with twice the layers, the old ones copied
     //! (FrameStats::imagePageRegrows). An image larger than kMaxImageSide is
-    //! loaded as the first level of its mip chain that fits.
+    //! loaded only with a max size (loadTexture's bytes overload).
     static constexpr size_t ImageClasses=5;
     static constexpr int kMinImageSide=128;
     static constexpr int imageClassSide(size_t imageClass) { return kMinImageSide << imageClass; }
@@ -923,7 +947,9 @@ protected:
     std::unordered_set<FontKey, FontKeyHash> m_failedFonts;
     std::vector<SlotTextureData *> m_textureData;
     std::vector<size_t> m_freeTextureData;
-    std::unordered_map<Texture, size_t> m_textures;
+    //! successful loads not freed yet (loadedTextureCount())
+    size_t m_loadedTextures=0;
+    gweni::Point m_lastDecodedSize;
 
     std::pair<const FontKey, FontData> *m_lastFont;
     size_t m_lastTexture;
@@ -1142,11 +1168,20 @@ private:
     //! A layer of class imageClass's page for a new image: a free one, else the
     //! next one never used, else the page grown; NoImageLayer if it cannot grow
     size_t allocateImageLayer(size_t imageClass);
-    //! Puts a loaded image (m_readData RGBA8, width x height) in a layer of its
-    //! class's page with its mip chain, reduced first to the first level of the
-    //! chain that fits kMaxImageSide (m_readData and the size then that level's);
-    //! false if no layer can be had
+    //! Puts a loaded image (m_readData RGBA8, width x height, at most
+    //! kMaxImageSide a side) in a layer of its class's page with its mip chain;
+    //! false if it is larger or no layer can be had
     bool placeImage(SlotTextureData &texData);
+    //! The loads' shared steps: the texture freed and unloaded first; a failure
+    //! handing texData (when there is one) back and logging one line, "Texture
+    //! <what>: <source>"; the decode of encoded bytes; and the tail, texData's
+    //! pixels made RGBA8, reduced to the side kept and placed
+    Texture::Status beginTextureLoad(gweni::Texture &texture);
+    Texture::Status failTextureLoad(SlotTextureData *texData, const char *what, const char *source);
+    Texture::Status loadEncodedTexture(gweni::Texture &texture, const uint8_t *bytes, size_t size, int maxSize,
+        const char *source);
+    Texture::Status finishTextureLoad(gweni::Texture &texture, SlotTextureData &texData, int maxSize,
+        const char *source);
 
     Rect m_viewRect;
     //! setViewTransform's matrix, column-major, the identity when there is none
