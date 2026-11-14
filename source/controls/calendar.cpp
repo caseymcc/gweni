@@ -725,6 +725,30 @@ void Calendar::rebind()
     m_previous->setDisabled(isDisabled() || !canShowPrevious());
     m_next->setDisabled(isDisabled() || !canShowNext());
     m_title->setDisabled(isDisabled());
+    releaseDisabledPress();
+}
+
+// Button takes no release while disabled, so a part a rebind disabled while it
+// held the press (a cell paged onto a date past the limits, a button at the
+// end of the limits) would keep the mouse until the next press: it lets go
+// here, and its release does nothing.
+void Calendar::releaseDisabledPress()
+{
+    auto release=[](Button *part)
+    {
+        if(!part || !part->isDisabled())
+            return;
+        if(part->isDepressed())
+            part->setDepressed(false);
+        if(MouseFocus == part)
+            MouseFocus=nullptr;
+    };
+
+    for(internal::CalendarCell *cell : m_cells)
+        release(cell);
+    release(m_title);
+    release(m_previous);
+    release(m_next);
 }
 
 // The parts are bound disabled with it (rebind), so a press, a hover look or

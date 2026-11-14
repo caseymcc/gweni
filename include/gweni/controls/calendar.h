@@ -351,6 +351,8 @@ protected:
     //! Every shown cell's date, text and look, the title and the weekday row:
     //! each written only where it changed.
     void rebind();
+    //! A part rebind() disabled while it held the mouse press lets it go.
+    void releaseDisabledPress();
     //! The look of a day cell showing \p date.
     internal::CalendarCellLook dayLook(const Date &date);
     //! The cursor's ring shows: the calendar has the focus.
