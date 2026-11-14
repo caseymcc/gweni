@@ -35,15 +35,6 @@ public:
         m_fLastFrame=now;
     }
 
-    // every frame while the bar shows; a hidden one (on a page switched away
-    // from) asks an idle loop for none, and showing it again is work of its own
-    double nextThinkTime() const override
-    {
-        if(!m_control->visible())
-            return std::numeric_limits<double>::infinity();
-        return gweni::anim::Animation::nextThinkTime();
-    }
-
     double m_fLastFrame;
 };
 
@@ -212,11 +203,19 @@ void ProgressBar::setIndeterminateSpeed(float speed)
     updateAnimation();
 }
 
+void ProgressBar::onVisibleChanged()
+{
+    ParentClass::onVisibleChanged();
+    updateAnimation();
+}
+
 void ProgressBar::updateAnimation()
 {
 #if GWENI_ANIMATE
-    const bool moving=(m_indeterminate && (m_indeterminateSpeed != 0.0f))
-        || (m_cycleSpeed != 0.0f);
+    // a hidden bar (on a page switched away from) has none: showing it again
+    // registers a new one, whose first step is the time since it was shown
+    const bool moving=((m_indeterminate && (m_indeterminateSpeed != 0.0f))
+        || (m_cycleSpeed != 0.0f)) && visible();
 
     if(moving && !m_animation)
     {

@@ -942,13 +942,25 @@ void Base::redraw()
         canvas->redraw();
 }
 
+//! The control setParent() is moving from one parent straight to another:
+//! removeChild() leaves its m_ancestorHidden for addChild() to set, so a move
+//! between two hidden parents does not show it in between (no
+//! StateChange_Visibility, no onVisibleChanged()).
+static Base *g_movingChild=nullptr;
+
 void Base::setParent(Base *parent)
 {
     if(m_parent == parent)
         return;
 
     if(m_parent)
+    {
+        Base *const outer=g_movingChild;
+
+        g_movingChild=parent ? this : nullptr;
         m_parent->removeChild(this);
+        g_movingChild=outer;
+    }
 
     m_parent=parent;
     m_actualParent=nullptr;
@@ -1066,6 +1078,7 @@ void Base::setHidden(bool hidden)
 
         for(auto &&child : m_children)
             child->setAncestorHidden(hidden);
+        onVisibleChanged();
     }
 
     invalidate();
@@ -1089,6 +1102,7 @@ void Base::setAncestorHidden(bool ancestorHidden)
 
     for(auto &&child : m_children)
         child->setAncestorHidden(ancestorHidden);
+    onVisibleChanged();
 }
 
 void Base::invalidateChildren(bool recursive)
@@ -1430,8 +1444,9 @@ void Base::removeChild(Base *child)
         noteChildLeaving(child);
         child->m_actualParent=nullptr;
         // On its own it is shown unless it hid itself; a new parent sets this
-        // again as it is attached.
-        child->setAncestorHidden(false);
+        // again as it is attached (at once, for a move: g_movingChild).
+        if(child != g_movingChild)
+            child->setAncestorHidden(false);
         if(child->m_attached)
             attachedChildLeft(child);
         // this control reserved z for its attached children

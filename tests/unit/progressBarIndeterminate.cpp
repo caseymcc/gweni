@@ -10,7 +10,10 @@
  *  when vertical) and is always inside the track, a frame where it moves less
  *  than a unit marks and draws nothing, no text changes while it runs, a hidden
  *  bar stands still, and setIndeterminate(false) gives back the fill and label
- *  of the stored progress. A determinate cycling bar sets its auto label only
+ *  of the stored progress. A moving bar (indeterminate or cycling) has no
+ *  animation registered while it is hidden, by its own hide, an ancestor's or
+ *  being built into a page hidden already, and gets one back once shown, so
+ *  a hidden bar runs nothing (animsRun 0). A determinate cycling bar sets its auto label only
  *  when the whole percentage changes.
  *
  *  The segment is drawn only on a frame its rect changes, and
@@ -19,6 +22,7 @@
  */
 #include "headlessFixture.h"
 
+#include <gweni/anim.h>
 #include <gweni/controls/progressBar.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/skins/textured/texturedControls.h>
@@ -409,4 +413,71 @@ TEST_CASE("ProgressBar: a cycling bar's auto label is set only on a new whole pe
     pb->setAutoLabel(true);
     scene.frame(1.0f/60.0f);
     CHECK(pb->getText() != "busy");
+}
+
+TEST_CASE("ProgressBar: a hidden moving bar has no animation registered, and shown it runs again")
+{
+    Scene scene;
+
+    for(const bool indeterminate : {true, false})
+    {
+        CAPTURE(indeterminate);
+
+        controls::Base *page=scene.canvas->newChild<controls::Base>();
+        controls::ProgressBar *pb=page->newChild<controls::ProgressBar>();
+
+        if(indeterminate)
+            pb->setIndeterminate(true);
+        else
+            pb->setCycleSpeed(0.5f);
+        scene.frame(1.0f/60.0f);
+        CHECK(anim::activeCount(pb) == 1);
+        CHECK(scene.canvas->getUpdateStats().animsRun == 1);
+
+        // its own hide, then an ancestor's: nothing registered, nothing run
+        pb->hide();
+        CHECK(anim::activeCount(pb) == 0);
+        scene.frame(1.0f/60.0f);
+        CHECK(scene.canvas->getUpdateStats().animsRun == 0);
+        pb->show();
+        CHECK(anim::activeCount(pb) == 1);
+        scene.frame(1.0f/60.0f);
+        CHECK(scene.canvas->getUpdateStats().animsRun == 1);
+
+        page->hide();
+        CHECK(anim::activeCount(pb) == 0);
+        scene.frame(1.0f/60.0f);
+        CHECK(scene.canvas->getUpdateStats().animsRun == 0);
+        page->show();
+        scene.frame(1.0f/60.0f);
+        CHECK(scene.canvas->getUpdateStats().animsRun == 1);
+
+        // built into a page hidden already, as the shell's pages from index 1 on
+        page->hide();
+        controls::ProgressBar *built=page->newChild<controls::ProgressBar>();
+
+        if(indeterminate)
+            built->setIndeterminate(true);
+        else
+            built->setCycleSpeed(0.5f);
+        CHECK(anim::activeCount(built) == 0);
+        scene.frame(1.0f/60.0f);
+        CHECK(scene.canvas->getUpdateStats().animsRun == 0);
+        page->show();
+        CHECK(anim::activeCount(built) == 1);
+        scene.frame(1.0f/60.0f);
+        CHECK(scene.canvas->getUpdateStats().animsRun == 2);
+
+        // stopped while hidden, it stays stopped when shown
+        page->hide();
+        if(indeterminate)
+            built->setIndeterminate(false);
+        else
+            built->setCycleSpeed(0.0f);
+        page->show();
+        CHECK(anim::activeCount(built) == 0);
+
+        page->delayedDelete();
+        scene.frame(1.0f/60.0f);
+    }
 }

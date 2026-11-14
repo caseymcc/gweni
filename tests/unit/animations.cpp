@@ -31,8 +31,9 @@
  *  unfocused, the box deleted outright or delayed, or the canvas dropping a
  *  hidden box's focus, which the blink notices on its next run), never twice
  *  and without touching the box's other animations; a ProgressBar's while it
- *  cycles or is indeterminate at a non-zero speed, hidden or not, its first
- *  step the time since it started moving.
+ *  cycles or is indeterminate at a non-zero speed and is visible() (none while
+ *  hidden, a new one once shown), its first step the time since it started
+ *  moving.
  */
 #include "headlessFixture.h"
 
@@ -724,13 +725,16 @@ TEST_CASE("a ProgressBar has an animation only while it moves")
     bar->setIndeterminate(false);
     CHECK(anim::activeCount(bar) == 1);
 
-    // hidden, it stays registered and stands still
+    // hidden, it has none and stands still; shown, it moves again
     bar->setHidden(true);
     const float progress=bar->getProgress();
     scene.clock+=0.2f;
     scene.frame();
-    CHECK(anim::activeCount(bar) == 1);
+    CHECK(anim::activeCount(bar) == 0);
+    CHECK(scene.a->getUpdateStats().animsRun == 0);
     CHECK(bar->getProgress() == progress);
+    bar->setHidden(false);
+    CHECK(anim::activeCount(bar) == 1);
 
     bar->setCycleSpeed(0.0f);
     scene.frame();

@@ -837,6 +837,15 @@ public:
     //! m_actualParent chain, inner panels included) is hidden. O(1).
     virtual bool visible() const;
 
+    //! Called on this control whenever its visible() changed: its own
+    //! setHidden(), an ancestor's, or being attached to or detached from a
+    //! parent that is hidden, wherever StateChange_Visibility is marked for it.
+    //! Not for a change that leaves visible() as it was (a hide under a hidden
+    //! ancestor, a descendant that hid itself). visible() is its new value,
+    //! on it and on its subtree. For work kept only while the control shows (a
+    //! moving ProgressBar's or a Spinner's animation); the default does nothing.
+    virtual void onVisibleChanged() {}
+
     virtual void hide() { setHidden(true); }    //!< Make control invisible.
     virtual void show(bool show=true) { setHidden(!show); }   //!< Make control visible if hidden.
 

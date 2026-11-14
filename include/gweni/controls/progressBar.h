@@ -109,9 +109,12 @@ protected:
     void updateAutoLabel();
     void advanceIndeterminate(float delta);
     //! Registers the bar's animation when it starts moving (cycling, or
-    //! indeterminate at a non-zero speed) and cancels it when it stops, so a
-    //! bar standing still costs its canvas's update phase nothing.
+    //! indeterminate at a non-zero speed) while it is visible(), and cancels
+    //! it when it stops or is hidden, so a bar standing still or hidden costs
+    //! its canvas's update phase nothing.
     void updateAnimation();
+    //! Hidden or shown: registers or cancels the animation (updateAnimation).
+    void onVisibleChanged() override;
 
     float m_progress;
     float m_cycleSpeed;
