@@ -4080,7 +4080,7 @@ two programs and the draws. What follows describes both together:
   shows again. A range replaced with the top row inside it (a placeholder answered)
   shows its first new row at the top: `spliceVisible` inserts after the range, below the
   top, and then removes it. Putting the anchor back leaves a `scrollToItem()` not yet laid
-  out alone (the app asked for that view), and one edit that places nodes again in two steps (`addNode` with an expander: the insert, then the leaf a folder) keeps one anchor over both, so the second never anchors on a top the first clamped at the list's end. The stripes are by item parity, so an odd run added or removed above the view
+  out alone (the app asked for that view), and every public edit keeps one anchor over all of its steps (`TreeTable::AnchorScope`, depth-counted: the outermost scope captures the first shown node and puts it back as it ends, the scopes of the steps inside it, a re-sort or a parent placed again for its new key, doing nothing), so no step anchors on a top an earlier one clamped at the list's end (`addNode` with an expander, `removeNode` and `resetChildren` under a child-count sort, an empty lazy answer, a request handler's own edits); a step taken once the anchored node itself is gone anchors on the top it finds. The stripes are by item parity, so an odd run added or removed above the view
   would flip every row on screen: `m_stripePhase` is flipped with the first shown item's
   parity, so the rows on screen keep their stripes (`DataTable::syncSourceRows`). **The
   selection** stays on its node through every edit, also under a collapsed parent (shown

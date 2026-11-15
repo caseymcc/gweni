@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <climits>
+#include <optional>
 #include <unordered_set>
 #include <utility>
 
@@ -347,15 +348,17 @@ TreeTable::NodeId TreeTable::addNode(NodeId parentId, NodeId appId, bool hasChil
     // The insert and the leaf turning a folder may each place nodes again:
     // one anchor over both, so the second does not anchor on a top the
     // first clamped at the list's end.
-    const Anchor anchor=hasChildren?captureAnchor():Anchor{};
+    std::optional<AnchorScope> anchor;
+
+    if(hasChildren)
+        anchor.emplace(*this);
+
     const NodeId id=insertNode(parentId, NoItem, appId);
 
     if(id != NoNode && hasChildren)
     {
         m_nodes[m_nodeIndex.at(id)].hasChildren=true;
         refreshNode(id, false);
-        restoreAnchor(anchor);
-        syncVisibleSelection();
     }
     return id;
 }
@@ -453,7 +456,13 @@ bool TreeTable::insertNodes(NodeId parent, size_t index, const NodeId *ids, size
     // node goes to its sorted place, a splice each.
     std::vector<NodeId> *order=isSorted()?currentSorted(parent):nullptr;
     const bool anchorBatch=order && at != NoItem && count > 1;
-    const Anchor anchor=anchorBatch?captureAnchor():Anchor{};
+    // A per-id splice can clamp against a list still missing later ids:
+    // the anchor is put back once all are shown and the parent's new key is
+    // placed.
+    std::optional<AnchorScope> anchor;
+
+    if(anchorBatch)
+        anchor.emplace(*this);
 
     if(isSorted() && priorEmpty)
     {
@@ -493,13 +502,6 @@ bool TreeTable::insertNodes(NodeId parent, size_t index, const NodeId *ids, size
             spliceVisible(at, replaced, visible);
     }
     refreshNode(parent, false);
-    if(anchorBatch)
-    {
-        // A per-id splice can clamp against a list still missing later ids.
-        // Restore once all are shown and the parent's new key is placed.
-        restoreAnchor(anchor);
-        syncVisibleSelection();
-    }
     return true;
 }
 
@@ -549,6 +551,9 @@ bool TreeTable::removeNode(NodeId id)
     const std::vector<NodeId> &shown=order?*order:siblings;
     const size_t index=static_cast<size_t>(std::find(shown.begin(), shown.end(), id)-shown.begin());
     const bool selected=isInSubtree(m_selectedNode, id);
+    // the splice may clamp at the list's end before the parent's new key
+    // (a child count) places it again
+    std::optional<AnchorScope> anchor(std::in_place, *this);
 
     if(selected)
         m_selectedNode=index+1 < shown.size()?shown[index+1]
@@ -567,6 +572,7 @@ bool TreeTable::removeNode(NodeId id)
     eraseRecords({id});
     syncVisibleSelection();
     refreshNode(parent, false);
+    anchor.reset();
     if(emptied)
         expansionEvent(parent, false);
     if(selected)
@@ -621,7 +627,11 @@ void TreeTable::setHasChildren(NodeId id, bool hasChildren)
 
     node.hasChildren=hasChildren;
     node.expanded=node.expanded && hasChildren;
-    refreshNode(id, false);
+    {
+        AnchorScope anchor(*this);
+
+        refreshNode(id, false);
+    }
     if(wasExpanded && !hasChildren)
         expansionEvent(id, false);
 }
@@ -666,11 +676,15 @@ size_t TreeTable::endLoading(Node &node, bool empty)
 
     const bool wasExpanded=node.expanded;
 
-    node.hasChildren=false;
-    node.expanded=false;
-    if(item != NoItem)
-        spliceVisible(item, 1, {});
-    refreshNode(id, false);
+    {
+        AnchorScope anchor(*this);
+
+        node.hasChildren=false;
+        node.expanded=false;
+        if(item != NoItem)
+            spliceVisible(item, 1, {});
+        refreshNode(id, false);
+    }
     if(wasExpanded)
         expansionEvent(id, false);
     return NoItem;
@@ -686,6 +700,7 @@ void TreeTable::resetChildren(NodeId id)
         return;
 
     const bool selectionMoved=m_selectedNode != id && isInSubtree(m_selectedNode, id);
+    std::optional<AnchorScope> anchor(std::in_place, *this);
     Node &node=m_nodes[found->second];
     const bool wasExpanded=node.expanded;
     const size_t item=wasExpanded?itemForNode(id):NoItem;
@@ -709,6 +724,7 @@ void TreeTable::resetChildren(NodeId id)
     eraseRecords(std::move(children));
     syncVisibleSelection();
     refreshNode(id, false);
+    anchor.reset();
     if(wasExpanded)
         expansionEvent(id, false);
     if(selectionMoved)
@@ -732,7 +748,9 @@ bool TreeTable::moveNode(NodeId id, NodeId newParent, size_t index)
     if(oldParent == newParent && oldIndex == index)
         return true;
 
-    const Anchor anchor=captureAnchor();
+    // Follow the original node through every re-placement, its parents'
+    // included: intermediate removals may have clamped the viewport.
+    std::optional<AnchorScope> anchor(std::in_place, *this);
     const size_t item=itemForNode(id);
 
     if(item != NoItem)
@@ -805,10 +823,7 @@ bool TreeTable::moveNode(NodeId id, NodeId newParent, size_t index)
     if(oldParent != newParent)
         refreshNode(newParent, false);
     refreshNode(oldParent, false);
-    // Follow the original node after every re-placement, including one of
-    // its parents. Intermediate removals may have clamped the viewport.
-    restoreAnchor(anchor);
-    syncVisibleSelection();
+    anchor.reset();
     if(emptied)
         expansionEvent(oldParent, false);
     return true;
@@ -1002,6 +1017,23 @@ void TreeTable::restoreAnchor(const Anchor &anchor)
     m_stripePhase^=(before^body->firstVisibleItem())%2;
 }
 
+TreeTable::AnchorScope::AnchorScope(TreeTable &table)
+    : m_table(table)
+{
+    // a removed anchor (the edit took the top's node away) is taken anew
+    // from the top the next step finds
+    if(m_table.m_anchorDepth++ == 0 || !m_table.getNode(m_table.m_scopeAnchor.node))
+        m_table.m_scopeAnchor=m_table.captureAnchor();
+}
+
+TreeTable::AnchorScope::~AnchorScope()
+{
+    if(--m_table.m_anchorDepth > 0)
+        return;
+    m_table.restoreAnchor(m_table.m_scopeAnchor);
+    m_table.syncVisibleSelection();
+}
+
 // Only a group sorted in this generation holds the node; a stale one is
 // sorted whole when it is next shown.
 void TreeTable::keepSorted(NodeId id, bool verify)
@@ -1064,14 +1096,12 @@ void TreeTable::keepSorted(NodeId id, bool verify)
     if(item == NoItem)
         return;
 
-    const Anchor anchor=captureAnchor();
+    const AnchorScope anchor(*this);
     const size_t end=subtreeEnd(item);
     const std::vector<VisibleNode> moved(m_visible.begin()+item, m_visible.begin()+end);
 
     spliceVisible(item, end-item, {});
     spliceVisible(shownChildItem(parent, to+1), 0, moved);
-    restoreAnchor(anchor);
-    syncVisibleSelection();
 }
 
 // A hidden group is only made stale: it is sorted when next shown. A shown
@@ -1102,7 +1132,7 @@ void TreeTable::resortGroup(NodeId parent)
     if(run.size() != end-start)
         return;
 
-    const Anchor anchor=captureAnchor();
+    std::optional<AnchorScope> anchor(std::in_place, *this);
     std::vector<size_t> changed;
 
     for(Base *control : getVirtualBody()->getRows())
@@ -1116,8 +1146,7 @@ void TreeTable::resortGroup(NodeId parent)
     std::copy(run.begin(), run.end(), m_visible.begin()+start);
     for(size_t item : changed)
         rebindItem(item);
-    restoreAnchor(anchor);
-    syncVisibleSelection();
+    anchor.reset();
     if(!changed.empty())
     {
         if(Canvas *canvas=getCanvas())
@@ -1140,7 +1169,7 @@ void TreeTable::applySort()
         return;
     m_projectionSorted=isSorted();
 
-    const Anchor anchor=captureAnchor();
+    std::optional<AnchorScope> anchor(std::in_place, *this);
     std::vector<VisibleNode> visible;
 
     visible.reserve(m_visible.size());
@@ -1167,9 +1196,9 @@ void TreeTable::applySort()
             rebound=true;
         }
     }
-    // the anchor first: the stripe phase it moves is what the sync applies
-    restoreAnchor(anchor);
-    syncVisibleSelection();
+    // (the scope restores the anchor before the sync: the stripe phase it
+    // moves is what the sync applies)
+    anchor.reset();
     if(rebound)
     {
         if(Canvas *canvas=getCanvas())
@@ -1340,27 +1369,22 @@ void TreeTable::setExpanded(NodeId id, bool expanded)
     if(found == m_nodeIndex.end())
         return;
 
-    bool requested=false;
-    Anchor anchor;
+    std::optional<AnchorScope> anchor;
 
     if(expanded && beginRequest(m_nodes[found->second]))
     {
         // Asked before the node expands, so an answer in the handler expands
         // it with its children, and an empty one leaves it a collapsed leaf.
         // Its new sort key may move it while the list still lacks its children.
-        anchor=captureAnchor();
-        requested=true;
+        // The handler's own edits are steps inside this anchor.
+        anchor.emplace(*this);
         requestChildren(id);
 
         const Node *now=getNode(id);
 
         if(!now || now->expanded || !now->hasChildren)
-        {
             // The handler may have completed the expansion itself.
-            restoreAnchor(anchor);
-            syncVisibleSelection();
             return;
-        }
     }
 
     Node &node=m_nodes[m_nodeIndex.at(id)];
@@ -1394,8 +1418,13 @@ void TreeTable::setExpanded(NodeId id, bool expanded)
 
             if(end > at)
             {
-                // a selected descendant hides: the collapsed node takes it
-                if(m_selectedNode != id && isInSubtree(m_selectedNode, id))
+                // a shown selected descendant hides: the collapsed node takes
+                // it (one hidden already, under a collapsed descendant, stays
+                // on its node, as collapseAll keeps it)
+                const auto selectedShown=[this](const VisibleNode &shown) { return shown.id == m_selectedNode; };
+
+                if(m_selectedNode != id && m_selectedNode != NoNode
+                    && std::any_of(m_visible.begin()+at, m_visible.begin()+end, selectedShown))
                 {
                     m_selectedNode=id;
                     selectionMoved=true;
@@ -1404,11 +1433,7 @@ void TreeTable::setExpanded(NodeId id, bool expanded)
             }
         }
     }
-    if(requested)
-    {
-        restoreAnchor(anchor);
-        syncVisibleSelection();
-    }
+    anchor.reset();
     expansionEvent(id, expanded);
     if(selectionMoved)
         selectionEvent();
@@ -1527,11 +1552,9 @@ void TreeTable::expandSubtree(NodeId id)
 
         // the subtree's shown rows go out and come back with the rest: a
         // first shown row among them stays at the top
-        const Anchor anchor=captureAnchor();
+        const AnchorScope anchor(*this);
 
         spliceVisible(at, end-at, children);
-        restoreAnchor(anchor);
-        syncVisibleSelection();
     }
 
     for(NodeId changedId : changed)

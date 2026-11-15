@@ -42,6 +42,10 @@
  *  rebind, and placeholder cell contents hide and restore their own flags.
  *  A sorted batch and an immediate lazy answer that re-sorts its folder
  *  restore the anchor after the entire edit, despite intermediate clamps.
+ *  A loading placeholder on top keeps its folder there through a sort;
+ *  addNode with an expander, removeNode and resetChildren under a
+ *  child-count sort at the list's end keep the first shown node, as near
+ *  its row as the content allows, and so does every combined edit.
  *  GWENI_TREETABLE_SEED_FIRST/COUNT extend the combined model's seed range
  *  for manual stress runs; the suite defaults to seeds 1..1000.
  */
@@ -2415,7 +2419,10 @@ struct LiveModelScene: Scene, event::Handler
         const bool shown=itemOf(id) != Tree::NoItem;
         bool hasShownBelow=shown && (node.loading || !node.children.empty());
         node.expanded=false;
-        if(shown && hasShownBelow && selected != id && selected != NoNode && inSubtree(selected, id))
+        // only a shown selection moves to the collapsed node; one hidden
+        // already under a collapsed descendant stays on its node
+        if(shown && hasShownBelow && selected != id && selected != NoNode && inSubtree(selected, id)
+            && itemOf(selected) != Tree::NoItem)
             selected=id;
         tree->setExpanded(id, false);
     }
@@ -2971,6 +2978,19 @@ TEST_CASE("TreeTable model: combined lazy sorted selected and scrolled edits mat
                 CAPTURE(itemAfter);
                 CHECK(p.top() == topBefore);
             }
+            // and where the end clamps, the view is as near that node's row
+            // as the content allows (a placeholder top is left out: its
+            // answer shows the first new row there)
+            if(anchorKept && topBefore != NoNode && p.m.count(topBefore) && p.itemOf(topBefore) != Tree::NoItem)
+            {
+                const int rowHeight=tree->getRowHeight();
+                const int target=static_cast<int>(p.itemOf(topBefore))*rowHeight+offsetBefore%rowHeight;
+                CAPTURE(topBefore);
+                CAPTURE(p.what);
+                CAPTURE(offsetBefore);
+                CAPTURE(target);
+                CHECK(body->getVerticalScrollOffset() == std::min(target, body->getMaxVerticalScrollOffset()));
+            }
             // a placeholder still shown under its loading node stays on top
             if(anchorKept && loadingBefore != NoNode && p.m.count(loadingBefore) && !clamped)
             {
@@ -3182,4 +3202,152 @@ TEST_CASE("TreeTable model: addNode with an expander under a sort keeps the firs
         const int target=static_cast<int>(tree->itemForNode(topBefore))*20+into;
         CHECK(body->getVerticalScrollOffset() == std::min(target, body->getMaxVerticalScrollOffset()));
     }
+}
+
+namespace
+{
+
+// A child-count key for folders and a size for files: the demo's Size sort,
+// where a removed or reset child moves its folder.
+Tree::Comparator childCountOrSize(Tree *tree, const std::map<Id, double> &bytes)
+{
+    return [tree, &bytes](Id a, Id b)
+        {
+            const auto key=[tree, &bytes](Id id)
+                {
+                    const Tree::Node *node=tree->getNode(id);
+                    return node->hasChildren?static_cast<double>(node->children.size()):bytes.at(id);
+                };
+            return key(a) < key(b);
+        };
+}
+
+}
+
+TEST_CASE("TreeTable model: removeNode at the list end under a child-count sort keeps the first shown node")
+{
+    for(int fromEnd : {0, 3})
+    {
+        CAPTURE(fromEnd);
+        Scene scene;
+        Tree *tree=scene.tree;
+        std::map<Id, double> bytes;
+        for(Id id=0; id < 10; ++id)
+        {
+            bytes[id]=1.0;
+            REQUIRE(tree->addNode(Root, id) == id);
+        }
+        for(Id id=10; id < 15; ++id)
+        {
+            bytes[id]=9.5;
+            REQUIRE(tree->addNode(Root, id) == id);
+        }
+        // a folder of 10 sorts between the small files and the large ones,
+        // above the top once the view is at the end
+        const Id folder=20;
+        REQUIRE(tree->addNode(Root, folder) == folder);
+        for(Id child=200; child < 210; ++child)
+        {
+            bytes[child]=0;
+            REQUIRE(tree->addNode(folder, child) == child);
+        }
+        tree->setExpanded(folder, true);
+        tree->setSortComparator(0, childCountOrSize(tree, bytes));
+        tree->setSortColumn(0, controls::SortDirection::Ascending);
+        scene.settle();
+        controls::VirtualList *body=tree->getVirtualBody();
+        body->setVerticalScrollOffset(body->getMaxVerticalScrollOffset()-fromEnd);
+        scene.settle();
+        const Id topBefore=scene.top();
+        const int into=body->getVerticalScrollOffset()%20;
+        REQUIRE(tree->itemForNode(folder) < tree->itemForNode(topBefore));
+
+        // the splice clamps at the end, then the folder (9 children now)
+        // moves up past small files
+        REQUIRE(tree->removeNode(209));
+        scene.frame();
+        const int target=static_cast<int>(tree->itemForNode(topBefore))*20+into;
+        CHECK(body->getVerticalScrollOffset() == std::min(target, body->getMaxVerticalScrollOffset()));
+        CHECK(scene.top() == topBefore);
+    }
+}
+
+TEST_CASE("TreeTable model: resetChildren of the top folder at the list end under a child-count sort keeps it on top")
+{
+    Scene scene;
+    Tree *tree=scene.tree;
+    std::map<Id, double> bytes;
+    for(Id id=0; id < 20; ++id)
+    {
+        bytes[id]=1.0;
+        REQUIRE(tree->addNode(Root, id) == id);
+    }
+    for(Id id=20; id < 25; ++id)
+    {
+        bytes[id]=5;
+        REQUIRE(tree->addNode(Root, id) == id);
+    }
+    const Id folder=30;
+    REQUIRE(tree->addNode(Root, folder) == folder);
+    for(Id child=300; child < 310; ++child)
+    {
+        bytes[child]=0;
+        REQUIRE(tree->addNode(folder, child) == child);
+    }
+    tree->setExpanded(folder, true);
+    tree->setSortComparator(0, childCountOrSize(tree, bytes));
+    tree->setSortColumn(0, controls::SortDirection::Ascending);
+    scene.settle();
+    controls::VirtualList *body=tree->getVirtualBody();
+    body->setVerticalScrollOffset(static_cast<int>(tree->itemForNode(folder))*20+5);
+    scene.settle();
+    REQUIRE(scene.top() == folder);
+
+    // its children go (the view clamps at the end), then the folder, with
+    // no children, sorts first
+    tree->resetChildren(folder);
+    scene.frame();
+    const int target=static_cast<int>(tree->itemForNode(folder))*20+5;
+    CHECK(body->getVerticalScrollOffset() == std::min(target, body->getMaxVerticalScrollOffset()));
+    CHECK(scene.top() == folder);
+}
+
+TEST_CASE("TreeTable model: a collapse leaves a selection hidden already on its node, as collapseAll does")
+{
+    Scene scene;
+    Tree *tree=scene.tree;
+    Selections selections;
+    tree->onSelectionChange.add(&selections, &Selections::changed);
+    const Id folder=1;
+    const Id inner=2;
+    const Id leaf=3;
+    REQUIRE(tree->addNode(Root, folder) == folder);
+    REQUIRE(tree->addNode(folder, inner) == inner);
+    REQUIRE(tree->addNode(inner, 4) == 4);
+    REQUIRE(tree->addNode(Root, leaf) == leaf);
+    tree->setExpanded(folder, true);
+    scene.settle();
+    tree->setSelectedNode(leaf);
+    // moved under the collapsed inner folder: selected, not shown
+    REQUIRE(tree->moveNode(leaf, inner, 0));
+    scene.frame();
+    REQUIRE(tree->getSelectedNode() == leaf);
+    REQUIRE(tree->itemForNode(leaf) == Tree::NoItem);
+    selections.ids.clear();
+
+    tree->setExpanded(folder, false);
+    scene.frame();
+    CHECK(tree->getSelectedNode() == leaf);
+    CHECK(selections.ids.empty());
+
+    // a shown selection still moves to the collapsed node, with one event
+    tree->setExpanded(folder, true);
+    tree->setExpanded(inner, true);
+    scene.frame();
+    REQUIRE(tree->itemForNode(leaf) != Tree::NoItem);
+    selections.ids.clear();
+    tree->setExpanded(folder, false);
+    scene.frame();
+    CHECK(tree->getSelectedNode() == folder);
+    CHECK(selections.ids == std::vector<Id>{folder});
 }

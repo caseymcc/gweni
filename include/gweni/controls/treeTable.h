@@ -356,6 +356,23 @@ private:
     };
     Anchor captureAnchor();
     void restoreAnchor(const Anchor &anchor);
+    //! One anchor over a whole public edit: the outermost scope captures it
+    //! and, as it ends, puts that node back at the top (and the selection's
+    //! row in step); the scopes of the steps inside it (a re-sort, a parent
+    //! placed again) do nothing, so no step anchors on a top an earlier one
+    //! clamped at the list's end. A step taken once the anchored node is gone
+    //! (removed with its subtree) anchors on the top it finds.
+    class AnchorScope
+    {
+    public:
+        explicit AnchorScope(TreeTable &table);
+        ~AnchorScope();
+        AnchorScope(const AnchorScope &)=delete;
+        AnchorScope &operator=(const AnchorScope &)=delete;
+
+    private:
+        TreeTable &m_table;
+    };
     //! Drops the store records of these nodes and their whole subtrees.
     void eraseRecords(std::vector<NodeId> pending);
     //! Every pooled row shows its node's expansion again (the toggled node's
@@ -422,6 +439,9 @@ private:
     std::unordered_map<NodeId, SortedGroup> m_sortedGroups;
     //! Whether m_visible is in a sort's order (so a sort's end rebuilds it).
     bool m_projectionSorted=false;
+    //! The AnchorScopes open and the anchor the outermost one holds.
+    int m_anchorDepth=0;
+    Anchor m_scopeAnchor;
 };
 
 }//namespace controls

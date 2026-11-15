@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace gweni
 {
@@ -69,6 +70,9 @@ public:
     bool less(int column, size_t a, size_t b) const;
     //! The name a row shows.
     std::string displayName(size_t id) const;
+    //! Whether the node shows as a folder: it has children, or Remove took
+    //! its last one (the table makes that a leaf; the demo keeps its name).
+    bool showsAsFolder(size_t id) const;
 
     //! The buttons' actions: add a file to the selected folder (beside a
     //! selected file), remove the selection, rename it.
@@ -99,6 +103,8 @@ private:
     std::unordered_map<size_t, std::string> m_names;
     size_t m_nextAdded=FirstAdded;
     size_t m_renames=0;
+    //! Folders Remove emptied.
+    std::unordered_set<size_t> m_emptiedFolders;
     bool m_lazyPending=false;
 };
 

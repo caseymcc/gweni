@@ -127,6 +127,7 @@ void TreeTableDemo::setNodeCount(size_t count)
     m_names.clear();
     m_nextAdded=FirstAdded;
     m_renames=0;
+    m_emptiedFolders.clear();
     m_lazyPending=false;
     m_table->setHidden(true);
     m_table->delayedDelete();
@@ -194,11 +195,12 @@ void TreeTableDemo::build()
 void TreeTableDemo::bind(controls::DataTableRow *row, size_t id)
 {
     const controls::TreeTable::Node *node=m_table->getNode(id);
-    const bool folder=node && node->hasChildren;
+    const bool folder=showsAsFolder(id);
 
     row->setCellText(0, displayName(id));
     // a lazy folder not loaded yet has no count to show
-    row->setCellText(1, !folder?fileSize(id):node->children.empty()?String("-")
+    row->setCellText(1, !folder?fileSize(id)
+        :node->children.empty() && node->hasChildren?String("-")
         :std::to_string(node->children.size())+" items");
     row->setCellText(2, modified(id));
 }
@@ -210,9 +212,14 @@ std::string TreeTableDemo::displayName(size_t id) const
     if(named != m_names.end())
         return named->second;
 
+    return nodeName(id, showsAsFolder(id));
+}
+
+bool TreeTableDemo::showsAsFolder(size_t id) const
+{
     const controls::TreeTable::Node *node=m_table?m_table->getNode(id):nullptr;
 
-    return nodeName(id, node && node->hasChildren);
+    return node && (node->hasChildren || m_emptiedFolders.count(id) != 0);
 }
 
 // Name and Modified as their text sorts (the dates are written to sort so),
@@ -229,7 +236,7 @@ bool TreeTableDemo::less(int column, size_t a, size_t b) const
         {
             const controls::TreeTable::Node *node=m_table->getNode(id);
 
-            return node && node->hasChildren?node->children.size():fileBytes(id);
+            return showsAsFolder(id)?node->children.size():fileBytes(id);
         };
 
     return size(a) < size(b);
@@ -294,7 +301,7 @@ void TreeTableDemo::addFile()
     size_t parent=controls::TreeTable::Root;
 
     if(node)
-        parent=node->hasChildren?selected:node->parent;
+        parent=showsAsFolder(selected)?selected:node->parent;
 
     // a lazy folder never opened asks for its own files first: an added
     // file would otherwise be its children, and it would never ask
@@ -334,8 +341,17 @@ void TreeTableDemo::removeSelected()
 {
     const size_t selected=m_table->getSelectedNode();
 
-    if(m_table->getNode(selected))
-        m_table->removeNode(selected);
+    const controls::TreeTable::Node *node=m_table->getNode(selected);
+
+    if(!node)
+        return;
+
+    // the parent stays a folder by name when this was its last child
+    const controls::TreeTable::Node *parent=m_table->getNode(node->parent);
+
+    if(parent && parent->children.size() == 1)
+        m_emptiedFolders.insert(parent->id);
+    m_table->removeNode(selected);
 }
 
 void TreeTableDemo::renameSelected()
@@ -346,7 +362,7 @@ void TreeTableDemo::renameSelected()
     if(!node)
         return;
 
-    m_names[selected]="renamed-"+std::to_string(++m_renames)+(node->hasChildren?"":".txt");
+    m_names[selected]="renamed-"+std::to_string(++m_renames)+(showsAsFolder(selected)?"":".txt");
     m_table->nodeChanged(selected);
     showSelection();
 }
