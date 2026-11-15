@@ -1377,7 +1377,9 @@ gweni over it as a HUD, into the same target, in the same frame (#687).
 
 **The frame order.** Each frame:
 
-1. `canvas->updateCanvas()`, as always (it makes no GL or Vulkan call);
+1. `canvas->updateCanvas()`, as always (it draws nothing; the one GL or Vulkan call it
+   can make is a new font's atlas texture, made where the font is first measured, which
+   `setPreserveAppState` keeps from the app's bindings, below);
 2. the app's scene: its own clear (colour and depth) and draws, with its own depth;
 3. `renderer->clearDepth()` (`SlotRenderer::clearDepth()`), the target's depth alone
    cleared to the far plane (1.0), its colour kept;
@@ -1442,16 +1444,26 @@ change or depend on and set gweni's own, and `end()`, after `flush()`, put it al
 the program, the vertex array, the array buffer, the active unit and units 0..6's 2D
 and 2D-array textures and samplers, blend enable, function (separate) and equation,
 depth test, function, mask and range, cull face, scissor test and box, stencil test,
-colour mask, the viewport, the pixel pack and unpack state, and on desktop GL the
-polygon mode and `GL_FRAMEBUFFER_SRGB` (the sorted pass sets nothing more than the
-opaque one: it draws through the same programs, blend and depth state). gweni's own
-state for the frame is the viewport at the view rect, unit 0 active, no sampler objects
-on its units, the scissor, stencil and cull tests off, depth and colour writes on,
-`GL_FUNC_ADD`, the depth range 0..1, unpack alignment 4 with no row length or skips,
-and on desktop GL `GL_FILL` and no `GL_FRAMEBUFFER_SRGB`. It all stays inside the
-GL 3.3 / GLES 3.0 subset. GL calls gweni makes outside a frame (a font or image
-loaded, `readPixels`) still change state. `tests/glAppState.cpp` (`gl_only`) sets a
-non-default value of each, draws a frame and compares every one through `glGet*`.
+colour mask, the viewport, the pixel pack and unpack state and the pixel unpack buffer
+(the atlas and clip-box uploads would read from one the app left bound), and on desktop
+GL the polygon mode, `GL_FRAMEBUFFER_SRGB` and `GL_PRIMITIVE_RESTART` (an app's restart
+index would cut gweni's quads; GLES and WebGL restart at 0xFFFF only, past every index
+gweni draws) (the sorted pass sets nothing more than the opaque one: it draws through
+the same programs, blend and depth state). gweni's own state for the frame is the
+viewport at the view rect, unit 0 active, no sampler objects on its units, the scissor,
+stencil and cull tests off, depth and colour writes on, `GL_FUNC_ADD`, the depth range
+0..1, unpack alignment 4 with no row length or skips, no pixel unpack buffer, and on
+desktop GL `GL_FILL`, no `GL_FRAMEBUFFER_SRGB` and no primitive restart. It all stays
+inside the GL 3.3 / GLES 3.0 subset. Outside a frame, the GL calls a font's first
+measure makes (its atlas texture, in the update phase's layout or a `measureText`) and
+an image's load (its page made or written) run on unit 0 with no pixel buffer and
+gweni's unpack state, and the app's active unit, unit 0's 2D and 2D-array bindings, its
+pixel buffer and unpack state are put back after them (`OpenGLCore::OutsideFrame`), so
+an app's binding is never replaced by an atlas, saved as the app's and later deleted;
+`readPixels` still sets the pack alignment, and a font or image freed deletes its
+texture. `tests/glAppState.cpp` (`gl_only`) sets a non-default value of each, draws a
+frame and compares every one through `glGet*`, and does the same round an update phase
+whose layout loads a font.
 
 **HudExample** (`examples/hud/`, with `GWENI_BUILD_EXAMPLES` and the GL renderer, not
 in the web tree): a spinning, depth-tested cube with its own shader (GLSL 3.30 core, or

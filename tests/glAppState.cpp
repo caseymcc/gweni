@@ -14,14 +14,18 @@
  *  and a reverse-subtract equation, the depth test off with GL_GREATER, no
  *  depth writes and a 0.2..0.8 depth range, cull face, scissor and stencil on,
  *  a scissor box, a colour mask, a viewport, pack and unpack alignment, row
- *  length and skips, and on desktop GL a line polygon mode and
- *  GL_FRAMEBUFFER_SRGB.
+ *  length and skips, a pixel unpack buffer, and on desktop GL a line polygon
+ *  mode, GL_FRAMEBUFFER_SRGB and primitive restart at index 7.
  *
  *    state    a frame that lays out new text (its glyphs uploaded to the atlas)
  *             with preserve on leaves every one of those glGet* values as it
  *             was; with preserve off some differ (what the frame sets).
  *    pixels   with preserve on, a frame of a settled canvas over that state
  *             draws byte for byte what it draws over gweni's own state.
+ *    update   with preserve on, an update phase whose layout loads a new font
+ *             (its atlas texture made where it is first measured, outside a
+ *             frame) leaves every one of those values as it was, and makes no
+ *             GL error under the app's pixel unpack buffer.
  */
 #include <doctest/doctest.h>
 
@@ -106,9 +110,12 @@ std::map<std::string, std::vector<GLint>> snapshot()
     integers("unpackRowLength", GL_UNPACK_ROW_LENGTH, 1);
     integers("unpackSkipRows", GL_UNPACK_SKIP_ROWS, 1);
     integers("unpackSkipPixels", GL_UNPACK_SKIP_PIXELS, 1);
+    integers("pixelUnpackBuffer", GL_PIXEL_UNPACK_BUFFER_BINDING, 1);
 #ifndef GWENI_GL_ES
     integers("polygonMode", GL_POLYGON_MODE, 2);
     enabled("framebufferSrgb", GL_FRAMEBUFFER_SRGB);
+    enabled("primitiveRestart", GL_PRIMITIVE_RESTART);
+    integers("primitiveRestartIndex", GL_PRIMITIVE_RESTART_INDEX, 1);
 #endif
     return state;
 }
@@ -132,6 +139,7 @@ struct AppState
     GLuint program=0;
     GLuint vertexArray=0;
     GLuint buffer=0;
+    GLuint pixelBuffer=0;
     GLuint textures[3]={};
     GLuint samplers[2]={};
     std::map<std::string, std::vector<GLint>> before;
@@ -154,6 +162,7 @@ struct AppState
 
         glGenVertexArrays(1, &vertexArray);
         glGenBuffers(1, &buffer);
+        glGenBuffers(1, &pixelBuffer);
         glGenTextures(3, textures);
         glGenSamplers(2, samplers);
         glSamplerParameteri(samplers[0], GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -162,6 +171,9 @@ struct AppState
         glUseProgram(program);
         glBindVertexArray(vertexArray);
         glBindBuffer(GL_ARRAY_BUFFER, buffer);
+        // too small for any upload gweni makes: one read from it is an error
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pixelBuffer);
+        glBufferData(GL_PIXEL_UNPACK_BUFFER, 16, nullptr, GL_STREAM_DRAW);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, textures[0]);
         glBindSampler(0, samplers[0]);
@@ -196,6 +208,8 @@ struct AppState
 #ifndef GWENI_GL_ES
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
         glEnable(GL_FRAMEBUFFER_SRGB);
+        glEnable(GL_PRIMITIVE_RESTART);
+        glPrimitiveRestartIndex(7);
 #endif
         REQUIRE(glGetError() == GL_NO_ERROR);
     }
@@ -217,6 +231,8 @@ struct AppState
         glDeleteProgram(program);
         glDeleteVertexArrays(1, &vertexArray);
         glDeleteBuffers(1, &buffer);
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+        glDeleteBuffers(1, &pixelBuffer);
         glDeleteTextures(3, textures);
         glDeleteSamplers(2, samplers);
         glBlendFuncSeparate((GLenum)before["blendSrcRgb"][0], (GLenum)before["blendDstRgb"][0],
@@ -251,6 +267,8 @@ struct AppState
 #ifndef GWENI_GL_ES
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         glDisable(GL_FRAMEBUFFER_SRGB);
+        glDisable(GL_PRIMITIVE_RESTART);
+        glPrimitiveRestartIndex((GLuint)before["primitiveRestartIndex"][0]);
 #endif
         gweni::test::glRenderer().setPreserveAppState(false);
         CHECK(glGetError() == GL_NO_ERROR);
@@ -352,10 +370,36 @@ TEST_CASE("App state: with setPreserveAppState a frame gives every saved GL valu
 
         // what the frame changes without it, so the state above is a real test;
         // glyphs already in the atlas, so nothing is uploaded under the app's
-        // unpack state (which WebGL refuses)
+        // unpack state, and no pixel buffer is bound for the clip-box upload
+        // the new text makes (both of which are errors)
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
         scene.label->setText("Label");
         scene.frame();
         CHECK_FALSE((snapshot() == set));
+    }
+}
+
+TEST_CASE("App state: with setPreserveAppState an update phase that loads a font gives every saved GL value back")
+{
+    Scene scene;
+    scene.settled();
+    {
+        AppState app;
+        const size_t fonts=gweni::test::gpuRenderer().getLoadedFontCount();
+        const auto set=snapshot();
+
+        gweni::test::glRenderer().setPreserveAppState(true);
+        // a size nothing else uses, so its atlas is made by this layout's measure
+        scene.label->setFont("OpenSans.ttf", 15, true);
+        scene.canvas->updateCanvas();
+        REQUIRE(gweni::test::gpuRenderer().getLoadedFontCount() > fonts);
+        CHECK(glGetError() == GL_NO_ERROR);
+        const auto after=snapshot();
+        INFO("changed: ", differences(set, after));
+        CHECK((after == set));
+        scene.canvas->renderCanvas();
+        CHECK(glGetError() == GL_NO_ERROR);
+        CHECK((snapshot() == set));
     }
 }
 

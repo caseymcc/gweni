@@ -184,9 +184,14 @@ struct OpenGLCore::AppState
     GLint viewport[4]={};
     GLint packAlignment=4;
     GLint unpackAlignment=4, unpackRowLength=0, unpackSkipRows=0, unpackSkipPixels=0;
+    //! the uploads would read from a pixel buffer the app left bound
+    GLint pixelUnpackBuffer=0;
 #ifndef GWENI_GL_ES
     GLint polygonMode[2]={GL_FILL, GL_FILL};
     GLboolean framebufferSrgb=GL_FALSE;
+    //! an app's restart index would cut gweni's quads (GLES and WebGL restart
+    //! at 0xFFFF only, past every index gweni draws)
+    GLboolean primitiveRestart=GL_FALSE;
 #endif
 
     void save()
@@ -224,9 +229,11 @@ struct OpenGLCore::AppState
         glGetIntegerv(GL_UNPACK_ROW_LENGTH, &unpackRowLength);
         glGetIntegerv(GL_UNPACK_SKIP_ROWS, &unpackSkipRows);
         glGetIntegerv(GL_UNPACK_SKIP_PIXELS, &unpackSkipPixels);
+        glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &pixelUnpackBuffer);
 #ifndef GWENI_GL_ES
         glGetIntegerv(GL_POLYGON_MODE, polygonMode);
         framebufferSrgb=glIsEnabled(GL_FRAMEBUFFER_SRGB);
+        primitiveRestart=glIsEnabled(GL_PRIMITIVE_RESTART);
 #endif
     }
 
@@ -248,9 +255,11 @@ struct OpenGLCore::AppState
         glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
         glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
         glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 #ifndef GWENI_GL_ES
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         glDisable(GL_FRAMEBUFFER_SRGB);
+        glDisable(GL_PRIMITIVE_RESTART);
 #endif
     }
 
@@ -286,9 +295,11 @@ struct OpenGLCore::AppState
         glPixelStorei(GL_UNPACK_ROW_LENGTH, unpackRowLength);
         glPixelStorei(GL_UNPACK_SKIP_ROWS, unpackSkipRows);
         glPixelStorei(GL_UNPACK_SKIP_PIXELS, unpackSkipPixels);
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, (GLuint)pixelUnpackBuffer);
 #ifndef GWENI_GL_ES
         glPolygonMode(GL_FRONT_AND_BACK, (GLenum)polygonMode[0]);
         enable(GL_FRAMEBUFFER_SRGB, framebufferSrgb);
+        enable(GL_PRIMITIVE_RESTART, primitiveRestart);
 #endif
     }
 
@@ -309,6 +320,63 @@ struct OpenGLCore::AppState
         glDepthRange(nearValue, farValue);
 #endif
     }
+};
+
+//! setPreserveAppState() outside a frame: a font's atlas made in the update
+//! phase (its first measure), an image page made or written as it loads. The
+//! hook runs on unit 0 with no pixel buffer and gweni's unpack state, and the
+//! app's active unit, unit 0's 2D and 2D-array bindings, the pixel buffer and
+//! the unpack state are put back after it. Off, or inside a frame (begin()
+//! has saved the app's state already), it does nothing.
+class OpenGLCore::OutsideFrame
+{
+public:
+    explicit OutsideFrame(const OpenGLCore &renderer):
+        m_active(renderer.m_preserveAppState && !renderer.m_appStateSaved)
+    {
+        if(!m_active)
+            return;
+        glGetIntegerv(GL_ACTIVE_TEXTURE, &m_activeTexture);
+        glActiveTexture(GL_TEXTURE0);
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &m_texture2D);
+        glGetIntegerv(GL_TEXTURE_BINDING_2D_ARRAY, &m_texture2DArray);
+        glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &m_pixelUnpackBuffer);
+        glGetIntegerv(GL_UNPACK_ALIGNMENT, &m_unpack[0]);
+        glGetIntegerv(GL_UNPACK_ROW_LENGTH, &m_unpack[1]);
+        glGetIntegerv(GL_UNPACK_SKIP_ROWS, &m_unpack[2]);
+        glGetIntegerv(GL_UNPACK_SKIP_PIXELS, &m_unpack[3]);
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+        glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+        glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+    }
+
+    OutsideFrame(const OutsideFrame &)=delete;
+    OutsideFrame &operator=(const OutsideFrame &)=delete;
+
+    ~OutsideFrame()
+    {
+        if(!m_active)
+            return;
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, (GLuint)m_texture2D);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, (GLuint)m_texture2DArray);
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, (GLuint)m_pixelUnpackBuffer);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, m_unpack[0]);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, m_unpack[1]);
+        glPixelStorei(GL_UNPACK_SKIP_ROWS, m_unpack[2]);
+        glPixelStorei(GL_UNPACK_SKIP_PIXELS, m_unpack[3]);
+        glActiveTexture((GLenum)m_activeTexture);
+    }
+
+private:
+    bool m_active;
+    GLint m_activeTexture=GL_TEXTURE0;
+    GLint m_texture2D=0;
+    GLint m_texture2DArray=0;
+    GLint m_pixelUnpackBuffer=0;
+    GLint m_unpack[4]={ 4, 0, 0, 0 };
 };
 
 void OpenGLCore::begin()
@@ -425,6 +493,8 @@ TextureHandle OpenGLCore::createAtlasTexture(const texture_atlas_t &atlas)
 {
     const bool lcd=(atlas.depth == 3);
     GLuint texture=0;
+    // made where a font is first measured, in the update phase too
+    const OutsideFrame outside(*this);
 
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
@@ -470,6 +540,7 @@ bool OpenGLCore::allocateImagePage(size_t imageClass, size_t layers, size_t kept
     const GLsizei side=(GLsizei)imageClassSide(imageClass);
     const GLint levels=(GLint)imageClassLevels(imageClass);
     GLuint texture=0;
+    const OutsideFrame outside(*this);
 
     // an error from before is not this allocation's
     deviceError();
@@ -546,6 +617,8 @@ bool OpenGLCore::allocateImagePage(size_t imageClass, size_t layers, size_t kept
 void OpenGLCore::uploadImageLayer(size_t imageClass, size_t layer, int width, int height, const uint8_t *rgba,
     const ImageMipLevel *levels, size_t levelCount)
 {
+    const OutsideFrame outside(*this);
+
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D_ARRAY, m_imagePages[imageClass]);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);

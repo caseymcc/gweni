@@ -67,16 +67,22 @@ public:
     //! view rect, unit 0 active, no sampler objects on gweni's texture units,
     //! the scissor, stencil and cull tests off, depth writes, colour writes,
     //! GL_FUNC_ADD, the depth range 0..1, unpack alignment 4 and no row length
-    //! or skips, and on desktop GL GL_FILL and no GL_FRAMEBUFFER_SRGB), and end(),
-    //! after flush(), puts it all back: the program, the vertex array, the array
+    //! or skips, no pixel unpack buffer, and on desktop GL GL_FILL, no
+    //! GL_FRAMEBUFFER_SRGB and no GL_PRIMITIVE_RESTART), and end(), after
+    //! flush(), puts it all back: the program, the vertex array, the array
     //! buffer, the active unit and units 0..6's 2D and 2D-array textures and
     //! samplers, blend enable, function (separate) and equation, depth test,
     //! function, mask and range, cull face, scissor test and box, stencil test,
-    //! colour mask, viewport, pixel pack and unpack state, and on desktop GL the
-    //! polygon mode and GL_FRAMEBUFFER_SRGB. GL calls gweni makes outside a frame
-    //! (a font or image loaded, readPixels) still change state. For an app that
-    //! draws its own GL scene around gweni (docs/architecture.md -> "gweni over
-    //! an app's scene").
+    //! colour mask, viewport, pixel pack and unpack state and the pixel unpack
+    //! buffer, and on desktop GL the polygon mode, GL_FRAMEBUFFER_SRGB and
+    //! GL_PRIMITIVE_RESTART. Outside a frame, a font's atlas made where it is
+    //! first measured (the update phase's layout, a measureText) and an image
+    //! page made or written as it loads run on unit 0 with no pixel buffer and
+    //! gweni's unpack state, and the app's active unit, unit 0's 2D and
+    //! 2D-array bindings, pixel buffer and unpack state are put back after;
+    //! readPixels() still sets the pack alignment, and a font or image freed
+    //! deletes its texture. For an app that draws its own GL scene around gweni
+    //! (docs/architecture.md -> "gweni over an app's scene").
     void setPreserveAppState(bool preserve) { m_preserveAppState=preserve; }
     bool preserveAppState() const { return m_preserveAppState; }
 
@@ -212,6 +218,8 @@ private:
 
     //! setPreserveAppState(): whether it is on, and the app's state begin() saved
     struct AppState;
+    //! the app's texture and unpack state kept round a hook outside a frame
+    class OutsideFrame;
     bool m_preserveAppState=false;
     //! begin() saved m_appState, which end() gives back
     bool m_appStateSaved=false;
