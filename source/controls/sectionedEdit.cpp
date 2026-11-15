@@ -93,6 +93,14 @@ bool isBlank(const String &text)
 constexpr Date MinDate(1, 1, 1);
 constexpr Date MaxDate(9999, 12, 31);
 
+//! Whether \p value is a real date and time: an end, a value or a start
+//! that is none (a 13th month, 25:00) would be shown as it is and stepped
+//! with no days to wrap in.
+bool isValidValue(const SectionedEdit::Value &value)
+{
+    return value.date.isValid() && value.time.isValid();
+}
+
 void clampDay(Date &date)
 {
     const int last=Date::daysInMonth(date.year, date.month);
@@ -200,7 +208,7 @@ bool SectionedEdit::setFormat(const String &pattern)
 
 void SectionedEdit::setFieldValue(const std::optional<Value> &value)
 {
-    if(!value && !m_allowEmpty)
+    if((!value && !m_allowEmpty) || (value && !isValidValue(*value)))
         return;
 
     m_value=value?std::optional<Value>(clampValue(*value)):std::nullopt;
@@ -209,6 +217,9 @@ void SectionedEdit::setFieldValue(const std::optional<Value> &value)
 
 void SectionedEdit::setFieldRange(const std::optional<Value> &min, const std::optional<Value> &max)
 {
+    if((min && !isValidValue(*min)) || (max && !isValidValue(*max)))
+        return;
+
     m_min=min;
     m_max=max;
     if(m_min && m_max && (*m_max < *m_min))
@@ -232,6 +243,8 @@ void SectionedEdit::setAllowEmpty(bool allow)
 
 void SectionedEdit::setEmptyStepValue(const Value &value)
 {
+    if(!isValidValue(value))
+        return;
     m_emptyStepValue=value;
 }
 
@@ -489,10 +502,12 @@ bool SectionedEdit::stepSection(int direction, bool large)
 
     // on in the step's direction until a value the range and the filter take,
     // or back where it began
-    // a year or month step goes on from the day it began with, clamped to
-    // each month's last only for the value tried: Jan 30 refused on Feb 28
-    // tries Mar 30, not Mar 28
-    const bool keepDay=(kind == SectionKind::Year) || (kind == SectionKind::Month);
+    // a year or month step (the day section's PageUp and PageDown are a
+    // year's) goes on from the day it began with, clamped to each month's
+    // last only for the value tried: Jan 30 refused on Feb 28 tries Mar 30,
+    // not Mar 28
+    const bool keepDay=(kind == SectionKind::Year) || (kind == SectionKind::Month)
+        || ((kind == SectionKind::Day) && large);
 
     for(int i=0; i < 1000; ++i)
     {

@@ -26,9 +26,12 @@
  *  The calendar button inside the field's padding, at its height; disabled
  *  with the field and while it is read-only, when nothing opens the calendar.
  *  A filtered month or year step going on from the day it began with (Jan 30
- *  to Mar 30, not Mar 28), a step from empty searching on by day in the year
- *  section too, years held to 1..9999 (set, stepped and typed), and a new
- *  renderer text layout measuring the format's width again.
+ *  to Mar 30, not Mar 28), the day section's PageUp too (Feb 29 on to the
+ *  next Feb 29 when the 28th is refused), a range end that is no date
+ *  refused, a step from empty searching on by day in the year section too,
+ *  years held to 1..9999 (set, stepped and typed, a five-digit year
+ *  reverting), and a new renderer text layout measuring the format's width
+ *  again.
  */
 #include "headlessFixture.h"
 
@@ -55,6 +58,12 @@ struct Changes: public event::Handler
 
     void changed(event::Info) { ++count; }
 };
+
+//! \p date in ISO, "none" for no date.
+String iso(const std::optional<Date> &date)
+{
+    return date?date->toIso():String("none");
+}
 
 bool weekday(const Date &date)
 {
@@ -623,6 +632,43 @@ TEST_CASE("DateEdit: a filtered month step goes on from the day it began with")
     CHECK(scene.step(2, keys::Up) == "2029-01-30");
 }
 
+TEST_CASE("DateEdit: the day section's PageUp is a year step from the day it began with")
+{
+    Scene scene;
+    DateEdit *edit=scene.edit;
+
+    // 2024-02-29 a year on is February 28, which the filter refuses, and so
+    // in 2026 and 2027; the next a year step takes is 2028-02-29
+    edit->setDateFilter([](const Date &date) { return !((date.month == 2) && (date.day == 28)); });
+    edit->setDate(Date(2024, 2, 29));
+    CHECK(scene.step(9, keys::PageUp) == "2028-02-29");
+    CHECK(scene.events.count == 1);
+    // as the year section's Up does
+    edit->setDate(Date(2024, 2, 29));
+    CHECK(scene.step(2, keys::Up) == "2028-02-29");
+}
+
+TEST_CASE("DateEdit: an invalid range end is refused")
+{
+    Scene scene;
+    DateEdit *edit=scene.edit;
+
+    edit->setDate(Date(2026, 11, 15));
+    edit->setRange(Date(2026, 11, 5), Date(2026, 12, 18));
+    // a month past December (an app's Date(y, m+1, 1) in December) is no
+    // date: the call is refused, the range and the date as they were
+    edit->setRange(Date(2026, 13, 1), std::nullopt);
+    CHECK(iso(edit->getMinDate()) == "2026-11-05");
+    CHECK(iso(edit->getMaxDate()) == "2026-12-18");
+    edit->setRange(std::nullopt, Date(2026, 2, 30));
+    CHECK(iso(edit->getMinDate()) == "2026-11-05");
+    CHECK(iso(edit->getMaxDate()) == "2026-12-18");
+    REQUIRE(edit->getText() == "2026-11-15");
+    // and the day steps as before
+    CHECK(scene.step(9, keys::Up) == "2026-11-16");
+    CHECK(scene.events.count == 1);
+}
+
 TEST_CASE("DateEdit: a step from empty searches on by day")
 {
     Scene scene;
@@ -647,9 +693,11 @@ TEST_CASE("DateEdit: a year is 1..9999")
     CHECK(edit->getText() == "0001-01-01");
     edit->setDate(Date(10000, 1, 1));
     CHECK(edit->getText() == "9999-12-31");
-    // past the last year a step changes nothing; a five-digit year is no date
+    // past the last year a step changes nothing
     CHECK(scene.step(2, keys::Up) == "9999-12-31");
-    CHECK(scene.enter("20261-01-01") == "9999-12-31");
+    // a five-digit year is no date: it reverts, not clamped to 9999-12-31
+    edit->setDate(Date(2026, 1, 1));
+    CHECK(scene.enter("20261-01-01") == "2026-01-01");
     edit->setDate(Date(1, 1, 1));
     CHECK(scene.step(2, keys::Down) == "0001-01-01");
     CHECK(scene.events.count == 0);

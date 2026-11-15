@@ -28,8 +28,10 @@
  *  parent); a typed and a stepped value are clamped to the range, a step at
  *  the limit wrapping round to the range's other end; an empty text is no
  *  value only with setAllowEmpty, and a step from empty shows the empty-step
- *  value. onValueChanged fires once per real change by the user and never
- *  from a setter. The width is the format's at the font, whatever the text
+ *  value. A value, a range end or an empty-step value that is no date or
+ *  time (a 13th month, 24:00) is refused, keeping what the field had.
+ *  onValueChanged fires once per real change by the user and never from a
+ *  setter. The width is the format's at the font, whatever the text
  *  (an empty field's too) and whatever size the app asks for, and a step
  *  that keeps the string's width lays nothing out.
  */
@@ -499,6 +501,33 @@ TEST_CASE("SectionedEdit: empty allowed and not")
     // not allowed any more: the empty-step value
     edit->setAllowEmpty(false);
     CHECK(edit->getText() == "2026-06-01");
+}
+
+TEST_CASE("SectionedEdit: a value, a range end or an empty-step value that is none is refused")
+{
+    Scene scene;
+    SectionedEdit *edit=scene.edit;
+
+    edit->setFieldValue(dateValue(2026, 11, 15));
+    edit->setFieldRange(dateValue(2026, 11, 5), dateValue(2026, 12, 18));
+    edit->setEmptyStepValue(dateValue(2026, 11, 20));
+    scene.changes=0;
+
+    // a 13th month and a 30th of February are no dates, 24:00 no time
+    edit->setFieldValue(dateValue(2026, 13, 1));
+    CHECK(edit->getText() == "2026-11-15");
+    edit->setFieldRange(dateValue(2026, 2, 30), std::nullopt);
+    REQUIRE(edit->getFieldMin().has_value());
+    CHECK(edit->getFieldMin()->date.toIso() == "2026-11-05");
+    edit->setEmptyStepValue(dateValue(2026, 11, 31));
+    CHECK(edit->getEmptyStepValue().date.toIso() == "2026-11-20");
+    edit->setEmptyStepValue(timeValue(24, 0));
+    CHECK(edit->getEmptyStepValue().time.toText() == "00:00");
+    // so a step from empty shows the last good one
+    edit->setAllowEmpty(true);
+    edit->setFieldValue(std::nullopt);
+    CHECK(scene.step(9, keys::Up) == "2026-11-20");
+    CHECK(scene.changes == 1);
 }
 
 TEST_CASE("SectionedEdit: the width is the format's, and a step of the same width lays nothing out")

@@ -55,15 +55,16 @@ namespace internal
 //! time: minute step) after it acceptsValue() takes. A step whose value the
 //! range clamps or acceptsValue() refuses is taken further in its direction
 //! until one is accepted, or not at all if none is; a year or month step
-//! goes on from the day it began with, so January 30 refused on February 28
-//! tries March 30.
+//! (the day section's PageUp and PageDown included) goes on from the day it
+//! began with, so January 30 refused on February 28 tries March 30.
 //!
 //! **The parse** is lenient. A date's digits are three groups split by
 //! anything that is no digit, read in the format's order of year, month and
 //! day ("2026-11-1" for YYYY-MM-DD, "11/1/2026" for M/D/YYYY), or one group
 //! of 8 (or 6) digits split at the format's widths ("20261101"); a year of
-//! one or two digits is in 2000-2099, and one of five or more is no date. A time is TimeOfDay::fromText's
-//! ("1430", "2:30 pm"), in either clock. A letter in a date is no date.
+//! one or two digits is in 2000-2099, and one of five or more is no date. A
+//! time is TimeOfDay::fromText's ("1430", "2:30 pm"), in either clock. A
+//! letter in a date is no date.
 //! A parsed value is clamped to setFieldRange(); one acceptsValue() refuses,
 //! and text that is no value, revert to the last value, as Escape does when
 //! the text is not the value's. An empty text is no value when
@@ -134,23 +135,28 @@ public:
     const std::vector<Section> &getSections() const { return m_sections; }
 
     //! Sets the value, clamped to the range, with no event; empty only when
-    //! setAllowEmpty() allows it (else it is ignored). The text shows it.
+    //! setAllowEmpty() allows it (else it is ignored), and a value that is no
+    //! date or time (a 13th month, 24:00) is ignored. The text shows it.
     void setFieldValue(const std::optional<Value> &value);
     const std::optional<Value> &getFieldValue() const { return m_value; }
 
     //! The values the field takes, both ends included; either may be empty
-    //! for none. The value is clamped at once, with no event.
+    //! for none. The value is clamped at once, with no event. An end that is
+    //! no date or time refuses the call, the range and the value kept.
     void setFieldRange(const std::optional<Value> &min, const std::optional<Value> &max);
     const std::optional<Value> &getFieldMin() const { return m_min; }
     const std::optional<Value> &getFieldMax() const { return m_max; }
 
     //! Whether an empty text is a value (no value). Off by default: a field
-    //! holds a value from the start (setEmptyStepValue's).
+    //! holds a value from the start, 1970-01-01 00:00 until one is set.
     void setAllowEmpty(bool allow);
     bool allowsEmpty() const { return m_allowEmpty; }
 
-    //! What a step from an empty field shows, and the value a field that may
-    //! not be empty starts with: 1970-01-01 00:00 unless set.
+    //! What a step from an empty field shows (clamped, then the first value
+    //! on that acceptsValue() takes), and what setAllowEmpty(false) gives a
+    //! field that is empty: 1970-01-01 00:00 unless set. A new field's value
+    //! is not it (setFieldValue sets that). A value that is no date or time
+    //! is ignored.
     void setEmptyStepValue(const Value &value);
     const Value &getEmptyStepValue() const { return m_emptyStepValue; }
 

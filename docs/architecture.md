@@ -4892,9 +4892,12 @@ two programs and the draws. What follows describes both together:
     and AP last, the order the parse reads, so a field can read back what it shows
     (`mm:HH` and `AP h:mm` are refused); anything else is refused, the format kept. A
     date's year is 1..9999 whatever the range (`clampValue`), so it fits the four
-    digits of the width, and a typed year of five digits is no date. The section under the caret is found from the text as typed, not from the
-    format: its alphanumeric runs, the caret in a run or at its end being in it and one
-    between two in the next (`sectionAt`), so it works on half-typed text too.
+    digits of the width, and a typed year of five digits is no date. A value, a range
+    end or a `setToday` that is no date or time (a 13th month, 25:00) is refused, the
+    field keeping what it had, so nothing shown or stepped is ever invalid. The section
+    under the caret is found from the text as typed, not from the format: its
+    alphanumeric runs, the caret in a run or at its end being in it and one between two
+    in the next (`sectionAt`), so it works on half-typed text too.
   - *Stepping.* Up and Down step that section by one, wrapping inside it with no carry
     (QDateTimeEdit's rule): the day 31 to 1 of the same month (30 to 1 in a 30-day
     one), December to January of the same year, the minute 59 to 0 of the same hour,
@@ -4907,9 +4910,9 @@ two programs and the draws. What follows describes both together:
     whose value the range clamps back, or that the filter refuses, goes on in its
     direction (a weekday-only field steps Friday to Monday; at a limit a day wraps
     round to the range's other end), and changes nothing when no value is taken. A
-    year or month step goes on from the day it began with, clamped only for the value
-    tried, so a weekday-only January 30 refused on February 28 goes to March 30, not
-    March 28. A step from empty searches on a day at a time (a minute step for a time)
+    year or month step (the day section's PageUp and PageDown included) goes on from
+    the day it began with, clamped only for the value tried, so a weekday-only January
+    30 refused on February 28 goes to March 30, not March 28. A step from empty searches on a day at a time (a minute step for a time)
     from `setToday`'s value to the first the filter takes, whatever the section. A or
     P typed in the AP section sets it. The caret stays in its section, as far into it
     as it was. Typed text is read before a step, so Up after typing steps what was
@@ -4945,7 +4948,9 @@ two programs and the draws. What follows describes both together:
     1) at z+1 in the `DateEditButton`, `DateEditButtonHover` and
     `DateEditButtonDisabled` text colours; the field itself draws as a TextBox. A press
     on it, Alt+Down or F4 open a `Popup` made on the first open (`Base::createPopup`,
-    so the field owns it) and kept, holding an `internal::DateEditCalendar` (a
+    so the field owns it) and kept (not while the field is disabled or read-only:
+    then the button is disabled with it and nothing opens the calendar, an open one
+    closing), holding an `internal::DateEditCalendar` (a
     `Calendar` in Single mode, docked so the popup is its size) opened below the field:
     each open reads typed text first, then gives the calendar the month view, the
     field's range as its limits, its filter, its today and the date selected with the
@@ -4958,8 +4963,9 @@ two programs and the draws. What follows describes both together:
     first): it closes the popup with nothing changed and focuses the field. A press
     outside closes it as any popup's does. The range and the filter are the calendar's,
     so a typed and a picked date agree. The canvas shows one popup at a time, so a
-    DateEdit inside a Popup closes it when its calendar opens, as a ColorEdit's picker
-    does. A TimeEdit has no popup: the toolkits' time pickers are a spinning list per
+    DateEdit inside a Popup opens no calendar: the open closes the host popup, which
+    hides the field, and the calendar closes with its hidden anchor, as a ColorEdit's
+    picker does in a Popup. A TimeEdit has no popup: the toolkits' time pickers are a spinning list per
     part or a clock face, for touch, and a typed time with stepping and a coarse minute
     step picks what they pick.
   `tests/unit/sectionedEdit.cpp`, `dateEdit.cpp` and `timeEdit.cpp` pin the formats,

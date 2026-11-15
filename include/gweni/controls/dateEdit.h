@@ -87,8 +87,10 @@ private:
 //! press puts it. The range and the filter are the calendar's, so a typed
 //! date and a picked one agree.
 //!
-//! The canvas shows one popup at a time: a DateEdit inside a Popup closes
-//! that popup when its calendar opens, as a ColorEdit's picker does.
+//! The canvas shows one popup at a time, so a DateEdit inside a Popup opens
+//! no calendar: the open closes the host popup, which hides the field, and
+//! the calendar closes with its hidden anchor, as a ColorEdit's picker does
+//! in a Popup.
 //!
 //! It draws as a TextBox, its width the format's at its font with the button
 //! (see SectionedEdit).
@@ -112,7 +114,8 @@ public:
 
     //! The dates the field takes, both ends included, either empty for none
     //! (the calendar's setDateLimits). The date is clamped at once, with no
-    //! event.
+    //! event. An end that is no date (a 13th month) refuses the call, the
+    //! range and the date kept.
     void setRange(const std::optional<Date> &min, const std::optional<Date> &max);
     std::optional<Date> getMinDate() const;
     std::optional<Date> getMaxDate() const;
@@ -124,10 +127,12 @@ public:
     //! Whether the field takes \p date: in the range and the filter's.
     bool isDateEnabled(const Date &date) const;
 
-    //! The app's today: what a step from an empty field shows (clamped), and
-    //! the date a field that may not be empty starts with when it has none.
-    //! There is no clock in gweni (gweni/date.h): an app that wants today
-    //! says which day it is. 1970-01-01 until set.
+    //! The app's today: what a step from an empty field shows (clamped, then
+    //! the first day on the filter takes), the date an empty field's calendar
+    //! opens on, the calendar's today, and what setAllowEmpty(false) gives an
+    //! empty field. A new field's date is not it (setDate sets that). There
+    //! is no clock in gweni (gweni/date.h): an app that wants today says
+    //! which day it is. 1970-01-01 until set; a date that is none is ignored.
     void setToday(const Date &today);
     const Date &getToday() const { return getEmptyStepValue().date; }
 

@@ -57,7 +57,8 @@ public:
     bool isTwelveHour() const;
 
     //! The times the field takes, both ends included, either empty for none.
-    //! The time is clamped at once, with no event.
+    //! The time is clamped at once, with no event. An end that is no time
+    //! (25:00) refuses the call, the range and the time kept.
     void setRange(const std::optional<TimeOfDay> &min, const std::optional<TimeOfDay> &max);
     std::optional<TimeOfDay> getMinTime() const;
     std::optional<TimeOfDay> getMaxTime() const;

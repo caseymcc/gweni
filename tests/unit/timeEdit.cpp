@@ -16,7 +16,8 @@
  *  The lenient parse on Return in both clocks ("1430", "2:30 pm", "12 am" is
  *  00:00, "12 pm" 12:00, "0930"), and text that is no time ("25:00",
  *  "2:30 xm", "0:30 am", "") reverting on Return, on the focus leaving and on
- *  Escape. setRange clamping a typed and a stepped time. Empty allowed and
+ *  Escape. setRange clamping a typed and a stepped time, and refusing an end
+ *  that is no time (25:00, 10:60). Empty allowed and
  *  not. The minute step: Up and Down by it to its next multiple, a typed
  *  minute kept. onValueChanged once per real change by the user, never from
  *  setTime, setRange, setTwelveHour or setMinuteStep. A format the parse
@@ -37,6 +38,12 @@ using controls::TimeEdit;
 
 namespace
 {
+
+//! \p time on a 24-hour clock, "none" for no time.
+String timeText(const std::optional<TimeOfDay> &time)
+{
+    return time?time->toText():String("none");
+}
 
 //! Counts onValueChanged.
 struct Changes: public event::Handler
@@ -273,6 +280,25 @@ TEST_CASE("TimeEdit: the range clamps a typed and a stepped time")
     edit->setRange(TimeOfDay(10, 0), std::nullopt);
     CHECK(edit->getText() == "10:00");
     CHECK(scene.events.count == 4);
+}
+
+TEST_CASE("TimeEdit: an invalid range end is refused")
+{
+    Scene scene;
+    TimeEdit *edit=scene.edit;
+
+    edit->setTime(TimeOfDay(12, 0));
+    edit->setRange(TimeOfDay(9, 0), TimeOfDay(17, 30));
+    // 25:00 and 10:60 are no times: the call is refused, the range and the
+    // time as they were
+    edit->setRange(TimeOfDay(25, 0), std::nullopt);
+    CHECK(timeText(edit->getMinTime()) == "09:00");
+    CHECK(timeText(edit->getMaxTime()) == "17:30");
+    edit->setRange(std::nullopt, TimeOfDay(10, 60));
+    CHECK(timeText(edit->getMinTime()) == "09:00");
+    CHECK(timeText(edit->getMaxTime()) == "17:30");
+    CHECK(edit->getText() == "12:00");
+    CHECK(scene.events.count == 0);
 }
 
 TEST_CASE("TimeEdit: empty allowed and not")
