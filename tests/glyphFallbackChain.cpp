@@ -86,7 +86,7 @@ struct Chain
         ftgl::texture_atlas_delete(atlas);
     }
 
-    static ftgl::texture_font_t *open(void *data, size_t index)
+    static ftgl::texture_font_t *open(void *data, size_t index, uint32_t)
     {
         Chain &self=*static_cast<Chain *>(data);
 

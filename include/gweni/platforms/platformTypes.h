@@ -442,6 +442,7 @@ public:
         Font,           //!< Font resource.
         Texture,        //!< Texture resource.
         Other,          //!< Other type of resource.
+        LazyFont,       //!< A font beside the executable in resources-lazy/.
         MaxType
     };
 
@@ -480,6 +481,15 @@ public:
     //! chain of every face without one of its own. A loader that draws no text
     //! from faces of its own ignores it (renderer::SlotRenderer's is the one).
     virtual void setGlyphFallback(const gweni::String &face, const std::vector<gweni::String> &chain) {}
+
+    //! A range-gated chain face, read only on a miss within unicodeRange
+    //! (CSS U+XXXX or U+XXXX-YYYY entries). file is in the LazyFont resource
+    //! directory. A bad declaration returns false and leaves the face unset.
+    virtual bool setGlyphFallbackSource(const gweni::String &face, const gweni::String &file,
+        const gweni::String &unicodeRange) { return true; }
+    //! Deterministic capture setup: read declared chain files before any text
+    //! is measured. This makes no atlas or chain font.
+    virtual bool preloadGlyphFallbacks() { return true; }
 
     //! A font family: a Font whose facename is the family's draws its bold,
     //! italic and bold italic text from the family's faces, a style the family

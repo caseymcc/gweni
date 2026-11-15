@@ -549,7 +549,7 @@ texture_font_load_glyph_from( texture_font_t * self,
         size_t n;
 
         for( n = 0; !found && self->fallback
-             && (chained = self->fallback( self->fallback_data, n )); ++n )
+             && (chained = self->fallback( self->fallback_data, n, utf8_to_utf32( codepoint ) )); ++n )
         {
             if( chained != self )
                 found = texture_font_get_glyph_present( chained, codepoint, phase );

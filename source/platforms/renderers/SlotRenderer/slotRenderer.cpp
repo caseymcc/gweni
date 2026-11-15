@@ -29,6 +29,9 @@
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <charconv>
+#include <cctype>
+#include <sstream>
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -285,6 +288,62 @@ void SlotRenderer::setGlyphFallback(const String &face, const std::vector<String
     }
 }
 
+bool SlotRenderer::setGlyphFallbackSource(const String &face, const String &file, const String &unicodeRange)
+{
+    GlyphSource source;
+    source.file=file;
+    std::istringstream input(unicodeRange);
+    String entry;
+    auto hex=[](const String &value, uint32_t &number)
+    {
+        const auto parsed=std::from_chars(value.data(), value.data()+value.size(), number, 16);
+        return !value.empty() && parsed.ec == std::errc() && parsed.ptr == value.data()+value.size();
+    };
+    while(std::getline(input, entry, ','))
+    {
+        entry.erase(std::remove_if(entry.begin(), entry.end(),
+            [](unsigned char c) { return std::isspace(c); }), entry.end());
+        if(entry.size() < 3 || (entry[0] != 'U' && entry[0] != 'u') || entry[1] != '+')
+            return false;
+        const size_t dash=entry.find('-');
+        uint32_t first=0, last=0;
+        if(!hex(entry.substr(2, dash == String::npos?dash:dash-2), first))
+            return false;
+        last=first;
+        if(dash != String::npos && !hex(entry.substr(dash+1), last))
+            return false;
+        if(first > last || last > 0x10FFFF)
+            return false;
+        source.ranges.emplace_back(first, last);
+    }
+    if(face.empty() || file.empty() || source.ranges.empty() || unicodeRange.back() == ',')
+        return false;
+    auto existing=m_glyphSources.find(face);
+    if(existing != m_glyphSources.end() && existing->second.file == file && existing->second.ranges == source.ranges)
+        return true;
+    m_glyphSources[face]=std::move(source);
+    reloadFonts([&](const FontData &fontData)
+    {
+        const auto chain=glyphFallback(fontData.faceName);
+        return std::find(chain.begin(), chain.end(), face) != chain.end();
+    });
+    return true;
+}
+
+bool SlotRenderer::preloadGlyphFallbacks()
+{
+    bool loaded=true;
+    std::unordered_set<String> faces;
+    for(const auto &[face, source]:m_glyphSources)
+        faces.insert(face);
+    for(const auto &[face, chain]:m_glyphFallback)
+        faces.insert(chain.begin(), chain.end());
+    for(const String &face:faces)
+        if(!glyphFallbackBlob(face))
+            loaded=false;
+    return loaded;
+}
+
 void SlotRenderer::setFontFamily(const String &family, const FontFamily &faces)
 {
     auto it=m_fontFamilies.find(family);
@@ -412,7 +471,7 @@ void SlotRenderer::attachGlyphChain(FontData &fontData)
     fontData.markup.font->fallback_data=fontData.glyphChain.get();
 }
 
-ftgl::texture_font_t *SlotRenderer::glyphChainFont(void *data, size_t index)
+ftgl::texture_font_t *SlotRenderer::glyphChainFont(void *data, size_t index, uint32_t codepoint)
 {
     GlyphChain &chain=*static_cast<GlyphChain *>(data);
     const ftgl::texture_font_t *primary=chain.primary;
@@ -421,6 +480,11 @@ ftgl::texture_font_t *SlotRenderer::glyphChainFont(void *data, size_t index)
     for(GlyphChain::Link &link:chain.links)
     {
         if(link.failed)
+            continue;
+        auto source=chain.renderer->m_glyphSources.find(link.face);
+        if(source != chain.renderer->m_glyphSources.end() &&
+            !std::any_of(source->second.ranges.begin(), source->second.ranges.end(),
+                [codepoint](const auto &range) { return codepoint >= range.first && codepoint <= range.second; }))
             continue;
 
         if(link.font == nullptr)
@@ -466,11 +530,14 @@ ftgl::texture_font_t *SlotRenderer::glyphChainFont(void *data, size_t index)
 
 std::shared_ptr<const std::vector<unsigned char>> SlotRenderer::glyphFallbackBlob(const String &face)
 {
-    const String path=getResourcePaths().getPath(ResourcePaths::Type::Font, regularFaceName(face));
-    std::weak_ptr<const std::vector<unsigned char>> &shared=m_glyphFallbackBlobs[path];
+    auto source=m_glyphSources.find(face);
+    const String path=source == m_glyphSources.end()?
+        getResourcePaths().getPath(ResourcePaths::Type::Font, regularFaceName(face)):
+        getResourcePaths().getPath(ResourcePaths::Type::LazyFont, source->second.file);
+    auto &shared=m_glyphFallbackBlobs[path];
 
-    if(std::shared_ptr<const std::vector<unsigned char>> blob=shared.lock())
-        return blob;
+    if(shared)
+        return shared;
     if(m_failedGlyphFallbackFiles.count(path) > 0)
         return nullptr;
 

@@ -597,6 +597,9 @@ public:
     //! loaded again with their owners (their runs laid out again on the next
     //! frame, through textLayoutSerial()). None is set by default.
     void setGlyphFallback(const gweni::String &face, const std::vector<gweni::String> &chain) override;
+    bool setGlyphFallbackSource(const gweni::String &face, const gweni::String &file,
+        const gweni::String &unicodeRange) override;
+    bool preloadGlyphFallbacks() override;
     //! The chain a face's fonts take: its own, else the default, less the face
     //! itself and repeats
     std::vector<gweni::String> glyphFallback(const gweni::String &face) const;
@@ -1011,10 +1014,10 @@ protected:
     gweni::String regularFaceName(const gweni::String &face) const;
     //! Gives a just-made font its face's glyph chain, if the face has one
     void attachGlyphChain(FontData &fontData);
-    //! texture_font_t::fallback: the index-th chain font that opens, opening the
-    //! links up to it that are not yet; nullptr past the last
-    static ftgl::texture_font_t *glyphChainFont(void *data, size_t index);
-    //! A chain face's file in memory, read once while any font holds it; nullptr
+    //! texture_font_t::fallback: the index-th chain font eligible for the
+    //! missed codepoint, opening it as needed; nullptr past the last.
+    static ftgl::texture_font_t *glyphChainFont(void *data, size_t index, uint32_t codepoint);
+    //! A chain face's file in memory, read once per renderer session; nullptr
     //! (logged the first time) if it cannot be read
     std::shared_ptr<const std::vector<unsigned char>> glyphFallbackBlob(const gweni::String &face);
     //! flush()'s: erases the fonts idle for kIdleFontFlushes (FontData::idleSince)
@@ -1769,8 +1772,14 @@ private:
     std::unordered_set<gweni::String> m_reportedFaces;
     //! setGlyphFallback's chains by face, "" the default
     std::map<gweni::String, std::vector<gweni::String>> m_glyphFallback;
-    //! The chain faces' files by path, alive while a GlyphChain::Link holds one
-    std::unordered_map<gweni::String, std::weak_ptr<const std::vector<unsigned char>>> m_glyphFallbackBlobs;
+    struct GlyphSource
+    {
+        gweni::String file;
+        std::vector<std::pair<uint32_t, uint32_t>> ranges;
+    };
+    std::unordered_map<gweni::String, GlyphSource> m_glyphSources;
+    //! Retained through the renderer's session, including capture preloads.
+    std::unordered_map<gweni::String, std::shared_ptr<const std::vector<unsigned char>>> m_glyphFallbackBlobs;
     //! Chain face files that could not be read (logged once) or opened
     std::unordered_set<gweni::String> m_failedGlyphFallbackFiles;
     size_t m_glyphFallbackFilesRead=0;

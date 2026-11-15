@@ -22111,6 +22111,11 @@ int main(int argc, char *argv[])
     bool degraded=!resourcesFound;
     if(!skin->init("DefaultSkin.json"))
         degraded=true;
+#ifndef __EMSCRIPTEN__
+    if(capturing && !renderer->preloadGlyphFallbacks())
+        degraded=true;
+#endif
+
     if(gweni::capture::loadDefaultFont(*renderer, skin->getDefaultFont()) != gweni::Font::Status::Loaded)
         degraded=true;
 

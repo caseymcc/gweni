@@ -1135,6 +1135,20 @@ if(TARGET gweni_capture)
         gweni_capture
         doctest::doctest)
 
+    if(NOT EMSCRIPTEN)
+        get_property(test_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+        set(test_lazy_dir ${CMAKE_CURRENT_BINARY_DIR}/resources-lazy)
+        if(test_multi_config)
+            set(test_lazy_dir ${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/resources-lazy)
+        endif()
+        add_custom_target(gweni_test_lazy_resources
+            COMMAND ${CMAKE_COMMAND}
+                -DSRC=${GWENI_LAZY_RESOURCE_DIR}
+                -DDST=${test_lazy_dir}
+                -P ${GWENI_SOURCE_DIR}/cmake/mirrorDirectory.cmake
+            VERBATIM)
+        add_dependencies(gweni_unittests gweni_test_lazy_resources)
+    endif()
     if(EMSCRIPTEN)
         # a page (gweni_unittests.html), run in the browser as web_unittests
         # below, with resources/ preloaded where main.cpp's CurrentPath

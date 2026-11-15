@@ -6,8 +6,9 @@
  *  The textured skin's font roles, from resources/DefaultSkin.json:
  *  "monoFont" is getDefaultMonoFont(), DejaVu Sans Mono 11, a fixed-width face
  *  that Font{facename="DejaVuSansMono"} selects as it does any face, and
- *  "fontFallback"'s default chain [DejaVuSansMono] is the renderer's glyph
- *  fallback chain for every other face (the mono face's own is empty). init
+ *  "fontFallback"'s default chain [DejaVuSansMono, DroidSansFallbackFull] is
+ *  the renderer's glyph fallback chain for every other face (mono uses Droid
+ *  alone). Droid's ranges guard its lazy file. init
  *  opens no chain face and loads no mono font, so a Latin UI reads nothing
  *  more than it did. From a copy of resources/ without DejaVuSansMono.ttf,
  *  init fails (a capture's exit 2, tests/missingResources.cmake's nomono
@@ -67,9 +68,9 @@ TEST_CASE("Skin fonts: monoFont is getDefaultMonoFont(), a fixed-width face, and
 
     CHECK(mono.facename == "DejaVuSansMono");
     CHECK(mono.size == 11.0f);
-    CHECK(on.renderer->glyphFallback("OpenSans") == std::vector<String>{ "DejaVuSansMono" });
-    CHECK(on.renderer->glyphFallback("LiberationSans-Regular") == std::vector<String>{ "DejaVuSansMono" });
-    CHECK(on.renderer->glyphFallback("DejaVuSansMono").empty());
+    CHECK(on.renderer->glyphFallback("OpenSans") == std::vector<String>{ "DejaVuSansMono", "DroidSansFallbackFull" });
+    CHECK(on.renderer->glyphFallback("LiberationSans-Regular") == std::vector<String>{ "DejaVuSansMono", "DroidSansFallbackFull" });
+    CHECK(on.renderer->glyphFallback("DejaVuSansMono") == std::vector<String>{ "DroidSansFallbackFull" });
 
     // init held the default font alone: no mono atlas, no chain face read
     const size_t fonts=on.renderer->getLoadedFontCount();
@@ -106,7 +107,7 @@ TEST_CASE("Skin fonts: without the mono face's file, init fails, mono is the def
         CHECK_FALSE(on.skin->init("DefaultSkin.json"));
         CHECK(on.skin->getDefaultMonoFont().facename == on.skin->getDefaultFont().facename);
         CHECK(on.skin->getDefaultMonoFont().size == 11.0f);
-        CHECK(on.renderer->glyphFallback("OpenSans").empty());
+        CHECK(on.renderer->glyphFallback("OpenSans") == std::vector<String>{ "DroidSansFallbackFull" });
 
         // the default font still loads, and a missing glyph is its own box
         const Font &font=on.skin->getDefaultFont();

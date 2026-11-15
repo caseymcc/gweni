@@ -508,6 +508,24 @@ bool TexturedSkin::loadFonts(const json::Value &jsonDoc)
                 }
                 for(const json::Value &face:member.value.GetArray())
                 {
+                    if(face.IsObject() && face.HasMember("face") && face["face"].IsString() &&
+                        face.HasMember("file") && face["file"].IsString() &&
+                        face.HasMember("unicodeRange") && face["unicodeRange"].IsString())
+                    {
+                        const std::string link=face["face"].GetString();
+                        // A lazy face is declared, not stat'ed or opened by skin
+                        // setup. Its first eligible miss (or capture preload)
+                        // reports a missing file.
+                        if(getRenderer()->getLoader().setGlyphFallbackSource(link,
+                            face["file"].GetString(), face["unicodeRange"].GetString()))
+                            chain.push_back(link);
+                        else
+                        {
+                            std::cerr<<"Invalid glyph fallback unicodeRange for "<<link<<"\n";
+                            found=false;
+                        }
+                        continue;
+                    }
                     if(!face.IsString())
                     {
                         std::cerr<<"skin \"fontFallback\" \""<<name<<"\" must be an array of face names\n";

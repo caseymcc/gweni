@@ -98,6 +98,9 @@ add_custom_target(gweni_example_resources
     COMMAND ${CMAKE_COMMAND}
         -DSRC=${GWENI_SOURCE_DIR}/resources -DDST=${example_resource_dir}
         -P ${GWENI_SOURCE_DIR}/cmake/mirrorDirectory.cmake
+    COMMAND ${CMAKE_COMMAND}
+        -DSRC=${GWENI_LAZY_RESOURCE_DIR} -DDST=${example_resource_dir}/../resources-lazy
+        -P ${GWENI_SOURCE_DIR}/cmake/mirrorDirectory.cmake
     COMMENT "Mirroring resources/ next to the examples"
     VERBATIM)
 add_dependencies(${example_name} gweni_example_resources)

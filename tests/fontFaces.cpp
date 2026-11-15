@@ -338,14 +338,14 @@ TEST_CASE("Font faces: a family set after its font is loaded loads it again in t
     fresh.renderer.freeFont(bold);
 }
 
-TEST_CASE("Font faces: \"mono\" is DejaVu Sans Mono and the default chain is none of its own")
+TEST_CASE("Font faces: \"mono\" is DejaVu Sans Mono, excludes itself from the chain and keeps CJK")
 {
     Fresh fresh("resources", true);
 
     REQUIRE(fresh.skinInit);
-    CHECK(fresh.renderer.glyphFallback("mono").empty());
-    CHECK(fresh.renderer.glyphFallback("DejaVuSansMono").empty());
-    CHECK(fresh.renderer.glyphFallback("OpenSans") == std::vector<String>{ "DejaVuSansMono" });
+    CHECK(fresh.renderer.glyphFallback("mono") == std::vector<String>{ "DroidSansFallbackFull" });
+    CHECK(fresh.renderer.glyphFallback("DejaVuSansMono") == std::vector<String>{ "DroidSansFallbackFull" });
+    CHECK(fresh.renderer.glyphFallback("OpenSans") == std::vector<String>{ "DejaVuSansMono", "DroidSansFallbackFull" });
 
     const Font mono=font("mono", 13.0f);
 

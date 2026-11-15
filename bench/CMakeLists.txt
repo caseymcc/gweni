@@ -46,6 +46,9 @@ add_custom_target(gweni_bench_resources
     COMMAND ${CMAKE_COMMAND}
         -DSRC=${GWENI_SOURCE_DIR}/resources -DDST=${bench_resource_dir}
         -P ${GWENI_SOURCE_DIR}/cmake/mirrorDirectory.cmake
+    COMMAND ${CMAKE_COMMAND}
+        -DSRC=${GWENI_LAZY_RESOURCE_DIR} -DDST=${bench_resource_dir}/../resources-lazy
+        -P ${GWENI_SOURCE_DIR}/cmake/mirrorDirectory.cmake
     COMMENT "Mirroring resources/ next to gweni_bench"
     VERBATIM)
 add_dependencies(gweni_bench gweni_bench_resources)

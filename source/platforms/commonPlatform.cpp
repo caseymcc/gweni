@@ -28,6 +28,13 @@ CurrentPath::CurrentPath(String const &resourceDir):
 
 String CurrentPath::getPath(Type type, String const &filename)
 {
+    if(type == Type::LazyFont)
+    {
+        String path=(fs::path(getExecutableDir())/"resources-lazy"/filename).string();
+        if(fs::path(path).extension() != ".ttf")
+            path+=".ttf";
+        return path;
+    }
     //    String filepath(m_resDir + filename);
     String filepath((fs::path(m_resDir)/filename).string());
 
@@ -48,6 +55,13 @@ RelativeToExecutablePaths::RelativeToExecutablePaths(String const &resourceDir):
 
 String RelativeToExecutablePaths::getPath(Type type, String const &filename)
 {
+    if(type == Type::LazyFont)
+    {
+        String path=(fs::path(getExecutableDir())/"resources-lazy"/filename).string();
+        if(fs::path(path).extension() != ".ttf")
+            path+=".ttf";
+        return path;
+    }
     String filepath((fs::path(m_resDir)/filename).string());
 
     if(type == Type::Font)

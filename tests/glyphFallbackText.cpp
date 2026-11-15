@@ -387,7 +387,7 @@ TEST_CASE("Glyph fallback: measureText and measureCarets measure the drawn run, 
     }
 }
 
-TEST_CASE("Glyph fallback: a face's file is read once for every font of it, while one holds it")
+TEST_CASE("Glyph fallback: a face's file is read once per renderer across font sizes and releases")
 {
     Fresh chained(TextAA::Grayscale, { "DejaVuSansMono" });
 
@@ -405,7 +405,8 @@ TEST_CASE("Glyph fallback: a face's file is read once for every font of it, whil
     CHECK(renderer.glyphFallbackFontsOpened() == 2);
     CHECK(renderer.glyphFallbackFilesRead() == 1);
 
-    // with both fonts gone, nothing holds the file: the next miss reads it again
+    // Bytes survive font releases, as they do a capture preload with no font
+    // open yet. Reopening an atlas does not read the file again.
     renderer.freeFont(small);
     renderer.freeFont(large);
     CHECK(renderer.getTextureFont(small) == nullptr);
@@ -414,7 +415,7 @@ TEST_CASE("Glyph fallback: a face's file is read once for every font of it, whil
     REQUIRE(static_cast<int>(renderer.loadFont(small)) == static_cast<int>(Font::Status::Loaded));
     renderer.measureText(small, arrow);
     CHECK(renderer.glyphFallbackFontsOpened() == 3);
-    CHECK(renderer.glyphFallbackFilesRead() == 2);
+    CHECK(renderer.glyphFallbackFilesRead() == 1);
     renderer.freeFont(small);
 }
 

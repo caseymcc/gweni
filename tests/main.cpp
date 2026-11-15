@@ -28,8 +28,11 @@
 #endif
 
 #include <gweni/platforms/commonPlatform.h>
+#include <gweni/utils/json.h>
 
 #include <cstdlib>
+#include <fstream>
+#include <iterator>
 #include <iostream>
 #include <string>
 
@@ -202,6 +205,37 @@ REGISTER_LISTENER("gweni_draw_state", 1, DrawStateListener);
 //! Loads OpenSans into the shared renderer and runs every case, then frees it.
 int runCases(doctest::Context &context, renderer::SlotRenderer *renderer)
 {
+#ifndef __EMSCRIPTEN__
+    // Read the configured chain files before any test lays out text. Use a
+    // temporary chain name so tests of an unconfigured shared renderer keep
+    // their original chain, while the blobs remain held for the session.
+    std::ifstream config("resources/DefaultSkin.json");
+    const std::string text((std::istreambuf_iterator<char>(config)), std::istreambuf_iterator<char>());
+    json::Document document;
+    document.Parse(text.c_str());
+    if(document.HasParseError() || !document.IsObject() || !document.HasMember("fontFallback"))
+        return EXIT_FAILURE;
+    std::vector<String> faces;
+    for(const auto &chain:document["fontFallback"].GetObject())
+    {
+        for(const auto &entry:chain.value.GetArray())
+        {
+            if(entry.IsString())
+                faces.emplace_back(entry.GetString());
+            else
+            {
+                const String face=entry["face"].GetString();
+                if(!renderer->setGlyphFallbackSource(face, entry["file"].GetString(), entry["unicodeRange"].GetString()))
+                    return EXIT_FAILURE;
+                faces.push_back(face);
+            }
+        }
+    }
+    renderer->setGlyphFallback("__capture_preload", faces);
+    if(!renderer->preloadGlyphFallbacks())
+        return EXIT_FAILURE;
+    renderer->setGlyphFallback("__capture_preload", {});
+#endif
     test::g_openSans.facename="OpenSans.ttf";
     test::g_openSans.size=11;
     test::setOpenSansFamily(*renderer);

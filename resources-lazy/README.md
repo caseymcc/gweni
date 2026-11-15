@@ -29,8 +29,13 @@ Add `--check` to check the manifest without rewriting it. The generator reads
 the font's Unicode cmap, excludes glyph 0 and non-scalar codepoints, merges
 contiguous coverage, and emits CSS `unicode-range` syntax. It needs neither
 fonttools nor a system font. `tests/fontRanges.py` independently checks its
-coverage against FreeType and checks the manifest's exact bytes.
+coverage against FreeType, checks the manifest's exact bytes, and requires
+the default and mono chains in `resources/DefaultSkin.json` to declare that
+same `unicodeRange`.
 
-This directory is the resource input for task #605. Runtime range declarations,
-native lazy reads, the web package, and capture preloading are added in its
-subsequent steps; configuration alone does not add the face to a glyph chain.
+Native examples, the bench and unit tests mirror the build-tree directory
+beside their executable. The default and mono glyph fallback chains declare
+the face's ranges and file there. A first miss within those ranges reads its
+bytes once per renderer; captures read all chain bytes before laying out text.
+Ordinary `--resources` overrides leave this separate directory beside the
+executable. The web's separate lazy package follows in task #605's web step.

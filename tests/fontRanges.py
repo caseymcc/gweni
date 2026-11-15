@@ -116,6 +116,14 @@ class FontRanges(unittest.TestCase):
         self.assertTrue({ord(cp) for cp in "单元测试あア"} <= codepoints)
         self.assertNotIn(0x10FFFF, codepoints)
         self.assertNotIn(ord("A"), codepoints)
+        skin = json.loads((ROOT / "resources/DefaultSkin.json").read_text())
+        for role in ("default", "DejaVuSansMono"):
+            lazy = skin["fontFallback"][role][-1]
+            self.assertEqual(lazy, {
+                "face": "DroidSansFallbackFull",
+                "file": "DroidSansFallbackFull",
+                "unicodeRange": json.loads(expected)["unicodeRange"],
+            })
 
 
 if __name__ == "__main__":

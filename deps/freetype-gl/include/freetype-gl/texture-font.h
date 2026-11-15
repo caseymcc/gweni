@@ -367,7 +367,7 @@ typedef struct texture_font_t
     /**
      * gweni: the glyph fallback chain. When this font's face has no glyph for
      * a codepoint (FT_Get_Char_Index gives 0, the codepoint not 0),
-     * texture_font_get_glyph(_phase) asks fallback(fallback_data, i) for the
+     * texture_font_get_glyph(_phase) asks fallback(fallback_data, i, codepoint) for the
      * chain's fonts in turn, i = 0, 1, ..., until it returns NULL, and takes
      * the glyph from the first one whose own face (or its own chain) has the
      * codepoint, at the same phase. Only when none has it does this font load
@@ -379,7 +379,7 @@ typedef struct texture_font_t
      * keeps a pointer to it in fallback_glyphs, so the next lookup of the
      * codepoint opens no face. NULL (the calloc default) is no chain.
      */
-    struct texture_font_t * (*fallback)( void * data, size_t index );
+    struct texture_font_t * (*fallback)( void * data, size_t index, uint32_t codepoint );
 
     /**
      * gweni: the first argument of every fallback call.
