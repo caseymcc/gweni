@@ -1387,6 +1387,8 @@ private:
         bool built=false;
         //! the view changed: made again from every slot and run at the next flush
         bool rebuild=false;
+        //! the view rect the grid covers; footprints are in device px from its origin
+        int x=0, y=0;
         int width=0, height=0;
         int cols=0, rows=0;
         std::vector<Cell> cells;
@@ -1425,8 +1427,10 @@ private:
     //! change of what sortActive() says
     void markSortStale();
     //! A slot's footprint: its quad's bounds in device px intersected with its
-    //! clip box and the view; empty for one that cannot show
+    //! clip box and the view, from the view's origin; empty for one that cannot show
     OverlapRect slotFootprint(size_t slot) const;
+    //! A device-px rect cut to the view, from the view's origin
+    OverlapRect viewFootprint(OverlapRect rect) const;
     //! A run's: its glyph quads' bounds intersected with its clip box and the
     //! view; empty for one that draws nothing
     OverlapRect runFootprint(size_t textId) const;
@@ -1666,8 +1670,9 @@ private:
     std::vector<TextRunBounds> m_textRunBounds;
     size_t m_textRunsCulled=0;
     void markTextVertexes(const TextRun &run);
-    //! Writes box into the run's glyph slots in use, marking only the ones that change.
-    void writeTextClipBoxes(const TextRun &run, const Box &box);
+    //! Writes box into the run's glyph slots in use, marking only the ones that change;
+    //! true if any did
+    bool writeTextClipBoxes(const TextRun &run, const Box &box);
     //! Moves the text id's run from its font's draw list to fontData's (nullptr: to none).
     void setTextRunFont(size_t textId, FontData *fontData);
     //! Rebuilds fontData's drawChunks from its textRuns.

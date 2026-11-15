@@ -1334,9 +1334,12 @@ overlay's refresh about 465. The modal scrim overlaps every cell, so while it is
 slot moved, shown or hidden anywhere on screen (a caret blink, a label behind the
 dialog given a wider text, each frame of a dialog drag) builds the schedule again,
 visiting about every item on screen (887 for 640 Labels behind a dialog); a settled
-frame builds nothing. A sorted text group's runs are drawn by font in the order
+frame builds nothing. The index's grid covers the view rect from its origin
+(`setViewRect`, any change of it building the index again), and a run re-emitted
+where it was, with its box, cull and drawn glyphs unchanged, is not looked at again. A sorted text group's runs are drawn by font in the order
 the fonts were loaded (`FontData::serial`), the same in every build. The chunks whose slots enter or leave the set build their ranges again and never
-merge a gap across a sorted slot; the fonts whose runs do, their draw lists (while
+merge a gap across a sorted slot (so a chunk can then exceed the ranges cap by one
+per island of sorted slots); the fonts whose runs do, their draw lists (while
 the set holds runs, a font's list gives each chunk room for one range per run of the
 font that draws, sorted ones included, since the runs taken out split its ranges and
 how many a chunk holds moves with what is under the slot). With no
@@ -2020,7 +2023,9 @@ two programs and the draws. What follows describes both together:
   loop), and `GWENI_UPLOAD_STATS=1` prints `N of M primitive slots drawn in R ranges
   (B chunks' ranges built)`; `gweni_bench` reports them as `primitive_slots_drawn`
   and `primitive_ranges`. The slots the sorted pass draws are left out of these ranges
-  ("Translucent slots: the sorted pass"). Slots are not moved (see "free-slot compaction" under "Not
+  ("Translucent slots: the sorted pass"), and a gap holding one is never merged, so
+  while the pass is active a chunk can hold more than the cap's ranges: one more per
+  island of sorted slots in it (one more draw each on Vulkan and without multi-draw). Slots are not moved (see "free-slot compaction" under "Not
   yet done") and ids are handed out lowest first, so before the runs, when a chunk's
   draw ended at its last shown slot, a control that took a slot after the rest (a
   hover surface, a newly shown page) held every hidden slot below it in the draw.

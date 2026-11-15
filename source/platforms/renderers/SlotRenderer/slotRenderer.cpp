@@ -231,7 +231,12 @@ void SlotRenderer::reloadFonts(const std::function<bool(const FontData &)> &whic
 
         reload.emplace_back(it->first.font, it->second.owners);
         for(size_t textId:it->second.textRuns)
+        {
             m_textRuns[textId].fontData=nullptr;
+            // the sorted schedule may hold this font: the run's new font
+            // (none until it is drawn again) makes the flush build it again
+            noteRunChanged(textId);
+        }
         it=eraseFont(it); // the atlas texture, then FontData's destructor deletes the manager
     }
 
@@ -1407,8 +1412,9 @@ void SlotRenderer::init()
 void SlotRenderer::setViewRect(const gweni::Rect &viewRect)
 {
     m_viewRect=viewRect;
-    // the overlap index's grid covers the view
-    if(m_overlap.built && ((viewRect.w != m_overlap.width) || (viewRect.h != m_overlap.height)))
+    // the overlap index's grid covers the view, from its origin
+    if(m_overlap.built && ((viewRect.x != m_overlap.x) || (viewRect.y != m_overlap.y) ||
+        (viewRect.w != m_overlap.width) || (viewRect.h != m_overlap.height)))
         m_overlap.rebuild=true;
 }
 
@@ -1734,6 +1740,15 @@ void SlotRenderer::markSortStale()
     m_sortedScheduleStale=true;
 }
 
+SlotRenderer::OverlapRect SlotRenderer::viewFootprint(OverlapRect rect) const
+{
+    rect.x0=std::max<int32_t>(rect.x0, m_overlap.x)-m_overlap.x;
+    rect.y0=std::max<int32_t>(rect.y0, m_overlap.y)-m_overlap.y;
+    rect.x1=std::min<int32_t>(rect.x1, m_overlap.x+m_overlap.width)-m_overlap.x;
+    rect.y1=std::min<int32_t>(rect.y1, m_overlap.y+m_overlap.height)-m_overlap.y;
+    return rect;
+}
+
 SlotRenderer::OverlapRect SlotRenderer::slotFootprint(size_t slot) const
 {
     OverlapRect rect;
@@ -1764,10 +1779,7 @@ SlotRenderer::OverlapRect SlotRenderer::slotFootprint(size_t slot) const
         rect.x1=std::min<int32_t>(rect.x1, box.x1);
         rect.y1=std::min<int32_t>(rect.y1, box.y1);
     }
-    rect.x0=std::max<int32_t>(rect.x0, 0);
-    rect.y0=std::max<int32_t>(rect.y0, 0);
-    rect.x1=std::min<int32_t>(rect.x1, m_overlap.width);
-    rect.y1=std::min<int32_t>(rect.y1, m_overlap.height);
+    rect=viewFootprint(rect);
     if(rect.empty())
         rect=OverlapRect();
     return rect;
@@ -1810,10 +1822,7 @@ SlotRenderer::OverlapRect SlotRenderer::runFootprint(size_t textId) const
         rect.x1=std::min<int32_t>(rect.x1, box.x1);
         rect.y1=std::min<int32_t>(rect.y1, box.y1);
     }
-    rect.x0=std::max<int32_t>(rect.x0, 0);
-    rect.y0=std::max<int32_t>(rect.y0, 0);
-    rect.x1=std::min<int32_t>(rect.x1, m_overlap.width);
-    rect.y1=std::min<int32_t>(rect.y1, m_overlap.height);
+    rect=viewFootprint(rect);
     if(rect.empty())
         rect=OverlapRect();
     return rect;
@@ -1986,6 +1995,8 @@ void SlotRenderer::buildOverlapIndex()
 {
     OverlapIndex &index=m_overlap;
 
+    index.x=m_viewRect.x;
+    index.y=m_viewRect.y;
     index.width=std::max(m_viewRect.w, 0);
     index.height=std::max(m_viewRect.h, 0);
     index.cols=(index.width+OverlapIndex::kCellSide-1) >> OverlapIndex::kCellLog2;
@@ -2449,9 +2460,18 @@ void SlotRenderer::recountPrimitiveChunks()
             if(m_primitiveChunks.size() <= chunk)
                 m_primitiveChunks.resize(chunk+1);
             ++m_primitiveChunks[chunk].visible;
-            if(slotSorted(slot))
-                ++m_primitiveChunks[chunk].sorted;
         }
+    }
+    // a chunk's sorted count is the sorted set's slots in it, visible or not (one
+    // hidden since the set was built leaves it at the next build, which counts
+    // it out)
+    for(size_t slot:m_overlap.sortedSlots)
+    {
+        const size_t chunk=slot/m_chunkSlots;
+
+        if(m_primitiveChunks.size() <= chunk)
+            m_primitiveChunks.resize(chunk+1);
+        ++m_primitiveChunks[chunk].sorted;
     }
     m_sortedScheduleStale=true;
 }
@@ -4173,8 +4193,10 @@ void SlotRenderer::markTextVertexes(const TextRun &run)
         m_dirtyTextVertexSlots.mark(run.start+i);
 }
 
-void SlotRenderer::writeTextClipBoxes(const TextRun &run, const Box &box)
+bool SlotRenderer::writeTextClipBoxes(const TextRun &run, const Box &box)
 {
+    bool written=false;
+
     for(size_t i=0; i<run.glyphs; ++i)
     {
         Box &slotBox=m_textClipBoxes[run.start+i];
@@ -4184,7 +4206,9 @@ void SlotRenderer::writeTextClipBoxes(const TextRun &run, const Box &box)
 
         slotBox=box;
         m_dirtyTextClipSlots.mark(run.start+i);
+        written=true;
     }
+    return written;
 }
 
 void SlotRenderer::setTextRunFont(size_t textId, FontData *fontData)
@@ -4558,7 +4582,10 @@ void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::
                 colorTextRun(run, kept, true);
         }
 
-        if((pos.x != run.position.x) || (pos.y != run.position.y) || (zIndex != run.zIndex))
+        const bool moved=(pos.x != run.position.x) || (pos.y != run.position.y) || (zIndex != run.zIndex);
+        const bool culledBefore=run.culled;
+
+        if(moved)
         {
             const gweni::Point delta=pos-run.position;
             // the same offsets as the rebuild below gives
@@ -4593,10 +4620,14 @@ void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::
         // nothing, and the run is culled or drawn again from it
         const Box box=makeClipBox();
 
-        writeTextClipBoxes(run, box);
+        const bool boxChanged=writeTextClipBoxes(run, box);
+
         cullTextRun(textId, run, box);
         markTextDrawList(run, drawnBefore);
-        noteRunChanged(textId);
+        // the overlap index looks again only at a run whose footprint or z can
+        // have changed, not at every run re-emitted as it was
+        if(moved || boxChanged || (run.culled != culledBefore) || (drawnRange(run) != drawnBefore))
+            noteRunChanged(textId);
         return;
     }
 

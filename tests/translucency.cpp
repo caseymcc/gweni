@@ -58,7 +58,15 @@
  *                      not translucent: the sorted pass holds only the one
  *                      translucent rect beside them;
  *    run redrawn       a run behind a panel drawn again in another colour (the
- *                      same glyph slots and footprint) builds no new schedule.
+ *                      same glyph slots and footprint) builds no new schedule;
+ *    font reloaded     a face's fonts reloaded (a new chain) under a sorted
+ *                      run and flushed before it is drawn again build the
+ *                      schedule again (no freed font drawn);
+ *    view origin       a view rect at x 64 indexes a panel and a run on screen
+ *                      past device x w;
+ *    chunks recounted  setIndexChunkSlots with a sorted slot culled in the
+ *                      frame counts its chunk's sorted slots right, so the
+ *                      next frames draw no empty chunk.
  *
  *  The renderer is shared with the other cases, so each case releases its ids
  *  and puts the chunk size back when it ends.
@@ -580,4 +588,83 @@ TEST_CASE("Translucency: a sorted run drawn again in its glyph slots builds no n
 
     CHECK(renderer.getFrameStats().sortedScheduleBuilds == 0);
     CHECK(badPixels(frame, drawReference({back, text(run, Point(30, 130), "HHHH", Color(250, 120, 120, 255), 2)})) == 0);
+}
+
+TEST_CASE("Translucency: a font reloaded under a sorted run, flushed before the run is drawn again")
+{
+    Ids ids;
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
+    const std::vector<size_t> prims=ids.primitives(1);
+    const size_t run=ids.text();
+
+    drawScene({rect(prims[0], Rect(20, 20, 200, 80), panel, 20), text(run, Point(30, 30), "Hello", ink, 10)});
+    REQUIRE(renderer.getFrameStats().sortedRuns == 1);
+
+    // a new chain for the default face reloads its fonts, the run's included,
+    // which then has no font until it is drawn again: the schedule that held
+    // its font is built again, drawing no freed font
+    const std::vector<gweni::String> chain=renderer.glyphFallback(gweni::String());
+    const std::vector<gweni::String> mono{ "DejaVuSansMono" };
+
+    renderer.setGlyphFallback(gweni::String(), (chain == mono) ? std::vector<gweni::String>() : mono);
+    renderer.begin();
+    renderer.end();
+    CHECK(renderer.getFrameStats().sortedScheduleBuilds == 1);
+    CHECK(renderer.getFrameStats().sortedRuns == 0);
+    renderer.setGlyphFallback(gweni::String(), chain);
+}
+
+TEST_CASE("Translucency: a view rect with an origin indexes what it shows past its width")
+{
+    Ids ids;
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
+    const Point size=gweni::test::viewSize();
+    const std::vector<size_t> prims=ids.primitives(1);
+    const size_t run=ids.text();
+    // on screen at device x w+4: the view shows [64, 64+w)
+    const int x=size.x+4;
+
+    renderer.setViewRect(Rect(64, 0, size.x, size.y));
+    renderer.setClipRegion(Rect(0, 0, size.x+64, size.y));
+    renderer.begin();
+    rect(prims[0], Rect(x, 20, 56, 80), panel, 20).draw(renderer);
+    text(run, Point(x+4, 30), "Hi", ink, 10).draw(renderer);
+    renderer.end();
+    CHECK(renderer.getFrameStats().sortedSlots == 1);
+    CHECK(renderer.getFrameStats().sortedRuns == 1);
+    renderer.setViewRect(Rect(Point(0, 0), size));
+    renderer.setClipRegion(Rect(Point(0, 0), size));
+}
+
+TEST_CASE("Translucency: chunks recounted with a sorted slot culled draw no empty chunk")
+{
+    Ids ids;
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
+    const std::vector<size_t> prims=ids.primitives(2);
+    const Point size=gweni::test::viewSize();
+
+    drawScene({rect(prims[0], Rect(20, 20, 100, 100), panel, 3), rect(prims[1], Rect(60, 60, 100, 100), panel, 5)});
+    REQUIRE(renderer.getFrameStats().sortedSlots == 2);
+
+    // the second slot culled in the frame (out of its clip box: no longer
+    // visible at once), then the chunks recounted before the flush
+    renderer.begin();
+    renderer.setClipRegion(Rect(300, 0, 10, 10));
+    renderer.setDrawColor(panel);
+    renderer.drawFilledRect(prims[1], Rect(60, 60, 100, 100), 5);
+    renderer.setClipRegion(Rect(Point(0, 0), size));
+    renderer.setIndexChunkSlots(64);
+    renderer.end();
+    renderer.begin();
+    renderer.end();
+
+    const size_t drawCalls=renderer.getFrameStats().drawCalls;
+
+    CHECK(renderer.getFrameStats().sortedSlots == 1);
+    // the same chunks counted afresh draw as many
+    renderer.setIndexChunkSlots(128);
+    renderer.setIndexChunkSlots(64);
+    renderer.begin();
+    renderer.end();
+    CHECK(renderer.getFrameStats().drawCalls == drawCalls);
 }
