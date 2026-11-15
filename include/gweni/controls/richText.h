@@ -176,10 +176,13 @@ public:
     gweni::String getSelectedText() const;
     //! Selects the bytes [first, last) of getText() (focus at last)
     void select(size_t first, size_t last);
-    void selectAll();
-    void clearSelection();
+    //! Ctrl+A, Escape and Ctrl+C: virtual, so a block of a container (a
+    //! Markdown document's) selects, clears and copies the container's whole
+    //! selection
+    virtual void selectAll();
+    virtual void clearSelection();
     //! Puts the selected text on the clipboard; false (nothing done) for none
-    bool copySelection();
+    virtual bool copySelection();
 
     //! The byte of getText() nearest \p local (this control's coordinates): on
     //! the line whose box holds its y (the first above them, the last below),

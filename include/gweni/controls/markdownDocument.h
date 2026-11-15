@@ -14,6 +14,7 @@
 #include <gweni/text/markdown.h>
 
 #include <functional>
+#include <unordered_map>
 #include <vector>
 
 namespace gweni
@@ -142,6 +143,19 @@ public:
 
     //! A theme change: the font again, a heading's size being a metric
     void updateColors() override;
+
+    //! In a document, the selection is the document's: a drag that leaves
+    //! this block goes on into the block under the mouse
+    //! (MarkdownDocument::positionAt), and Ctrl+A, Escape and Ctrl+C select,
+    //! clear and copy the document's whole selection. A press, a double-click
+    //! and a drag re-mark every block whose part of it changed.
+    void onMouseMoved(int x, int y, int deltaX, int deltaY) override;
+    void onMouseClickLeft(int x, int y, bool down) override;
+    void onMouseDoubleClickLeft(int x, int y) override;
+    bool onKeyEscape(bool down) override;
+    void selectAll() override;
+    void clearSelection() override;
+    bool copySelection() override;
 
 protected:
     void onLink(event::Info info);
@@ -434,16 +448,80 @@ public:
     //! links is clicked (RichText::onLinkClicked); gweni opens nothing
     event::Caller onLinkClicked;
 
+    //! \sect{Selection}
+    //! The document holds one text::SelectionModel for every text it shows,
+    //! each a RichText given the model and its path in reading order: a
+    //! block's path is its index in the document's blocks and in each block
+    //! holding it (a quote's, a list's, a list item's), a list item's marker
+    //! {item..., 0} and its blocks {item..., 1+j}, a table's cell {table...,
+    //! row, column}, a code block's text the block's own path. A position is
+    //! (path, byte of that text). A drag selects from the pressed text into
+    //! whichever text is under the mouse, in reading order; a double-click a
+    //! word; Ctrl+A everything; Ctrl+C copies getSelectedText(). Kept across
+    //! setMarkdown: each end stays on its text's control, at its new path,
+    //! its byte clamped to the new text, unless that block is gone (then the
+    //! selection is cleared), so an edit of a block outside it keeps it.
+
+    //! A text the selection runs through, in reading order
+    struct Selectable
+    {
+        enum class Kind
+        {
+            Text,   //!< a paragraph, heading, raw HTML or code block's text
+            Marker, //!< a list item's marker, before its blocks
+            Cell    //!< a table's cell
+        };
+
+        std::vector<size_t> path;
+        internal::MarkdownText *text=nullptr;
+        Kind kind=Kind::Text;
+        //! a cell's table and row
+        const Base *table=nullptr;
+        size_t row=0;
+    };
+    const std::vector<Selectable> &getSelectables() const { return m_selectables; }
+
+    text::SelectionModel &selectionModel() { return m_selection; }
+    //! The position in reading order under canvas point \p at: in the text
+    //! it is over, else in the nearest text across on its line, else the
+    //! start of the first text below it (the end of the last one past them)
+    text::SelectionPosition positionAt(const gweni::Point &at);
+    void select(const text::SelectionPosition &anchor, const text::SelectionPosition &focus);
+    void selectAll();
+    void clearSelection();
+    bool hasSelection() const { return !m_selection.empty(); }
+    //! The selection as shown, as plain text: each text's selected part, a
+    //! tab between two cells of a row, a space after a marker, a newline
+    //! between any other two texts
+    gweni::String getSelectedText();
+    //! Puts getSelectedText() on the clipboard; false (nothing done) for none
+    bool copySelection();
+    //! The model changed: re-marks each text whose part of it changed
+    void selectionChanged();
+
 private:
     //! Every block control under the document that is no column, and the
     //! block it shows, with each list item's marker (block null)
     void forEachBlock(const std::function<void(Base *, const text::MarkdownBlock *)> &visit);
+    //! The selectables again, in reading order, each given the model and its
+    //! path (only one whose path changed is told)
+    void assignPaths();
+    //! The selectable showing text, null for none
+    const Selectable *selectableOf(const internal::MarkdownText *text) const;
+    //! The selectable at path, null for none
+    const Selectable *selectableAt(const std::vector<size_t> &path) const;
 
     gweni::String m_markdown;
     gweni::Font m_font;
     bool m_hasFont=false;
     bool m_codeWrap=false;
     MarkdownHighlighter m_highlighter;
+
+    text::SelectionModel m_selection;
+    std::vector<Selectable> m_selectables;
+    //! each text's part of the selection as last told: whether it had one,
+    //! and its bytes
+    std::unordered_map<const Base *, std::pair<bool, std::pair<size_t, size_t>>> m_shown;
 };
 
 }//namespace controls

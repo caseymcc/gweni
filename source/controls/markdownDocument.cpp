@@ -6,6 +6,8 @@
 
 
 #include <gweni/controls/markdownDocument.h>
+#include <gweni/gweni.h>
+#include <gweni/platforms/platform.h>
 #include <gweni/skin.h>
 
 #include <algorithm>
@@ -361,6 +363,71 @@ void MarkdownText::updateColors()
     // a code block's text and a marker take their fonts from their owners
     if(m_fromBlock)
         applyFont();
+}
+
+void MarkdownText::onMouseMoved(int x, int y, int deltaX, int deltaY)
+{
+    MarkdownDocument *document=documentOf(this);
+
+    // a drag from this text: into whichever text is under the mouse
+    if(document && m_selecting && (MouseFocus == this))
+    {
+        setHoveredLink(linkAt(canvasPosToLocal(Point(x, y))));
+        document->selectionModel().extendTo(document->positionAt(Point(x, y)));
+        document->selectionChanged();
+        return;
+    }
+    ParentClass::onMouseMoved(x, y, deltaX, deltaY);
+}
+
+void MarkdownText::onMouseClickLeft(int x, int y, bool down)
+{
+    ParentClass::onMouseClickLeft(x, y, down);
+    if(MarkdownDocument *document=documentOf(this))
+        document->selectionChanged();
+}
+
+void MarkdownText::onMouseDoubleClickLeft(int x, int y)
+{
+    ParentClass::onMouseDoubleClickLeft(x, y);
+    if(MarkdownDocument *document=documentOf(this))
+        document->selectionChanged();
+}
+
+bool MarkdownText::onKeyEscape(bool down)
+{
+    MarkdownDocument *document=documentOf(this);
+
+    if(!document)
+        return ParentClass::onKeyEscape(down);
+    if(!document->hasSelection())
+        return false;
+    if(down)
+        document->clearSelection();
+    return true;
+}
+
+void MarkdownText::selectAll()
+{
+    if(MarkdownDocument *document=documentOf(this))
+        document->selectAll();
+    else
+        ParentClass::selectAll();
+}
+
+void MarkdownText::clearSelection()
+{
+    if(MarkdownDocument *document=documentOf(this))
+        document->clearSelection();
+    else
+        ParentClass::clearSelection();
+}
+
+bool MarkdownText::copySelection()
+{
+    if(MarkdownDocument *document=documentOf(this))
+        return document->copySelection();
+    return ParentClass::copySelection();
 }
 
 void MarkdownText::onLink(event::Info info)
@@ -877,8 +944,277 @@ void MarkdownDocument::setMarkdown(const String &markdown)
     if(markdown == m_markdown)
         return;
 
+    // the selection's ends by the texts that hold them
+    const bool selected=!m_selection.empty();
+    const Selectable *anchor=selected?selectableAt(m_selection.anchor().block):nullptr;
+    const Selectable *focus=selected?selectableAt(m_selection.focus().block):nullptr;
+    const internal::MarkdownText *anchorText=anchor?anchor->text:nullptr;
+    const internal::MarkdownText *focusText=focus?focus->text:nullptr;
+    const size_t anchorOffset=m_selection.anchor().offset;
+    const size_t focusOffset=m_selection.focus().offset;
+
     m_markdown=markdown;
     setBlocks(text::parseMarkdown(markdown));
+    assignPaths();
+
+    if(selected)
+    {
+        anchor=selectableOf(anchorText);
+        focus=selectableOf(focusText);
+        if(anchor && focus)
+            m_selection.select(
+                text::SelectionPosition(anchor->path, std::min(anchorOffset, anchor->text->getText().size())),
+                text::SelectionPosition(focus->path, std::min(focusOffset, focus->text->getText().size())));
+        else
+            m_selection.clear();
+    }
+    selectionChanged();
+}
+
+void MarkdownDocument::assignPaths()
+{
+    using internal::MarkdownCodeBlock;
+    using internal::MarkdownColumn;
+    using internal::MarkdownListItem;
+    using internal::MarkdownTable;
+    using internal::MarkdownText;
+
+    std::vector<Selectable> selectables;
+
+    auto add=[this, &selectables](MarkdownText *text, std::vector<size_t> path, Selectable::Kind kind,
+        const Base *table, size_t row)
+    {
+        if((&text->selectionModel() != &m_selection) || (text->selectionBlock() != path))
+            text->setSelectionModel(&m_selection, path);
+
+        Selectable selectable;
+
+        selectable.path=std::move(path);
+        selectable.text=text;
+        selectable.kind=kind;
+        selectable.table=table;
+        selectable.row=row;
+        selectables.push_back(std::move(selectable));
+    };
+
+    std::function<void(Base *, const std::vector<size_t> &)> visit=
+        [&](Base *control, const std::vector<size_t> &path)
+    {
+        if(MarkdownListItem *item=dynamic_cast<MarkdownListItem *>(control))
+        {
+            std::vector<size_t> inner=path;
+
+            inner.push_back(0);
+            add(item->getMarker(), inner, Selectable::Kind::Marker, nullptr, 0);
+            for(size_t j=0; j < item->getBlockCount(); ++j)
+            {
+                inner.back()=1+j;
+                visit(item->getBlockControl(j), inner);
+            }
+        }
+        else if(MarkdownColumn *column=dynamic_cast<MarkdownColumn *>(control))
+        {
+            std::vector<size_t> inner=path;
+
+            inner.push_back(0);
+            for(size_t j=0; j < column->getBlockCount(); ++j)
+            {
+                inner.back()=j;
+                visit(column->getBlockControl(j), inner);
+            }
+        }
+        else if(MarkdownCodeBlock *code=dynamic_cast<MarkdownCodeBlock *>(control))
+            add(code->getText(), path, Selectable::Kind::Text, nullptr, 0);
+        else if(MarkdownTable *table=dynamic_cast<MarkdownTable *>(control))
+        {
+            for(size_t row=0; row < table->getRowCount(); ++row)
+            {
+                for(size_t column=0; column < table->getColumnCount(); ++column)
+                {
+                    std::vector<size_t> cell=path;
+
+                    cell.push_back(row);
+                    cell.push_back(column);
+                    add(table->getCell(row, column), cell, Selectable::Kind::Cell, table, row);
+                }
+            }
+        }
+        else if(MarkdownText *text=dynamic_cast<MarkdownText *>(control))
+            add(text, path, Selectable::Kind::Text, nullptr, 0);
+    };
+
+    for(size_t i=0; i < m_blockControls.size(); ++i)
+        visit(m_blockControls[i], std::vector<size_t>(1, i));
+
+    m_selectables=std::move(selectables);
+
+    // what was told to texts that are gone is forgotten
+    std::unordered_map<const Base *, std::pair<bool, std::pair<size_t, size_t>>> shown;
+
+    for(const Selectable &selectable:m_selectables)
+    {
+        auto iter=m_shown.find(selectable.text);
+
+        if(iter != m_shown.end())
+            shown.insert(*iter);
+    }
+    m_shown=std::move(shown);
+}
+
+const MarkdownDocument::Selectable *MarkdownDocument::selectableOf(const internal::MarkdownText *text) const
+{
+    if(!text)
+        return nullptr;
+    for(const Selectable &selectable:m_selectables)
+    {
+        if(selectable.text == text)
+            return &selectable;
+    }
+    return nullptr;
+}
+
+const MarkdownDocument::Selectable *MarkdownDocument::selectableAt(const std::vector<size_t> &path) const
+{
+    auto iter=std::lower_bound(m_selectables.begin(), m_selectables.end(), path,
+        [](const Selectable &selectable, const std::vector<size_t> &at) { return selectable.path < at; });
+
+    return ((iter != m_selectables.end()) && (iter->path == path))?&*iter:nullptr;
+}
+
+text::SelectionPosition MarkdownDocument::positionAt(const Point &at)
+{
+    const Selectable *nearest=nullptr;
+    int nearestDistance=0;
+
+    for(const Selectable &selectable:m_selectables)
+    {
+        if(!selectable.text->visible())
+            continue;
+
+        const Rect bounds=selectable.text->getCanvasBounds();
+
+        if((at.y < bounds.y) || (at.y >= bounds.y+bounds.h))
+            continue;
+        if((at.x >= bounds.x) && (at.x < bounds.x+bounds.w))
+            return text::SelectionPosition(selectable.path,
+                selectable.text->positionAt(selectable.text->canvasPosToLocal(at)));
+
+        // on its line, across from it
+        const int distance=(at.x < bounds.x)?bounds.x-at.x:at.x-(bounds.x+bounds.w)+1;
+
+        if(!nearest || (distance < nearestDistance))
+        {
+            nearest=&selectable;
+            nearestDistance=distance;
+        }
+    }
+    if(nearest)
+        return text::SelectionPosition(nearest->path, nearest->text->positionAt(nearest->text->canvasPosToLocal(at)));
+
+    // between texts: the start of the first one below
+    const Selectable *last=nullptr;
+
+    for(const Selectable &selectable:m_selectables)
+    {
+        if(!selectable.text->visible())
+            continue;
+        if(selectable.text->getCanvasBounds().y > at.y)
+            return text::SelectionPosition(selectable.path, 0);
+        last=&selectable;
+    }
+    if(last)
+        return text::SelectionPosition(last->path, last->text->getText().size());
+    return text::SelectionPosition();
+}
+
+void MarkdownDocument::select(const text::SelectionPosition &anchor, const text::SelectionPosition &focus)
+{
+    m_selection.select(anchor, focus);
+    selectionChanged();
+}
+
+void MarkdownDocument::selectAll()
+{
+    if(m_selectables.empty())
+        return;
+
+    const Selectable &last=m_selectables.back();
+
+    select(text::SelectionPosition(m_selectables.front().path, 0),
+        text::SelectionPosition(last.path, last.text->getText().size()));
+}
+
+void MarkdownDocument::clearSelection()
+{
+    if(m_selection.empty())
+        return;
+    m_selection.setCaret(m_selection.focus());
+    selectionChanged();
+}
+
+String MarkdownDocument::getSelectedText()
+{
+    String out;
+    const Selectable *previous=nullptr;
+
+    if(m_selection.empty())
+        return out;
+
+    const std::vector<size_t> &first=m_selection.start().block;
+    const std::vector<size_t> &last=m_selection.end().block;
+
+    for(const Selectable &selectable:m_selectables)
+    {
+        std::pair<size_t, size_t> bytes;
+        const String &shown=selectable.text->getText();
+
+        if(!selectable.text->selectedRange(bytes))
+        {
+            // an empty cell inside the selection still has its tab
+            if(!((selectable.kind == Selectable::Kind::Cell) && shown.empty() && (first < selectable.path)
+                && (selectable.path < last)))
+                continue;
+            bytes={ 0, 0 };
+        }
+        if(previous)
+        {
+            if((previous->kind == Selectable::Kind::Cell) && (selectable.kind == Selectable::Kind::Cell)
+                && (previous->table == selectable.table) && (previous->row == selectable.row))
+                out+='\t';
+            else if(previous->kind == Selectable::Kind::Marker)
+                out+=' ';
+            else
+                out+='\n';
+        }
+        out+=shown.substr(bytes.first, bytes.second-bytes.first);
+        previous=&selectable;
+    }
+    return out;
+}
+
+bool MarkdownDocument::copySelection()
+{
+    if(m_selection.empty())
+        return false;
+
+    platform::setClipboardText(getSelectedText());
+    return true;
+}
+
+void MarkdownDocument::selectionChanged()
+{
+    for(const Selectable &selectable:m_selectables)
+    {
+        std::pair<size_t, size_t> bytes;
+        const bool has=selectable.text->selectedRange(bytes);
+        auto &shown=m_shown[selectable.text];
+
+        if((shown.first != has) || (has && (shown.second != bytes)))
+        {
+            shown={ has, has?bytes:std::pair<size_t, size_t>(0, 0) };
+            selectable.text->selectionChanged();
+        }
+    }
 }
 
 void MarkdownDocument::setFont(const Font &font)
