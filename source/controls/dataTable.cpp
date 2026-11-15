@@ -751,6 +751,7 @@ void DataTable::setSortColumn(int column, SortDirection direction, bool doEvents
     if(column >= 0)
         cells[column]->setSortDirection(direction);
 
+    sortOrderChanged();
     if(!doEvents)
         return;
 

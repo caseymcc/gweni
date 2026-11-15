@@ -381,6 +381,7 @@ bool TreeTable::insertNodes(NodeId parent, size_t index, const NodeId *ids, size
 
     index=std::min(index, childrenOf(parent).size());
 
+    const bool priorEmpty=childrenOf(parent).empty();
     const size_t at=answer?placeholder:insertionItem(parent, index);
     const size_t replaced=answer?1:0;
     const size_t depth=parent == Root?0:getNode(parent)->depth+1;
@@ -408,7 +409,39 @@ bool TreeTable::insertNodes(NodeId parent, size_t index, const NodeId *ids, size
     siblings.insert(siblings.begin()+index, ids, ids+count);
     if(parent != Root)
         m_nodes[m_nodeIndex.at(parent)].hasChildren=true;
-    if(at != NoItem)
+
+    // Sorted: a group that had no children is sorted whole and shown as one
+    // run (a lazy node's answer in its placeholder's place); otherwise each
+    // node goes to its sorted place, a splice each.
+    std::vector<NodeId> *order=isSorted()?currentSorted(parent):nullptr;
+
+    if(isSorted() && priorEmpty)
+    {
+        (parent == Root?m_rootsSortedFor:m_nodes[m_nodeIndex.at(parent)].sortedFor)=0;
+        if(at != NoItem)
+        {
+            std::vector<VisibleNode> run;
+
+            appendVisible(run, getShownChildren(parent));
+            spliceVisible(at, replaced, run);
+        }
+    }
+    else if(order)
+    {
+        for(size_t i=0; i < count; ++i)
+        {
+            const size_t pos=sortedPlace(parent, *order, ids[i]);
+
+            order->insert(order->begin()+pos, ids[i]);
+            if(at != NoItem)
+            {
+                const VisibleNode single{ids[i], depth};
+
+                spliceVisible(shownChildItem(parent, pos+1), 0, &single, 1);
+            }
+        }
+    }
+    else if(at != NoItem)
     {
         if(count == 1)
         {
@@ -443,12 +476,17 @@ bool TreeTable::removeNode(NodeId id)
     const NodeId parent=node->parent;
     auto &siblings=childrenOf(parent);
     const auto found=std::find(siblings.begin(), siblings.end(), id);
-    const size_t index=static_cast<size_t>(found-siblings.begin());
+    // the siblings as shown: a removed selection takes the one next to it
+    std::vector<NodeId> *order=currentSorted(parent);
+    const std::vector<NodeId> &shown=order?*order:siblings;
+    const size_t index=static_cast<size_t>(std::find(shown.begin(), shown.end(), id)-shown.begin());
     const bool selected=isInSubtree(m_selectedNode, id);
 
     if(selected)
-        m_selectedNode=index+1 < siblings.size()?siblings[index+1]
-            :index > 0?siblings[index-1]:parent;
+        m_selectedNode=index+1 < shown.size()?shown[index+1]
+            :index > 0?shown[index-1]:parent;
+    if(order)
+        order->erase(order->begin()+index);
     siblings.erase(found);
     if(parent != Root)
         m_nodes[m_nodeIndex.at(parent)].hasChildren=!siblings.empty();
@@ -582,6 +620,8 @@ void TreeTable::resetChildren(NodeId id)
     std::vector<NodeId> children;
 
     children.swap(node.children);
+    node.sorted.clear();
+    node.sortedFor=0;
     node.expanded=false;
     node.loading=false;
     node.childrenRequested=false;
@@ -621,22 +661,31 @@ bool TreeTable::moveNode(NodeId id, NodeId newParent, size_t index)
     if(oldParent == newParent && oldIndex == index)
         return true;
 
-    const int offset=sourceScrollOffset();
-    VirtualList *body=getVirtualBody();
-    const NodeId anchor=nodeForItem(body->firstVisibleItem());
-    const int into=offset%getRowHeight();
+    const Anchor anchor=captureAnchor();
     const size_t item=itemForNode(id);
 
     if(item != NoItem)
         spliceVisible(item, subtreeEnd(item)-item, {});
+    if(std::vector<NodeId> *order=currentSorted(oldParent))
+        order->erase(std::find(order->begin(), order->end(), id));
     old.erase(found);
     if(oldParent != Root)
         m_nodes[m_nodeIndex.at(oldParent)].hasChildren=!old.empty();
 
-    const size_t at=insertionItem(newParent, index);
+    size_t at=insertionItem(newParent, index);
     auto &siblings=childrenOf(newParent);
 
     siblings.insert(siblings.begin()+index, id);
+    // sorted: shown at its sorted place, the app's index kept for the order
+    // a sort's end gives back
+    if(std::vector<NodeId> *order=currentSorted(newParent))
+    {
+        const size_t pos=sortedPlace(newParent, *order, id);
+
+        order->insert(order->begin()+pos, id);
+        if(at != NoItem)
+            at=shownChildItem(newParent, pos+1);
+    }
     m_nodes[m_nodeIndex.at(id)].parent=newParent;
     if(newParent != Root)
         m_nodes[m_nodeIndex.at(newParent)].hasChildren=true;
@@ -663,16 +712,7 @@ bool TreeTable::moveNode(NodeId id, NodeId newParent, size_t index)
 
     // insert/remove already anchor surviving rows. If the anchor itself was
     // in the moved subtree, follow its node at its new position as well.
-    const size_t anchorItem=itemForNode(anchor);
-
-    if(anchorItem != NoItem)
-    {
-        const size_t before=body->firstVisibleItem();
-        const uint64_t target=static_cast<uint64_t>(anchorItem)*getRowHeight()+into;
-
-        body->setVerticalScrollOffset(static_cast<int>(std::min<uint64_t>(target, INT_MAX)));
-        m_stripePhase^=(before^body->firstVisibleItem())%2;
-    }
+    restoreAnchor(anchor);
     syncVisibleSelection();
     nodeChanged(oldParent);
     if(oldParent != newParent)
@@ -684,6 +724,9 @@ void TreeTable::nodeChanged(NodeId id)
 {
     if(!getNode(id))
         return;
+    // its sort key, or (folders first) whether it has children, may have
+    // changed: its place among its siblings follows
+    keepSorted(id);
 
     // A hidden/offscreen node costs no layout and no binder call. In
     // particular, building children under an unseen parent never scans the
@@ -699,6 +742,240 @@ void TreeTable::nodeChanged(NodeId id)
                 canvas->hoverMayHaveMoved();
             return;
         }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////
+// Sorting across the hierarchy
+
+bool TreeTable::isSorted() const
+{
+    const int column=getSortColumn();
+
+    return column >= 0 && static_cast<size_t>(column) < m_comparators.size()
+        && m_comparators[column] && getSortDirection() != SortDirection::None;
+}
+
+void TreeTable::setSortComparator(int column, Comparator less)
+{
+    if(column < 0)
+        return;
+    if(static_cast<size_t>(column) >= m_comparators.size())
+        m_comparators.resize(column+1);
+    m_comparators[column]=std::move(less);
+    if(column == getSortColumn())
+        applySort();
+}
+
+void TreeTable::setFoldersFirst(bool foldersFirst)
+{
+    if(m_foldersFirst == foldersFirst)
+        return;
+
+    m_foldersFirst=foldersFirst;
+    applySort();
+}
+
+void TreeTable::sortOrderChanged()
+{
+    applySort();
+}
+
+// Folders before leaves in either direction, then the column's order, its
+// reverse when descending; std::stable_sort and sortedPlace keep ties in the
+// app's order.
+bool TreeTable::shownLess(NodeId a, NodeId b) const
+{
+    if(m_foldersFirst)
+    {
+        const bool folderA=getNode(a)->hasChildren;
+        const bool folderB=getNode(b)->hasChildren;
+
+        if(folderA != folderB)
+            return folderA;
+    }
+
+    const Comparator &less=m_comparators[getSortColumn()];
+
+    return getSortDirection() == SortDirection::Descending?less(b, a):less(a, b);
+}
+
+std::vector<TreeTable::NodeId> *TreeTable::currentSorted(NodeId parent)
+{
+    if(!isSorted())
+        return nullptr;
+    if(parent == Root)
+        return m_rootsSortedFor == m_sortGeneration?&m_rootsSorted:nullptr;
+
+    Node &node=m_nodes[m_nodeIndex.at(parent)];
+
+    return node.sortedFor == m_sortGeneration?&node.sorted:nullptr;
+}
+
+// A stale group is sorted from the app's order the first time it is asked
+// for, so a collapsed subtree costs nothing until it is shown.
+const std::vector<TreeTable::NodeId> &TreeTable::getShownChildren(NodeId parent)
+{
+    static const std::vector<NodeId> none;
+
+    if(parent != Root && !getNode(parent))
+        return none;
+    if(!isSorted())
+        return childrenOf(parent);
+    if(std::vector<NodeId> *order=currentSorted(parent))
+        return *order;
+
+    std::vector<NodeId> &order=parent == Root?m_rootsSorted:m_nodes[m_nodeIndex.at(parent)].sorted;
+
+    order=childrenOf(parent);
+    std::stable_sort(order.begin(), order.end(), [this](NodeId a, NodeId b) { return shownLess(a, b); });
+    (parent == Root?m_rootsSortedFor:m_nodes[m_nodeIndex.at(parent)].sortedFor)=m_sortGeneration;
+    return order;
+}
+
+// Where stable_sort would put it: after the nodes that sort before it and
+// the equal ones before it in the app's order. A scan of the equal run only.
+size_t TreeTable::sortedPlace(NodeId parent, const std::vector<NodeId> &order, NodeId id) const
+{
+    const auto less=[this](NodeId a, NodeId b) { return shownLess(a, b); };
+    auto at=std::lower_bound(order.begin(), order.end(), id, less);
+    const auto end=std::upper_bound(at, order.end(), id, less);
+
+    if(at != end)
+    {
+        const std::vector<NodeId> &app=parent == Root?m_roots:getNode(parent)->children;
+        const auto appIndex=[&app](NodeId node) { return std::find(app.begin(), app.end(), node)-app.begin(); };
+        const auto own=appIndex(id);
+
+        while(at != end && appIndex(*at) < own)
+            ++at;
+    }
+    return static_cast<size_t>(at-order.begin());
+}
+
+size_t TreeTable::shownChildItem(NodeId parent, size_t pos)
+{
+    const std::vector<NodeId> &shown=getShownChildren(parent);
+
+    if(pos < shown.size())
+        return itemForNode(shown[pos]);
+    return parent == Root?m_visible.size():subtreeEnd(itemForNode(parent));
+}
+
+TreeTable::Anchor TreeTable::captureAnchor()
+{
+    Anchor anchor;
+    const int offset=sourceScrollOffset();
+
+    anchor.node=nodeForItem(getVirtualBody()->firstVisibleItem());
+    anchor.into=offset%getRowHeight();
+    return anchor;
+}
+
+void TreeTable::restoreAnchor(const Anchor &anchor)
+{
+    const size_t item=itemForNode(anchor.node);
+
+    if(item == NoItem)
+        return;
+
+    VirtualList *body=getVirtualBody();
+    const size_t before=body->firstVisibleItem();
+    const uint64_t target=static_cast<uint64_t>(item)*getRowHeight()+anchor.into;
+
+    body->setVerticalScrollOffset(static_cast<int>(std::min<uint64_t>(target, INT_MAX)));
+    m_stripePhase^=(before^body->firstVisibleItem())%2;
+}
+
+// Only a group sorted in this generation holds the node; a stale one is
+// sorted whole when it is next shown.
+void TreeTable::keepSorted(NodeId id)
+{
+    const Node *node=getNode(id);
+
+    if(!node)
+        return;
+
+    const NodeId parent=node->parent;
+    std::vector<NodeId> *order=currentSorted(parent);
+
+    if(!order)
+        return;
+
+    const auto found=std::find(order->begin(), order->end(), id);
+
+    if(found == order->end())
+        return;
+
+    const size_t from=static_cast<size_t>(found-order->begin());
+
+    order->erase(found);
+
+    const size_t to=sortedPlace(parent, *order, id);
+
+    order->insert(order->begin()+to, id);
+    if(to == from)
+        return;
+
+    const size_t item=itemForNode(id);
+
+    if(item == NoItem)
+        return;
+
+    const Anchor anchor=captureAnchor();
+    const size_t end=subtreeEnd(item);
+    const std::vector<VisibleNode> moved(m_visible.begin()+item, m_visible.begin()+end);
+
+    spliceVisible(item, end-item, {});
+    spliceVisible(shownChildItem(parent, to+1), 0, moved);
+    restoreAnchor(anchor);
+    syncVisibleSelection();
+}
+
+// A new generation makes every group stale; the shown ones are sorted as
+// the projection is built again, which binds only the rows whose node
+// changed. The first shown node goes back to the top and the selection,
+// shown or not, stays on its node.
+void TreeTable::applySort()
+{
+    ++m_sortGeneration;
+    if(!isSorted() && !m_projectionSorted)
+        return;
+    m_projectionSorted=isSorted();
+
+    const Anchor anchor=captureAnchor();
+    std::vector<VisibleNode> visible;
+
+    visible.reserve(m_visible.size());
+    appendVisible(visible, getShownChildren(Root));
+
+    size_t first=0;
+
+    while(first < visible.size() && first < m_visible.size() && visible[first].id == m_visible[first].id)
+        ++first;
+    if(first == visible.size() && first == m_visible.size())
+        return;
+
+    m_visible.swap(visible);
+    syncVisibleSelection();
+
+    bool rebound=false;
+
+    for(Base *control : getVirtualBody()->getRows())
+    {
+        const size_t item=getVirtualBody()->itemForRow(control);
+
+        if(item != NoItem && item >= first && item < m_visible.size())
+        {
+            rebindItem(item);
+            rebound=true;
+        }
+    }
+    restoreAnchor(anchor);
+    if(rebound)
+    {
+        if(Canvas *canvas=getCanvas())
+            canvas->hoverMayHaveMoved();
     }
 }
 
@@ -765,7 +1042,7 @@ void TreeTable::spliceVisible(size_t at, size_t removed, const VisibleNode *adde
 // Iterative preorder, so a hierarchy deeper than the process stack still
 // works. Only expanded descendants are visited, in the app's child order.
 void TreeTable::appendVisible(std::vector<VisibleNode> &into,
-    const std::vector<NodeId> &children) const
+    const std::vector<NodeId> &children)
 {
     std::vector<NodeId> pending(children.rbegin(), children.rend());
 
@@ -779,16 +1056,24 @@ void TreeTable::appendVisible(std::vector<VisibleNode> &into,
         if(node.expanded && node.loading)
             into.push_back({NoNode, node.depth+1});
         else if(node.expanded)
-            pending.insert(pending.end(), node.children.rbegin(), node.children.rend());
+        {
+            const std::vector<NodeId> &shown=getShownChildren(id);
+
+            pending.insert(pending.end(), shown.rbegin(), shown.rend());
+        }
     }
 }
 
-void TreeTable::appendSubtree(std::vector<VisibleNode> &into, const Node &node) const
+void TreeTable::appendSubtree(std::vector<VisibleNode> &into, NodeId id)
 {
-    if(node.loading)
-        into.push_back({NoNode, node.depth+1});
+    const Node *node=getNode(id);
+
+    if(!node)
+        return;
+    if(node->loading)
+        into.push_back({NoNode, node->depth+1});
     else
-        appendVisible(into, node.children);
+        appendVisible(into, getShownChildren(id));
 }
 
 // The item count takes care of rows newly shown or hidden by a changed range.
@@ -877,7 +1162,7 @@ void TreeTable::setExpanded(NodeId id, bool expanded)
         {
             std::vector<VisibleNode> children;
 
-            appendSubtree(children, node);
+            appendSubtree(children, id);
             if(!children.empty())
             {
                 spliceVisible(at, 0, children);
@@ -927,7 +1212,7 @@ void TreeTable::setAllExpanded(bool expanded)
     std::vector<VisibleNode> visible;
 
     visible.reserve(expanded?m_nodes.size():m_roots.size());
-    appendVisible(visible, m_roots);
+    appendVisible(visible, getShownChildren(Root));
 
     size_t first=0;
 
@@ -1008,7 +1293,7 @@ void TreeTable::expandSubtree(NodeId id)
         const size_t end=subtreeEnd(item);
         std::vector<VisibleNode> children;
 
-        appendSubtree(children, *getNode(id));
+        appendSubtree(children, id);
         spliceVisible(at, end-at, children);
     }
 

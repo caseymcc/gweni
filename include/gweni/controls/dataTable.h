@@ -467,6 +467,11 @@ protected:
     //! subclass that selects something else through the item (a TreeTable's
     //! node) tells it here.
     virtual void selectedItemChanged(DataTableRow *row, size_t item, bool doEvents);
+    //! The sort column or direction changed (setSortColumn, a header click),
+    //! before onSortChanged fires: a subclass that sorts its own items (a
+    //! TreeTable) puts them in the new order here, so the app's handler sees
+    //! it. Nothing by default: the table leaves the order to the app.
+    virtual void sortOrderChanged() {}
     //! Source mode: selects the item with events and scrolls it into view, as
     //! a row key does.
     void moveSelectionTo(size_t item);

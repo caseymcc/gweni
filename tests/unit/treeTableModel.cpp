@@ -17,6 +17,15 @@
  *  takes its place in one splice on the same pooled rows; an empty answer
  *  takes the expander away; keys pass over a placeholder; a loading node
  *  under a collapsed ancestor, expandAll and expandSubtree ask once each.
+ *  Sorting: a header click with a column comparator sorts every shown
+ *  sibling group (ascending, then descending; no sort column gives the app's
+ *  order back), stably, folders first if asked, equal to an independent
+ *  sorted rebuild, the app's `children` order untouched; expansion, the
+ *  selection and the first shown node are kept, a collapsed group is not
+ *  compared until it is expanded; inserts, batches, moves, renames
+ *  (nodeChanged), a leaf becoming a folder, removals and a lazy answer go to
+ *  their sorted place; sorted edits bind the same rows with the same pool,
+ *  controls and ids at 1 000 and 100 000 nodes.
  */
 #include "headlessFixture.h"
 
@@ -24,6 +33,7 @@
 #include <doctest/doctest.h>
 
 #include <cmath>
+#include <cstdio>
 #include <map>
 #include <random>
 #include <set>
@@ -981,4 +991,434 @@ TEST_CASE("TreeTable model: keys pass over a placeholder, and hidden or bulk laz
         if(controls::TreeTableRow *row=treeRow(scene.tree, item))
             CHECK(row->isPlaceholder() == (scene.tree->nodeForItem(item) == P));
     }
+}
+
+namespace
+{
+
+//! The app's names and the comparisons the table asks for.
+struct Names
+{
+    std::map<Id, String> names;
+    size_t compares=0;
+    std::set<Id> compared;
+
+    Tree::Comparator less()
+    {
+        return [this](Id a, Id b)
+            {
+                ++compares;
+                compared.insert(a);
+                compared.insert(b);
+                return names.at(a) < names.at(b);
+            };
+    }
+};
+
+//! An independent sorted rebuild: every expanded group of the app's order
+//! stable-sorted by name, folders first if asked, reversed when descending.
+std::vector<Id> sortedPreorder(const Model &model, const std::map<Id, String> &names,
+    bool descending, bool foldersFirst)
+{
+    const auto shownLess=[&](Id a, Id b)
+        {
+            if(foldersFirst)
+            {
+                const bool folderA=!model.nodes.at(a).children.empty();
+                const bool folderB=!model.nodes.at(b).children.empty();
+                if(folderA != folderB)
+                    return folderA;
+            }
+            return descending?names.at(b) < names.at(a):names.at(a) < names.at(b);
+        };
+    const auto sorted=[&](std::vector<Id> group)
+        {
+            std::stable_sort(group.begin(), group.end(), shownLess);
+            return group;
+        };
+    std::vector<Id> visible;
+    std::vector<Id> pending;
+    const auto roots=sorted(model.roots);
+    pending.assign(roots.rbegin(), roots.rend());
+    while(!pending.empty())
+    {
+        const Id id=pending.back();
+        pending.pop_back();
+        visible.push_back(id);
+        const auto &node=model.nodes.at(id);
+        if(node.expanded)
+        {
+            const auto children=sorted(node.children);
+            pending.insert(pending.end(), children.rbegin(), children.rend());
+        }
+    }
+    return visible;
+}
+
+//! The table against the rebuild: the shown order, every depth, and the
+//! app's order (`children`) left as the app gave it.
+void checkSorted(Tree *tree, const Model &model, const std::map<Id, String> &names,
+    bool descending, bool foldersFirst)
+{
+    const std::vector<Id> expected=sortedPreorder(model, names, descending, foldersFirst);
+    CHECK(visibleIds(tree) == expected);
+    REQUIRE(tree->getItemCount() == expected.size());
+    for(size_t item=0; item < expected.size(); ++item)
+    {
+        const auto *node=tree->getNode(expected[item]);
+        REQUIRE(node != nullptr);
+        CHECK(tree->getVisibleNodes()[item].depth == node->depth);
+        CHECK(node->children == model.nodes.at(expected[item]).children);
+    }
+    CHECK(tree->getNodeCount() == model.nodes.size());
+}
+
+struct SortEvents: event::Handler
+{
+    Tree *tree=nullptr;
+    std::vector<Point> points;
+    //! The shown order as the handler sees it.
+    std::vector<std::vector<Id>> orders;
+    void changed(event::Info info)
+    {
+        points.push_back(info.point);
+        orders.push_back(visibleIds(tree));
+    }
+};
+
+//! A whole left click on the header cell's centre, moved a unit right per
+//! click so two clicks are no double-click.
+void clickHeader(Scene &scene, int column, int nth)
+{
+    controls::Base *cell=scene.tree->getHeader()->getCells().at(column);
+    const Point at=cell->localPosToCanvas();
+    scene.canvas.inputMouseMoved(at.x+cell->getWidth()/2+nth, at.y+cell->getHeight()/2, 0, 0);
+    scene.canvas.inputMouseButton(0, true);
+    scene.canvas.inputMouseButton(0, false);
+    scene.frame();
+}
+
+//! A small tree with equal names (stability), folders and leaves mixed,
+//! one folder expanded and one collapsed.
+void buildNamedTree(Scene &scene, Model &model, Names &names)
+{
+    const std::vector<std::pair<Id, String>> roots{
+        {1, "delta"}, {2, "alpha"}, {3, "charlie"}, {4, "alpha"}, {5, "bravo"}, {6, "echo"}};
+    for(const auto &root : roots)
+    {
+        REQUIRE(scene.tree->addNode(Root, root.first) == root.first);
+        model.insert(Root, model.roots.size(), {root.first});
+        names.names[root.first]=root.second;
+        scene.names[root.first]=root.second;
+    }
+    const std::vector<std::tuple<Id, Id, String>> children{
+        {3, 30, "zulu"}, {3, 31, "kilo"}, {3, 32, "kilo"}, {3, 33, "able"},
+        {5, 50, "yankee"}, {5, 51, "baker"}, {30, 300, "two"}, {30, 301, "one"}};
+    for(const auto &child : children)
+    {
+        const Id parent=std::get<0>(child), id=std::get<1>(child);
+        REQUIRE(scene.tree->addNode(parent, id) == id);
+        model.insert(parent, model.children(parent).size(), {id});
+        names.names[id]=std::get<2>(child);
+        scene.names[id]=std::get<2>(child);
+    }
+    scene.tree->setExpanded(3, true);
+    model.nodes.at(3).expanded=true;
+    scene.tree->setExpanded(30, true);
+    model.nodes.at(30).expanded=true;
+}
+
+}//namespace
+
+TEST_CASE("TreeTable model: a header click sorts each sibling group ascending then descending, stably, folders first")
+{
+    Scene scene;
+    Model model;
+    Names names;
+    SortEvents events;
+    events.tree=scene.tree;
+    scene.tree->onSortChanged.add(&events, &SortEvents::changed);
+    buildNamedTree(scene, model, names);
+    scene.settle();
+    const std::vector<Id> appOrder=visibleIds(scene.tree);
+
+    // no comparator: the click only tells the app, the order is the app's
+    clickHeader(scene, 1, 0);
+    CHECK(events.points.size() == 1);
+    CHECK_FALSE(scene.tree->isSorted());
+    CHECK(visibleIds(scene.tree) == appOrder);
+
+    scene.tree->setSortComparator(0, names.less());
+    clickHeader(scene, 0, 1);
+    CHECK(scene.tree->isSorted());
+    CHECK(scene.tree->getSortDirection() == controls::SortDirection::Ascending);
+    checkSorted(scene.tree, model, names.names, false, false);
+    // the app's handler sees the order already sorted
+    REQUIRE(events.orders.size() == 2);
+    CHECK(events.orders.back() == visibleIds(scene.tree));
+    // stable: the two "alpha" roots and the two "kilo" leaves in app order
+    CHECK(visibleIds(scene.tree) == std::vector<Id>{2, 4, 5, 3, 33, 31, 32, 30, 301, 300, 1, 6});
+
+    clickHeader(scene, 0, 2);
+    CHECK(scene.tree->getSortDirection() == controls::SortDirection::Descending);
+    checkSorted(scene.tree, model, names.names, true, false);
+    CHECK(visibleIds(scene.tree) == std::vector<Id>{6, 1, 3, 30, 300, 301, 31, 32, 33, 5, 2, 4});
+
+    // folders first, in both directions
+    scene.tree->setFoldersFirst(true);
+    checkSorted(scene.tree, model, names.names, true, true);
+    CHECK(visibleIds(scene.tree) == std::vector<Id>{3, 30, 300, 301, 31, 32, 33, 5, 6, 1, 2, 4});
+    clickHeader(scene, 0, 3);
+    checkSorted(scene.tree, model, names.names, false, true);
+
+    // no sort column: the app's order back
+    scene.tree->setSortColumn(-1, controls::SortDirection::None);
+    CHECK(visibleIds(scene.tree) == appOrder);
+    scene.frame();
+    scene.frame();
+    CHECK(scene.renderer.frameStats().primitiveSlotsWritten == 0);
+}
+
+TEST_CASE("TreeTable model: a sort keeps expansion, selection and the first shown node and sorts collapsed groups on expand")
+{
+    Scene scene;
+    Names names;
+    Selections selections;
+    scene.tree->onSelectionChange.add(&selections, &Selections::changed);
+    // 300 roots whose names reverse their order, root 0 a collapsed folder
+    // of 40 and root 1 an expanded one of 3
+    for(Id id=0; id < 300; ++id)
+    {
+        REQUIRE(scene.tree->addNode(Root, id) == id);
+        char name[16];
+        std::snprintf(name, sizeof(name), "r%03u", unsigned(299-id));
+        names.names[id]=name;
+    }
+    for(Id id=1000; id < 1040; ++id)
+    {
+        REQUIRE(scene.tree->addNode(0, id) == id);
+        char name[16];
+        std::snprintf(name, sizeof(name), "c%04u", unsigned(2000-id));
+        names.names[id]=name;
+    }
+    for(Id id=1100; id < 1103; ++id)
+    {
+        REQUIRE(scene.tree->addNode(1, id) == id);
+        names.names[id]="e"+std::to_string(2000-id);
+    }
+    scene.tree->setExpanded(1, true);
+    controls::VirtualList *body=scene.tree->getVirtualBody();
+    body->setVerticalScrollOffset(100*20+7);
+    scene.settle();
+    const Id anchor=scene.top();
+    REQUIRE(scene.tree->setSelectedNode(anchor+2));
+    scene.settle();
+    const auto pool=body->getRows();
+    const auto controls=controlsIn(scene.tree);
+    const auto serial=scene.canvas.treeSerial();
+
+    scene.tree->setSortComparator(0, names.less());
+    scene.tree->setSortColumn(0, controls::SortDirection::Ascending);
+    scene.frame();
+    // the anchored node is still the first shown, at the same offset into it
+    CHECK(scene.top() == anchor);
+    CHECK(body->getVerticalScrollOffset()%20 == 7);
+    CHECK(scene.tree->getSelectedNode() == anchor+2);
+    CHECK(selections.ids.empty());
+    CHECK(scene.tree->isExpanded(1));
+    CHECK_FALSE(scene.tree->isExpanded(0));
+    // the collapsed folder's children were never compared
+    for(Id id=1000; id < 1040; ++id)
+        CHECK(names.compared.count(id) == 0);
+    // the shown order: the reversed roots, folder 1's children sorted
+    const auto &visible=scene.tree->getVisibleNodes();
+    REQUIRE(visible.size() == 303);
+    CHECK(visible.front().id == 299);
+    CHECK(scene.tree->nodeForItem(scene.tree->itemForNode(1)+1) == 1102);
+    CHECK(scene.binds.size() <= pool.size());
+    CHECK(body->getRows() == pool);
+    CHECK(controlsIn(scene.tree) == controls);
+    CHECK(scene.canvas.treeSerial() == serial);
+    CHECK(scene.canvas.getLayoutStats().passes <= 1);
+    scene.settle();
+
+    // expanding the collapsed folder sorts its group then
+    names.compared.clear();
+    scene.tree->setExpanded(0, true);
+    CHECK(names.compared.count(1000) == 1);
+    const size_t folder=scene.tree->itemForNode(0);
+    for(size_t i=0; i < 40; ++i)
+        CHECK(scene.tree->nodeForItem(folder+1+i) == Id(1039-i));
+    CHECK(scene.tree->getNode(0)->children.front() == 1000);
+    CHECK(controlsIn(scene.tree) == controls);
+}
+
+TEST_CASE("TreeTable model: inserts, moves, renames and answers while sorted go to their sorted place")
+{
+    Scene scene;
+    Model model;
+    Names names;
+    Selections selections;
+    Requests requests;
+    requests.listen(scene.tree);
+    scene.tree->onSelectionChange.add(&selections, &Selections::changed);
+    buildNamedTree(scene, model, names);
+    scene.tree->setSortComparator(0, names.less());
+    scene.tree->setFoldersFirst(true);
+    scene.tree->setSortColumn(0, controls::SortDirection::Ascending);
+    scene.settle();
+    checkSorted(scene.tree, model, names.names, false, true);
+    const auto controls=controlsIn(scene.tree);
+    auto name=[&](Id id, const String &text) { names.names[id]=text; scene.names[id]=text; };
+
+    // a single insert at the app's front, a batch spread over the group
+    name(34, "mike");
+    REQUIRE(scene.tree->insertNode(3, 0, 34) == 34);
+    model.insert(3, 0, {34});
+    checkSorted(scene.tree, model, names.names, false, true);
+    name(35, "aaa"); name(36, "kilo"); name(37, "zzz");
+    REQUIRE(scene.tree->insertNodes(3, 2, {35, 36, 37}));
+    model.insert(3, 2, {35, 36, 37});
+    checkSorted(scene.tree, model, names.names, false, true);
+    // equal names keep the app's order: 36 is before 31 and 32 in it
+    const auto shown=scene.tree->getShownChildren(3);
+    const auto at=[&](Id id) { return std::find(shown.begin(), shown.end(), id)-shown.begin(); };
+    CHECK(at(36) < at(31));
+    CHECK(at(31) < at(32));
+    // and one added after them in the app's order is shown after them
+    name(38, "kilo");
+    REQUIRE(scene.tree->insertNode(3, 99, 38) == 38);
+    model.insert(3, 99, {38});
+    checkSorted(scene.tree, model, names.names, false, true);
+
+    // a root insert, and a leaf that becomes a folder moves before the leaves
+    name(7, "foxtrot");
+    REQUIRE(scene.tree->insertNode(Root, 1, 7) == 7);
+    model.insert(Root, 1, {7});
+    checkSorted(scene.tree, model, names.names, false, true);
+    name(60, "x");
+    REQUIRE(scene.tree->insertNode(6, 0, 60) == 60);
+    model.insert(6, 0, {60});
+    checkSorted(scene.tree, model, names.names, false, true);
+    // "echo" is a folder now, before the leaf "delta"
+    const auto roots=scene.tree->getShownChildren(Root);
+    CHECK(std::find(roots.begin(), roots.end(), 6) < std::find(roots.begin(), roots.end(), 1));
+
+    // a rename re-sorts its node with its visible subtree
+    REQUIRE(scene.tree->setSelectedNode(30));
+    name(3, "zzz");
+    scene.tree->nodeChanged(3);
+    checkSorted(scene.tree, model, names.names, false, true);
+    CHECK(scene.tree->getSelectedNode() == 30);
+    CHECK(scene.tree->isExpanded(30));
+
+    // a move into another group goes to its sorted place there
+    REQUIRE(scene.tree->moveNode(31, 5, 0));
+    model.move(31, 5, 0);
+    checkSorted(scene.tree, model, names.names, false, true);
+    REQUIRE(scene.tree->moveNode(51, Root, 99));
+    model.move(51, Root, 99);
+    checkSorted(scene.tree, model, names.names, false, true);
+
+    // a removed selection takes its next shown sibling
+    selections.ids.clear();
+    const auto group=scene.tree->getShownChildren(30);
+    REQUIRE(group.size() == 2);
+    REQUIRE(scene.tree->setSelectedNode(group.front()));
+    REQUIRE(scene.tree->removeNode(group.front()));
+    model.remove(group.front());
+    CHECK(scene.tree->getSelectedNode() == group.back());
+    CHECK(selections.ids == std::vector<Id>{group.back()});
+    checkSorted(scene.tree, model, names.names, false, true);
+
+    // a lazy answer under a sort replaces the placeholder sorted
+    name(8, "golf");
+    REQUIRE(scene.tree->addNode(Root, 8, true) == 8);
+    scene.tree->setExpanded(8, true);
+    CHECK(requests.ids == std::vector<Id>{8});
+    name(80, "c"); name(81, "a"); name(82, "b");
+    REQUIRE(scene.tree->insertNodes(8, 0, {80, 81, 82}));
+    model.insert(Root, model.roots.size(), {8});
+    model.insert(8, 0, {80, 81, 82});
+    model.nodes.at(8).expanded=true;
+    checkSorted(scene.tree, model, names.names, false, true);
+    for(controls::Base *control : scene.tree->getVirtualBody()->getRows())
+    {
+        if(!control->hidden())
+            CHECK_FALSE(gweni_cast<controls::TreeTableRow>(control)->isPlaceholder());
+    }
+
+    // descending and back, after all the edits
+    scene.tree->setSortColumn(0, controls::SortDirection::Descending);
+    checkSorted(scene.tree, model, names.names, true, true);
+    scene.tree->setSortColumn(-1, controls::SortDirection::None);
+    model.check(scene.tree);
+    scene.frame();
+    CHECK(controlsIn(scene.tree) == controls);
+}
+
+TEST_CASE("TreeTable model: sorted edits bind locally with the same pool controls and ids at 1000 and 100000 nodes")
+{
+    std::vector<std::vector<size_t>> costs;
+    for(size_t count : {1000, 100000})
+    {
+        CAPTURE(count);
+        const auto baseline=test::IdBankCounts::now();
+        {
+            Scene scene;
+            Tree *tree=scene.tree;
+            // roots named by their id, so the sort keeps their order and the
+            // rows on screen are the same nodes at both counts
+            for(Id id=0; id < count; ++id)
+                REQUIRE(tree->addNode(Root, id) == id);
+            // an added node (id*1000000+1) sorts right after node id
+            tree->setSortComparator(0, [](Id a, Id b)
+                {
+                    const auto key=[](Id x) { return x > 1000000?x/1000000:x; };
+                    return key(a) < key(b) || (key(a) == key(b) && a < b);
+                });
+            tree->setSortColumn(0, controls::SortDirection::Ascending);
+            controls::VirtualList *body=tree->getVirtualBody();
+            body->setVerticalScrollOffset(50*20+7);
+            scene.settle();
+            const auto pool=body->getRows();
+            const auto controls=controlsIn(tree);
+            const Id anchor=scene.top();
+            const auto bank=test::IdBankCounts::now();
+            std::vector<size_t> cost{pool.size(), controls.size(),
+                bank.livePrimitives()-baseline.livePrimitives(),
+                bank.liveTexts()-baseline.liveTexts()};
+            // a node sorting above, inside and below the viewport, inserted
+            // at the app's end and removed
+            for(Id id : {Id(10), Id(55), Id(500)})
+            {
+                const Id added=id*1000000+1;
+                REQUIRE(tree->insertNode(Root, count, added) == added);
+                scene.frame();
+                cost.push_back(scene.binds.size());
+                cost.push_back(controls::getChangeStats().controls);
+                cost.push_back(scene.renderer.frameStats().primitiveSlotsWritten);
+                // off screen it binds nothing
+                if(id != 55)
+                    CHECK(scene.binds.empty());
+                CHECK(scene.top() == anchor);
+                CHECK(tree->nodeForItem(tree->itemForNode(id)+1) == added);
+                scene.binds.clear();
+                REQUIRE(tree->removeNode(added));
+                scene.frame();
+                cost.push_back(scene.binds.size());
+                cost.push_back(controls::getChangeStats().controls);
+                CHECK(scene.top() == anchor);
+                CHECK(body->getRows() == pool);
+                CHECK(controlsIn(tree) == controls);
+                scene.binds.clear();
+            }
+            costs.push_back(cost);
+        }
+        const auto after=test::IdBankCounts::now();
+        CHECK(after.livePrimitives() == baseline.livePrimitives());
+        CHECK(after.liveTexts() == baseline.liveTexts());
+    }
+    REQUIRE(costs.size() == 2);
+    CHECK(costs[0] == costs[1]);
 }

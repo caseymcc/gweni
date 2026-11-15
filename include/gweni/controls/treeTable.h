@@ -112,8 +112,8 @@ private:
 //! preorder and keep the first shown node anchored, with only changed or
 //! newly shown nodes bound again. A node may load its children lazily
 //! (setHasChildren, onChildrenRequested), showing a placeholder row until the
-//! app answers. Sorting is not yet supported.
-//! A header sort notification leaves the hierarchy in its original order.
+//! app answers. A column with a comparator sorts every sibling group, the
+//! hierarchy kept (setSortComparator).
 class GWENI_EXPORT TreeTable: public DataTable
 {
 public:
@@ -137,6 +137,11 @@ public:
         //! resetChildren), and the app has not answered yet.
         bool childrenRequested=false;
         bool loading=false;
+        //! The children in the active sort's order, valid while sortedFor is
+        //! the table's sort generation (a collapsed subtree is sorted when it
+        //! is next shown). `children` stays the app's order.
+        std::vector<NodeId> sorted;
+        uint32_t sortedFor=0;
     };
 
     //! A visible row. A lazy node waiting for its children (expanded and
@@ -171,7 +176,9 @@ public:
     //! with their nodes, even when hidden at the destination. False for
     //! unknown nodes/parents or a move into the node or its descendants.
     bool moveNode(NodeId id, NodeId newParent, size_t index);
-    //! The app's fields changed: bind this node again if on screen.
+    //! The app's fields changed: bind this node again if on screen. While a
+    //! sort is active the node also moves to its sorted place among its
+    //! siblings (its visible subtree with it), so a rename re-sorts it.
     void nodeChanged(NodeId id);
 
     //! Lazy children. setHasChildren(id, true) gives a node with no children
@@ -191,6 +198,29 @@ public:
     //! expand asks for the children again.
     void resetChildren(NodeId id);
     event::Caller onChildrenRequested;
+
+    //! Sorting across the hierarchy. A column with a comparator (`less` over
+    //! app ids; null removes it) sorts every sibling group by it, stably, on
+    //! the header's sort cycle (DataTable's: ascending, then descending;
+    //! setSortColumn(-1, None) gives back the app's order). Expansion, the
+    //! selection and the first shown node are kept. Only the shown, expanded
+    //! groups are sorted at once; a collapsed or hidden one is sorted when
+    //! it is next shown. Inserts, moves and nodeChanged while sorted go to
+    //! their sorted place, and the indexes insertNode and moveNode take are
+    //! in the app's order (getNode()->children), not the shown one. Without
+    //! a comparator for the sort column the order is the app's and the
+    //! header only fires onSortChanged.
+    using Comparator=std::function<bool(NodeId a, NodeId b)>;
+    void setSortComparator(int column, Comparator less);
+    //! With a sort active, nodes with children (advertised ones included)
+    //! come before leaves in both directions, as in a file manager.
+    void setFoldersFirst(bool foldersFirst);
+    bool getFoldersFirst() const { return m_foldersFirst; }
+    //! Whether a column with a comparator is the sort column.
+    bool isSorted() const;
+    //! The parent's children in the order shown (sorted, or the app's). A
+    //! collapsed group is sorted by this call if it was stale.
+    const std::vector<NodeId> &getShownChildren(NodeId parent);
     size_t getNodeCount() const { return m_nodes.size(); }
     //! Null for an unknown id. The pointer lasts until the next model edit.
     const Node *getNode(NodeId id) const;
@@ -263,6 +293,7 @@ public:
 protected:
     DataTableRow *newSourceRow(Base *parent) override;
     void selectedItemChanged(DataTableRow *row, size_t item, bool doEvents) override;
+    void sortOrderChanged() override;
 
 private:
     friend class TreeTableRow;
@@ -285,7 +316,31 @@ private:
     static bool beginRequest(Node &node);
     void requestChildren(NodeId id);
     //! The node's children, or its placeholder while it is loading.
-    void appendSubtree(std::vector<VisibleNode> &into, const Node &node) const;
+    void appendSubtree(std::vector<VisibleNode> &into, NodeId id);
+    //! Sorting: the comparator of the sort, with folders first and the
+    //! direction applied; where a node goes among its parent's sorted
+    //! children (ties in the app's order); the visible item where the shown
+    //! child at pos would start (the parent's visible end past the last).
+    bool shownLess(NodeId a, NodeId b) const;
+    size_t sortedPlace(NodeId parent, const std::vector<NodeId> &order, NodeId id) const;
+    size_t shownChildItem(NodeId parent, size_t pos);
+    //! The parent's sorted order if it is current, else null.
+    std::vector<NodeId> *currentSorted(NodeId parent);
+    //! Moves the node to its sorted place among its siblings, its visible
+    //! subtree with it.
+    void keepSorted(NodeId id);
+    //! A new sort: the shown groups are sorted and the projection is built
+    //! again, the first shown node and the selection kept.
+    void applySort();
+    //! The first shown node and how far into its row the view is, and
+    //! putting it back at the top after an edit moved it.
+    struct Anchor
+    {
+        NodeId node=NoNode;
+        int into=0;
+    };
+    Anchor captureAnchor();
+    void restoreAnchor(const Anchor &anchor);
     //! Drops the store records of these nodes and their whole subtrees.
     void eraseRecords(std::vector<NodeId> pending);
     //! Every pooled row shows its node's expansion again (the toggled node's
@@ -294,7 +349,9 @@ private:
     void rowDoubleClicked(TreeTableRow *row);
     void activateNode(NodeId id);
 
-    void appendVisible(std::vector<VisibleNode> &into, const std::vector<NodeId> &children) const;
+    //! The visible preorder of these nodes' subtrees, each expanded group in
+    //! its shown order (sorted on the way when stale).
+    void appendVisible(std::vector<VisibleNode> &into, const std::vector<NodeId> &children);
     size_t subtreeEnd(size_t item) const;
     std::vector<NodeId> &childrenOf(NodeId parent);
     //! Where child index of this parent starts in the visible preorder, or
@@ -330,6 +387,15 @@ private:
     NodeId m_selectedNode=NoNode;
     //! Keeps the stripes of anchored rows when an odd run changes above them.
     size_t m_stripePhase=0;
+    std::vector<Comparator> m_comparators;
+    bool m_foldersFirst=false;
+    //! Raised by every change of the shown order; a group whose sortedFor
+    //! differs is stale. The roots' sorted order is kept here.
+    uint32_t m_sortGeneration=1;
+    std::vector<NodeId> m_rootsSorted;
+    uint32_t m_rootsSortedFor=0;
+    //! Whether m_visible is in a sort's order (so a sort's end rebuilds it).
+    bool m_projectionSorted=false;
 };
 
 }//namespace controls
