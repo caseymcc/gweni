@@ -39,7 +39,10 @@
  *  previews the range to the hovered date, the second click sets the end,
  *  swapped when earlier, and a third click starts a new range; each click
  *  fires onSelectionChanged once, setRange() nothing (swapping its ends too).
- *  Space selects at the cursor, which the preview follows.
+ *  Space selects at the cursor, which the preview follows. The preview moved
+ *  from one cell to the next marks those two cells alone (the leave keeps it
+ *  for the enter to move), and moved onto a disabled date or off the grid it
+ *  goes back to the start alone.
  *
  *  The views: a click on the title shows the year's 12 months (the weekday
  *  row and the other 30 cells hidden, the calendar's size kept), a second the
@@ -1152,4 +1155,50 @@ TEST_CASE("Calendar: a view change hit-tests the hover again under a resting mou
     scene.click(calendar->getCell(2));
     REQUIRE(calendar->getView() == Calendar::View::Year);
     CHECK(HoveredControl == underMouse());
+}
+
+TEST_CASE("Calendar: a range preview moved one cell marks the two cells alone")
+{
+    Scene scene;
+    Calendar *calendar=scene.calendar(2026, 11);
+
+    calendar->setSelectionMode(Calendar::SelectionMode::Range);
+    calendar->setDateFilter([](const Date &date) { return date != Date(2026, 11, 22); });
+    scene.frame();
+    scene.click(cellOf(calendar, Date(2026, 11, 2)));
+    scene.hover(cellOf(calendar, Date(2026, 11, 20)));
+    REQUIRE(cellOf(calendar, Date(2026, 11, 20))->getLook().rangeEnd);
+
+    // the move from the 20th to the 21st: the leave keeps the preview the
+    // enter moves, so the 18 cells in range both before and after stay clean
+    auto move=[&](const Date &date)
+    {
+        controls::Base *cell=cellOf(calendar, date);
+        const Point at=cell->localPosToCanvas();
+
+        scene.canvas->inputMouseMoved(at.x+cell->getWidth()/2, at.y+cell->getHeight()/2, 0, 0);
+    };
+    move(Date(2026, 11, 21));
+    for(int i=0; i < Calendar::CellCount; ++i)
+    {
+        const Date date=calendar->getCell(i)->getDate();
+
+        CAPTURE(date.toIso());
+        REQUIRE(marked(calendar->getCell(i)) == ((date == Date(2026, 11, 20)) || (date == Date(2026, 11, 21))));
+    }
+    scene.frame();
+    CHECK(cellOf(calendar, Date(2026, 11, 21))->getLook().rangeEnd);
+    CHECK(cellOf(calendar, Date(2026, 11, 20))->getLook().inRange);
+
+    // onto a disabled date the preview goes back to the start alone
+    scene.hover(cellOf(calendar, Date(2026, 11, 22)));
+    CHECK_FALSE(cellOf(calendar, Date(2026, 11, 21))->getLook().inRange);
+    CHECK(cellOf(calendar, Date(2026, 11, 2))->getLook().rangeEnd);
+
+    // and off the grid too
+    scene.hover(cellOf(calendar, Date(2026, 11, 25)));
+    REQUIRE(cellOf(calendar, Date(2026, 11, 25))->getLook().rangeEnd);
+    scene.hover(calendar->getWeekdayLabel(0));
+    CHECK_FALSE(cellOf(calendar, Date(2026, 11, 25))->getLook().inRange);
+    CHECK(cellOf(calendar, Date(2026, 11, 2))->getLook().rangeEnd);
 }

@@ -1154,13 +1154,20 @@ void Calendar::onCellPress(event::Info info)
         zoomInOn(cell->getDate());
 }
 
+bool Calendar::takesPreview(const Base *control) const
+{
+    const internal::CalendarCell *cell=dynamic_cast<const internal::CalendarCell *>(control);
+
+    return cell && (cell->m_calendar == this) && (m_view == View::Month) && (m_selectionMode == SelectionMode::Range)
+        && m_rangeStart && !m_rangeEnd && !cell->getLook().disabled;
+}
+
 // While a range has its start alone, the hovered day is its other end.
 void Calendar::onCellHoverEnter(event::Info info)
 {
     const internal::CalendarCell *cell=static_cast<const internal::CalendarCell *>(info.controlCaller);
 
-    if(!cell || (cell->m_calendar != this) || (m_view != View::Month) || (m_selectionMode != SelectionMode::Range)
-        || !m_rangeStart || m_rangeEnd || cell->getLook().disabled)
+    if(!takesPreview(cell))
         return;
     if(m_preview == cell->getDate())
         return;
@@ -1174,6 +1181,11 @@ void Calendar::onCellHoverLeave(event::Info info)
     const internal::CalendarCell *cell=static_cast<const internal::CalendarCell *>(info.controlCaller);
 
     if(!cell || (cell->m_calendar != this) || !m_preview || (*m_preview != cell->getDate()))
+        return;
+    // the input handler has the new hover before it tells the old one: a
+    // preview moving to another cell is moved by its enter, in one rebind,
+    // so the cells in range before and after are not marked twice for nothing
+    if(takesPreview(HoveredControl))
         return;
 
     m_preview.reset();

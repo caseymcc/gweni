@@ -4495,7 +4495,10 @@ two programs and the draws. What follows describes both together:
     then an end (the two swapped when the end is earlier; a click after a whole range
     starts a new one), and while only the start is set the hovered date, or the cursor
     when the keys moved it last, is the drawn end, so the range previews; None selects
-    nothing. A click on a day of the month either side selects it and shows its month.
+    nothing. The input handler sets the new hover before it tells the old control of
+    the leave, so a leave whose new hover is a cell that takes the preview keeps it and
+    the enter moves it in one rebind: a move to the next cell marks those two cells
+    alone, not every cell in range twice. A click on a day of the month either side selects it and shows its month.
     `onSelectionChanged` fires once per real change by the user (a range's start and
     its end each are one), never from `setSelectedDate`, `setRange` or any other set.
   - *The cursor.* The calendar takes the focus (its cells take none) and has a cursor

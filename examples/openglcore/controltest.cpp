@@ -1235,7 +1235,7 @@
  *                 single calendar's 18th, on to the 19th and off, a click on
  *                 the 18th (the 11th selected before), showNext() and
  *                 showPrevious(), the range calendar's 17th clicked, the mouse
- *                 onto the 26th and a click on it, the limited calendar's
+ *                 onto the 25th, on to the 26th and a click on it, the limited calendar's
  *                 12th clicked and Right, Right, Down, Left, PageDown, Home,
  *                 PageDown and PageDown, the Sunday calendar's title and its
  *                 Apr clicked, then its title twice and its 2026 and November
@@ -1251,9 +1251,12 @@
  *                 makes no control, keeps the live ids, lays out in at most
  *                 one pass entering no more than the way down to the calendar
  *                 and its parts, changes no pixel outside the calendar, and
- *                 the month before gives the frame back; the range's second
- *                 click writes only the cells whose look changed and the
- *                 clicked one; the keys move the cursor over the weekend and
+ *                 the month before gives the frame back; the range's first
+ *                 click writes and marks only the cells whose look changed
+ *                 and the clicked one; the preview moved from the 25th to the
+ *                 26th writes and marks those two cells alone, no pixel
+ *                 outside them; the range's second click writes only the
+ *                 cells whose look changed and the clicked one; the keys move the cursor over the weekend and
  *                 to the maximum, and PageDown at the limit writes and changes
  *                 nothing; after each click that changes the view the hovered
  *                 control is the one under the mouse (zoom_hover); zooming
@@ -14746,19 +14749,96 @@ static bool runCalendarScenario(Session &s, const std::string &shotDir, bool &pa
         +std::to_string(nextOutside)+" pixels outside the calendar, or the month before did not give the frame back");
     idleWork+=settleCodeEditor(s, pixels);
 
-    // (4) a range's second click: the cells whose look it changed alone
+    // (4) a range's first click: the cells whose look it changed (the old
+    // range's, the new start's) alone, the calendar taking the focus from
+    // the single one, whose cursor ring goes
     Calendar *range=demo->rangeCalendar();
     CalendarCell *start=calendarCell(range, Date(2026, 11, 17));
+    CalendarCell *beforeEndCell=calendarCell(range, Date(2026, 11, 25));
     CalendarCell *end=calendarCell(range, Date(2026, 11, 26));
+    const std::vector<gweni::controls::internal::CalendarCellLook> beforeStart=calendarLooks(range);
+    const std::vector<gweni::controls::internal::CalendarCellLook> singleBeforeStart=calendarLooks(single);
 
     clickMouse(s, centre(start).x, centre(start).y);
-    renderFrames(s, 1);
-    // the preview on the way to the end: the hover makes it, so the click
-    // that ends the range changes no look but its own cell's
-    moveMouse(s, centre(end).x, centre(end).y);
+
+    const CodeEditorFrame startClick=codeEditorFrame(s);
+    const std::vector<gweni::controls::internal::CalendarCellLook> afterStart=calendarLooks(range);
+    const std::vector<gweni::controls::internal::CalendarCellLook> singleAfterStart=calendarLooks(single);
+    std::set<size_t> startPrims, startTexts;
+    std::vector<gweni::Rect> startRects={start->getCanvasBounds()};
+    size_t startBudget=1+subtreeControls(start);  // the calendar takes the focus
+    int startLooks=0;
+
+    idsOf({start}, startPrims, startTexts);
+    for(int i=0; i < Calendar::CellCount; ++i)
+    {
+        gweni::controls::Base *cell=range->getCell(i);
+
+        if((beforeStart[static_cast<size_t>(i)] != afterStart[static_cast<size_t>(i)]) && (cell != start))
+        {
+            ++startLooks;
+            idsOf({cell}, startPrims, startTexts);
+            startRects.push_back(cell->getCanvasBounds());
+            startBudget+=subtreeControls(cell);
+        }
+        if(singleBeforeStart[static_cast<size_t>(i)] != singleAfterStart[static_cast<size_t>(i)])
+        {
+            ++startLooks;
+            idsOf({single->getCell(i)}, startPrims, startTexts);
+            startRects.push_back(single->getCell(i)->getCanvasBounds());
+            startBudget+=subtreeControls(single->getCell(i));
+        }
+    }
+
+    const size_t startOutside=differencesOutsideRects(s, pixels, startClick.pixels, startRects);
+    const bool startSet=range->getRangeStart() && !range->getRangeEnd()
+        && (*range->getRangeStart() == Date(2026, 11, 17));
+
+    checks.check("range_start",
+        startSet && !startClick.primitives.empty() && idsWithin(startClick.primitives, startPrims)
+            && idsWithin(startClick.texts, startTexts) && startClick.changed <= startBudget
+            && startClick.passes == 0 && startOutside == 0,
+        "the first click left the range "+(range->getRangeStart()?range->getRangeStart()->toIso():std::string("-"))
+        +" to "+(range->getRangeEnd()?range->getRangeEnd()->toIso():std::string("-"))
+        +" (2026-11-17 to - expected), or wrote "+std::to_string(startClick.primitives.size())+" primitive and "
+        +std::to_string(startClick.texts.size())+" text ids, not all of them of the "+std::to_string(startLooks)
+        +" cells whose look changed and the clicked one, changed "+std::to_string(startClick.changed)+" controls ("
+        +std::to_string(startBudget)+" allowed), ran "+std::to_string(startClick.passes)+" layout passes or changed "
+        +std::to_string(startOutside)+" pixels outside them");
+
+    // the preview on the way to the end: moved from the 25th to the 26th it
+    // writes and marks those two cells alone, the cells in range before and
+    // after left as they are, so the click that ends the range changes no
+    // look but its own cell's
+    moveMouse(s, centre(beforeEndCell).x, centre(beforeEndCell).y);
     renderFrames(s, 1);
     idleWork+=settleCodeEditor(s, pixels);
+    moveMouse(s, centre(end).x, centre(end).y);
 
+    const CodeEditorFrame previewMove=codeEditorFrame(s);
+    std::set<size_t> previewPrims, previewTexts;
+
+    idsOf({beforeEndCell, end}, previewPrims, previewTexts);
+
+    const size_t previewOutside=differencesOutsideRects(s, pixels, previewMove.pixels,
+        {beforeEndCell->getCanvasBounds(), end->getCanvasBounds()});
+    const bool previewed=end->getLook().rangeEnd && beforeEndCell->getLook().inRange;
+
+    checks.check("range_preview",
+        previewed && !previewMove.primitives.empty() && idsWithin(previewMove.primitives, previewPrims)
+            && idsWithin(previewMove.texts, previewTexts)
+            && previewMove.changed <= subtreeControls(beforeEndCell)+subtreeControls(end)
+            && previewMove.passes == 0 && previewOutside == 0,
+        "the preview moved from the 25th to the 26th "+std::string(previewed?"":"(not previewed there) ")
+        +"wrote "+std::to_string(previewMove.primitives.size())+" primitive and "
+        +std::to_string(previewMove.texts.size())+" text ids, not all of them the two cells', changed "
+        +std::to_string(previewMove.changed)+" controls ("
+        +std::to_string(subtreeControls(beforeEndCell)+subtreeControls(end))+" allowed), ran "
+        +std::to_string(previewMove.passes)+" layout passes or changed "+std::to_string(previewOutside)
+        +" pixels outside them");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // a range's second click: the cells whose look it changed alone
     const std::vector<gweni::controls::internal::CalendarCellLook> beforeEnd=calendarLooks(range);
 
     clickMouse(s, centre(end).x, centre(end).y);
@@ -14945,6 +15025,8 @@ static bool runCalendarScenario(Session &s, const std::string &shotDir, bool &pa
              <<" select_texts="<<select.texts.size()<<" next_prims="<<next.primitives.size()
              <<" next_texts="<<next.texts.size()<<" next_glyphs="<<next.glyphSlots
              <<" next_passes="<<next.passes<<" next_visited="<<next.visited<<"/"<<nextBudget
+             <<" range_start_prims="<<startClick.primitives.size()<<" range_start_changed="<<startClick.changed
+             <<" range_preview_prims="<<previewMove.primitives.size()<<" range_preview_changed="<<previewMove.changed
              <<" range_end_prims="<<endClick.primitives.size()<<" range_end_looks="<<lookChanges
              <<" cursors="<<cursors<<"\n";
     return ok;

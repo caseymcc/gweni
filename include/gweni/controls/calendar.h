@@ -359,6 +359,9 @@ protected:
     bool showsCursor();
     //! The range as drawn: the range, or the start and the preview.
     bool drawnRange(Date &low, Date &high) const;
+    //! A hover on \p control previews the range's end: a day cell of this
+    //! calendar, enabled, while a range has its start alone.
+    bool takesPreview(const Base *control) const;
 
     void onCellDown(event::Info info);
     void onCellPress(event::Info info);
