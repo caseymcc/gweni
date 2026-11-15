@@ -129,7 +129,12 @@ void TreeTableRow::setPlaceholder(bool placeholder)
         }
     }
     if(!placeholder)
+    {
         m_placeholderContents.clear();
+        // This caption belongs to the placeholder. A binder that fills the
+        // tree cell with widgets may leave its Label caption empty.
+        setCellText(m_treeColumn, String());
+    }
     m_placeholder=placeholder;
     updateColors();
 }

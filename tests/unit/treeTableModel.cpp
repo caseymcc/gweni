@@ -2170,6 +2170,52 @@ TEST_CASE("TreeTable model: placeholders hide pooled cell contents and restore t
     CHECK(controlsIn(tree) == controls);
 }
 
+TEST_CASE("TreeTable model: a widget-only binder clears the loading caption on reuse")
+{
+    Scene scene;
+    Tree *tree=scene.tree;
+    // The app fills the cells with controls, leaving Label captions empty.
+    tree->setNodeBinder([](controls::DataTableRow *, Id, size_t) {});
+    scene.roots(5);
+    tree->setHasChildren(2, true);
+    scene.settle();
+    std::map<controls::DataTableRow *, controls::CheckBox *> contents;
+    for(auto *control : tree->getVirtualBody()->getRows())
+    {
+        auto *row=gweni_cast<controls::DataTableRow>(control);
+        REQUIRE(row != nullptr);
+        auto *box=scene.canvas.newChild<controls::CheckBox>();
+        row->setCellContents(0, box);
+        contents[row]=box;
+    }
+    scene.settle();
+    tree->setExpanded(2, true);
+    scene.frame();
+    auto *placeholder=treeRow(tree, 3);
+    REQUIRE(placeholder != nullptr);
+    REQUIRE(placeholder->isPlaceholder());
+    REQUIRE(placeholder->getCellText(0) == Tree::PlaceholderText);
+    REQUIRE(tree->insertNode(2, 0, 20) == 20);
+    scene.frame();
+    CHECK_FALSE(placeholder->isPlaceholder());
+    CHECK(contents.at(placeholder)->visible());
+    CHECK(placeholder->getCellText(0) == "");
+
+    // A real node may also be named Loading…: clear before the app binds,
+    // so an explicitly supplied caption with that value remains intact.
+    tree->setNodeBinder([](controls::DataTableRow *row, Id, size_t)
+        {
+            row->setCellText(0, Tree::PlaceholderText);
+        });
+    tree->resetChildren(2);
+    tree->setExpanded(2, true);
+    scene.frame();
+    REQUIRE(tree->insertNode(2, 0, 21) == 21);
+    scene.frame();
+    CHECK_FALSE(treeRow(tree, 3)->isPlaceholder());
+    CHECK(treeRow(tree, 3)->getCellText(0) == Tree::PlaceholderText);
+}
+
 namespace
 {
 
