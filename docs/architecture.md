@@ -4871,6 +4871,93 @@ two programs and the draws. What follows describes both together:
   the limits and the filter, every key, both selections and the views headless;
   `--scenario calendar` holds the costs and pixels on CalendarDemo, whose four
   calendars show single, range, limited weekday-only and Sunday-first selection.
+- **The date and time fields.** `controls::DateEdit` (`include/gweni/controls/dateEdit.h`)
+  and `controls::TimeEdit` (`include/gweni/controls/timeEdit.h`) are one mechanism,
+  `internal::SectionedEdit` (`include/gweni/controls/sectionedEdit.h`): a `TextBox`
+  showing a value formatted from a pattern of sections, typed into freely and stepped
+  (QDateTimeEdit, WinUI's DatePicker and TimePicker). It is no editor of its own: the
+  text is a TextBox's, and the value is read from it as a whole. The value is a
+  `SectionedEdit::Value`, a `gweni::Date` and a `gweni::TimeOfDay` (`date.h`: an hour
+  0-23 and a minute, `addMinutes` wrapping at midnight, `hour12()`/`hourFrom12()` for
+  the 12-hour clock, `toText(twelveHour)` and the lenient `fromText`;
+  `tests/unit/timeOfDay.cpp`), ordered by the date and then the time, so one range
+  clamp serves both; a date field leaves the time at 00:00 and a time field the date
+  at 1970-01-01.
+  - *Sections.* `setFormat` takes a fixed vocabulary: `YYYY`, `MM`/`M`, `DD`/`D`,
+    `HH`/`H` (0-23), `hh`/`h` (1-12, with `AP`), `mm` and `AP`, every other ASCII
+    character a separator shown as it is. A pattern is a date's (year, month and day)
+    or a time's (an hour, the minute, AP exactly with a 12-hour hour), each section
+    once and a separator between two, and a DateEdit takes only a date's and a
+    TimeEdit only a time's (`formatAllowed`); anything else is refused, the format
+    kept. The section under the caret is found from the text as typed, not from the
+    format: its alphanumeric runs, the caret in a run or at its end being in it and one
+    between two in the next (`sectionAt`), so it works on half-typed text too.
+  - *Stepping.* Up and Down step that section by one, wrapping inside it with no carry
+    (QDateTimeEdit's rule): the day 31 to 1 of the same month (30 to 1 in a 30-day
+    one), December to January of the same year, the minute 59 to 0 of the same hour,
+    the hour at 24 (so 11 AM goes to 12 PM on a 12-hour clock), AP switching; a month
+    or year step clamps the day to the new month's last. PageUp and PageDown take a
+    year in a date's day and month sections and ten in its year's, ten minutes
+    (rounded up to a multiple of the minute step) in the minute's, twelve hours in the
+    hour's and AP's. `setMinuteStep` steps the minute to the step's next multiple, up
+    or down, so a typed 07 steps to 15 or 0 by 15 and stays 07 until stepped. A step
+    whose value the range clamps back, or that the filter refuses, goes on in its
+    direction (a weekday-only field steps Friday to Monday; at a limit a day wraps
+    round to the range's other end), and changes nothing when no value is taken. A or
+    P typed in the AP section sets it. The caret stays in its section, as far into it
+    as it was. Typed text is read before a step, so Up after typing steps what was
+    typed.
+  - *The lenient parse.* On Return (the press, which then goes on up to a dialog's
+    default button as a TextBox's does) and when the field loses the focus, the text
+    is read as a whole: a date as three digit groups split by anything that is no
+    digit, in the format's order of year, month and day ("2026-11-1", "11/1/2026" for
+    M/D/YYYY), or one group of 8 or 6 digits split at the format's widths, a one- or
+    two-digit year in 2000-2099, a letter making it no date; a time as
+    `TimeOfDay::fromText` reads it, in either clock ("1430", "930", "2:30 pm", "12 am"
+    is 00:00). A value is clamped to `setRange`, and one the filter refuses, or text
+    that is no value, reverts to the last value, as Escape does (it takes the key only
+    when there is typed text to drop, so a dialog's Escape still gets through). An
+    empty text is no value only with `setAllowEmpty(true)`; a step from empty shows
+    `setToday`'s date (00:00 for a time). `onValueChanged` fires once per real change
+    by the user, never from `setDate`, `setTime`, `setRange` or any other set.
+  - *Why the width is fixed.* A field's width is its format's widest text at its font,
+    each digit place the widest digit, AP the wider of AM and PM, the separators, the
+    padding, a unit for the caret and the children docked Left or Right (the calendar
+    button), reported as its request (`requestedSizeExtra(X)`), so a parent placing it
+    by its request gets that width too and a width the app asks for is not used. So a
+    new value never resizes the box, and with its Text keeping its layout for a string
+    of the same size (`setSameSizeKeepsLayout`) a step that keeps the string's width, a
+    digit for a digit in a face whose digits are one width, lays nothing out and
+    writes the field's own slots and the new string's glyphs alone; one that changes
+    it (9 AM to 10 AM) lays out the field and its Text alone.
+  - *The popup.* A DateEdit holds an `internal::DateEditButton` docked at its right
+    inside it, a Button taking no keyboard input and no Tab stop (a press on it focuses
+    the field), drawn by its own renderer: a slot hidden at rest and the
+    `DateEditButtonHover`/`DateEditButtonDown` surfaces, and a down chevron (icon kind
+    1) at z+1 in the `DateEditButton`, `DateEditButtonHover` and
+    `DateEditButtonDisabled` text colours; the field itself draws as a TextBox. A press
+    on it, Alt+Down or F4 open a `Popup` made on the first open (`Base::createPopup`,
+    so the field owns it) and kept, holding an `internal::DateEditCalendar` (a
+    `Calendar` in Single mode, docked so the popup is its size) opened below the field:
+    each open reads typed text first, then gives the calendar the month view, the
+    field's range as its limits, its filter, its today and the date selected with the
+    cursor on it (on today's, clamped, when the field is empty), and the keyboard
+    focus. A day chosen (a click, Space or Return) sets the field, closes the popup and
+    focuses the field; it listens to `Calendar::onDateChosen`, which fires on every
+    choice of an enabled day in Single or Range mode, the day already selected too
+    (when `onSelectionChanged` does not). Escape is the calendar's
+    (`DateEditCalendar::onKeyEscape`, the canvas offering it to the focus in the popup
+    first): it closes the popup with nothing changed and focuses the field. A press
+    outside closes it as any popup's does. The range and the filter are the calendar's,
+    so a typed and a picked date agree. The canvas shows one popup at a time, so a
+    DateEdit inside a Popup closes it when its calendar opens, as a ColorEdit's picker
+    does. A TimeEdit has no popup: the toolkits' time pickers are a spinning list per
+    part or a clock face, for touch, and a typed time with stepping and a coarse minute
+    step picks what they pick.
+  `tests/unit/sectionedEdit.cpp`, `dateEdit.cpp` and `timeEdit.cpp` pin the formats,
+  the steps, the parse, the reverts, the range, the filter, empty fields, both clocks,
+  the minute step, the events and the popup headless; `--scenario date-time` holds the
+  costs and pixels on DateTimeDemo.
 - **The stepper.** `controls::Stepper` (`include/gweni/controls/stepper.h`) is a
   multi-step flow (Material's and MUI's Stepper, Qt's QWizard): numbered steps in a
   header and a page per step, one shown at a time. `addStep(title, subtitle)` returns
@@ -6631,12 +6718,12 @@ set by its bare name and one with some of them as `Name.field` per missing field
 the shipped theme with `"strict": true` added):
 
 ```
-theme strict: 226 of 230 surfaces not set: Badge, ButtonDisabled, ButtonDown, ...
-theme strict: 84 of 86 text colors not set: AxisTagText, BadgeText, ButtonDisabled, ...
+theme strict: 235 of 239 surfaces not set: Badge, ButtonDisabled, ButtonDown, ...
+theme strict: 87 of 89 text colors not set: AxisTagText, BadgeText, ButtonDisabled, ...
 ```
 
-(`theme strict: all 230 surfaces set` for a kind with no gaps, and a single
-`theme strict: all 230 surfaces and 86 text colors set` when there are none at all). A
+(`theme strict: all 239 surfaces set` for a kind with no gaps, and a single
+`theme strict: all 239 surfaces and 89 text colors set` when there are none at all). A
 rejected value counts as not set. A surface that is transparent at rest on purpose
 (`WindowButton`, `SelectableHover`: a transparent fill hides the slot) is magenta too
 until the theme sets it to `[0,0,0,0]`; the theme has not said what it looks like. The
