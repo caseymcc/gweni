@@ -12,7 +12,10 @@
 //  A page's files are the page itself and what its HTML names locally (each
 //  src= and href= that is not a link to another page or an absolute URL), and
 //  for each Emscripten script X.js the X.wasm and X.data it fetches. It prints
-//  one line per file and a total per page, and with --budget exits 1 unless
+//  one line per file and a total per page, then the lazy package
+//  (resources-lazy/, the CJK face) as its own rows, in no page's total: a
+//  window fetches it only once it shows text that misses it. With --budget it
+//  exits 1 unless
 //  the budget page's gzip total (the larger of the two encodings, so it holds
 //  whichever one the server picks) is at most <bytes>.
 //
@@ -57,6 +60,25 @@ export function encodedSizes(bytes)
         gzip: zlib.gzipSync(bytes, { level: 9 }).length,
         brotli: zlib.brotliCompressSync(bytes, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11 } }).length,
     };
+}
+
+// The lazy package's files, {files: [{path, raw, gzip, brotli}], raw, gzip,
+// brotli}: what a window fetches when it first shows CJK, loaded by no page
+export function lazySizes(site)
+{
+    const total = { files: [], raw: 0, gzip: 0, brotli: 0 };
+    const dir = join(site, 'resources-lazy');
+    if(!existsSync(dir))
+        return total;
+    for(const name of readdirSync(dir).sort())
+    {
+        const sizes = encodedSizes(readFileSync(join(dir, name)));
+        total.files.push({ path: `resources-lazy/${name}`, ...sizes });
+        total.raw += sizes.raw;
+        total.gzip += sizes.gzip;
+        total.brotli += sizes.brotli;
+    }
+    return total;
 }
 
 // {page: {files: [{path, raw, gzip, brotli}], raw, gzip, brotli}} for every
@@ -105,7 +127,9 @@ function main()
     }
 
     const pages = siteSizes(site);
-    const width = Math.max(...Object.values(pages).flatMap(p => p.files.map(f => f.path.length)), 5) + 2;
+    const lazy = lazySizes(site);
+    const width = Math.max(...Object.values(pages).flatMap(p => p.files.map(f => f.path.length)),
+        ...lazy.files.map(f => f.path.length), 5) + 2;
     const row = (name, sizes) => `${name.padEnd(width)}  ${kb(sizes.raw).padStart(10)}  ${kb(sizes.gzip).padStart(10)}  ${kb(sizes.brotli).padStart(10)}`;
     console.log(`${''.padEnd(width)}  ${'raw'.padStart(10)}  ${'gzip'.padStart(10)}  ${'brotli'.padStart(10)}`);
     for(const [page, total] of Object.entries(pages))
@@ -114,6 +138,12 @@ function main()
         for(const f of total.files)
             console.log(row(`  ${f.path}`, f));
         console.log(row('  total', total));
+    }
+    if(lazy.files.length)
+    {
+        console.log('lazy package (fetched by a window once it shows CJK; in no page\'s total):');
+        for(const f of lazy.files)
+            console.log(row(`  ${f.path}`, f));
     }
 
     if(budget !== null)

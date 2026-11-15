@@ -38,6 +38,13 @@
 //                     again opens the view and puts it back, and picking
 //                     SliderDemo then loads ?control=SliderDemo&depth-view,
 //                     the view open and the checkbox checked again
+//    controltest.html?control=UnicodeTextDemo
+//                     the gallery showing CJK: it fetches the lazy package's
+//                     CJK face (resources-lazy/) once and it arrives
+//                     (ControlTest's gweni_web_glyph_fallback), and the face's
+//                     license is under licenses/
+//  Every other page shows no CJK and must ask for nothing under
+//  resources-lazy/: the face is fetched only for text that shows it.
 //  A page with a window must draw frames (gweniRun.frames, web/pre.js) on a
 //  WebGL 2 context on ANGLE's SwiftShader with at least 24 depth bits
 //  (run.mjs' conditions, through probe.mjs' launchOptions), write nothing to
@@ -166,16 +173,23 @@ class Visit
         page.on('pageerror', err => errors.push(`uncaught exception: ${err.stack || err.message}`));
         page.on('requestfailed', request => errors.push(`request failed: ${request.url()}: ${request.failure()?.errorText}`));
         page.on('response', response => { if(response.status() >= 400) errors.push(`HTTP ${response.status()} for ${response.url()}`); });
+        const lazy = [];
+        page.on('request', request => { if(request.url().includes('/resources-lazy/')) lazy.push(request.url()); });
         await page.goto(`${this.base}/${path}`, { waitUntil: 'commit' });
-        return { page, context, errors, label };
+        return { page, context, errors, label, lazy, showsCjk: false };
     }
 
-    // Fails for every error the page showed so far, and forgets them.
+    // Fails for every error the page showed so far, and for a request for the
+    // lazy package (resources-lazy/, the CJK face) from a page that shows no
+    // CJK, and forgets them.
     report(visit)
     {
         for(const e of visit.errors)
             fail(visit.label, e);
         visit.errors.length = 0;
+        if(!visit.showsCjk && visit.lazy.length)
+            fail(visit.label, `shows no CJK but asked for the lazy package: ${visit.lazy.join(', ')}`);
+        visit.lazy.length = 0;
     }
 
     // Every link and image of the page that points into the site is there.
@@ -446,6 +460,41 @@ class Visit
         return visit;
     }
 
+    // The gallery at UnicodeTextDemo, whose CJK line shows: it fetches the lazy
+    // CJK face from the site once (resources-lazy/), which arrives and is laid
+    // out (ControlTest's gweni_web_glyph_fallback), and the face's license is
+    // under licenses/.
+    async cjk()
+    {
+        const visit = await this.open('controltest.html?control=UnicodeTextDemo', 'controltest.html?control=UnicodeTextDemo');
+        visit.showsCjk = true;
+        let ok = await this.checkWindow(visit, 'UnicodeTextDemo');
+        let state = '';
+        if(ok)
+        {
+            await visit.page.waitForFunction(() => /arrived=1|failed=1/.test(Module.ccall('gweni_web_glyph_fallback', 'string', [], [])),
+                null, { timeout: 120000, polling: 50 }).catch(() => {});
+            await settle(visit.page, 5, 300000);
+            state = await visit.page.evaluate(() => Module.ccall('gweni_web_glyph_fallback', 'string', [], []));
+            if(!/^fetches=1 arrived=1 failed=0 /.test(state) || visit.lazy.length !== 1)
+            {
+                fail(visit.label, `the CJK face: ${visit.lazy.length} request(s) (${visit.lazy.join(', ')}), ${state}; expected one fetch that arrived`);
+                ok = false;
+            }
+            const license = await fetch(`${this.base}/licenses/DroidSansFallbackFull-LICENSE.txt`);
+            if(license.status !== 200)
+            {
+                fail(visit.label, `licenses/DroidSansFallbackFull-LICENSE.txt is not there (HTTP ${license.status})`);
+                ok = false;
+            }
+        }
+        const clean = visit.errors.length === 0;
+        this.report(visit);
+        if(ok && clean)
+            pass(visit.label, `the CJK face fetched once and arrived (${state}), its license under licenses/`);
+        await visit.context.close();
+    }
+
     // The picker on an open gallery page: choosing a control loads its page,
     // the other parameters kept.
     async pick(visit, control, expected, depthView = false)
@@ -527,6 +576,7 @@ async function main()
         const depth = await s.app('controltest.html?control=ButtonDemo&depth-view', 'ButtonDemo-depth-view', 'ButtonDemo', undefined, 'gallery');
         await s.pick(depth, 'SliderDemo', '?control=SliderDemo&depth-view', true);
         await depth.context.close();
+        await s.cjk();
     }
     finally
     {

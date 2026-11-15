@@ -34,8 +34,12 @@
 #    site.css           their one stylesheet (tools/site/, as the pages are)
 #    ControlTest.{js,wasm,data}, OpenGLCore.{js,wasm,data}
 #                       the two apps, each .data the preloaded resources/
+#    resources-lazy/    the lazy package: the CJK face (cmake/LazyFont.cmake),
+#                       in no .data, fetched by a window only once it shows
+#                       text that misses it (SlotRenderer::lazyFacePending)
 #    images/demo.png    the landing page's preview
-#    licenses/          gweni's LICENSE and the fonts' licenses
+#    licenses/          gweni's LICENSE and the fonts' licenses, the lazy
+#                       face's included
 #    .nojekyll          so Pages serves the files as they are
 #  Every URL in it is relative, so it works under https://<user>.github.io/gweni/
 #  and from a local server alike. It needs no COOP/COEP headers: the build has
@@ -103,7 +107,8 @@ fi
 cmake --build "$build_dir" --target ControlTest OpenGLCore
 
 bin="$build_dir/examples/openglcore"
-for file in ControlTest.js ControlTest.wasm ControlTest.data OpenGLCore.js OpenGLCore.wasm OpenGLCore.data; do
+for file in ControlTest.js ControlTest.wasm ControlTest.data OpenGLCore.js OpenGLCore.wasm OpenGLCore.data \
+        resources-lazy/DroidSansFallbackFull.ttf resources-lazy/DroidSansFallbackFull-LICENSE.txt; do
     if [ ! -f "$bin/$file" ]; then
         echo "build_site.sh: $bin/$file is missing: is $build_dir a web tree (./generate.sh web release)?" >&2
         exit 1
@@ -133,6 +138,11 @@ mkdir -p "$out/images" "$out/licenses"
 cp "$repo/docs/images/demo.png" "$out/images/"
 cp "$repo/LICENSE" "$out/licenses/LICENSE.txt"
 cp "$repo"/resources/*-LICENSE.txt "$out/licenses/"
+# the lazy package's faces, beside the pages (the apps fetch resources-lazy/<face>
+# relative to the page), their licenses with the others
+mkdir -p "$out/resources-lazy"
+cp "$bin"/resources-lazy/*.ttf "$out/resources-lazy/"
+cp "$bin"/resources-lazy/*-LICENSE.txt "$out/licenses/"
 
 # the commit the site is built from: GITHUB_SHA in a workflow (a short one made
 # whole where git knows it), else the checkout's HEAD, with -dirty when the

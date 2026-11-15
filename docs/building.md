@@ -432,6 +432,11 @@ It holds three pages, their files and nothing else:
   `Module.gweniDepthViewChanged`), and keeps `depth-view` in the URL as it is,
   so a control picked next opens with the view as it was.
 
+Beside them is `resources-lazy/`, the lazy package: the CJK face (Droid Sans
+Fallback Full, `docs/architecture.md` → "The lazy CJK face"), in no page's
+`.data`. A window fetches it once it shows text that misses it, so a visitor who
+sees no CJK downloads none of it; its license is in `licenses/` with the others.
+
 They are written in `tools/site/` (the pages, `site.css`), dark like the Tokyo
 Night skin, with no framework and nothing loaded from elsewhere. Every URL is
 relative, so the site works under `https://<user>.github.io/gweni/` as from a
@@ -444,13 +449,15 @@ with nothing taken to be cached (`tools/site/sizes.mjs`). It exits 1 if the
 gallery page's gzip total is over its `BUDGET_BYTES`, 8 MB. Measured with DejaVu
 Sans Mono in `resources/` (#604), which adds its 341 kB (0.20 MB gzip) to each
 page's `.data`, and OpenSans Bold, Italic and BoldItalic (#590), which add 651 kB
-(0.35 MB gzip) more:
+(0.35 MB gzip) more. The lazy package is a row of its own, in no page's total (#605,
+which adds about 6 kB gzip to the pages themselves):
 
 | page | raw | gzip | brotli |
 |---|---|---|---|
-| `controltest.html` (`ControlTest.wasm` 3464 kB, `.data` 1707 kB, `.js` 153 kB) | 5.34 MB | 2.24 MB | 1.58 MB |
-| `demo.html` (`OpenGLCore.wasm` 2870 kB, `.data` 1707 kB, `.js` 153 kB) | 4.74 MB | 2.08 MB | 1.45 MB |
-| `index.html` (with the 169 kB preview) | 0.18 MB | 0.17 MB | 0.16 MB |
+| `controltest.html` (`ControlTest.wasm` 4572 kB, `.data` 1709 kB, `.js` 161 kB) | 6.46 MB | 2.58 MB | 1.83 MB |
+| `demo.html` (`OpenGLCore.wasm` 3391 kB, `.data` 1709 kB, `.js` 160 kB) | 5.27 MB | 2.26 MB | 1.58 MB |
+| `index.html` (with the 144 kB preview) | 0.15 MB | 0.14 MB | 0.14 MB |
+| lazy package: `resources-lazy/DroidSansFallbackFull.ttf`, fetched on the first CJK shown | 4.03 MB | 2.15 MB | 1.70 MB |
 
 The release web tree is `-Oz` for this: at CMake's `-O3`, `ControlTest.wasm` is
 3041 kB (1080 kB gzip), against `-Oz`'s 2566 kB (975 kB gzip), and a

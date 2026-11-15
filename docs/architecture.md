@@ -5504,10 +5504,11 @@ taken from a chain font is kept in the primary's `fallback_glyphs` (and so in
 when no chain face has the codepoint does the primary's own missing glyph show. A chain
 font starts with an empty cache, no ASCII warm-up, and is deleted with its primary's
 `FontData` (`GlyphChain`'s destructor); #552's idle-flush wait for a font no load owns
-applies to the primary as before. Each chain face's file is read into memory once and
-shared by every font using it (`glyphFallbackBlob`, kept by `weak_ptr` in
-`m_glyphFallbackBlobs`, so it goes when the last font holding it does, and is read again
-when needed), and loaded from memory (`TEXTURE_FONT_MEMORY`), since a file-backed
+applies to the primary as before. Each chain face's file is read into memory once per
+renderer and shared by every font using it (`glyphFallbackBlob`, held in
+`m_glyphFallbackBlobs` for the renderer's life, so a font made again, at another size or
+after every font using it went, reads nothing; `glyphFallbackFilesRead()` counts the
+reads), and loaded from memory (`TEXTURE_FONT_MEMORY`), since a file-backed
 freetype-gl font opens its file again on every glyph load. A config that names a chain
 face whose file is missing reports it (`Glyph fallback font file not found: <path>`), drops
 it and fails `init` ("Missing resources").
@@ -5566,8 +5567,85 @@ draw, the chain's order, the measures, the shared file, a chain set late),
 `cellCount`'s table and a box-drawing table in DejaVu Sans Mono at 8 to 24 px (coverage
 and SDF) and scale 1, 1.5 and 2, its carets whole cells and its three rules unbroken and
 in the same device px in every row, on GL and Vulkan. UnicodeTextDemo shows a symbols line
-through the chain, a log table in the mono face and the CJK line, which no shipped face
-has, still as missing-glyph boxes.
+through the chain, a log table in the mono face whose last row is CJK, and the CJK line,
+both drawn from the lazy face below.
+
+### The lazy CJK face
+
+Droid Sans Fallback Full (Apache 2.0, 4 MB: CJK ideographs, kana, Hangul jamo, fullwidth forms) is the last face of the
+default chain and of DejaVu Sans Mono's. It is too large to load for every run, so it is
+loaded only when a run misses a codepoint it has, and on the web it is not in a page's
+download until then.
+
+**Outside `resources/`.** `cmake/LazyFont.cmake` downloads the font at configure time from
+an immutable AOSP revision, checks its SHA-256 (`cmake/fetchPinnedFile.cmake`; an
+existing file with that hash is reused, `-DGWENI_CJK_FONT_FILE=` takes a local copy) and
+puts it, its license and its range manifest in `<tree>/resources-lazy/`
+(`resources-lazy/README.md`). The examples, the bench and `gweni_unittests` mirror that
+directory beside their binaries, and `ResourcePaths::Type::LazyFont` looks there
+(`<exe dir>/resources-lazy/<file>.ttf`), whatever `--resources` says.
+
+**Declared ranges.** A lazy face is declared beside its chain entry, CSS `unicode-range`
+style: `"fontFallback"` takes, besides a face name, an object
+`{"face": ..., "file": ..., "unicodeRange": "U+0E3F, ..., U+3400-4DB5, U+4E00-9FA5, ..."}`, which the
+skin passes to `SlotRenderer::setGlyphFallbackSource(face, file, unicodeRange)` (parsed and
+checked there, no file opened). `tools/gen_font_ranges.py` writes the ranges from the
+face's Unicode cmap with Python's standard library (no fonttools), glyph 0 and non-scalar
+codepoints left out, into `resources-lazy/DroidSansFallbackFull-ranges.json`;
+`tests/fontRanges.py` (`font_ranges`) checks it against FreeType and requires the skin
+config to declare the same string. `glyphChainFont` skips a link whose ranges do not hold
+the missed codepoint before it looks its file up, so a miss outside them (a codepoint no
+face has, U+10FFFF) never opens, reads or fetches the face.
+
+**Native: read on the first miss.** The first miss inside the ranges reads the file into
+the renderer's blob and makes the chain font, as for any chain face; Latin text and misses
+outside the ranges read nothing (`tests/cjkFallback.cpp`).
+
+**Web: fetched once a run that misses it is shown.** In a page the directory is copied
+beside the page and is in no `.data`, so a page that shows no CJK downloads nothing. A miss
+inside the ranges whose file is not in the page's file system is pending
+(`SlotRenderer::lazyFacePending`): the chain callback returns
+`TEXTURE_FONT_FALLBACK_PENDING`, and freetype-gl gives the font's notdef
+(`texture_font_t::fallback_pending`) and keeps the glyph nowhere, as `FontData::glyph()`
+does not either, so the codepoint is asked for again once the face is there. The run laid
+out with it waits (`m_lazyPendingRuns`, by text id), and `flush()` starts the fetch
+(`fetchShownLazyFaces`, `fetch()` of `resources-lazy/<file>` relative to the page, the
+bytes written to the page's file system) only once a waiting run is shown, once per path
+per session. Shown, not laid out: the render walk lays out a hidden control's text too
+(`Text::update` draws the run and then hides it), so the demo shell's hidden
+UnicodeTextDemo page, which measures and lays out CJK at start-up, fetches nothing until it
+is shown. The fetch's end (`gweni_lazy_face_arrived`, told to every live renderer) loads
+again the fonts whose chain names the face (`reloadFonts`), which raises
+`textLayoutSerial()` once, and the canvas lays the whole tree out again with the glyphs. A
+failed fetch is one log line (`Glyph fallback font could not be fetched: <path>
+(<why>)`), the face is skipped from then on and never fetched again, and what drew as the
+notdef draws as the font's own missing glyph, the same image. `lazyFaceFetches()`,
+`lazyFaceArrivals()` and `lazyFaceFailures()` count them (0 natively), and ControlTest's
+`gweni_web_glyph_fallback()` reads them with the window renderer's serial;
+`tests/web/interactive.mjs`'s `cjk`, `cjkfail`, `cjkshell` and `nocjk` checks hold the
+fetch to this, and `web_site_smoke` (`tests/web/site.mjs`) fails on a request for the
+package from any page that shows no CJK and requires the gallery at UnicodeTextDemo to
+fetch it once.
+
+**Captures preload.** A capture must not draw what depends on a fetch's timing, so the
+apps' capture modes and `gweni_unittests` read every chain face before the first layout
+(`SlotRenderer::preloadGlyphFallbacks()`, the bytes only: no font or atlas is made, so a
+preload changes no pixel). In a page, `pre.js` first fetches the lazy package's faces
+(`Module.gweniLazyFiles`, generated by `page.cmake`) into `/resources-lazy` before `main`,
+for a capture (`--headless` in argv) or a page made with `gweni_web_page(<target>
+PRELOAD_LAZY)` (`gweni_unittests.html`); a file the runner mounted there is left as it is.
+A face that does not load makes a capture degraded (exit 2).
+
+**A full atlas.** A 1024² SDF atlas holds about 250 CJK glyphs at the 48 px base size. A
+font reserves its face's missing glyph (`texture_font_t::notdef`, glyph index 0) before its
+first glyph past ASCII, while the atlas has room for it; a glyph that then finds no room,
+its own or one a chain font would lend on the shared atlas (`texture_atlas_t::failed_regions`
+tells that from a glyph with no image), goes into the font's `unfit` list, is drawn as the
+notdef from then on and is never rasterised again. `texture_font_t::atlas_full` tells
+`SlotRenderer::fontAtlasFull`, which counts them (`glyphsOverAtlas()`) and logs the atlas's
+first one: `Font atlas full (<face>, <mode>, <px>, <W>x<H>): glyphs that do not fit draw as
+the missing glyph, from U+XXXX` (`tests/cjkFallback.cpp` fills an SDF atlas with 600
+ideographs). There is no atlas growth.
 
 ## Rich text: faces, metrics, `text::RichLayout` and `RichText`
 
