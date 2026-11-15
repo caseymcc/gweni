@@ -40,6 +40,10 @@
  *  into ties, every pooled row's depth/text/selection/stripes, and the anchor;
  *  lazy answers at the list end keep the view, placeholders at a new depth
  *  rebind, and placeholder cell contents hide and restore their own flags.
+ *  A sorted batch and an immediate lazy answer that re-sorts its folder
+ *  restore the anchor after the entire edit, despite intermediate clamps.
+ *  GWENI_TREETABLE_SEED_FIRST/COUNT extend the combined model's seed range
+ *  for manual stress runs; the suite defaults to seeds 1..1000.
  */
 #include "headlessFixture.h"
 
@@ -49,6 +53,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <map>
 #include <random>
 #include <set>
@@ -2728,8 +2733,15 @@ struct LiveModelScene: Scene, event::Handler
 
 TEST_CASE("TreeTable model: combined lazy sorted selected and scrolled edits match an independent model")
 {
-    for(unsigned seed=1; seed <= 1000; ++seed)
+    const char *firstEnv=std::getenv("GWENI_TREETABLE_SEED_FIRST");
+    const char *countEnv=std::getenv("GWENI_TREETABLE_SEED_COUNT");
+    const unsigned first=firstEnv?static_cast<unsigned>(std::stoul(firstEnv)):1;
+    const unsigned count=countEnv?static_cast<unsigned>(std::stoul(countEnv)):1000;
+    REQUIRE(first > 0);
+    REQUIRE(count > 0);
+    for(unsigned i=0; i < count; ++i)
     {
+        const unsigned seed=first+i;
         CAPTURE(seed);
         LiveModelScene p(seed);
         Tree *tree=p.tree;
@@ -2951,5 +2963,104 @@ TEST_CASE("TreeTable model: combined lazy sorted selected and scrolled edits mat
                 CHECK(p.top() == topBefore);
             }
         }
+    }
+}
+
+TEST_CASE("TreeTable model: a sorted batch above a viewport that fits restores its final anchor")
+{
+    for(bool sorted : {false, true})
+    {
+        CAPTURE(sorted);
+        Scene scene;
+        Tree *tree=scene.tree;
+        for(Id id=1; id <= 9; ++id)
+        {
+            scene.names[id]="m"+std::to_string(id);
+            REQUIRE(tree->addNode(Root, id) == id);
+        }
+        scene.names[100]="a1";
+        scene.names[101]="a2";
+        if(sorted)
+        {
+            tree->setSortComparator(0, [&scene](Id a, Id b) { return scene.names.at(a) < scene.names.at(b); });
+            tree->setSortColumn(0, controls::SortDirection::Ascending);
+        }
+        tree->setSelectedNode(1);
+        scene.settle();
+        auto *body=tree->getVirtualBody();
+        REQUIRE(body->getMaxVerticalScrollOffset() == 0);
+        REQUIRE(scene.top() == 1);
+
+        REQUIRE(tree->insertNodes(Root, 0, {100, 101}));
+        scene.frame();
+        REQUIRE(visibleIds(tree) == std::vector<Id>{100, 101, 1, 2, 3, 4, 5, 6, 7, 8, 9});
+        // The anchor's target is 40. Only the final list's maximum may clamp
+        // it, not the first splice's maximum (19).
+        REQUIRE(body->getMaxVerticalScrollOffset() == 39);
+        CHECK(body->getVerticalScrollOffset() == 39);
+        CHECK(tree->getSelectedNode() == 1);
+        CHECK(tree->getSelectedItem() == 2);
+    }
+}
+
+TEST_CASE("TreeTable model: a lazy answer that re-sorts its folder keeps the expansion anchor")
+{
+    // Answer now, later, and now with a nested expansion from the handler.
+    // The last variant returns early from the outer setExpanded call.
+    for(int answerMode=0; answerMode < 3; ++answerMode)
+    {
+        CAPTURE(answerMode);
+        Scene scene;
+        Tree *tree=scene.tree;
+        std::map<Id, int> bytes;
+        for(Id id=0; id <= 12; ++id)
+        {
+            bytes[id]=static_cast<int>(id);
+            REQUIRE(tree->addNode(Root, id, id == 1) == id);
+        }
+        for(Id id=100; id <= 104; ++id)
+            bytes[id]=0;
+        const auto key=[tree, &bytes](Id id)
+            {
+                const Tree::Node *node=tree->getNode(id);
+                return node->hasChildren?static_cast<int>(node->children.size()):bytes.at(id);
+            };
+        tree->setSortComparator(0, [key](Id a, Id b) { return key(a) < key(b); });
+        tree->setSortColumn(0, controls::SortDirection::Ascending);
+        Requests requests;
+        requests.listen(tree);
+        const auto answer=[&](Id id)
+            {
+                REQUIRE(tree->insertNodes(id, 0, {100, 101, 102, 103, 104}));
+                if(answerMode == 2)
+                    tree->setExpanded(id, true);
+            };
+        if(answerMode != 1)
+            requests.answer=answer;
+        tree->setSelectedNode(1);
+        scene.settle();
+        REQUIRE(visibleIds(tree) == std::vector<Id>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12});
+        auto *body=tree->getVirtualBody();
+        body->setVerticalScrollOffset(39);
+        scene.settle();
+        REQUIRE(scene.top() == 1);
+        tree->setExpanded(1, true);
+        scene.frame();
+        if(answerMode == 1)
+        {
+            CHECK(tree->getNode(1)->loading);
+            answer(1);
+            scene.frame();
+        }
+        REQUIRE(visibleIds(tree) == std::vector<Id>{0, 2, 3, 4, 1, 100, 101, 102, 103, 104,
+            5, 6, 7, 8, 9, 10, 11, 12});
+        REQUIRE(body->getMaxVerticalScrollOffset() >= 4*20+19);
+        CHECK(scene.top() == 1);
+        CHECK(body->getVerticalScrollOffset() == 4*20+19);
+        CHECK(tree->getSelectedNode() == 1);
+        CHECK(tree->getSelectedItem() == 4);
+        CHECK(tree->isExpanded(1));
+        CHECK(requests.ids == std::vector<Id>{1});
+        CHECK(requests.expanded == std::vector<Id>{1});
     }
 }

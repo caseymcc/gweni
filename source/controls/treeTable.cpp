@@ -446,6 +446,8 @@ bool TreeTable::insertNodes(NodeId parent, size_t index, const NodeId *ids, size
     // run (a lazy node's answer in its placeholder's place); otherwise each
     // node goes to its sorted place, a splice each.
     std::vector<NodeId> *order=isSorted()?currentSorted(parent):nullptr;
+    const bool anchorBatch=order && at != NoItem && count > 1;
+    const Anchor anchor=anchorBatch?captureAnchor():Anchor{};
 
     if(isSorted() && priorEmpty)
     {
@@ -485,6 +487,13 @@ bool TreeTable::insertNodes(NodeId parent, size_t index, const NodeId *ids, size
             spliceVisible(at, replaced, visible);
     }
     refreshNode(parent, false);
+    if(anchorBatch)
+    {
+        // A per-id splice can clamp against a list still missing later ids.
+        // Restore once all are shown and the parent's new key is placed.
+        restoreAnchor(anchor);
+        syncVisibleSelection();
+    }
     return true;
 }
 
@@ -1317,16 +1326,27 @@ void TreeTable::setExpanded(NodeId id, bool expanded)
     if(found == m_nodeIndex.end())
         return;
 
+    bool requested=false;
+    Anchor anchor;
+
     if(expanded && beginRequest(m_nodes[found->second]))
     {
         // Asked before the node expands, so an answer in the handler expands
         // it with its children, and an empty one leaves it a collapsed leaf.
+        // Its new sort key may move it while the list still lacks its children.
+        anchor=captureAnchor();
+        requested=true;
         requestChildren(id);
 
         const Node *now=getNode(id);
 
         if(!now || now->expanded || !now->hasChildren)
+        {
+            // The handler may have completed the expansion itself.
+            restoreAnchor(anchor);
+            syncVisibleSelection();
             return;
+        }
     }
 
     Node &node=m_nodes[m_nodeIndex.at(id)];
@@ -1369,6 +1389,11 @@ void TreeTable::setExpanded(NodeId id, bool expanded)
                 spliceVisible(at, end-at, {});
             }
         }
+    }
+    if(requested)
+    {
+        restoreAnchor(anchor);
+        syncVisibleSelection();
     }
     expansionEvent(id, expanded);
     if(selectionMoved)
