@@ -559,7 +559,8 @@ bool onKeyEvent(controls::Base *canvas, int key, bool down)
     {
         controls::Canvas *onCanvas=canvas->getCanvas();
 
-        // Cancel a live drag before a field in a Popup takes Escape.
+        // a live drag first, ahead of the popup and of a focus inside it:
+        // Escape cancels it, and the hover goes to what is under the mouse
         if(onCanvas && (draganddrop::dragCanvas() == onCanvas) && draganddrop::cancel())
         {
             UpdateHoveredControl(canvas);

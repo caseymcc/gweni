@@ -233,7 +233,8 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # tree table's expands, collapses and keys, the split and drop-down
     # buttons' menus, the range slider's drags and keys, the
     # steppers' step changes, the code view's copy button, a RichText, the
-    # SearchComboBox's keystrokes, picks and chip wrap, and the reorder drags
+    # SearchComboBox's keystrokes, picks and chip wrap, and the reorder drags'
+    # looks and drops
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
             dialog toast flow switch spinner navigation-rail board field-validation segmented

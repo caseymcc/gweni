@@ -22,8 +22,9 @@
  *  row deleted mid-drag leaves it running, the list hidden (in the next update
  *  phase) or deleted cancels it, telling the target it left. Escape cancels a
  *  live drag ahead of the focused control, including a SearchComboBox field
- *  in an open Popup: the query, its list and the Popup stay until the next
- *  Escape, and the cancelled drag's release drops nothing. Over
+ *  in an open Popup: the query and its list stay until the next Escape, the
+ *  Popup until the one after, and the cancelled drag's release drops
+ *  nothing. Over
  *  nothing that accepts the item the cursor the core asked for is No, and a
  *  release there cancels; a cancel calls no handleDrop and ends the source's
  *  drag with false. A press moved under 5 units starts nothing. Once a drag
