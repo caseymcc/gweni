@@ -13,8 +13,9 @@
  *  a device error, fails it too, each with one line naming it.
  *
  *  It links gweni alone, so in the Vulkan-only tree (./generate.sh linux
- *  vulkan) it is the binary vulkanFrameLinks.cmake checks for GL libraries
- *  and symbols. Out of the glob of tests/ sources, as vulkan_smoke is.
+ *  vulkan) it is the binary vulkan_frame_no_gl (noGl.cmake) checks for GL
+ *  libraries and symbols. Out of the glob of tests/ sources, as vulkan_smoke
+ *  is.
  */
 #include <gweni/controls/button.h>
 #include <gweni/controls/canvas.h>

@@ -1,4 +1,9 @@
-# The Vulkan-only tree (./generate.sh linux vulkan) holds nothing GL, two ways:
+#
+#  Gweni
+#  Copyright (c) 2010 Facepunch Studios
+#  MIT License, see LICENSE
+#
+#  The Vulkan-only tree (./generate.sh linux vulkan) holds nothing GL, two ways:
 #
 #   cmake -DMODE=elf -DEXE=<exe> -DREADELF=<readelf> -DNM=<nm> -P noGl.cmake
 #     fails, naming each one, if the exe (vulkan_frame, which links gweni and

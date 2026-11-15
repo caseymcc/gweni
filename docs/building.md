@@ -148,9 +148,14 @@ add_subdirectory(external/gweni gweni)
 target_link_libraries(app PRIVATE gweni)
 ```
 
+- Set the options as cache entries, as above: gweni's minimum CMake (3.12)
+  predates policy CMP0077, so on a first configure its `option()` ignores a
+  plain `set()` of the same name and takes its own default (CMake warns, naming
+  CMP0077).
 - `GWENI_BUILD_EXAMPLES` and `GWENI_BUILD_TESTS` default to OFF when gweni is
   not the top-level project, so this builds the library alone. With
-  `GWENI_BUILD_TESTS` on, the tests need the validation layer too.
+  `GWENI_BUILD_TESTS` on, the tests need the validation layer, `doctest` and
+  `glfw3`'s headers too.
 - `GWENI_RENDER_OPENGL_CORE` is ON by default; turn it off, or GL, GLEW and
   GLFW are found and linked.
 - `GWENI_SANITIZE`, `GWENI_FRAME_POINTERS` and `GWENI_DEBUG_LOGGING` are as in

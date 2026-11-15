@@ -820,7 +820,7 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
         endforeach()
     endforeach()
 elseif(NOT EMSCRIPTEN)
-    message(STATUS "tests: ControlTest tests skipped, GWENI_BUILD_EXAMPLES is off")
+    message(STATUS "tests: ControlTest tests skipped, no ControlTest (GWENI_BUILD_EXAMPLES off, or no GL renderer)")
 endif()
 
 # The mirror that keeps the resources/ next to the examples in step with the
@@ -1097,7 +1097,7 @@ if(TARGET gweni_capture)
         endif()
     endif()
 else()
-    message(STATUS "tests: unit tests skipped, they need gweni_capture (GWENI_BUILD_EXAMPLES)")
+    message(STATUS "tests: GL unit tests (gweni_unittests) skipped, they need gweni_capture (GWENI_BUILD_EXAMPLES and the GL renderer)")
 endif()
 
 # web_probe: the image's pinned headless Chromium gives a WebGL 2 context with
