@@ -708,8 +708,14 @@ bool TreeTable::moveNode(NodeId id, NodeId newParent, size_t index)
     siblings.insert(siblings.begin()+index, id);
     // sorted: shown at its sorted place, the app's index kept for the order
     // a sort's end gives back (a loading group had none to sort among)
+    // (sorted again at once: the group is shown, and a later insert under it
+    // needs its current order to find its place)
     if(answer)
+    {
         m_sortedGroups.erase(newParent);
+        if(isSorted())
+            getShownChildren(newParent);
+    }
     else if(std::vector<NodeId> *order=currentSorted(newParent))
     {
         const size_t pos=sortedPlace(newParent, *order, id);

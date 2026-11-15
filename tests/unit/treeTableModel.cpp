@@ -1510,15 +1510,30 @@ TEST_CASE("TreeTable model: a move under a loading node is its answer and matche
         // the moved node takes the placeholder's place
         CHECK(ids() == std::vector<Id>{1, 3, 2});
         CHECK_FALSE(tree->getNode(1)->loading);
+
+        // an insert whose app index and sorted place disagree, before any
+        // rebuild: sorted, it goes after 3 (the group the move answered is
+        // sorted at once, not left stale)
+        REQUIRE(tree->insertNode(1, 0, 50) == 50);
+        scene.frame();
+        const std::vector<Id> withInsert=sorted?std::vector<Id>{1, 3, 50, 2}
+            :std::vector<Id>{1, 50, 3, 2};
+        CHECK(ids() == withInsert);
         tree->collapseAll();
         tree->expandAll();
         scene.frame();
-        CHECK(ids() == std::vector<Id>{1, 3, 2});
+        CHECK(ids() == withInsert);
 
         // a later answer adds to it
         REQUIRE(tree->insertNodes(1, 99, {100, 101}));
         scene.frame();
-        CHECK(ids() == std::vector<Id>{1, 3, 100, 101, 2});
+        const std::vector<Id> answered=sorted?std::vector<Id>{1, 3, 50, 100, 101, 2}
+            :std::vector<Id>{1, 50, 3, 100, 101, 2};
+        CHECK(ids() == answered);
+        tree->collapseAll();
+        tree->expandAll();
+        scene.frame();
+        CHECK(ids() == answered);
     }
 }
 
@@ -1701,7 +1716,19 @@ TEST_CASE("TreeTable model: an edit's anchor leaves a pending scrollToItem to th
     REQUIRE(tree->moveNode(300, 4, 0));
     scene.frame();
     controls::VirtualList *body=tree->getVirtualBody();
-    const size_t first=body->firstVisibleItem();
+    size_t first=body->firstVisibleItem();
+    CHECK(first <= 80);
+    CHECK(80 < first+200/20);
+
+    // a move of the anchor's own node, which moves the anchor: the pending
+    // scroll still wins
+    scene.settle();
+    tree->scrollToItem(0);
+    scene.settle();
+    tree->scrollToItem(80);
+    REQUIRE(tree->moveNode(0, Root, 50));
+    scene.frame();
+    first=body->firstVisibleItem();
     CHECK(first <= 80);
     CHECK(80 < first+200/20);
 }
