@@ -100,7 +100,9 @@ public:
 
 public:
 
-    //! The calendar button's width, in the field's right padding's room.
+    //! The calendar button's width. The button is docked Right inside the
+    //! field and counted in its width, so the format's widest text fits left
+    //! of it; text typed past that scrolls under it, as in a NumericUpDown.
     static constexpr int ButtonWidth=16;
 
     //! The date shown, empty for none (only with setAllowEmpty(true)). Set
@@ -130,7 +132,8 @@ public:
     const Date &getToday() const { return getEmptyStepValue().date; }
 
     //! Opens the calendar (see the class comment); nothing when it is open,
-    //! the field is disabled or not on a canvas.
+    //! the field is disabled, read-only (setEditable(false)) or not on a
+    //! canvas.
     void openCalendar();
     //! Closes it, the focus back to the field when \p focusField.
     void closeCalendar(bool focusField=true);
@@ -147,7 +150,15 @@ public:
     bool onKeyDown(bool down) override;
     bool onKeyF4(bool down) override;
 
+    //! The button follows: disabled with the field, and while it is
+    //! read-only; either closes an open calendar.
+    void setDisabled(bool disabled) override;
+    void setEditable(bool editable) override;
+
 protected:
+
+    //! The button disabled while the field is disabled or read-only.
+    void updateButton();
 
     //! A date's formats alone.
     bool formatAllowed(bool date) const override { return date; }

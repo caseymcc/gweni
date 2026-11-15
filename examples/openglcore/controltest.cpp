@@ -1566,7 +1566,6 @@
 #include <gweni/controls/stepper.h>
 #include <gweni/controls/calendar.h>
 #include <gweni/controls/dateEdit.h>
-#include <gweni/controls/popup.h>
 #include <gweni/controls/timeEdit.h>
 #include <gweni/controls/selectable.h>
 #include <gweni/controls/toolTip.h>

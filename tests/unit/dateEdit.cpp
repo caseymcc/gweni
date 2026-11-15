@@ -23,6 +23,8 @@
  *  isDateEnabled following the range and the filter. Empty allowed and not,
  *  a step from empty showing setToday's date. onValueChanged once per real
  *  change by the user, never from setDate, setRange, setFormat or the filter.
+ *  The calendar button inside the field's padding, at its height; disabled
+ *  with the field and while it is read-only, when nothing opens the calendar.
  */
 #include "headlessFixture.h"
 
@@ -535,5 +537,67 @@ TEST_CASE("DateEdit: the button is in the field's width")
     // right of the text, inside the field
     CHECK(button->getBounds().x > edit->getWidth()/2);
     CHECK(button->getBounds().x+button->getWidth() <= edit->getWidth());
+    // the field's height inside its padding, not Button's own
+    const Padding &padding=edit->getPadding();
+    CHECK(button->getBounds().y == padding.top);
+    CHECK(button->getBounds().y+button->getHeight() == edit->getFieldHeight()-padding.bottom);
     CHECK_FALSE(button->isTabable());
+}
+
+TEST_CASE("DateEdit: disabled, the button is disabled and nothing opens the calendar")
+{
+    Scene scene;
+    DateEdit *edit=scene.edit;
+    controls::internal::DateEditButton *button=edit->getButton();
+
+    edit->setDate(Date(2026, 11, 13));
+    scene.caretAt(3);
+    scene.key(keys::F4);
+    REQUIRE(edit->isCalendarOpen());
+
+    // disabling closes it and disables the button with the field
+    edit->setDisabled(true);
+    scene.frame();
+    CHECK_FALSE(edit->isCalendarOpen());
+    CHECK(button->isDisabled());
+    scene.clickOn(button);
+    CHECK_FALSE(edit->isCalendarOpen());
+    edit->openCalendar();
+    CHECK_FALSE(edit->isCalendarOpen());
+
+    edit->setDisabled(false);
+    scene.frame();
+    CHECK_FALSE(button->isDisabled());
+    scene.clickOn(button);
+    CHECK(edit->isCalendarOpen());
+    scene.key(keys::Escape);
+    CHECK(scene.date() == "2026-11-13");
+}
+
+TEST_CASE("DateEdit: read-only, the calendar does not open and the date stays")
+{
+    Scene scene;
+    DateEdit *edit=scene.edit;
+    controls::internal::DateEditButton *button=edit->getButton();
+
+    edit->setDate(Date(2026, 11, 13));
+    edit->setEditable(false);
+    scene.frame();
+    CHECK(button->isDisabled());
+    scene.caretAt(3);
+    scene.key(keys::F4);
+    CHECK_FALSE(edit->isCalendarOpen());
+    scene.altDown();
+    CHECK_FALSE(edit->isCalendarOpen());
+    scene.clickOn(button);
+    CHECK_FALSE(edit->isCalendarOpen());
+    CHECK(scene.date() == "2026-11-13");
+    CHECK(scene.events.count == 0);
+
+    edit->setEditable(true);
+    scene.frame();
+    CHECK_FALSE(button->isDisabled());
+    scene.caretAt(3);
+    scene.key(keys::F4);
+    CHECK(edit->isCalendarOpen());
 }

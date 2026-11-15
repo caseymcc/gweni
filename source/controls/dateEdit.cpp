@@ -47,8 +47,9 @@ GWENI_CONTROL_CONSTRUCTOR(DateEditButton)
     // a press focuses the field, not the button
     setKeyboardInputEnabled(false);
     setTabable(false);
-    // the width asked for (no text to fit), the dock's height
-    setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    // the width asked for (no text to fit); the dock's height, the field's
+    // inside its padding (Fixed would keep Button's own height and overhang)
+    setSizeFlags({SizeFlag::Fixed, SizeFlag::Elastic});
 }
 
 GWENI_CONTROL_CONSTRUCTOR(DateEditCalendar)
@@ -144,7 +145,7 @@ bool DateEdit::isCalendarOpen() const
 
 void DateEdit::openCalendar()
 {
-    if(isCalendarOpen() || isDisabled() || !getCanvas())
+    if(isCalendarOpen() || isDisabled() || !m_editable || !getCanvas())
         return;
 
     // what was typed is the date the calendar opens on
@@ -191,6 +192,28 @@ void DateEdit::toggleCalendar()
         closeCalendar(true);
     else
         openCalendar();
+}
+
+void DateEdit::setDisabled(bool disabled)
+{
+    ParentClass::setDisabled(disabled);
+    updateButton();
+}
+
+void DateEdit::setEditable(bool editable)
+{
+    ParentClass::setEditable(editable);
+    updateButton();
+}
+
+void DateEdit::updateButton()
+{
+    const bool off=isDisabled() || !m_editable;
+
+    if(off)
+        closeCalendar(false);
+    if(m_button->isDisabled() != off)
+        m_button->setDisabled(off);
 }
 
 void DateEdit::onButtonPressed(event::Info)
