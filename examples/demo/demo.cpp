@@ -45,6 +45,7 @@
 #include "demo/stepper.h"
 #include "demo/searchCombo.h"
 #include "demo/calendar.h"
+#include "demo/dateTime.h"
 #include "demo/dialog.h"
 #include "demo/toast.h"
 #include "demo/crossSplitter.h"
@@ -259,6 +260,7 @@ void Demo::init(const String &name)
         addDemo<SplitButtonDemo>(cat, "SplitButtonDemo", "Split buttons");
         addDemo<StepperDemo>(cat, "StepperDemo", "Stepper");
         addDemo<CalendarDemo>(cat, "CalendarDemo", "Calendar");
+        addDemo<DateTimeDemo>(cat, "DateTimeDemo", "Date and time");
         addDemo<CheckBoxDemo>(cat, "CheckBoxDemo", "Check box");
         addDemo<SwitchDemo>(cat, "SwitchDemo", "Switch");
         addDemo<SpinnerDemo>(cat, "SpinnerDemo", "Spinner");

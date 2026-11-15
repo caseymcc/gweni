@@ -181,7 +181,7 @@
  *                       split-button | range-slider | stepper |
  *                       code-view | rich-text | markdown | search-combo |
  *                       reorder |
- *                       calendar | translucency (see below)
+ *                       calendar | date-time | translucency (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -1315,6 +1315,31 @@
  *                 out and back in gives the month's frame back; the label names the selection; settled frames write
  *                 nothing; the demo gives every id back. Exits non-zero if any
  *                 check is no.
+ *    date-time    DateTimeDemo, the clock frozen (date_time.png,
+ *                 date_time_calendar.png), the demo's values label not
+ *                 updating: Up in the ISO date's day, month and year and the
+ *                 24-hour time's minute and hour; "1/2/2027" and
+ *                 "31/02/2027" typed into the D/M/Y date, "2:30 pm" into the
+ *                 12-hour time and a Saturday into the weekday-only date, each
+ *                 with Return; Alt+Down on the ISO date, a settled frame and
+ *                 Escape; a click on its button and a click on Dec 20; last
+ *                 the label updating again and a Down on the time. One line
+ *                   date-time up=yes|no ... ids_back=yes|no up=TEXTS ...
+ *                 reports the checks: each Up writes only the field's own
+ *                 slots (not its button's) and no more glyphs than its new
+ *                 string, lays nothing out and changes no pixel outside the
+ *                 field; the typed texts commit or revert as the unit tests
+ *                 say; Alt+Down opens the calendar with the focus below the
+ *                 field inside the canvas, changing no pixel outside the
+ *                 popup and the field; a settled frame with it open writes
+ *                 nothing; Escape gives the frame before opening back with
+ *                 the focus on the field; the button's open makes no control
+ *                 and no id, below the field, nothing changed outside the
+ *                 popup and the field; the pick sets the field, closes the
+ *                 calendar with the focus back and gives the frame before
+ *                 opening back but the field; the label names the new time;
+ *                 settled frames write nothing; the demo gives every id
+ *                 back. Exits non-zero if any check is no.
  *    virtual-list VirtualListDemo with its list at 1 000 and then 100 000
  *                 items, the clock frozen: a settled frame, a one-row scroll
  *                 from the top (scrollByRows) and a wheel notch over the list
@@ -1540,6 +1565,9 @@
 #include <gweni/controls/dropDownButton.h>
 #include <gweni/controls/stepper.h>
 #include <gweni/controls/calendar.h>
+#include <gweni/controls/dateEdit.h>
+#include <gweni/controls/popup.h>
+#include <gweni/controls/timeEdit.h>
 #include <gweni/controls/selectable.h>
 #include <gweni/controls/toolTip.h>
 #include <gweni/controls/popup.h>
@@ -1610,6 +1638,7 @@
 #include <demo/stepper.h>
 #include <demo/searchCombo.h>
 #include <demo/calendar.h>
+#include <demo/dateTime.h>
 #include <gweni/controls/badge.h>
 #include <gweni/controls/chip.h>
 #include <gweni/controls/searchComboBox.h>
@@ -1783,7 +1812,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(ChartAreasDemo) X(TimelineDemo) X(ComboBoxDemo) X(SearchComboDemo) \
-    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(NavigationRailDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(TreeTableDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(CodeViewDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(SegmentedButtonsDemo) X(CalendarDemo) X(SplitButtonDemo) X(StepperDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
+    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(NavigationRailDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(TreeTableDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(CodeViewDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(SegmentedButtonsDemo) X(CalendarDemo) X(DateTimeDemo) X(SplitButtonDemo) X(StepperDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(SwitchDemo) X(SpinnerDemo) X(FieldValidationDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(RangeSliderDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
@@ -1886,7 +1915,8 @@ static void printUsage(std::ostream &out)
          "                     | navigation-rail | flow | board | switch | spinner\n"
          "                     | image-grid | segmented | split-button\n"
          "                     | range-slider | stepper | code-view | rich-text\n"
-         "                     | search-combo | reorder | calendar | translucency;\n"
+         "                     | search-combo | reorder | calendar | date-time\n"
+         "                     | translucency;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -2940,7 +2970,7 @@ enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typ
     ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, TreeTable, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
     ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented, SplitButton,
-    RangeSlider, Stepper, CodeView, RichText, Markdown, SearchCombo, Reorder, Calendar, Translucency };
+    RangeSlider, Stepper, CodeView, RichText, Markdown, SearchCombo, Reorder, Calendar, DateTime, Translucency };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2995,6 +3025,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "markdown") scenario=Scenario::Markdown;
     else if(name == "search-combo") scenario=Scenario::SearchCombo;
     else if(name == "calendar") scenario=Scenario::Calendar;
+    else if(name == "date-time") scenario=Scenario::DateTime;
     else return false;
     return true;
 }
@@ -15366,6 +15397,294 @@ static bool runCalendarScenario(Session &s, const std::string &shotDir, bool &pa
 }
 
 //-----------------------------------------------------------------------------
+// --scenario date-time: DateTimeDemo's fields, the clock frozen
+//
+// A field is a TextBox showing its value: an Up in a section rewrites its text
+// (a digit for a digit keeps the string's width, so nothing is laid out) and
+// writes the field's own slots and the new string's glyphs. DateEdit's
+// calendar is a Popup made on the first open and kept: an open writes the
+// popup and the field (its focus look and the button), a pick or Escape gives
+// the frame before opening back, but the field's text after a pick. The
+// demo's label is the app's reply to onValueChanged: its new text is laid
+// out, so the cost checks are made with its updates off and the label is
+// checked on its own at the end.
+//-----------------------------------------------------------------------------
+
+static bool runDateTimeScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    using gweni::Date;
+    using gweni::TimeOfDay;
+    using gweni::controls::DateEdit;
+    using gweni::controls::TimeEdit;
+    using gweni::controls::internal::SectionedEdit;
+
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    checks.scenario="date-time";
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    gweni::controls::Base *control=addControl(s, "DateTimeDemo");
+    auto *demo=gweni::gweni_cast<gweni::DateTimeDemo>(control);
+
+    if(!demo)
+    {
+        std::cerr<<"ControlTest: date-time: DateTimeDemo was not built\n";
+        return false;
+    }
+
+    s.label="date_time";
+    renderFrames(s, s.frames);
+
+    bool ok=shoot(s, shotDir+"/date_time.png");
+    std::vector<uint8_t> pixels;
+    size_t idleWork=settleCodeEditor(s, pixels);
+    auto centre=[](gweni::controls::Base *part) {
+        const gweni::Rect r=part->getCanvasBounds();
+
+        return gweni::Point(r.x+r.w/2, r.y+r.h/2);
+    };
+    auto caretAt=[&s](SectionedEdit *field, int pos) {
+        field->focus();
+        field->setCursorPos(pos);
+        field->setCursorend(pos);
+        renderFrames(s, 1);
+    };
+    auto dropFocus=[&s]() {
+        if(gweni::KeyboardFocus)
+            gweni::KeyboardFocus->unfocus();
+        renderFrames(s, 1);
+    };
+
+    demo->setLabelUpdates(false);
+
+    // (1) Up in each section of the ISO date and the 24-hour time: the
+    // field's own slots (not its button's) and no more glyphs than its new
+    // string, no layout, no pixel outside the field
+    DateEdit *iso=demo->isoDate();
+    TimeEdit *time24=demo->time24();
+    struct Step
+    {
+        SectionedEdit *field;
+        int caret;
+        const char *expected;
+    };
+    const Step steps[]={
+        {iso, 9, "2026-11-15"}, {iso, 6, "2026-12-15"}, {iso, 2, "2027-12-15"},
+        {time24, 4, "14:31"}, {time24, 1, "15:31"}};
+    std::string stepTexts;
+    size_t stepPrims=0, stepGlyphs=0, stepOutside=0, stepChanged=0;
+    int stepPasses=0;
+    bool stepsOk=true;
+
+    for(const Step &step : steps)
+    {
+        caretAt(step.field, step.caret);
+        idleWork+=settleCodeEditor(s, pixels);
+
+        std::set<size_t> allowedPrims, allowedTexts, buttonPrims, buttonTexts;
+
+        subtreeIds(step.field, allowedPrims, allowedTexts);
+        if(DateEdit *date=dynamic_cast<DateEdit *>(step.field))
+        {
+            subtreeIds(date->getButton(), buttonPrims, buttonTexts);
+            for(size_t id : buttonPrims)
+                allowedPrims.erase(id);
+        }
+
+        sendKey(s, "up");
+
+        const CodeEditorFrame frame=codeEditorFrame(s);
+        const size_t outside=differencesOutsideRects(s, pixels, frame.pixels, {step.field->getCanvasBounds()});
+        const bool good=(step.field->getText() == step.expected) && idsWithin(frame.primitives, allowedPrims)
+            && idsWithin(frame.texts, allowedTexts) && (frame.glyphSlots <= step.field->getText().size())
+            && (frame.passes == 0) && (outside == 0) && (frame.changed <= subtreeControls(step.field));
+
+        stepTexts+=(stepTexts.empty()?"":",")+step.field->getText();
+        stepPrims=std::max(stepPrims, frame.primitives.size());
+        stepGlyphs=std::max(stepGlyphs, frame.glyphSlots);
+        stepOutside+=outside;
+        stepPasses+=frame.passes;
+        stepChanged=std::max(stepChanged, frame.changed);
+        stepsOk=stepsOk && good;
+        pixels=frame.pixels;
+    }
+    checks.check("up",
+        stepsOk,
+        "the Ups gave "+stepTexts+" (2026-11-15,2026-12-15,2027-12-15,14:31,15:31 expected), wrote up to "
+        +std::to_string(stepPrims)+" primitive ids and "+std::to_string(stepGlyphs)
+        +" glyphs, outside the field's own or past the new string, changed up to "+std::to_string(stepChanged)
+        +" controls, ran "+std::to_string(stepPasses)+" layout passes or changed "+std::to_string(stepOutside)
+        +" pixels outside the field");
+    dropFocus();
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (2) typing and Return, as the unit tests say: a lenient D/M/Y date, a
+    // date that is none reverting, a 12-hour time from "2:30 pm", a Saturday
+    // the weekday-only field's filter refuses
+    auto enter=[&s](SectionedEdit *field, const std::string &text) {
+        field->focus();
+        field->onSelectAll(field);
+        typeText(s, text);
+        sendKey(s, "return");
+        renderFrames(s, 1);
+        return field->getText();
+    };
+    DateEdit *dmy=demo->dmyDate();
+    TimeEdit *time12=demo->time12();
+    const std::string typedDate=enter(dmy, "1/2/2027");
+    const bool dateTaken=dmy->getDate() && (*dmy->getDate() == Date(2027, 2, 1));
+    const std::string revertedDate=enter(dmy, "31/02/2027");
+    const std::string typedTime=enter(time12, "2:30 pm");
+    const bool timeTaken=time12->getTime() && (*time12->getTime() == TimeOfDay(14, 30));
+    const std::string limitedText=enter(demo->limitedDate(), "2026-11-14");
+
+    checks.check("typed",
+        typedDate == "01/02/2027" && dateTaken && revertedDate == "01/02/2027" && typedTime == "2:30 PM"
+            && timeTaken && limitedText == "2026-11-13",
+        "\"1/2/2027\" gave "+typedDate+" (01/02/2027 expected), \"31/02/2027\" "+revertedDate
+        +" (01/02/2027), \"2:30 pm\" "+typedTime+" (2:30 PM), a Saturday in the weekday field "+limitedText
+        +" (2026-11-13)");
+    dropFocus();
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (3) Alt+Down from the focused ISO field: the calendar below the field,
+    // inside the canvas, no pixel changed outside the popup and the field
+    // (its button in it); a settled frame with it open writes nothing; Escape
+    // gives the frame before back
+    caretAt(iso, 9);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    const std::vector<uint8_t> beforeOpen=pixels;
+    const gweni::Rect canvasBounds(0, 0, s.canvas->getWidth(), s.canvas->getHeight());
+    auto placedBelow=[&](gweni::controls::Base *popup) {
+        const gweni::Rect p=popup->getCanvasBounds();
+        const gweni::Rect f=iso->getCanvasBounds();
+
+        return (p.y >= f.y+f.h) && insideRect(p, canvasBounds);
+    };
+
+    sendKey(s, "alt+down");
+
+    const CodeEditorFrame altOpen=codeEditorFrame(s);
+    const bool altOpened=iso->isCalendarOpen() && iso->getCalendar()
+        && (gweni::KeyboardFocus == iso->getCalendar());
+    const bool altBelow=altOpened && placedBelow(iso->getPopup());
+    const size_t altOutside=altOpened?differencesOutsideRects(s, beforeOpen, altOpen.pixels,
+        {iso->getPopup()->getCanvasBounds(), iso->getCanvasBounds()}):0;
+
+    ok=shoot(s, shotDir+"/date_time_calendar.png") && ok;
+
+    std::vector<uint8_t> openPixels;
+    const size_t openIdle=settleCodeEditor(s, openPixels);
+
+    sendKey(s, "escape");
+
+    const CodeEditorFrame escaped=codeEditorFrame(s);
+
+    checks.check("alt_down_open",
+        altOpened && altBelow && altOutside == 0 && altOpen.passes <= 1,
+        std::string("Alt+Down ")+(altOpened?"opened the calendar":"did not open the calendar with its focus")
+        +", "+(altBelow?"below the field inside the canvas":"not below the field inside the canvas")
+        +", changed "+std::to_string(altOutside)+" pixels outside the popup and the field and ran "
+        +std::to_string(altOpen.passes)+" layout passes");
+    checks.check("open_settled", openIdle == 0,
+        "settled frames with the calendar open wrote or changed "+std::to_string(openIdle));
+    checks.check("escape",
+        !iso->isCalendarOpen() && (gweni::KeyboardFocus == iso) && escaped.pixels == beforeOpen
+            && iso->getText() == "2027-12-15",
+        std::string("Escape ")+(iso->isCalendarOpen()?"left the calendar open":"closed the calendar")
+        +", the focus "+(gweni::KeyboardFocus == iso?"back on the field":"elsewhere")+", the field "
+        +iso->getText()+" (2027-12-15), or the frame before opening did not come back");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (4) the button: the second open makes no control, shows it below the
+    // field and changes nothing outside the popup and the field; a day picked
+    // closes it, sets the field and gives the frame before opening back but
+    // the field
+    const std::vector<uint8_t> beforeClick=pixels;
+    const size_t controlsBefore=subtreeControls(s.canvas);
+    const size_t liveBefore=livePrimitiveIds()+liveTextIds();
+    gweni::controls::Popup *popup=iso->getPopup();
+
+    clickMouse(s, centre(iso->getButton()).x, centre(iso->getButton()).y);
+
+    const CodeEditorFrame buttonOpen=codeEditorFrame(s);
+    const bool buttonOpened=iso->isCalendarOpen() && (iso->getPopup() == popup);
+    const size_t controlsAfter=subtreeControls(s.canvas);
+    const size_t liveAfter=livePrimitiveIds()+liveTextIds();
+    const bool buttonBelow=buttonOpened && placedBelow(popup);
+    const size_t buttonOutside=buttonOpened?differencesOutsideRects(s, beforeClick, buttonOpen.pixels,
+        {popup->getCanvasBounds(), iso->getCanvasBounds()}):0;
+
+    checks.check("button_open",
+        buttonOpened && controlsAfter == controlsBefore && liveAfter == liveBefore && buttonBelow
+            && buttonOutside == 0,
+        std::string("the button ")+(buttonOpened?"opened the same popup":"did not open the same popup")
+        +", made "+std::to_string(int(controlsAfter)-int(controlsBefore))+" controls and "
+        +std::to_string(int(liveAfter)-int(liveBefore))+" ids, "+(buttonBelow?"below":"not below")
+        +" the field inside the canvas, and changed "+std::to_string(buttonOutside)
+        +" pixels outside the popup and the field");
+
+    std::string picked="none";
+    size_t pickOutside=0;
+    bool pickClosed=false;
+
+    if(buttonOpened)
+    {
+        gweni::controls::Calendar *calendar=iso->getCalendar();
+        gweni::controls::Base *cell=calendar->getCell(calendar->cellIndex(Date(2027, 12, 20)));
+
+        clickMouse(s, centre(cell).x, centre(cell).y);
+        forgetMouse(s);
+
+        const CodeEditorFrame pick=codeEditorFrame(s);
+
+        picked=iso->getDate()?iso->getDate()->toIso():std::string("none");
+        pickClosed=!iso->isCalendarOpen() && (gweni::KeyboardFocus == iso);
+        pickOutside=differencesOutsideRects(s, beforeClick, pick.pixels, {iso->getCanvasBounds()});
+    }
+    checks.check("pick",
+        pickClosed && picked == "2027-12-20" && iso->getText() == "2027-12-20" && pickOutside == 0,
+        "the pick set the field to "+picked+" (2027-12-20 expected), "+(pickClosed?"closed":"did not close")
+        +" the calendar with the focus back, and changed "+std::to_string(pickOutside)
+        +" pixels outside the field from the frame before opening");
+    dropFocus();
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (5) the label names a value once it follows them again
+    demo->setLabelUpdates(true);
+    caretAt(time24, 1);
+    sendKey(s, "down");
+    renderFrames(s, 1);
+
+    const std::string label=demo->valuesLabel()->getText();
+
+    checks.check("label", label.find("Times: 14:31") != std::string::npos,
+        "the values label says \""+label+"\"");
+    dropFocus();
+    idleWork+=settleCodeEditor(s, pixels);
+    checks.check("settled", idleWork == 0, "settled frames wrote or changed "+std::to_string(idleWork));
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()+liveTextIds()-idsBefore;
+
+    checks.check("ids_back", idsLeft == 0, std::to_string(idsLeft)+" ids not given back");
+
+    passed=checks.allPassed();
+    std::cout<<"date-time";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<" up="<<stepTexts<<" up_prims="<<stepPrims<<" up_glyphs="<<stepGlyphs
+             <<" up_changed="<<stepChanged<<" open_prims="<<altOpen.primitives.size()
+             <<" open_passes="<<altOpen.passes<<" open_visited="<<altOpen.visited
+             <<" button_open_prims="<<buttonOpen.primitives.size()<<"\n";
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // NavigationRailDemo: app callbacks first, then the rail alone. Updating a
 // page is the app's work, so detach its callback before bounding selection to
 // two rows and their glyphs. Counts are frozen; only tooltip waits step time.
@@ -22325,6 +22644,15 @@ int main(int argc, char *argv[])
             ok=runCalendarScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a hover, a selection, a month change, a range end or a key did more than its cells
+            break;
+        }
+
+        case Scenario::DateTime:
+        {
+            bool passed=false;
+            ok=runDateTimeScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a step, a commit, an open, a pick or Escape did more than its field and popup
             break;
         }
 

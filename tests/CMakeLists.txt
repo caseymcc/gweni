@@ -265,14 +265,15 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # buttons' menus, the range slider's drags and keys, the
     # steppers' step changes, the code view's copy button, a RichText, the
     # SearchComboBox's keystrokes, picks and chip wrap, the reorder drags'
-    # looks and drops, the calendar's months and views, and a MarkdownView's
+    # looks and drops, the calendar's months and views, the date and time
+    # fields' steps, commits and calendar popup, and a MarkdownView's
     # edits, selection and code block, and the translucency scenario's panel,
     # scrim and overlay
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
             dialog toast flow switch spinner navigation-rail board field-validation segmented
             tree-table split-button range-slider stepper code-view rich-text markdown search-combo
-            reorder calendar translucency)
+            reorder calendar date-time translucency)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail")
@@ -794,6 +795,18 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_calendar 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario calendar --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/calendar@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # DateTimeDemo: an Up in a section writes the field's own slots and its
+    # new string's glyphs with no layout and no pixel outside it, typed text
+    # and Return commit or revert, Alt+Down and the button open the calendar
+    # below the field changing nothing outside it and the field, the second
+    # open makes no control, a settled frame with it open writes nothing,
+    # Escape gives the frame before back and a pick gives it back but the
+    # field's text
+    gweni_whole_app_test(controltest_date_time 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario date-time --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/date_time@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # gweni::tools::Inspector over the settled Demo, opened and closed by F12:

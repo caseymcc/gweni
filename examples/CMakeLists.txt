@@ -132,6 +132,8 @@ set(GWENI_DEMO_SOURCES
     demo/searchCombo.h
     demo/calendar.cpp
     demo/calendar.h
+    demo/dateTime.cpp
+    demo/dateTime.h
     demo/nodeGraph.cpp
     demo/nodeGraph.h
     demo/flow.cpp

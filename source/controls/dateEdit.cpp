@@ -158,6 +158,8 @@ void DateEdit::openCalendar()
             return;
         m_calendar=m_popup->newChild<internal::DateEditCalendar>();
         m_calendar->setOwner(this);
+        // docked, so the popup is the calendar's size and its padding
+        m_calendar->setDock(DockPosition::Top);
         m_calendar->setSelectionMode(Calendar::SelectionMode::Single);
         m_calendar->onDateChosen.add(this, &DateEdit::onDateChosen);
     }

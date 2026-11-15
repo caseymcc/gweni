@@ -93,6 +93,7 @@ GWENI_DEMO_TRANSPARENT(SplitButtonDemo)
 GWENI_DEMO_TRANSPARENT(StepperDemo)
 GWENI_DEMO_TRANSPARENT(SearchComboDemo)
 GWENI_DEMO_TRANSPARENT(CalendarDemo)
+GWENI_DEMO_TRANSPARENT(DateTimeDemo)
 GWENI_DEMO_TRANSPARENT(ZoomPanelDemo)
 GWENI_DEMO_TRANSPARENT(TranslucencyDemo)
 GWENI_DEMO_TRANSPARENT(FlowDemo)
@@ -295,6 +296,7 @@ template class ControlRegister<SplitButtonDemo>;
 template class ControlRegister<StepperDemo>;
 template class ControlRegister<SearchComboDemo>;
 template class ControlRegister<CalendarDemo>;
+template class ControlRegister<DateTimeDemo>;
 template class ControlRegister<ZoomPanelDemo>;
 template class ControlRegister<TranslucencyDemo>;
 template class ControlRegister<TranslucencyPanel>;
