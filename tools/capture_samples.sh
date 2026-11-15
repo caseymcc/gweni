@@ -69,6 +69,7 @@ SAMPLES=(
     TextDemo
     CodeEditorDemo
     CodeViewDemo
+    MarkdownDemo
     NodeGraphDemo
     LogViewDemo
     ChartTimeBarsDemo

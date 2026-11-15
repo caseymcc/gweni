@@ -172,7 +172,8 @@
  *                       chip-badge | navigation-rail | flow | board |
  *                       switch | spinner | image-grid | segmented |
  *                       split-button | range-slider | stepper |
- *                       code-view | rich-text | search-combo | reorder |
+ *                       code-view | rich-text | markdown | search-combo |
+ *                       reorder |
  *                       calendar (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
@@ -1208,6 +1209,31 @@
  *                 step, then
  *                   rich-text idle_work=0 ids_left=0 passed=yes|no
  *                 Exits non-zero if any check fails, naming it on stderr.
+ *    markdown     MarkdownDemo's reference document (resources/MarkdownDemo.md)
+ *                 in its MarkdownView, the clock frozen, at --size (865x545
+ *                 in ctest): setMarkdown with the first paragraph edited (its
+ *                 height kept) keeping every control of the document, laying
+ *                 out in one pass entering no more than the paragraph and its
+ *                 ancestors (the inner panel and the document once more: the
+ *                 view measures its content again), renumbering no z,
+ *                 writing the paragraph's slots alone and changing no pixel
+ *                 outside it; edited taller, the blocks below moved, the
+ *                 slots written theirs, the paragraph's and the view's scroll
+ *                 bar's; the same text again and one parsing to the same
+ *                 blocks writing and laying out nothing; a drag from "hard
+ *                 break" over the lists and the code block to "ali" of the
+ *                 table's "aligned", Ctrl+C copying the expected plain text
+ *                 (markdown-selected.png), kept by an edit of the last
+ *                 paragraph and cleared by Escape (the frame before the drag
+ *                 back); a click on the repository link telling the demo its
+ *                 url once; at 560 units wide the code block scrolling
+ *                 sideways under a horizontal wheel (no pixel outside it
+ *                 changed) and the view under a vertical one, and "Wrap code"
+ *                 wrapping its long line and unchecked scrolling it again;
+ *                 every settled frame writing nothing and the demo giving
+ *                 its ids back. One line per step, then
+ *                   markdown idle_work=0 ids_left=0 passed=yes|no
+ *                 Exits non-zero if any check fails, naming it on stderr.
  *    search-combo SearchComboDemo, the clock frozen (search-combo.png): the
  *                 searchable box's references at 30 and then 3 000, "-001"
  *                 typed into its field at each (options 10..19 at both);
@@ -1586,10 +1612,12 @@
 #include <demo/chartAreas.h>
 #include <gweni/controls/chart.h>
 #include <gweni/controls/timeline.h>
+#include <demo/markdown.h>
 #include <demo/richText.h>
 #include <demo/inspector.h>
 #include <gweni/controls/plotHistogram.h>
 #include <gweni/controls/plotLines.h>
+#include <gweni/controls/markdownView.h>
 #include <gweni/controls/richText.h>
 #include <demo/progressBar.h>
 #include <demo/properties.h>
@@ -1733,7 +1761,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
     X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo) X(InspectorDemo) X(ThemeEditorDemo) \
-    X(StatsOverlayDemo) X(ZoomPanelDemo) X(NodeGraphDemo) X(FlowDemo) X(BoardDemo) X(ImageGridDemo) X(RichTextDemo) X(ReorderDemo)
+    X(StatsOverlayDemo) X(ZoomPanelDemo) X(NodeGraphDemo) X(FlowDemo) X(BoardDemo) X(ImageGridDemo) X(RichTextDemo) X(MarkdownDemo) X(ReorderDemo)
 
 static const char *const g_controlNames[]=
 {
@@ -2885,7 +2913,7 @@ enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typ
     ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, TreeTable, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
     ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented, SplitButton,
-    RangeSlider, Stepper, CodeView, RichText, SearchCombo, Reorder, Calendar };
+    RangeSlider, Stepper, CodeView, RichText, Markdown, SearchCombo, Reorder, Calendar };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2936,6 +2964,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "stepper") scenario=Scenario::Stepper;
     else if(name == "code-view") scenario=Scenario::CodeView;
     else if(name == "rich-text") scenario=Scenario::RichText;
+    else if(name == "markdown") scenario=Scenario::Markdown;
     else if(name == "search-combo") scenario=Scenario::SearchCombo;
     else if(name == "calendar") scenario=Scenario::Calendar;
     else return false;
@@ -18166,6 +18195,431 @@ static bool runRichTextScenario(Session &s, const std::string &shotDir, bool &pa
 }
 
 //-----------------------------------------------------------------------------
+// --scenario markdown: MarkdownDemo's reference document in its MarkdownView,
+// the clock frozen. setMarkdown with the first paragraph edited (its height
+// kept) keeps every control of the document, lays out in one pass entering no
+// more than the paragraph and its ancestors, renumbers no z and writes only
+// the paragraph's slots, changing no pixel outside it; edited taller, the
+// blocks below are only moved (the slots written theirs and the paragraph's);
+// the same text again, and one parsing to the same blocks, write and lay out
+// nothing. A drag from the paragraph's second line over the list and the code
+// block into the table, then Ctrl+C, copies the expected plain text, which an
+// edit of the last paragraph keeps selected; Escape clears it. A click on a
+// link tells the demo its url once. At 560 units wide the code block scrolls
+// sideways (a horizontal wheel over it moving the code alone, a vertical one
+// the view), and with "Wrap code" its long line wraps instead. Every settled
+// frame writes nothing and the demo gives its ids back.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+// Every control of the document's subtree, by id
+std::set<size_t> markdownControlIds(gweni::controls::Base *control)
+{
+    std::set<size_t> ids;
+    std::vector<gweni::controls::Base *> pending(1, control);
+
+    while(!pending.empty())
+    {
+        gweni::controls::Base *at=pending.back();
+
+        pending.pop_back();
+        ids.insert(at->getControlId());
+        for(gweni::controls::Base *child:at->getActualChildren())
+            pending.push_back(child);
+    }
+    return ids;
+}
+
+}//namespace
+
+// The plain text the scenario's drag selects: from "hard break" on the first
+// paragraph's second line, over the lists and the code block, to "ali" of the
+// table's "aligned" (resources/MarkdownDemo.md)
+static const char *const g_markdownDragText=
+    "hard break ends the line before this one, and a soft break joins this one to it.\n"
+    "\xE2\x80\xA2 Lists, unordered\n"
+    "\xE2\x97\xA6 with a marker for each depth\n"
+    "\xE2\x96\xAA nested as deep as needed\n"
+    "\xE2\x80\xA2 and ordered:\n"
+    "1. first\n"
+    "2. second\n"
+    "int main()\n"
+    "{\n"
+    "    return render(\"a line of code long enough to scroll sideways in a narrow view\");\n"
+    "}\n"
+    "Element\tStatus\tCount\n"
+    "Tables\tali";
+
+static bool runMarkdownScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    using gweni::controls::MarkdownDocument;
+    using gweni::controls::internal::MarkdownCodeBlock;
+    using gweni::controls::internal::MarkdownTable;
+    using gweni::controls::internal::MarkdownText;
+
+    s.freezeClock=true;
+
+    const size_t idsBefore=livePrimitiveIds();
+    const gweni::Point size=s.size;
+    gweni::controls::Base *control=addControl(s, "MarkdownDemo");
+    auto *demo=gweni::gweni_cast<gweni::MarkdownDemo>(control);
+
+    if(!demo || !demo->view())
+    {
+        std::cerr<<"ControlTest: markdown: MarkdownDemo was not built\n";
+        return false;
+    }
+
+    MarkdownDocument *document=demo->view()->getDocument();
+    const gweni::String reference=demo->referenceText();
+
+    s.label="markdown";
+    renderFrames(s, s.frames);
+
+    auto *paragraph=dynamic_cast<MarkdownText *>(document->getBlockControl(1));
+    auto *code=dynamic_cast<MarkdownCodeBlock *>(document->getBlockControl(3));
+    auto *table=dynamic_cast<MarkdownTable *>(document->getBlockControl(4));
+
+    if(!paragraph || !code || !table || (paragraph->getLayout().lines().size() < 2))
+    {
+        std::cerr<<"ControlTest: markdown: the reference document is not the one expected "
+                   "(a paragraph of two lines, a list, a code block and a table after its heading)\n";
+        return false;
+    }
+
+    std::string failures;
+    size_t idleWork=0;
+    auto settle=[&](const char *step)
+    {
+        std::vector<uint8_t> pixels;
+
+        for(int i=0; i < 2; ++i)
+        {
+            RichFrame frame=richFrame(s);
+
+            if(frame.primSlots+frame.textSlots+frame.changed != 0)
+                std::cout<<"markdown unsettled "<<step<<" prim_slots="<<frame.primSlots<<" text_slots="<<frame.textSlots
+                         <<" changed="<<frame.changed<<"\n";
+            idleWork+=frame.primSlots+frame.textSlots+frame.changed;
+            pixels=std::move(frame.pixels);
+        }
+        return pixels;
+    };
+    auto fail=[&](const std::string &step, const std::string &why) { failures+="; "+step+": "+why; };
+    auto printFrame=[&](const std::string &step, const RichFrame &frame)
+    {
+        std::cout<<"markdown "<<step<<" prim_slots="<<frame.primSlots<<" text_slots="<<frame.textSlots
+                 <<" changed="<<frame.changed<<" passes="<<frame.passes<<" layout_visited="<<frame.visited
+                 <<" z_changed="<<s.canvas->getUpdateStats().zChanged<<"\n";
+    };
+    auto ancestorsOf=[](gweni::controls::Base *at)
+    {
+        size_t ancestors=0;
+
+        for(at=at->getActualParent(); at; at=at->getActualParent())
+            ++ancestors;
+        return ancestors;
+    };
+    // the reference with the first paragraph's "shows" as `word` and `more`
+    // after its first sentence
+    auto edited=[&](const gweni::String &word, const gweni::String &more)
+    {
+        gweni::String text=reference;
+        const size_t at=text.find("A **MarkdownView** shows");
+
+        text.replace(at+19, 5, word);
+        text.insert(text.find("docs.  \n")+5, more);
+        return text;
+    };
+
+    // the blocks the scenario holds are the ones the document shows: else an
+    // edit rebuilt them, and the scenario stops there, naming the step
+    auto blocksKept=[&](const std::string &step)
+    {
+        if((document->getBlockControl(1) == paragraph) && (document->getBlockControl(3) == code)
+            && (document->getBlockControl(4) == table))
+            return true;
+        std::cerr<<"ControlTest: markdown: "<<step<<": the edit rebuilt the paragraph, the code block or the table\n";
+        passed=false;
+        return false;
+    };
+
+    const std::vector<uint8_t> rest=settle("step1");
+    const std::set<size_t> controls=markdownControlIds(document);
+
+    // 1. the first paragraph edited, its height kept
+    {
+        std::set<size_t> primitives, texts;
+
+        subtreeIds(paragraph, primitives, texts);
+
+        const gweni::Rect bounds=paragraph->getCanvasBounds();
+        const int height=paragraph->getHeight();
+
+        demo->view()->setMarkdown(edited("draws", ""));
+        if(!blocksKept("edit"))
+            return false;
+
+        const RichFrame frame=richFrame(s);
+        // the paragraph and its ancestors in the four steps, and the inner
+        // panel and the document once more: a ScrollControl measures its
+        // width-dependent content again after laying it out
+        const size_t bound=4*(ancestorsOf(paragraph)+1)+2;
+
+        subtreeIds(paragraph, primitives, texts);
+        printFrame("edit", frame);
+        if(paragraph->getHeight() != height)
+            fail("edit", "the edit changed the paragraph's height: the scenario's edit is wrong");
+        if(markdownControlIds(document) != controls)
+            fail("edit", "the document's controls are not the ones it had");
+        if(frame.passes != 1 || frame.renderLayout || frame.visited > bound)
+            fail("edit", std::to_string(frame.passes)+" update-phase passes"+(frame.renderLayout?" and a render-phase one":"")
+                +", "+std::to_string(frame.visited)+" entries (at most "+std::to_string(bound)+": the paragraph and its ancestors)");
+        if(s.canvas->getUpdateStats().zChanged != 0)
+            fail("edit", std::to_string(s.canvas->getUpdateStats().zChanged)+" z labels changed");
+        if(frame.primSlots+frame.textSlots == 0 || !idsWithin(frame.primitives, primitives) || !idsWithin(frame.texts, texts))
+            fail("edit", "wrote no slot, or slots outside the edited paragraph");
+        if(differencesOutsideRects(s, rest, frame.pixels, { bounds }) != 0)
+            fail("edit", "pixels changed outside the paragraph");
+
+        demo->view()->setMarkdown(reference);
+        printFrame("edit_back", richFrame(s));
+        if(settle("step2") != rest)
+            fail("edit_back", "the frame before the edit did not come back");
+    }
+
+    // 2. edited taller: the blocks below only move
+    {
+        std::set<size_t> primitives, texts;
+        size_t below=0;
+
+        subtreeIds(paragraph, primitives, texts);
+        for(size_t i=2; i < document->getBlockCount(); ++i)
+        {
+            subtreeIds(document->getBlockControl(i), primitives, texts);
+            ++below;
+        }
+        // and the view's scroll bar, whose thumb follows the document's height
+        subtreeIds(demo->view()->getScrollBar(), primitives, texts);
+
+        const int tableY=table->getY();
+
+        demo->view()->setMarkdown(edited("shows", " This sentence is added to the paragraph, long enough to wrap "
+            "it onto one more line than it had, so every block below it moves down."));
+        if(!blocksKept("grow"))
+            return false;
+
+        const RichFrame frame=richFrame(s);
+        const size_t bound=4*(ancestorsOf(paragraph)+1)+2+4*below;
+
+        subtreeIds(paragraph, primitives, texts);
+        printFrame("grow", frame);
+        if(table->getY() <= tableY)
+            fail("grow", "the blocks below did not move");
+        if(markdownControlIds(document) != controls)
+            fail("grow", "the document's controls are not the ones it had");
+        if(frame.passes != 1 || frame.renderLayout || frame.visited > bound)
+            fail("grow", std::to_string(frame.passes)+" update-phase passes, "+std::to_string(frame.visited)
+                +" entries (at most "+std::to_string(bound)+": the paragraph, its ancestors and the blocks moved)");
+        if(s.canvas->getUpdateStats().zChanged != 0)
+            fail("grow", std::to_string(s.canvas->getUpdateStats().zChanged)+" z labels changed");
+        if(!idsWithin(frame.primitives, primitives) || !idsWithin(frame.texts, texts))
+            fail("grow", "wrote slots outside the paragraph and the blocks below it");
+
+        demo->view()->setMarkdown(reference);
+        printFrame("grow_back", richFrame(s));
+        if(settle("step3") != rest)
+            fail("grow_back", "the frame before the edit did not come back");
+    }
+
+    // 3. the same text again, and one parsing to the same blocks
+    for(const gweni::String &same : { reference, reference+"\n\n" })
+    {
+        demo->view()->setMarkdown(same);
+        if(!blocksKept("unchanged"))
+            return false;
+
+        const RichFrame frame=richFrame(s);
+
+        printFrame("unchanged", frame);
+        if(frame.primSlots+frame.textSlots+frame.changed != 0 || frame.passes != 0)
+            fail("unchanged", "an unchanged document wrote, changed or laid out something");
+    }
+    demo->view()->setMarkdown(reference);
+    settle("step4");
+
+    // 4. a drag over the lists and the code block into the table, Ctrl+C
+    const gweni::text::RichLine &second=paragraph->getLayout().lines().at(1);
+    const gweni::Point dragFrom=richCaretPoint(paragraph, second.firstPiece, 2);
+    const gweni::Point dragTo=richCaretPoint(table->getCell(1, 1), 0, 3);
+
+    gweni::platform::setClipboardText("");
+    mouseDown(s, dragFrom.x, dragFrom.y, true);
+    renderFrames(s, 1);
+    moveMouse(s, (dragFrom.x+dragTo.x)/2, (dragFrom.y+dragTo.y)/2);
+    renderFrames(s, 1);
+    moveMouse(s, dragTo.x, dragTo.y);
+    renderFrames(s, 1);
+    mouseUp(s, dragTo.x, dragTo.y);
+    renderFrames(s, 1);
+    sendKey(s, "ctrl+c");
+    renderFrames(s, 1);
+
+    const gweni::String copied=gweni::platform::getClipboardText();
+
+    std::cout<<"markdown drag copied_bytes="<<copied.size()<<" matches="<<(copied == g_markdownDragText?"yes":"no")<<"\n";
+    if(copied != g_markdownDragText)
+        fail("drag", "Ctrl+C after the drag copied \""+copied+"\"");
+    settle("step5");
+
+    const bool shot=shoot(s, shotDir+"/markdown-selected.png");
+
+    // 5. the last paragraph edited: the selection stays
+    {
+        gweni::String text=reference;
+
+        text.replace(text.find("which an edit changes."), 22, "which this edit has changed.");
+        demo->view()->setMarkdown(text);
+        if(!blocksKept("selection_kept"))
+            return false;
+        renderFrames(s, 1);
+        if(document->getSelectedText() != g_markdownDragText)
+            fail("selection_kept", "an edit outside the selection changed it to \""+document->getSelectedText()+"\"");
+        demo->view()->setMarkdown(reference);
+        renderFrames(s, 1);
+        settle("step6");
+    }
+
+    sendKey(s, "escape");
+    renderFrames(s, 1);
+    if(document->hasSelection())
+        fail("escape", "Escape left a selection");
+    if(settle("step7") != rest)
+        fail("escape", "clearing the selection did not give the frame before the drag back");
+
+    // 6. a click on the link: the demo is told its url
+    {
+        size_t span=0;
+
+        while(span < paragraph->getSpanCount() && paragraph->getSpans()[span].url.rfind("https://github", 0) != 0)
+            ++span;
+
+        const size_t piece=richPieceOf(paragraph, span);
+
+        if(piece >= paragraph->getLayout().pieces().size())
+            fail("click", "the paragraph has no link to the repository");
+        else
+        {
+            const gweni::String url=paragraph->getSpans()[span].url;
+            const gweni::Point onLink=richCaretPoint(paragraph, piece, 1);
+
+            clickMouse(s, onLink.x, onLink.y);
+            renderFrames(s, 1);
+            forgetMouse(s);
+            renderFrames(s, 1);
+            std::cout<<"markdown click url="<<demo->lastLink()<<" clicks="<<demo->linkClicks()<<"\n";
+            if(demo->linkClicks() != 1 || demo->lastLink() != url)
+                fail("click", "onLinkClicked was not called once with "+url);
+        }
+        settle("step8");
+    }
+
+    // 7. narrower: the code block scrolls sideways; then wrapped
+    if(!resizeSession(s, 560, size.y))
+        return false;
+    renderFrames(s, 2);
+    settle("step9");
+    if(!code->getScroll() || code->getScroll()->getMaxHorizontalScrollOffset() <= 0)
+        fail("code_scroll", "the code block does not scroll sideways at 560 units");
+    else
+    {
+        const std::vector<uint8_t> before=settle("step10");
+        const gweni::Rect codeBounds=code->getCanvasBounds();
+
+        moveMouse(s, codeBounds.x+codeBounds.w/2, codeBounds.y+codeBounds.h/3);
+        renderFrames(s, 1);
+        settle("step11");
+
+        const std::vector<uint8_t> hovered=settle("step12");
+
+        scrollWheelH(s, -120);
+
+        const RichFrame frame=richFrame(s);
+
+        printFrame("code_scroll", frame);
+        std::cout<<"markdown code_scroll offset="<<code->getScroll()->getHorizontalScrollOffset()<<"\n";
+        if(code->getScroll()->getHorizontalScrollOffset() <= 0)
+            fail("code_scroll", "a horizontal wheel over the code did not scroll it");
+        if(differencesOutsideRects(s, hovered, frame.pixels, { codeBounds }) != 0)
+            fail("code_scroll", "pixels changed outside the code block");
+        settle("step13");
+
+        const int viewOffset=demo->view()->getVerticalScrollOffset();
+
+        scrollWheel(s, -120);
+        renderFrames(s, 1);
+        if(demo->view()->getVerticalScrollOffset() <= viewOffset)
+            fail("code_scroll", "a vertical wheel over the code did not scroll the view");
+        settle("step14");
+        (void)before;
+    }
+
+    // "Wrap code"
+    {
+        forgetMouse(s);
+        renderFrames(s, 1);
+        demo->view()->setVerticalScrollOffset(0);
+        renderFrames(s, 2);
+
+        const gweni::Rect toggle=demo->wrapToggle()->checkBox()->getCanvasBounds();
+
+        clickMouse(s, toggle.x+toggle.w/2, toggle.y+toggle.h/2);
+        renderFrames(s, 2);
+
+        const size_t lines=code->getText()->getLayout().lines().size();
+
+        std::cout<<"markdown code_wrap wrapped="<<(code->isWrapped()?"yes":"no")<<" lines="<<lines<<"\n";
+        if(!code->isWrapped() || code->getScroll() || lines <= 4)
+            fail("code_wrap", "\"Wrap code\" did not wrap the code block's long line");
+        clickMouse(s, toggle.x+toggle.w/2, toggle.y+toggle.h/2);
+        renderFrames(s, 2);
+        if(code->isWrapped() || code->getText()->getLayout().lines().size() != 4)
+            fail("code_wrap", "unchecked, the code block is not scrolled again");
+        forgetMouse(s);
+        renderFrames(s, 1);
+        settle("step15");
+    }
+
+    if(!resizeSession(s, size.x, size.y))
+        return false;
+    renderFrames(s, 2);
+    if(code->getScroll())
+        code->getScroll()->setHorizontalScrollOffset(0);
+    renderFrames(s, 2);
+    settle("step16");
+
+    if(idleWork != 0)
+        fail("settled", "settled frames wrote "+std::to_string(idleWork)+" slots and changed controls");
+
+    forgetMouse(s);
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()-idsBefore;
+
+    if(idsLeft != 0)
+        fail("drop", "the demo did not give "+std::to_string(idsLeft)+" primitive ids back");
+
+    passed=failures.empty();
+    std::cout<<"markdown idle_work="<<idleWork<<" ids_left="<<idsLeft<<" passed="<<(passed?"yes":"no")<<"\n";
+    if(!passed)
+        std::cerr<<"ControlTest: markdown:"<<failures.substr(1)<<"\n";
+    return shot;
+}
+
+//-----------------------------------------------------------------------------
 // --scenario reorder: ReorderDemo at 760x460. On the Board, the clock frozen:
 // a reorder within Todo (the callback's values, a gap change writing only the
 // drop indicator's slot, a move that keeps the gap writing nothing, the order
@@ -21773,6 +22227,15 @@ int main(int argc, char *argv[])
             ok=runRichTextScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // an edit, a width, a hover or a selection touched more than its paragraph
+            break;
+        }
+
+        case Scenario::Markdown:
+        {
+            bool passed=false;
+            ok=runMarkdownScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // an edit, a re-render, a selection, a link or the code block failed its check
             break;
         }
 

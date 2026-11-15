@@ -83,6 +83,14 @@ re-colours the lines on screen below it and leaves the rest until they are shown
 over the diff): a unified diff whose added, removed and hunk lines get their own row backgrounds, a YAML
 config with line numbers and a one-line command, the last two as tall as their lines.
 
+[![A Markdown reference document in a MarkdownView: headings, styled text, nested lists, a code block, a table and a quote](docs/images/MarkdownDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=MarkdownDemo)
+
+**Markdown**: a MarkdownView showing a checked-in reference document (CommonMark with GFM tables and
+strikethrough, parsed by md4c): headings, bold, italic, struck-through and inline-code text with links,
+nested lists, a code block, an aligned table, nested quotes and rules. Each block is a control kept
+across `setMarkdown`, so a live preview's keystroke lays out and redraws only the block it changed,
+and a selection dragged across the blocks copies them as plain text.
+
 [![A small shader-like node graph](docs/images/NodeGraphDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=NodeGraphDemo)
 
 **Node graph**: a NodeGraph, the node editor built on a ZoomPanel: nodes with a coloured title bar

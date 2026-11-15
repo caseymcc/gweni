@@ -32,6 +32,8 @@ set(GWENI_DEMO_SOURCES
     demo/chartAreas.h
     demo/timeline.cpp
     demo/timeline.h
+    demo/markdown.cpp
+    demo/markdown.h
     demo/richText.cpp
     demo/richText.h
     demo/popup.cpp

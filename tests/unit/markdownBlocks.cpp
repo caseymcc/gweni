@@ -9,7 +9,8 @@
  *  - headings 1 to 6 (ATX and setext) with their spans;
  *  - a paragraph's emphasis, strong, both, strikethrough and inline code as
  *    style bits, links, autolinks (<...>, a bare URL, www. given "http://",
- *    an e-mail address given "mailto:"), a soft break as ' ', a hard break
+ *    an e-mail address given "mailto:", trailing ?!.,:*_~ left out of an
+ *    autolink as GFM says), a soft break as ' ', a hard break
  *    (two spaces or a '\') as '\n', and runs of one style merged;
  *  - entities: the common names and numeric ones decoded, U+FFFD for an
  *    invalid codepoint and NUL, an unknown name kept as written;
@@ -75,6 +76,10 @@ TEST_CASE("Markdown blocks: links and autolinks")
         "Paragraph 'http://auto.org/a'<http://auto.org/a> ' ' 'me@x.org'<mailto:me@x.org> ' ' "
         "'https://bare.org/p?q=1'<https://bare.org/p?q=1> ' ' 'www.w.org'<http://www.w.org> ' ' "
         "'x@y.com'<mailto:x@y.com>\n");
+    // trailing punctuation is no part of an autolink (GFM), a link's own is
+    CHECK(describeMarkdown("see https://example.com/docs. or https://x.org/a?! and [b](http://y.org/c.)\n") ==
+        "Paragraph 'see ' 'https://example.com/docs'<https://example.com/docs> '. or ' "
+        "'https://x.org/a'<https://x.org/a> '?! and ' 'b'<http://y.org/c.>\n");
     // an entity in a url is decoded
     CHECK(describeMarkdown("[a](/q?x=1&amp;y=2)\n") == "Paragraph 'a'</q?x=1&y=2>\n");
 }

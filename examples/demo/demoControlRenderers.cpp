@@ -68,6 +68,7 @@ GWENI_DEMO_TRANSPARENT(ChartLinesDemo)
 GWENI_DEMO_TRANSPARENT(ChartAreasDemo)
 GWENI_DEMO_TRANSPARENT(TimelineDemo)
 GWENI_DEMO_TRANSPARENT(RichTextDemo)
+GWENI_DEMO_TRANSPARENT(MarkdownDemo)
 GWENI_DEMO_TRANSPARENT(InspectorDemo)
 GWENI_DEMO_TRANSPARENT(ThemeEditorDemo)
 GWENI_DEMO_TRANSPARENT(StatsOverlayDemo)
@@ -230,6 +231,7 @@ template class ControlRegister<ChartLinesDemo>;
 template class ControlRegister<ChartAreasDemo>;
 template class ControlRegister<TimelineDemo>;
 template class ControlRegister<RichTextDemo>;
+template class ControlRegister<MarkdownDemo>;
 template class ControlRegister<InspectorDemo>;
 template class ControlRegister<ThemeEditorDemo>;
 template class ControlRegister<StatsOverlayDemo>;

@@ -536,6 +536,16 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/rich_text@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
+    # MarkdownDemo's reference document: an edit lays out and redraws the
+    # edited block alone (the blocks below only moved when it grows), the same
+    # text again nothing, a drag across a paragraph, a list, a code block and
+    # a table copies the expected plain text, a link click tells the demo its
+    # url, and the code block scrolls sideways and wraps
+    gweni_whole_app_test(controltest_markdown 120
+        COMMAND $<TARGET_FILE:ControlTest> --headless --size 865x545 --scenario markdown --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/markdown@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
     # PlotHistogramDemo's series: a sample with a new height writes its bar's
     # slot alone, one that keeps its height nothing, a hover the hovered bars'
     gweni_whole_app_test(controltest_plot_histogram 60

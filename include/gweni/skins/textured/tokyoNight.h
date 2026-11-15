@@ -426,9 +426,10 @@ inline Surface MarkdownRule    { Line,                  Line,                  L
 inline Surface MarkdownQuoteBar{ Line,                  Line,                  Line,  1.5f,     0.0f };
 // A Markdown code block's background.
 inline Surface MarkdownCodeBlock{ BgDark,               BgDark,                BgHighlight, RadiusSm, BorderW };
-// A Markdown table's header row, and the lines round and between its cells
-// (flat, so only top is read, as a rule's colour).
-inline Surface MarkdownTableHeader{ BgHighlight,        BgHighlight,           BgHighlight, 0.0f, 0.0f };
+// A Markdown table's header row (as dark as a code block, so a selection shows
+// over it), and the lines round and between its cells (flat, so only top is
+// read, as a rule's colour).
+inline Surface MarkdownTableHeader{ BgDark,             BgDark,                BgDark,      0.0f, 0.0f };
 inline Surface MarkdownTableBorder{ Line,               Line,                  Line,  0.0f,     0.0f };
 // What stands in for a Markdown image not shown: a box a shade over the
 // panel, bordered, under its alt text.

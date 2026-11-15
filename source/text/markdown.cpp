@@ -187,6 +187,8 @@ struct Builder
     int code=0;
     int strike=0;
     std::vector<gweni::String> links;
+    //! whether each open link is an autolink
+    std::vector<bool> autolinks;
     //! Images entered: the outermost one's span takes every text inside it
     int images=0;
 
@@ -260,6 +262,37 @@ struct Builder
             spans.back().url=url;
         }
         return &spans.back().text;
+    }
+
+    //! GFM leaves trailing ? ! . , : * _ ~ out of an autolink, which md4c
+    //! keeps in a bare URL's: they go after the link as text
+    void trimAutolink()
+    {
+        MarkdownBlock *block=open.empty()?nullptr:open.back();
+
+        if(!block || block->spans.empty() || block->spans.back().image || (block->spans.back().url != links.back()))
+            return;
+
+        MarkdownSpan &span=block->spans.back();
+        size_t keep=span.text.size();
+
+        while((keep > 0) && (gweni::String("?!.,:*_~").find(span.text[keep-1]) != gweni::String::npos))
+            --keep;
+        if((keep == span.text.size()) || (keep == 0))
+            return;
+
+        const gweni::String tail=span.text.substr(keep);
+        const gweni::String &url=links.back();
+
+        if((url.size() >= tail.size()) && (url.compare(url.size()-tail.size(), tail.size(), tail) == 0))
+            span.url=url.substr(0, url.size()-tail.size());
+        span.text.resize(keep);
+
+        MarkdownSpan after;
+
+        after.style=span.style;
+        after.text=tail;
+        block->spans.push_back(after);
     }
 
     int enterBlock(MD_BLOCKTYPE type, void *detail)
@@ -425,6 +458,7 @@ struct Builder
                     url="http://"+url;
             }
             links.push_back(url);
+            autolinks.push_back(a->is_autolink != 0);
             break;
         }
         case MD_SPAN_IMG:
@@ -474,7 +508,10 @@ struct Builder
             --strike;
             break;
         case MD_SPAN_A:
+            if(autolinks.back())
+                trimAutolink();
             links.pop_back();
+            autolinks.pop_back();
             break;
         default:
             break;
