@@ -415,13 +415,19 @@ TEST_CASE("App state: with setPreserveAppState a frame gives every saved GL valu
     }
     {
         AppState app;
-        const auto set=snapshot();
 
-        // what the frame changes without it, so the state above is a real test;
-        // glyphs already in the atlas, so nothing is uploaded under the app's
-        // unpack state, and no pixel buffer is bound for the clip-box upload
-        // the new text makes (both of which are errors)
+        // what the frame changes without it, so the state above is a real test,
+        // compared from here on: the glyphs are in the atlas already, and the
+        // clip-box upload the new text makes goes from no pixel buffer (from
+        // the app's it is an error) under gweni's unpack state (under the app's
+        // it sends the wrong boxes, which the shared renderer keeps, its mirror
+        // holding the right ones)
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+        glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+        glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+        const auto set=snapshot();
         scene.label->setText("Label");
         scene.frame();
         CHECK_FALSE((snapshot() == set));
