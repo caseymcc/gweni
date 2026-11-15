@@ -15,9 +15,11 @@
 //    uniform float textContrast;
 //
 // Dual-source: FragColor is the colour, Coverage what flush() blends an LCD
-// atlas's runs with (GL_SRC1_COLOR), one weight per channel. The other atlases'
-// SRC_ALPHA blend does not read Coverage. Without dual-source blending there is
-// no second output, and Coverage goes nowhere.
+// atlas's runs' colour with (GL_SRC1_COLOR), one weight per channel, and their
+// alpha with (GL_ONE, GL_ONE_MINUS_SRC1_ALPHA, FragColor.a being Coverage.a).
+// The other atlases' blend (SRC_ALPHA for the colour, ONE for the alpha, both
+// over ONE_MINUS_SRC_ALPHA) does not read Coverage. Without dual-source blending
+// there is no second output, and Coverage goes nowhere.
 #ifdef GWENI_DUAL_SOURCE
 layout(location = 0, index = 0) out vec4 FragColor;
 layout(location = 0, index = 1) out vec4 Coverage;
@@ -66,8 +68,8 @@ void main()
     {
         a = texture(texture1, texCoord).r;
 
-        // Straight alpha: the coverage scales alpha only, and the SRC_ALPHA blend
-        // applies it to the colour once. color * a here would apply it twice.
+        // Straight alpha: the coverage scales alpha only, and the blend applies
+        // it to the colour once (SRC_ALPHA). color * a here would apply it twice.
         FragColor = vec4(color.rgb, color.a * pow( a, 1.0/gamma ));
         Coverage = vec4(0.0);
     }

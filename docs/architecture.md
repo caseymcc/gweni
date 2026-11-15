@@ -1314,9 +1314,9 @@ How each GL feature maps:
 | an atlas's dirty row band: one `glTexSubImage2D` | the band's rows staged (expanded for LCD), one `vkCmdCopyBufferToImage` into them, the image `TRANSFER_DST_OPTIMAL` for the frame's uploads; `atlas_upload_*` count the same, being the core's |
 | text: per-chunk vertex array, `glMultiDrawElements` of an atlas's ranges | `vkCmdBindVertexBuffers` at the chunk's first glyph slot, one `vkCmdDrawIndexed` per range (`offsets/2` the first index) through the glyph quad order (`0, 1, 2, 0, 2, 3`); `text_draws` counts the chunk once, as on GL |
 | `texture1` bound per atlas, `textMode`, `textContrast` uniforms | a descriptor set per atlas drawn in the frame (the atlas, the glyph clip-box table), from the frame's pools, reset as it begins; `textMode`, `textContrast` with `projection`, `slotBase` in one push-constant block for both stages (`TextPush`, `Vulkan/textPush.glsl`) |
-| `glBlendFunc(SRC1_COLOR, ONE_MINUS_SRC1_COLOR)` for an LCD atlas | a second text pipeline with those factors (colour and alpha), made only with `dualSrcBlend` |
+| `glBlendFuncSeparate(SRC1_COLOR, ONE_MINUS_SRC1_COLOR, ONE, ONE_MINUS_SRC1_ALPHA)` for an LCD atlas | a second text pipeline with those factors, made only with `dualSrcBlend` |
 | `glDeleteTextures` of a freed atlas or image | retired: destroyed once the newest frame that may sample it has signalled its fence, its handle naming nothing from then on |
-| `glBlendFunc(SRC_ALPHA, ONE_MINUS_SRC_ALPHA)`, `GL_LESS` with depth writes | the pipeline's blend and depth state |
+| `glBlendFuncSeparate(SRC_ALPHA, ONE_MINUS_SRC_ALPHA, ONE, ONE_MINUS_SRC_ALPHA)`, `GL_LESS` with depth writes | the pipeline's blend and depth state |
 | `glClear` | a dynamic rendering with `LOAD_OP_CLEAR`, submitted at once |
 | `glReadPixels`, rows turned over | `vkCmdCopyImageToBuffer` into a host-visible buffer, rows turned over |
 | `glFlush` | the frame's two command buffers submitted with its fence |
@@ -2297,7 +2297,7 @@ two programs and the draws. What follows describes both together:
   Vulkan's sizes, and each texel the 2x2 box of the level above, every channel
   `(a+b+c+d+2)/4`, rounded to nearest. Alpha is averaged straight, not premultiplied,
   as `glGenerateMipmap` averaged the stored texels and as the image is blended
-  (`SRC_ALPHA, ONE_MINUS_SRC_ALPHA`). Where the level above is 1 texel wide (high) the
+  (`SRC_ALPHA, ONE_MINUS_SRC_ALPHA` for the colour). Where the level above is 1 texel wide (high) the
   box takes that column (row) twice, and an odd side's last column (row) is in no box.
   `OpenGLCore` uploads each level with a `glTexSubImage3D` into the image's layer of its
   page, `renderer::Vulkan` copies them all from one staging buffer. The image is at the
@@ -4975,8 +4975,8 @@ two programs and the draws. What follows describes both together:
   `lineHeight(font)` reads that
   same metric (`SlotRenderer::lineBoxHeight`) without laying a string out, so it is
   `measureText(font, " ").y` exactly (`tests/lineHeight.cpp`). The text shader outputs
-  `vec4(color.rgb, color.a * coverage)` under the `SRC_ALPHA, ONE_MINUS_SRC_ALPHA`
-  blend, so coverage is applied once; no gamma or contrast curve is applied
+  `vec4(color.rgb, color.a * coverage)` under the colour's `SRC_ALPHA, ONE_MINUS_SRC_ALPHA`
+  blend, so coverage is applied once (the alpha's is `ONE, ONE_MINUS_SRC_ALPHA`); no gamma or contrast curve is applied
   (`markup.gamma` is 1). `tests/textGrayscale.cpp` pins all of this.
 - **LCD subpixel text (opt-in).** `SlotRenderer::setTextAA(TextAA::{Grayscale, LcdRGB,
   LcdBGR})`, or `GWENI_TEXT_AA=gray|rgb|bgr` at construction; Grayscale by default, and
@@ -4988,8 +4988,9 @@ two programs and the draws. What follows describes both together:
   as `GL_RGB8`/`GL_RGB` initially and in the dirty bands. The text fragment shader has a
   dual-source output (`layout(location=0, index=1) Coverage`): for an LCD atlas it is the
   texel's `.rgb` (`.bgr` for BGR) times the colour's alpha, and `flush()` draws that
-  atlas's runs under `glBlendFunc(GL_SRC1_COLOR, GL_ONE_MINUS_SRC1_COLOR)`, putting the
-  previous blend back after, so each channel blends by its own subpixel's coverage. The
+  atlas's runs under `glBlendFuncSeparate(GL_SRC1_COLOR, GL_ONE_MINUS_SRC1_COLOR,
+  GL_ONE, GL_ONE_MINUS_SRC1_ALPHA)`, putting the previous blend back after, so each
+  channel blends by its own subpixel's coverage and the alpha by the mean one. The
   other modes leave `FragColor` as it was and their blend does not read `Coverage`.
   **Glyphs sit at 1/3 device px.** An LCD font sets freetype-gl's
   `texture_font_t::subpixel_positions` to 3 (a gweni patch, before its cache loads):

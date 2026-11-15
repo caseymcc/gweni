@@ -220,9 +220,9 @@ bool initGlfwContext(Context &ctx, const Point &size, const std::string &title, 
     // emscripten-glfw: the WebGL version is the context's major version, and the
     // framebuffer is the canvas's CSS size times devicePixelRatio, the content
     // scale (GLFW_SCALE_FRAMEBUFFER; GLFW_SCALE_TO_MONITOR is deprecated there).
-    // No alpha, so the page never shows through what the blend leaves
-    // translucent, no stencil and no multisampling, as in the EGL path's
-    // framebuffer.
+    // No alpha, so the page never shows through a frame drawn over a clear
+    // that is not opaque, no stencil and no multisampling, as in the EGL
+    // path's framebuffer.
     emscripten_glfw_set_next_window_canvas_selector("#canvas");
     glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);

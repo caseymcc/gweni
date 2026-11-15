@@ -337,7 +337,7 @@ private:
     VkDescriptorPool m_descriptorPool=VK_NULL_HANDLE;
     VkPipelineLayout m_primitiveLayout=VK_NULL_HANDLE;
     VkPipeline m_primitivePipeline=VK_NULL_HANDLE;
-    //! the text pipelines: SRC_ALPHA blended, and an LCD atlas's dual-source one
+    //! the text pipelines: blended as the primitives are, and an LCD atlas's dual-source one
     //! (VK_NULL_HANDLE without dualSrcBlend)
     VkDescriptorSetLayout m_textSetLayout=VK_NULL_HANDLE;
     VkPipelineLayout m_textLayout=VK_NULL_HANDLE;

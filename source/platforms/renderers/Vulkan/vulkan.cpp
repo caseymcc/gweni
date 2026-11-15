@@ -1134,13 +1134,16 @@ bool Vulkan::createPipelines()
     depth.depthWriteEnable=VK_TRUE;
     depth.depthCompareOp=VK_COMPARE_OP_LESS;
 
-    // glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA), colour and alpha alike
+    // glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE,
+    // GL_ONE_MINUS_SRC_ALPHA): the colour over what is there, and the alpha
+    // a + a_d*(1-a), so the target holds premultiplied colour and its coverage
+    // (its RGB is what SRC_ALPHA alone gave: no factor reads DST_ALPHA)
     VkPipelineColorBlendAttachmentState blendAttachment{};
     blendAttachment.blendEnable=VK_TRUE;
     blendAttachment.srcColorBlendFactor=VK_BLEND_FACTOR_SRC_ALPHA;
     blendAttachment.dstColorBlendFactor=VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
     blendAttachment.colorBlendOp=VK_BLEND_OP_ADD;
-    blendAttachment.srcAlphaBlendFactor=VK_BLEND_FACTOR_SRC_ALPHA;
+    blendAttachment.srcAlphaBlendFactor=VK_BLEND_FACTOR_ONE;
     blendAttachment.dstAlphaBlendFactor=VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
     blendAttachment.alphaBlendOp=VK_BLEND_OP_ADD;
     blendAttachment.colorWriteMask=VK_COLOR_COMPONENT_R_BIT|VK_COLOR_COMPONENT_G_BIT|
@@ -1260,14 +1263,16 @@ bool Vulkan::createPipelines()
         made=check(vkCreateGraphicsPipelines(device(), VK_NULL_HANDLE, 1, &info, nullptr,
             &m_textPipeline), "vkCreateGraphicsPipelines") && made;
 
-        // an LCD atlas's runs: glBlendFunc(GL_SRC1_COLOR, GL_ONE_MINUS_SRC1_COLOR),
-        // each channel by its own coverage, the alpha by the second output's
+        // an LCD atlas's runs: glBlendFuncSeparate(GL_SRC1_COLOR,
+        // GL_ONE_MINUS_SRC1_COLOR, GL_ONE, GL_ONE_MINUS_SRC1_ALPHA), each channel
+        // by its own coverage, the alpha a + a_d*(1-a) with a the mean coverage
+        // times the colour's alpha (FragColor.a == Coverage.a)
         if(m_device.dualSourceBlend)
         {
             blendAttachment.srcColorBlendFactor=VK_BLEND_FACTOR_SRC1_COLOR;
             blendAttachment.dstColorBlendFactor=VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR;
-            blendAttachment.srcAlphaBlendFactor=VK_BLEND_FACTOR_SRC1_COLOR;
-            blendAttachment.dstAlphaBlendFactor=VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR;
+            blendAttachment.srcAlphaBlendFactor=VK_BLEND_FACTOR_ONE;
+            blendAttachment.dstAlphaBlendFactor=VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA;
             made=check(vkCreateGraphicsPipelines(device(), VK_NULL_HANDLE, 1, &info, nullptr,
                 &m_lcdTextPipeline), "vkCreateGraphicsPipelines") && made;
         }

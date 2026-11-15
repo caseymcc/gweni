@@ -58,6 +58,7 @@
 #   ifndef GL_SRC1_COLOR
 #       define GL_SRC1_COLOR GL_SRC1_COLOR_EXT
 #       define GL_ONE_MINUS_SRC1_COLOR GL_ONE_MINUS_SRC1_COLOR_EXT
+#       define GL_ONE_MINUS_SRC1_ALPHA GL_ONE_MINUS_SRC1_ALPHA_EXT
 #   endif
 #   if !defined(__EMSCRIPTEN__)
 // libGLESv2 exports the core entry points only: an extension's comes from EGL
@@ -154,7 +155,10 @@ bool OpenGLCore::deviceError()
 
 void OpenGLCore::beginFrame()
 {
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    // the colour over what is there, and the alpha a + a_d*(1-a), so the target
+    // holds premultiplied colour and its coverage (its RGB is what SRC_ALPHA
+    // alone gave: no factor reads DST_ALPHA)
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_BLEND);
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
@@ -486,7 +490,9 @@ void OpenGLCore::beginTextAtlas(const FontData &fontData)
         glGetIntegerv(GL_BLEND_DST_RGB, &m_textBlend[1]);
         glGetIntegerv(GL_BLEND_SRC_ALPHA, &m_textBlend[2]);
         glGetIntegerv(GL_BLEND_DST_ALPHA, &m_textBlend[3]);
-        glBlendFunc(GL_SRC1_COLOR, GL_ONE_MINUS_SRC1_COLOR);
+        // the alpha a + a_d*(1-a), a the mean coverage times the colour's alpha
+        // (the shader's FragColor.a == Coverage.a), as the other atlases'
+        glBlendFuncSeparate(GL_SRC1_COLOR, GL_ONE_MINUS_SRC1_COLOR, GL_ONE, GL_ONE_MINUS_SRC1_ALPHA);
         m_lcdBlend=true;
     }
     else if(!lcd && m_lcdBlend)
