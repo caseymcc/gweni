@@ -30,6 +30,7 @@
 #include <gweni/platforms/commonPlatform.h>
 #include <gweni/utils/json.h>
 
+#include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
@@ -213,27 +214,51 @@ int runCases(doctest::Context &context, renderer::SlotRenderer *renderer)
     const std::string text((std::istreambuf_iterator<char>(config)), std::istreambuf_iterator<char>());
     json::Document document;
     document.Parse(text.c_str());
-    if(document.HasParseError() || !document.IsObject() || !document.HasMember("fontFallback"))
+    if(document.HasParseError() || !document.IsObject() || !document.HasMember("fontFallback") ||
+        !document["fontFallback"].IsObject())
+    {
+        std::fprintf(stderr, "gweni_unittests: resources/DefaultSkin.json has no fontFallback object"
+            " (run from the repo root)\n");
         return EXIT_FAILURE;
+    }
     std::vector<String> faces;
     for(const auto &chain:document["fontFallback"].GetObject())
     {
+        if(!chain.value.IsArray())
+        {
+            std::fprintf(stderr, "gweni_unittests: fontFallback.%s is not an array\n", chain.name.GetString());
+            return EXIT_FAILURE;
+        }
         for(const auto &entry:chain.value.GetArray())
         {
             if(entry.IsString())
                 faces.emplace_back(entry.GetString());
+            else if(!entry.IsObject() || !entry.HasMember("face") || !entry["face"].IsString() ||
+                !entry.HasMember("file") || !entry["file"].IsString() ||
+                !entry.HasMember("unicodeRange") || !entry["unicodeRange"].IsString())
+            {
+                std::fprintf(stderr, "gweni_unittests: a fontFallback.%s entry is neither a face name nor"
+                    " {face, file, unicodeRange}\n", chain.name.GetString());
+                return EXIT_FAILURE;
+            }
             else
             {
                 const String face=entry["face"].GetString();
                 if(!renderer->setGlyphFallbackSource(face, entry["file"].GetString(), entry["unicodeRange"].GetString()))
+                {
+                    std::fprintf(stderr, "gweni_unittests: fontFallback's %s entry was refused\n", face.c_str());
                     return EXIT_FAILURE;
+                }
                 faces.push_back(face);
             }
         }
     }
     renderer->setGlyphFallback("__capture_preload", faces);
     if(!renderer->preloadGlyphFallbacks())
+    {
+        std::fprintf(stderr, "gweni_unittests: a glyph fallback face could not be read (above)\n");
         return EXIT_FAILURE;
+    }
     renderer->setGlyphFallback("__capture_preload", {});
     test::g_openSans.facename="OpenSans.ttf";
     test::g_openSans.size=11;

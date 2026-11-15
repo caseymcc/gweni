@@ -672,7 +672,12 @@ void SlotRenderer::fetchShownLazyFaces()
 {
 #if defined(__EMSCRIPTEN__)
     const bool shown=std::any_of(m_lazyPendingRuns.begin(), m_lazyPendingRuns.end(),
-        [this](size_t textId) { return (textId < m_textRuns.size()) && !m_textRuns[textId].hidden; });
+        [this](size_t textId)
+        {
+            // not a hidden page's (the render walk lays those out too) nor one
+            // culled wholly outside its clip box (scrolled out of view)
+            return (textId < m_textRuns.size()) && !m_textRuns[textId].hidden && !m_textRuns[textId].culled;
+        });
 
     if(!shown)
         return;

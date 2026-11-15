@@ -201,6 +201,18 @@ OpenSans, each with one line on stderr (`docs/architecture.md` -> "Missing
 resources"). `gwen.png`, `test16.png` and `LiberationSans-Regular.ttf` are the
 demos' alone.
 
+The shipped `DefaultSkin.json` also names a lazy CJK face at the end of both
+glyph fallback chains, `DroidSansFallbackFull.ttf` (Apache 2.0, 4 MB), which is
+not in `resources/`: gweni's own trees download it at configure time
+(`cmake/LazyFont.cmake`, only with `GWENI_BUILD_EXAMPLES` or `GWENI_BUILD_TESTS`)
+into `<tree>/resources-lazy/`. An app that wants CJK drawn ships that directory's
+`DroidSansFallbackFull.ttf` and `DroidSansFallbackFull-LICENSE.txt` as
+`resources-lazy/` beside its executable (`ResourcePaths::Type::LazyFont` looks
+there, whatever the resources directory is); a web page serves it beside the
+page. Without it, CJK draws as the missing glyph, as before the face was added,
+and the first CJK miss prints one line on stderr naming the path tried; text
+without CJK never looks for it (`docs/architecture.md` -> "The lazy CJK face").
+
 ## GLES tree
 
 `./generate.sh linux gles` configures `build_linux_x64_debug_gles/` (with
