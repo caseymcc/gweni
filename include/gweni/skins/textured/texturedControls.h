@@ -882,6 +882,32 @@ private:
     std::vector<Run> m_runs;
 };
 
+// A Markdown horizontal rule (controls::internal::MarkdownRule): [0] an icon
+// of kind 6 (a Separator's rule) across its bounds, through their middle, in
+// MarkdownRule's top colour.
+class MarkdownRule:public textured::ControlRegister<MarkdownRule>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="MarkdownRule";
+};
+
+// A Markdown block quote (controls::internal::MarkdownQuote): [0] its bar, the
+// MarkdownQuoteBar surface down its left edge, MarkdownQuote::BarWidth units
+// wide and as high as the quote.
+class MarkdownQuote:public textured::ControlRegister<MarkdownQuote>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="MarkdownQuote";
+};
+
 // A NodeGraph: [0] its backdrop (GraphGrid's fill, over the render bounds) and
 // [1] its grid at getZIndex()+1 over it, one drawGrid over the render bounds: a
 // line every NodeGraph::gridStep() graph units from the graph's origin on each

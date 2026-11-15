@@ -23,6 +23,7 @@
 #include "gweni/controls/plotLines.h"
 #include "gweni/controls/chart.h"
 #include "gweni/controls/richText.h"
+#include "gweni/controls/markdownDocument.h"
 #include "gweni/controls/nodeGraph.h"
 #include "gweni/controls/colorControls.h"
 #include "gweni/controls/colorPicker.h"
@@ -2713,6 +2714,31 @@ void RichText::remove(renderer::Base *renderer, controls::Base *baseControl)
     m_runs.clear();
     m_drawn.clear();
     releasePrimitives(renderer);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//MarkdownRule, MarkdownQuote
+void MarkdownRule::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    const Rect bounds=baseControl->getRenderBounds();
+    const bool visible=baseControl->visible() && (bounds.w > 0) && (bounds.h > 0);
+
+    if(visible)
+        renderer->drawIcon(m_primitives[0], bounds, 6, 0, tokyonight::MarkdownRule.top,
+            baseControl->getZIndex());
+    else
+        renderer->hidePrimitive(m_primitives[0]);
+}
+
+void MarkdownQuote::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    Rect bar=baseControl->getRenderBounds();
+
+    bar.w=std::min(bar.w, controls::internal::MarkdownQuote::BarWidth);
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::MarkdownQuoteBar, bar);
 }
 
 
@@ -5869,6 +5895,8 @@ template class ControlRegister<Chart>;
 template class ControlRegister<ChartLegendRow>;
 template class ControlRegister<Timeline>;
 template class ControlRegister<RichText>;
+template class ControlRegister<MarkdownRule>;
+template class ControlRegister<MarkdownQuote>;
 template class ControlRegister<ColorLerpBox>;
 template class ControlRegister<ColorSlider>;
 template class ControlRegister<ColorDisplay>;

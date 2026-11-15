@@ -416,6 +416,11 @@ inline Surface RichTextCode   { BgHighlight,           BgHighlight,           Bg
 // A RichText's selection, one rect per line behind its glyphs (over a code
 // background), as TextSelection.
 inline Surface RichTextSelection{ Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), 0.0f, 0.0f };
+// A MarkdownDocument's horizontal rule: flat, so only top is read, the
+// line's colour (as a Separator's).
+inline Surface MarkdownRule    { Line,                  Line,                  Line,  0.0f,     0.0f };
+// A Markdown block quote's bar down its left edge.
+inline Surface MarkdownQuoteBar{ Line,                  Line,                  Line,  1.5f,     0.0f };
 
 // gweni::tools::StatsOverlay's panel, in the canvas's corner: translucent, so
 // the app's fills show dimly through it.
@@ -595,6 +600,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"TimelineAxis",&TimelineAxis},{"TimelineBar",&TimelineBar},{"TimelineBarHover",&TimelineBarHover},
         {"StatsOverlay",&StatsOverlay},
         {"RichTextCode",&RichTextCode},{"RichTextSelection",&RichTextSelection},
+        {"MarkdownRule",&MarkdownRule},{"MarkdownQuoteBar",&MarkdownQuoteBar},
         {"DropIndicator",&DropIndicator},{"DragSource",&DragSource},
         {"DragNumber",&DragNumber},{"DragNumberHover",&DragNumberHover},{"DragNumberFocus",&DragNumberFocus},
         {"DragNumberDown",&DragNumberDown},{"DragNumberDisabled",&DragNumberDisabled},

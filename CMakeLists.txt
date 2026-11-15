@@ -276,6 +276,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/listBox.cpp
     include/gweni/controls/logView.h
     source/controls/logView.cpp
+    include/gweni/controls/markdownDocument.h
+    source/controls/markdownDocument.cpp
     include/gweni/controls/menu.h
     source/controls/menu.cpp
     include/gweni/controls/menuItem.h
