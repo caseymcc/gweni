@@ -36,6 +36,19 @@ renderer::SlotRenderer *newRenderer(ResourcePaths &paths, const Rect &viewRect);
 //! on a copy of the device with VulkanDevice::dualSourceBlend off.
 renderer::SlotRenderer *newRendererWithoutDualSource(ResourcePaths &paths, const Rect &viewRect);
 
+#ifdef GWENI_HAS_VULKAN
+}//namespace test
+namespace renderer
+{
+struct VulkanDevice;
+}
+namespace test
+{
+
+//! The Vulkan device every renderer of a Vulkan run is made on; null in a GL run.
+const renderer::VulkanDevice *vulkanDevice();
+#endif
+
 //! Whether gpuRenderer()'s device has dual-source blending (GL's
 //! glCapabilities(), Vulkan's dualSrcBlend feature)
 bool deviceHasDualSource();

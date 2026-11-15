@@ -445,8 +445,10 @@ bool VulkanTarget::create(int width, int height, VkFormat depthFormat)
         return vkCreateImageView(m_device.device, &view, nullptr, &image.view) == VK_SUCCESS;
     };
 
+    // sampled, so an app composites it over its scene in a shader (RGBA8 UNORM
+    // sampling is mandatory on every device)
     if(!make(m_color, m_colorFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_TRANSFER_SRC_BIT|
-            VK_IMAGE_USAGE_TRANSFER_DST_BIT) ||
+            VK_IMAGE_USAGE_TRANSFER_DST_BIT|VK_IMAGE_USAGE_SAMPLED_BIT) ||
         !make(m_depth, m_depthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT))
     {
         destroy();
@@ -598,7 +600,8 @@ bool Vulkan::check(VkResult result, const char *what)
 
 bool Vulkan::deviceError()
 {
-    const bool error=m_error;
+    // a device init() refused stays an error: nothing is ever drawn on it
+    const bool error=m_error || m_deviceRefused;
 
     m_error=false;
     return error;
@@ -877,10 +880,50 @@ VkDescriptorSet Vulkan::allocateTextSet()
     return set;
 }
 
+const char *Vulkan::unusableDevice() const
+{
+    // volk's pointers first: until they are this instance's and this device's,
+    // no Vulkan call may be made (a second volk in the program has none at all)
+    if(m_device.instance == VK_NULL_HANDLE || volkGetLoadedInstance() != m_device.instance)
+        return "volk is not loaded for this VkInstance (volkLoadInstance, and one volk in the program)";
+    if(m_device.device == VK_NULL_HANDLE || volkGetLoadedDevice() != m_device.device)
+        return "volk is not loaded for this VkDevice (volkLoadDevice, and one volk in the program)";
+
+    VkPhysicalDeviceProperties properties;
+
+    vkGetPhysicalDeviceProperties(m_device.physicalDevice, &properties);
+    if(properties.apiVersion < VK_API_VERSION_1_3)
+        return "the physical device is not Vulkan 1.3";
+
+    VkPhysicalDeviceVulkan13Features features13{};
+    features13.sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    VkPhysicalDeviceFeatures2 features{};
+    features.sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    features.pNext=&features13;
+    vkGetPhysicalDeviceFeatures2(m_device.physicalDevice, &features);
+    if(!features13.dynamicRendering)
+        return "the physical device does not support dynamicRendering";
+    if(!features13.shaderDemoteToHelperInvocation)
+        return "the physical device does not support shaderDemoteToHelperInvocation";
+    if(m_device.dualSourceBlend && !features.features.dualSrcBlend)
+        return "VulkanDevice::dualSourceBlend is set, and the physical device does not support dualSrcBlend";
+    // which features the app enabled is the validation layer's to say
+    return nullptr;
+}
+
 void Vulkan::init()
 {
     // nothing of the mirror is on the buffers below yet, and the view is the clip region
     SlotRenderer::init();
+
+    if(const char *unusable=unusableDevice())
+    {
+        // nothing is made, and every hook returns at once: nothing is drawn
+        std::fprintf(stderr, "gweni: renderer::Vulkan: cannot use the device: %s\n", unusable);
+        m_deviceRefused=true;
+        return;
+    }
+    m_deviceUsable=true;
 
     vkGetPhysicalDeviceProperties(m_device.physicalDevice, &m_properties);
     vkGetPhysicalDeviceMemoryProperties(m_device.physicalDevice, &m_memoryProperties);
@@ -1543,6 +1586,8 @@ void Vulkan::submit()
 
 void Vulkan::clearTarget(const gweni::Color &color)
 {
+    if(!m_deviceUsable)
+        return;
     // at once, in the queue's order: another renderer drawing into the target
     // after this sees it cleared, and so do this one's next frame's draws
     if(m_recording)
@@ -1633,7 +1678,7 @@ void Vulkan::readPixels(int width, int height, std::vector<uint8_t> &pixels)
     width=std::min(width, m_target->width());
     height=std::min(height, m_target->height());
     pixels.assign(static_cast<size_t>(std::max(width, 0))*std::max(height, 0)*4, 0);
-    if(width <= 0 || height <= 0)
+    if(width <= 0 || height <= 0 || !m_deviceUsable)
         return;
 
     Buffer readback;
@@ -1712,6 +1757,8 @@ void Vulkan::beginFrame()
 
 void Vulkan::allocateVertexBuffer(SlotPath path, size_t bytes)
 {
+    if(!m_deviceUsable)
+        return;
     Buffer &buffer=(path == SlotPath::Primitives)?m_vertexBuffer:m_textVertexBuffer;
 
     // the frames in flight may still draw from the old one; this frame has
@@ -1726,6 +1773,8 @@ void Vulkan::allocateVertexBuffer(SlotPath path, size_t bytes)
 
 void Vulkan::uploadVertexRange(SlotPath path, size_t offset, size_t bytes, const void *data)
 {
+    if(!m_deviceUsable)
+        return;
     Buffer &buffer=(path == SlotPath::Primitives)?m_vertexBuffer:m_textVertexBuffer;
 
     if(buffer.buffer == VK_NULL_HANDLE || bytes == 0)
@@ -1739,11 +1788,16 @@ void Vulkan::uploadVertexRange(SlotPath path, size_t offset, size_t bytes, const
 
 size_t Vulkan::maxClipBoxRows() const
 {
+    // nothing is allocated on a device init() refused
+    if(!m_deviceUsable)
+        return 1;
     return m_properties.limits.maxImageDimension2D;
 }
 
 void Vulkan::allocateClipBoxes(SlotPath path, size_t rows)
 {
+    if(!m_deviceUsable)
+        return;
     // primitive.frag's CLIP_COLUMNS and CLIP_COLUMNS_LOG2
     static_assert(kClipColumns == 2048 && kClipColumnsLog2 == 11, "primitive.frag hard-codes 2048 clip boxes a row");
 
@@ -1768,6 +1822,8 @@ void Vulkan::allocateClipBoxes(SlotPath path, size_t rows)
 void Vulkan::uploadClipBoxRows(SlotPath path, size_t x, size_t y, size_t width, size_t height,
     const Box *boxes)
 {
+    if(!m_deviceUsable)
+        return;
     Texture *table=texture((path == SlotPath::Primitives)?m_clipTexture:m_textClipTexture);
 
     if(!table || width == 0 || height == 0)
@@ -1792,6 +1848,8 @@ void Vulkan::uploadClipBoxRows(SlotPath path, size_t x, size_t y, size_t width, 
 
 TextureHandle Vulkan::createAtlasTexture(const texture_atlas_t &atlas)
 {
+    if(!m_deviceUsable)
+        return 0;
     // R8 for coverage and distance alike; an LCD atlas's RGB as RGBA8, which every
     // device samples (R8G8B8 need not be), the alpha unused
     const bool lcd=(atlas.depth == 3);
@@ -1824,6 +1882,8 @@ TextureHandle Vulkan::createAtlasTexture(const texture_atlas_t &atlas)
 
 void Vulkan::uploadAtlasRows(TextureHandle handle, const texture_atlas_t &atlas, size_t firstRow, size_t rows)
 {
+    if(!m_deviceUsable)
+        return;
     Texture *atlasTexture=texture(handle);
 
     if(!atlasTexture || rows == 0)
@@ -1862,17 +1922,24 @@ void Vulkan::uploadAtlasRows(TextureHandle handle, const texture_atlas_t &atlas,
 
 void Vulkan::destroyAtlasTexture(TextureHandle handle)
 {
+    if(!m_deviceUsable)
+        return;
     // a frame in flight may still sample it
     retireHandle(handle);
 }
 
 size_t Vulkan::maxImageLayers() const
 {
+    // nothing is allocated on a device init() refused
+    if(!m_deviceUsable)
+        return 1;
     return std::max<size_t>(m_properties.limits.maxImageArrayLayers, 1);
 }
 
 bool Vulkan::allocateImagePage(size_t imageClass, size_t layers, size_t keptLayers)
 {
+    if(!m_deviceUsable)
+        return false;
     const uint32_t side=(uint32_t)imageClassSide(imageClass);
     const uint32_t levels=(uint32_t)imageClassLevels(imageClass);
     Texture page;
@@ -1933,6 +2000,8 @@ bool Vulkan::allocateImagePage(size_t imageClass, size_t layers, size_t keptLaye
 void Vulkan::uploadImageLayer(size_t imageClass, size_t layer, int width, int height, const uint8_t *rgba,
     const ImageMipLevel *levels, size_t levelCount)
 {
+    if(!m_deviceUsable)
+        return;
     Texture *page=texture(m_imagePages[imageClass]);
 
     if(!page || width <= 0 || height <= 0)
@@ -1983,6 +2052,8 @@ void Vulkan::uploadImageLayer(size_t imageClass, size_t layer, int width, int he
 
 bool Vulkan::readImageLayer(size_t imageClass, size_t layer, int width, int height, std::vector<uint8_t> &rgba)
 {
+    if(!m_deviceUsable)
+        return false;
     rgba.clear();
 
     Texture *page=texture(m_imagePages[imageClass]);
@@ -2039,6 +2110,8 @@ TextureHandle Vulkan::imagePageHandle(size_t imageClass) const
 
 void Vulkan::destroyImagePages()
 {
+    if(!m_deviceUsable)
+        return;
     // a frame in flight may still sample them
     for(TextureHandle &page:m_imagePages)
     {
@@ -2049,6 +2122,8 @@ void Vulkan::destroyImagePages()
 
 bool Vulkan::readTextureRgba(TextureHandle handle, int width, int height, std::vector<uint8_t> &rgba)
 {
+    if(!m_deviceUsable)
+        return false;
     rgba.clear();
 
     Texture *source=texture(handle);
@@ -2114,6 +2189,8 @@ bool Vulkan::readTextureRgba(TextureHandle handle, int width, int height, std::v
 
 void Vulkan::beginPrimitiveDraws()
 {
+    if(!m_deviceUsable)
+        return;
     Frame &current=frame();
 
     // this frame's set (the frame that last used it is done): the clip-box table
@@ -2155,6 +2232,8 @@ void Vulkan::beginPrimitiveDraws()
 
 void Vulkan::drawPrimitiveChunk(const ChunkDraw &draw)
 {
+    if(!m_deviceUsable)
+        return;
     Frame &current=frame();
     const size_t firstSlot=draw.chunk*indexChunkSlots();
     // the chunk's vertexes from its first slot's, as its GL vertex array points
@@ -2172,10 +2251,14 @@ void Vulkan::drawPrimitiveChunk(const ChunkDraw &draw)
 
 void Vulkan::endPrimitiveDraws()
 {
+    if(!m_deviceUsable)
+        return;
 }
 
 void Vulkan::beginTextDraws()
 {
+    if(!m_deviceUsable)
+        return;
     Frame &current=frame();
 
     beginRendering();
@@ -2189,6 +2272,8 @@ void Vulkan::beginTextDraws()
 
 void Vulkan::beginTextAtlas(const FontData &fontData)
 {
+    if(!m_deviceUsable)
+        return;
     Frame &current=frame();
     const bool lcd=(fontData.mode == TextMode::LcdRGB) || (fontData.mode == TextMode::LcdBGR);
     // without dual-source blending an LCD atlas would be blended by its mean
@@ -2241,6 +2326,8 @@ void Vulkan::beginTextAtlas(const FontData &fontData)
 
 void Vulkan::drawTextChunk(const ChunkDraw &draw)
 {
+    if(!m_deviceUsable)
+        return;
     if(!m_drawingAtlas)
         return;
 
@@ -2261,12 +2348,16 @@ void Vulkan::drawTextChunk(const ChunkDraw &draw)
 
 void Vulkan::endTextDraws()
 {
+    if(!m_deviceUsable)
+        return;
     m_boundTextPipeline=VK_NULL_HANDLE;
     m_drawingAtlas=false;
 }
 
 void Vulkan::submitFrame()
 {
+    if(!m_deviceUsable)
+        return;
     submit();
 }
 

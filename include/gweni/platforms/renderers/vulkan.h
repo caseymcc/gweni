@@ -149,6 +149,11 @@ public:
     //! Waits for the queue, then destroys everything it made.
     virtual ~Vulkan();
 
+    //! Checks the device first: volk loaded for its instance and device,
+    //! Vulkan 1.3, dynamicRendering and shaderDemoteToHelperInvocation supported,
+    //! and dualSourceBlend only where dualSrcBlend is. A device that fails prints
+    //! one stderr line naming what is missing, deviceError() is true from then on,
+    //! and the renderer makes no Vulkan call and draws nothing.
     void init() override;
     void setViewRect(const gweni::Rect &viewRect) override;
 
@@ -285,6 +290,10 @@ private:
     VkDevice device() const { return m_device.device; }
     //! Records a VkResult that is an error (deviceError()), and returns whether it succeeded.
     bool check(VkResult result, const char *what);
+    //! What makes the device unusable (one line), or null: volk not loaded for its
+    //! instance or device, no Vulkan 1.3, no dynamicRendering or
+    //! shaderDemoteToHelperInvocation, or dualSourceBlend set without dualSrcBlend
+    const char *unusableDevice() const;
 
     uint32_t memoryType(uint32_t typeBits, VkMemoryPropertyFlags properties) const;
     bool createBuffer(Buffer &buffer, VkDeviceSize size, VkBufferUsageFlags usage, bool hostVisible);
@@ -351,6 +360,11 @@ private:
     };
     std::vector<Clear> m_clears;
     uint64_t m_queueWaitIdles=0;
+    //! init()'s device check passed: until it has, and after it refused the
+    //! device (m_deviceRefused, which deviceError() reports from then on),
+    //! every hook returns without a Vulkan call
+    bool m_deviceUsable=false;
+    bool m_deviceRefused=false;
     bool m_recording=false;
     bool m_rendering=false;
     //! the Textures this frame's uploads wrote, made sampled again in submit()

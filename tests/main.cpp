@@ -102,6 +102,13 @@ renderer::SlotRenderer *newRendererWithoutDualSource(ResourcePaths &paths, const
     return made;
 }
 
+#ifdef GWENI_HAS_VULKAN
+const renderer::VulkanDevice *vulkanDevice()
+{
+    return g_vulkanDevice;
+}
+#endif
+
 bool deviceHasDualSource()
 {
 #ifdef GWENI_HAS_VULKAN
