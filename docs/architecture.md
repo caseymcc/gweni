@@ -1286,7 +1286,8 @@ The application owns the Vulkan objects, as it owns a GL context:
   validation warning and error on stderr (`gweni: Vulkan validation error: ...`) and
   aborts, and fails, saying so, without the layer. The options also take the
   instance and device extensions a window adds (#375). No GLFW in the library.
-- **`VulkanTarget`**: a colour image (`R8G8B8A8_UNORM`) and its depth buffer
+- **`VulkanTarget`**: a colour image (`R8G8B8A8_UNORM`, sampled as well as rendered
+  to, so an application composites it in a shader) and its depth buffer
   (`X8_D24_UNORM_PACK32` where the device renders to it, as GL's
   `GL_DEPTH_COMPONENT24`, else `D24_UNORM_S8_UINT` or `D32_SFLOAT`), of one size,
   what an EGL context's framebuffer is to `OpenGLCore`. Any renderer on the device
@@ -1421,6 +1422,73 @@ unchanged on Vulkan: each is registered again as `<name>_vulkan`
 (`gweni_whole_app_test` in `tests/CMakeLists.txt`), with `GWENI_RENDERER=vulkan`
 in its environment, which the exes and every child a script starts take as their
 `--renderer`. A run on Vulkan without a capture is the window, below.
+
+### gweni on an application's Vulkan device
+
+An application that draws with Vulkan itself (an engine, #690) makes its own device and
+has gweni draw into a `VulkanTarget` it then composites over its scene. What it and
+gweni each hold to (`VulkanDevice` and `VulkanTarget` in `vulkan.h` say the same):
+
+- **The device.** The instance and device are Vulkan 1.3, the device created with
+  `dynamicRendering` and `shaderDemoteToHelperInvocation` enabled, and `dualSrcBlend`
+  where the physical device has it (then `VulkanDevice::dualSourceBlend` is set;
+  without it LCD text is grayscale). No extension is needed. The application fills a
+  `VulkanDevice`: instance, physical device, device, one graphics queue and its
+  family, `dualSourceBlend`, and `messenger` null.
+- **volk.** The application loads volk itself (`volkInitialize`, `volkLoadInstance`,
+  `volkLoadDevice` for its device), and there is one volk in the program (`gweni`
+  links the static `volk::volk`, the application the same port): gweni calls
+  `volkInitialize` only in `createVulkanDevice`, which an application with its own
+  device does not call.
+- **`init()` checks the device** (`Vulkan::unusableDevice()`), before any other Vulkan
+  call: volk loaded for its instance (`volkGetLoadedInstance()`) and its device
+  (`volkGetLoadedDevice()`), which no Vulkan call is made before, so a second volk
+  in the program, whose pointers are null, is never called through; the physical
+  device at Vulkan 1.3; `dynamicRendering` and `shaderDemoteToHelperInvocation`
+  supported; `dualSourceBlend` only where `dualSrcBlend` is supported. A device that
+  fails prints one line (`gweni: renderer::Vulkan: cannot use the device: volk is
+  not loaded for this VkDevice (...)`), `deviceError()` is true from then on, and
+  every hook returns without a Vulkan call, so nothing is drawn, cleared or read.
+  Which features the application *enabled* `init()` cannot see; the validation layer
+  reports a missing one. `tests/vulkanDevice.cpp` refuses a device volk is not loaded
+  for (a second device made, which loads volk for itself, then volk loaded for the
+  suite's device again).
+- **The queue.** Every renderer submits to `VulkanDevice::queue` from the thread
+  that calls it, so all of that queue's submissions are made from one thread (the
+  application's and gweni's). A frame's `end()` submits its uploads and draws with
+  the frame's fence; `clearTarget()` submits at once, in queue order, and does not
+  wait: its command buffer and fence are reused by a later clear once the fence has
+  signalled (`clearCommandBufferCount()`). What still waits for the queue
+  (`vkQueueWaitIdle`) is occasional: a new font atlas, an image page or layer, a
+  buffer or clip-box regrow, `readPixels()`, `setTarget()` to other formats and the
+  destructor; `Vulkan::queueWaitIdleCount()` counts them (Vulkan-only, not in
+  `FrameStats`), and a frame loop of `clearTarget`, `updateCanvas` and
+  `renderCanvas` over a settled canvas makes none (`tests/vulkanClear.cpp`).
+- **The target.** `R8G8B8A8_UNORM`, rows bottom-up (sample at `(u, 1-v)`), in
+  `COLOR_ATTACHMENT_OPTIMAL` between gweni's frames, sampled
+  (`VK_IMAGE_USAGE_SAMPLED_BIT`). After gweni's submit the application's barrier,
+  on the same queue, takes it from `COLOR_ATTACHMENT_OUTPUT`/`COLOR_ATTACHMENT_WRITE`
+  to `FRAGMENT_SHADER`/`SHADER_READ` and to `SHADER_READ_ONLY_OPTIMAL`, and another
+  takes it back to `COLOR_ATTACHMENT_OPTIMAL` before gweni's next `clearTarget()` or
+  frame (`tests/vulkanDevice.cpp` writes its view into a combined-image-sampler
+  descriptor and makes both barriers, validated).
+- **Its values are premultiplied and sRGB-encoded.** Every blend is
+  `(SRC_ALPHA, ONE_MINUS_SRC_ALPHA)` for the colour and `(ONE, ONE_MINUS_SRC_ALPHA)`
+  for the alpha, on both backends, so a pixel holds `(c·a, a)` over a transparent
+  clear and two layers their premultiplied "over"; the colour channels are what the
+  old `SRC_ALPHA` alpha factor gave, byte for byte, since no factor reads the
+  destination's alpha. The blending is on the encoded values, as GL blends them, so
+  the application composites the target with `(ONE, ONE_MINUS_SRC_ALPHA)` on encoded
+  values, e.g. after its tonemap, over its swapchain image. Over an opaque clear
+  every pixel's alpha is 255. `tests/premultipliedAlpha.cpp` holds both backends to
+  this: a frame of fills, rounded corners, lines and grayscale text over a
+  transparent clear, composited on the CPU over a colour `S` (`rgb + S·(1-A)`), is
+  the frame drawn over `S` within 1 level per channel (measured: 1 on llvmpipe and
+  lavapipe, 0 over black).
+- **LCD text cannot be composited over a transparent clear**: each channel has its
+  own coverage (`SRC1_COLOR`) and the alpha their mean (`ONE, ONE_MINUS_SRC1_ALPHA`),
+  so no single alpha composites it. Draw it over an opaque clear, or keep grayscale
+  text (the default).
 
 ### The Vulkan window
 

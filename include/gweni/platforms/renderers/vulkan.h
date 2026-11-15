@@ -23,6 +23,22 @@ namespace renderer
 
 //! The Vulkan objects a renderer::Vulkan draws with, made by the application
 //! (createVulkanDevice, or its own) and outliving every renderer and target on it.
+//!
+//! An application that makes its own (docs/architecture.md, "gweni on an
+//! application's Vulkan device"):
+//! - The instance and device are Vulkan 1.3, the device created with the
+//!   dynamicRendering and shaderDemoteToHelperInvocation features enabled, and
+//!   dualSrcBlend where the physical device has it (then dualSourceBlend is set).
+//!   No extension is needed. Vulkan::init() checks what the physical device
+//!   supports; what was enabled is the validation layer's to check.
+//! - volk is the application's to load (volkInitialize, volkLoadInstance,
+//!   volkLoadDevice for this device) before a renderer is init()'d, and stays
+//!   loaded for this device while gweni draws. There is one volk in the program:
+//!   gweni calls volkInitialize only in createVulkanDevice, and init() refuses a
+//!   device volk is not loaded for.
+//! - Every renderer on the device submits to queue from the thread that calls
+//!   it, so every submission to that queue is made from one thread. messenger
+//!   is VK_NULL_HANDLE.
 struct VulkanDevice
 {
     VkInstance instance=VK_NULL_HANDLE;
@@ -72,6 +88,23 @@ GWENI_EXPORT void destroyVulkanDevice(VulkanDevice &device);
 //! every triangle covers, interpolates and differentiates as on GL, and
 //! readPixels turns the rows over as OpenGLCore's does. Shown in a window it
 //! needs a flip (a blit), not a renderer that draws the other way up.
+//!
+//! An application compositing it over its own scene:
+//! - The colour image is R8G8B8A8_UNORM and sampled (VK_IMAGE_USAGE_SAMPLED_BIT);
+//!   sample it at (u, 1-v) for its rows' order.
+//! - After gweni's submit (a frame's end(), on the same queue), the application's
+//!   barrier takes it from COLOR_ATTACHMENT_OUTPUT / COLOR_ATTACHMENT_WRITE to
+//!   FRAGMENT_SHADER / SHADER_READ, COLOR_ATTACHMENT_OPTIMAL to
+//!   SHADER_READ_ONLY_OPTIMAL, and back to COLOR_ATTACHMENT_OPTIMAL before
+//!   gweni's next clearTarget() or frame.
+//! - Its values are premultiplied (colour times alpha, and the alpha its
+//!   coverage) and sRGB-encoded, blended on the encoded values as GL blends them:
+//!   composite it with (ONE, ONE_MINUS_SRC_ALPHA) on encoded values, e.g. after
+//!   the application's tonemap, over its swapchain image. Cleared to a
+//!   transparent colour, it is the UI alone.
+//! - LCD text cannot be composited over a transparent clear (each channel has
+//!   its own coverage and the alpha their mean): draw it over an opaque clear,
+//!   or use grayscale text (the default).
 class GWENI_EXPORT VulkanTarget
 {
 public:
@@ -161,6 +194,8 @@ public:
     void setTarget(VulkanTarget &target);
     VulkanTarget &target() const { return *m_target; }
 
+    //! Clears the target's colour and depth at once, in the queue's order, without
+    //! waiting for the queue (its commands are reused once their fence signals).
     void clearTarget(const gweni::Color &color) override;
     void readPixels(int width, int height, std::vector<uint8_t> &pixels) override;
     bool textureExists(TextureHandle handle) const override;
