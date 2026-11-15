@@ -1,3 +1,7 @@
+/*
+ *  Gweni demo
+ *  See license in gweni.h
+ */
 #ifndef _gweni_translucency_example_h_
 #define _gweni_translucency_example_h_
 

@@ -1,3 +1,7 @@
+/*
+ *  Gweni demo
+ *  See license in gweni.h
+ */
 #include "demo/translucency.h"
 #include "gweni/controls/button.h"
 #include "gweni/controls/canvas.h"

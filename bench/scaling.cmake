@@ -42,6 +42,9 @@
 #      text_slots_written
 #    upload_calls, upload_bytes        yes      any increase
 #    buffer_regrows, image_regrows     yes      any increase
+#    sorted_slots, sorted_runs,        yes      any increase
+#      sorted_groups, sorted_builds,
+#      overlap_visited
 #    atlas_upload_calls,               yes      any increase
 #      atlas_upload_bytes
 #    layout_passes, layout_capped,     yes      any increase

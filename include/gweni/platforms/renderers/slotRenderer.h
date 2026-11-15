@@ -1339,10 +1339,11 @@ private:
     std::vector<uint8_t> m_translucentImageLayers[ImageClasses];
     bool m_imageTranslucencyChanged=false;
     bool m_translucentSort=true;
-    //! Whether the slot's vertexes blend with what is behind them: the alphas of
-    //! the colours its style draws (a border's only with a border) neither all 255
-    //! nor all 0, or an image (style 2) with a texel neither transparent nor
-    //! opaque. All 255 or all 0 draw in the opaque pass, as every slot did.
+    //! Whether the slot's vertexes blend with what is behind them: the alphas its
+    //! style outputs (a rounded rect's or a bilinear fill's gradient, not its
+    //! border colour's; never a checker's) neither all 255 nor all 0, or an image
+    //! (style 2) with a texel neither transparent nor opaque. All 255 or all 0
+    //! draw in the opaque pass, as every slot did.
     bool slotTranslucent(const Vertex *vertexes) const;
 
     //! A device-px rect [x0, x1) x [y0, y1), empty when x0 >= x1 or y0 >= y1
@@ -1354,7 +1355,9 @@ private:
         bool overlaps(const OverlapRect &other) const
         {
             return (x0 < other.x1) && (other.x0 < x1) && (y0 < other.y1) && (other.y0 < y1);
-        }        bool inside(const OverlapRect &other) const
+        }
+        //! Whether this rect lies wholly within \a other
+        bool inside(const OverlapRect &other) const
         {
             return (other.x0 <= x0) && (x1 <= other.x1) && (other.y0 <= y0) && (y1 <= other.y1);
         }

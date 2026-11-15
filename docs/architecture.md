@@ -1326,7 +1326,11 @@ query added it (a control's parts on a translucent panel) is not queried, since 
 is in front of it and overlaps it was found already. A dragged translucent Window
 over 10 000 Labels visits the same 269 index items a frame as over 1 000
 (`gweni_bench --scene translucent-drag`), the NodeGraph marquee 173, the stats
-overlay's refresh about 465. A sorted text group's runs are drawn by font in the order
+overlay's refresh about 465. The modal scrim overlaps every cell, so while it is up a
+slot moved, shown or hidden anywhere on screen (a caret blink, a label behind the
+dialog given a wider text, each frame of a dialog drag) builds the schedule again,
+visiting about every item on screen (887 for 640 Labels behind a dialog); a settled
+frame builds nothing. A sorted text group's runs are drawn by font in the order
 the fonts were loaded (`FontData::serial`), the same in every build. The chunks whose slots enter or leave the set build their ranges again and never
 merge a gap across a sorted slot; the fonts whose runs do, their draw lists. With no
 translucent slot it is exactly the old order and draws, and the samples are the same
