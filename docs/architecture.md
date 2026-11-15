@@ -4488,7 +4488,8 @@ two programs and the draws. What follows describes both together:
     the selection) rounded on their outside, and a row's first and last column rounded
     where the strip wraps. The text colours are `Colors.Calendar` (`CalendarDayText`,
     `CalendarOtherMonthText`, `CalendarDisabledText`, `CalendarSelectedText`,
-    `CalendarTodayText`, `CalendarWeekdayText`, `CalendarTitleText`); a hover keeps the
+    `CalendarTodayText`, `CalendarWeekdayText`, `CalendarTitleText`; a range's ends are
+    selected, so they take `CalendarSelectedText` on the selected fill); a hover keeps the
     colour, so it writes no glyph. The frame is the `Calendar` surface, the title's
     hover and press `CalendarTitleHover`/`CalendarTitleDown` (nothing at rest).
   - *Selection.* Single (the default) selects the clicked date; Range takes a start,

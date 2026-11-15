@@ -676,6 +676,8 @@ internal::CalendarCellLook Calendar::dayLook(const Date &date)
         look.inRange=(low != high) && (date >= low) && (date <= high);
         look.rangeStart=(date == low);
         look.rangeEnd=(date == high);
+        // the ends are the selection, as the zoomed views' are
+        look.selected=look.rangeStart || look.rangeEnd;
     }
     return look;
 }

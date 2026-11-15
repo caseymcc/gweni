@@ -1235,11 +1235,12 @@
  *                 single calendar's 18th, on to the 19th and off, a click on
  *                 the 18th (the 11th selected before), showNext() and
  *                 showPrevious(), the range calendar's 17th clicked, the mouse
- *                 onto the 25th, on to the 26th and a click on it, the limited calendar's
- *                 12th clicked and Right, Right, Down, Left, PageDown, Home,
- *                 PageDown and PageDown, the Sunday calendar's title and its
- *                 Apr clicked, then its title twice and its 2026 and November
- *                 clicked, the mouse left where each click was; last the label
+ *                 onto the 25th, on to the 26th and a click on it, the
+ *                 limited calendar's 12th clicked and Right, Right, Down,
+ *                 Left, PageDown, Home, End and PageDown (at the limit), the
+ *                 Sunday calendar's title and its Apr clicked, then its
+ *                 title twice and its 2026 and November clicked, the mouse
+ *                 left where each click was; last the label
  *                 updating again and a click on the 25th. One line
  *                   calendar hover=yes|no ... ids_back=yes|no hover_prims=N ...
  *                 reports the checks: the hover writes the cell's one slot, no

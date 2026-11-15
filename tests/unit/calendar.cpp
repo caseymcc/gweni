@@ -39,6 +39,8 @@
  *  previews the range to the hovered date, the second click sets the end,
  *  swapped when earlier, and a third click starts a new range; each click
  *  fires onSelectionChanged once, setRange() nothing (swapping its ends too).
+ *  The range's ends are selected (the selected fill and text colour), the
+ *  days between them in range alone.
  *  Space selects at the cursor, which the preview follows. The preview moved
  *  from one cell to the next marks those two cells alone (the leave keeps it
  *  for the enter to move), and moved onto a disabled date or off the grid it
@@ -700,7 +702,15 @@ TEST_CASE("Calendar: a range takes a start, a previewed end and swaps an earlier
         REQUIRE(look.inRange == ((day >= 10) && (day <= 20)));
         REQUIRE(look.rangeStart == (day == 10));
         REQUIRE(look.rangeEnd == (day == 20));
-        REQUIRE_FALSE(look.selected);
+        // the ends are the selection: the selected fill and its text colour
+        REQUIRE(look.selected == ((day == 10) || (day == 20)));
+    }
+    {
+        const auto &colors=scene.skin.Colors.Calendar;
+
+        CHECK((cellOf(calendar, Date(2026, 11, 10))->getTextColor() == colors.Selected));
+        CHECK((cellOf(calendar, Date(2026, 11, 20))->getTextColor() == colors.Selected));
+        CHECK((cellOf(calendar, Date(2026, 11, 15))->getTextColor() == colors.Day));
     }
     // a whole range: the hover previews nothing
     scene.hover(cellOf(calendar, Date(2026, 11, 28)));

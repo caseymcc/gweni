@@ -159,10 +159,13 @@ public:
 //! The keyboard: the calendar takes the focus (a click on a cell gives it)
 //! and has a cursor date of its own, drawn as a ring while it has the focus.
 //! Left/Right move it a day, Up/Down a week, Home/End to the month's first
-//! and last day, PageUp/PageDown a month, with Shift a year; a move to another
-//! month shows it. A move that lands on a disabled date goes on in its
-//! direction (a day at a time) to the first enabled one, and one that would
-//! leave the limits does nothing. Space and Return select at the cursor (in
+//! and last enabled day, PageUp/PageDown a month, with Shift a year; a move to
+//! another month shows it. A move that lands on a disabled date goes on in its
+//! direction (a day at a time) to the first enabled one. An arrow that would
+//! leave the limits does nothing, while Home, End and a page past a limit stop
+//! at the nearest enabled date inside it, so a page at the limit does nothing;
+//! a cursor outside the limits (a view shown past them) moves onto the limit
+//! it travels toward. Space and Return select at the cursor (in
 //! Range mode the start, then the end). In the Year view the arrows move a
 //! month (Up/Down four), Home/End to January and December and PageUp/Down a
 //! year; in the Decade view the same over years and decades; Space and Return
