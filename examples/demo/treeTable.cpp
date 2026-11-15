@@ -273,7 +273,12 @@ bool TreeTableDemo::answerPending()
     std::vector<size_t> ids;
 
     for(size_t i=1; i <= LazyChildren; ++i)
+    {
+        const uint32_t key=mix(static_cast<uint32_t>(i));
+
         ids.push_back(LazyFolder+i);
+        m_names[LazyFolder+i]=std::string(stems[key%10])+"-remote-"+std::to_string(i)+extensions[(key>>8)%8];
+    }
     return m_table->insertNodes(LazyFolder, 0, ids);
 }
 
