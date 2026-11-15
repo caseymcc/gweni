@@ -1933,12 +1933,10 @@ void SlotRenderer::updateOverlapRun(size_t textId)
     index.runZ[textId]=z;
 }
 
-void SlotRenderer::noteRunChanged(size_t textId)
+void SlotRenderer::noteRunInIndex(size_t textId)
 {
     OverlapIndex &index=m_overlap;
 
-    if(!index.built)
-        return;
     if(index.runNoted.size() <= textId)
         index.runNoted.resize(textId+1, 0);
     if(index.runNoted[textId])

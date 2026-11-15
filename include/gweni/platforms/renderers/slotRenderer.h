@@ -1418,8 +1418,14 @@ private:
     void updateOverlapSlot(size_t slot);
     void updateOverlapRun(size_t textId);
     //! A run's layout, visibility or font changed: its footprint is brought up to
-    //! date at the next flush. Nothing while the index is not built.
-    void noteRunChanged(size_t textId);
+    //! date at the next flush. Nothing while the index is not built, checked
+    //! inline: every renderText calls it.
+    void noteRunChanged(size_t textId)
+    {
+        if(m_overlap.built)
+            noteRunInIndex(textId);
+    }
+    void noteRunInIndex(size_t textId);
     //! The z the sorted pass orders a run by: its zIndex, clamped as a vertex's
     static int runZ(int zIndex) { return std::clamp(zIndex, 0, kMaxZIndex); }
     //! Whether the slot or the run is drawn by the sorted pass
