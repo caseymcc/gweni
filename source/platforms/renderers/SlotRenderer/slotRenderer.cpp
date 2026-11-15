@@ -528,6 +528,31 @@ ftgl::texture_font_t *SlotRenderer::glyphChainFont(void *data, size_t index, uin
     return nullptr;
 }
 
+void SlotRenderer::fontAtlasFull(void *data, ftgl::texture_font_t *font, uint32_t codepoint, size_t count)
+{
+    SlotRenderer &renderer=*static_cast<SlotRenderer *>(data);
+
+    ++renderer.m_glyphsOverAtlas;
+    if(count != 1)
+        return;
+
+    const char *const modes[]={ "coverage", "SDF", "LCD RGB", "LCD BGR" };
+
+    for(const auto &[key, fontData]:renderer.m_fonts)
+    {
+        if(fontData.textureFont == font)
+        {
+            gweni::log::write(log::Level::Error,
+                "Font atlas full (%s, %s, %gpx, %zux%zu): glyphs that do not fit draw as the missing glyph, from U+%04X",
+                fontData.faceName.c_str(), modes[static_cast<int>(key.mode)], fontData.baseSize,
+                font->atlas->width, font->atlas->height, static_cast<unsigned>(codepoint));
+            return;
+        }
+    }
+    gweni::log::write(log::Level::Error, "Font atlas full: glyphs that do not fit draw as the missing glyph, from U+%04X",
+        static_cast<unsigned>(codepoint));
+}
+
 std::shared_ptr<const std::vector<unsigned char>> SlotRenderer::glyphFallbackBlob(const String &face)
 {
     auto source=m_glyphSources.find(face);
@@ -698,6 +723,8 @@ Font::Status SlotRenderer::loadFont(const Font &requested, float px)
 
     if(fontData.markup.font)
     {
+        fontData.markup.font->atlas_full=&SlotRenderer::fontAtlasFull;
+        fontData.markup.font->atlas_full_data=this;
         // the chain first, so a codepoint of the cache the face lacks is the
         // chain's too
         attachGlyphChain(fontData);

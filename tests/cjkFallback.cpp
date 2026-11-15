@@ -6,15 +6,20 @@
  *  Native CJK fallback: Latin and out-of-range misses never ask for the lazy
  *  file; the first eligible miss reads it once, shared across primary sizes.
  *  Real CJK glyphs draw in proportional and terminal-cell runs on either
- *  backend. Capture preloading retains bytes without creating an atlas.
+ *  backend. Capture preloading retains bytes without creating an atlas. An SDF
+ *  atlas filled with CJK reports it once on stderr and draws every glyph that
+ *  did not fit as the face's missing glyph, rasterising none of them again.
  *  Browser coverage follows with task #605's separate lazy package.
  */
 #include <doctest/doctest.h>
 #include "gpuRenderer.h"
 #include <gweni/platforms/commonPlatform.h>
 #include <freetype-gl/texture-font.h>
+#include <cstdio>
 #include <memory>
+#include <string>
 #include <vector>
+#include <unistd.h>
 
 #ifndef __EMSCRIPTEN__
 namespace
@@ -75,6 +80,61 @@ Font font(const String &face, float size=13)
     return value;
 }
 const String cjk="\u5355\u5143\u6D4B\u8BD5";
+
+String utf8(uint32_t codepoint)
+{
+    String out;
+    if(codepoint < 0x800)
+    {
+        out+=char(0xC0|(codepoint >> 6));
+        out+=char(0x80|(codepoint&0x3F));
+    }
+    else
+    {
+        out+=char(0xE0|(codepoint >> 12));
+        out+=char(0x80|((codepoint >> 6)&0x3F));
+        out+=char(0x80|(codepoint&0x3F));
+    }
+    return out;
+}
+
+// What the process writes to stderr while it lives
+struct StderrCapture
+{
+    FILE *file=std::tmpfile();
+    int saved=-1;
+    StderrCapture()
+    {
+        REQUIRE(file != nullptr);
+        std::fflush(stderr);
+        saved=dup(2);
+        dup2(fileno(file), 2);
+    }
+    std::string text()
+    {
+        std::fflush(stderr);
+        std::string out;
+        std::rewind(file);
+        for(int c; (c=std::fgetc(file)) != EOF;)
+            out+=char(c);
+        return out;
+    }
+    ~StderrCapture()
+    {
+        std::fflush(stderr);
+        dup2(saved, 2);
+        close(saved);
+        std::fclose(file);
+    }
+};
+
+size_t count(const std::string &text, const std::string &what)
+{
+    size_t n=0;
+    for(size_t at=text.find(what); at != std::string::npos; at=text.find(what, at+1))
+        ++n;
+    return n;
+}
 }
 
 TEST_CASE("CJK fallback: Latin and out-of-range misses never read the lazy face, first CJK miss reads once")
@@ -141,5 +201,53 @@ TEST_CASE("CJK fallback: capture preload reads bytes without opening a chain fon
     scene.draw(font("DejaVuSansMono", 26), cjk);
     CHECK(scene.renderer->glyphFallbackFilesRead() == 1);
     CHECK(scene.renderer->glyphFallbackFontsOpened() == 2);
+}
+
+TEST_CASE("CJK fallback: a full SDF atlas reports once and draws what did not fit as the missing glyph")
+{
+    Scene scene, plain(false);
+    const Font face=font("OpenSans", 40);
+    // 600 ideographs, in runs of 50: more than a 1024 px atlas of 48 px glyphs holds
+    std::vector<String> lines;
+    for(uint32_t first=0x4E00; first < 0x4E00+600; first+=50)
+    {
+        String line;
+        for(uint32_t cp=first; cp < first+50; ++cp)
+            line+=utf8(cp);
+        lines.push_back(line);
+    }
+    const String last=utf8(0x4E00+599);
+    std::string log;
+    {
+        StderrCapture capture;
+        for(const String &line:lines)
+            scene.draw(face, line);
+        // drawn again, nothing is rasterised or reported again
+        const size_t over=scene.renderer->glyphsOverAtlas();
+        for(const String &line:lines)
+            scene.draw(face, line);
+        CHECK(scene.renderer->glyphsOverAtlas() == over);
+        CHECK(scene.renderer->getFrameStats().atlasUploadBytes == 0);
+        log=capture.text();
+    }
+    INFO(log);
+    CHECK(scene.renderer->glyphsOverAtlas() > 100);
+    CHECK(scene.renderer->glyphsOverAtlas() < 600);
+    CHECK(count(log, "Font atlas full") == 1);
+    CHECK(count(log, "\n") == 1);
+
+    auto *primary=scene.renderer->getTextureFont(face);
+    REQUIRE(primary != nullptr);
+    REQUIRE(primary->notdef != nullptr);
+    CHECK(primary->notdef->width > 1);
+    // the first glyphs are the face's, the last the missing glyph
+    auto *first=ftgl::texture_font_get_glyph(primary, utf8(0x4E00).c_str());
+    REQUIRE(first != nullptr);
+    CHECK(first != primary->notdef);
+    CHECK(first->codepoint == 0x4E00u);
+    CHECK(ftgl::texture_font_get_glyph(primary, last.c_str()) == primary->notdef);
+    // drawn as a codepoint no face has is, in a renderer with room for it
+    CHECK(scene.draw(face, last) == plain.draw(face, "\xF4\x8F\xBF\xBF"));
+    CHECK(scene.draw(face, last) != plain.draw(face, " "));
 }
 #endif

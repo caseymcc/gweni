@@ -622,6 +622,11 @@ public:
     //! the chain fonts made, since construction
     size_t glyphFallbackFilesRead() const { return m_glyphFallbackFilesRead; }
     size_t glyphFallbackFontsOpened() const { return m_glyphFallbackFontsOpened; }
+    //! For tests: the codepoints whose glyph found no room in its font's atlas
+    //! since construction, each counted once per font and drawn from then on as
+    //! that font's missing glyph; the first of each atlas is reported once on
+    //! stderr (fontAtlasFull)
+    size_t glyphsOverAtlas() const { return m_glyphsOverAtlas; }
 
     //! The freetype-gl font a font's text is drawn from (resolved at its draw px),
     //! nullptr if it is not loaded: a test hook, to look its glyphs up.
@@ -1017,6 +1022,9 @@ protected:
     //! texture_font_t::fallback: the index-th chain font eligible for the
     //! missed codepoint, opening it as needed; nullptr past the last.
     static ftgl::texture_font_t *glyphChainFont(void *data, size_t index, uint32_t codepoint);
+    //! texture_font_t::atlas_full: a codepoint's glyph did not fit font's atlas;
+    //! counts it and reports the atlas's first one with one log line
+    static void fontAtlasFull(void *data, ftgl::texture_font_t *font, uint32_t codepoint, size_t count);
     //! A chain face's file in memory, read once per renderer session; nullptr
     //! (logged the first time) if it cannot be read
     std::shared_ptr<const std::vector<unsigned char>> glyphFallbackBlob(const gweni::String &face);
@@ -1784,6 +1792,7 @@ private:
     std::unordered_set<gweni::String> m_failedGlyphFallbackFiles;
     size_t m_glyphFallbackFilesRead=0;
     size_t m_glyphFallbackFontsOpened=0;
+    size_t m_glyphsOverAtlas=0;
 
     //! The slots one draw covers (indexChunkSlots())
     size_t m_chunkSlots=kSlotsPerChunk;

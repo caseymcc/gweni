@@ -276,6 +276,7 @@ texture_font_init(texture_font_t *self)
 
     self->glyphs = vector_new(sizeof(texture_glyph_t *));
     self->fallback_glyphs = vector_new(sizeof(texture_glyph_t *));
+    self->unfit = vector_new(sizeof(uint32_t));
     self->height = 0;
     self->ascender = 0;
     self->descender = 0;
@@ -409,7 +410,42 @@ texture_font_delete( texture_font_t *self )
     /* gweni: the chain's fonts own these */
     if( self->fallback_glyphs )
         vector_delete( self->fallback_glyphs );
+    if( self->unfit )
+        vector_delete( self->unfit );
     free( self );
+}
+
+/* gweni: whether codepoint's glyph did not fit the atlas (texture_font_t::unfit) */
+static int
+texture_font_is_unfit( const texture_font_t * self, uint32_t codepoint )
+{
+    size_t i;
+
+    for( i = 0; i < self->unfit->size; ++i )
+    {
+        if( *(const uint32_t *) vector_get( self->unfit, i ) == codepoint )
+            return 1;
+    }
+    return 0;
+}
+
+/* gweni: codepoint's glyph found no room in the atlas: it is unfit from now on,
+ * reported, and drawn as the missing glyph (NULL if even that has none) */
+static texture_glyph_t *
+texture_font_set_unfit( texture_font_t * self, const char * codepoint )
+{
+    const uint32_t ucodepoint = utf8_to_utf32( codepoint );
+
+    if( !texture_font_is_unfit( self, ucodepoint ) )
+    {
+        vector_push_back( self->unfit, &ucodepoint );
+        if( self->atlas_full )
+            self->atlas_full( self->atlas_full_data, self, ucodepoint, self->unfit->size );
+        else if( self->unfit->size == 1 )
+            fprintf( stderr, "freetype-gl: texture atlas is full: glyphs that do not "
+                     "fit draw as the missing glyph (first U+%04X)\n", (unsigned)ucodepoint );
+    }
+    return self->notdef;
 }
 
 /* gweni: the phase a glyph of this font can be rasterised at, 0 for any other */
@@ -449,6 +485,10 @@ texture_font_find_glyph_phase( texture_font_t * self,
             return glyph;
     }
 
+    /* gweni: then those that did not fit the atlas, drawn as the missing glyph */
+    if( self->notdef && texture_font_is_unfit( self, ucodepoint ) )
+        return self->notdef;
+
     return NULL;
 }
 
@@ -466,11 +506,12 @@ texture_font_get_glyph_present( texture_font_t * self,
 // ------------------------------------------------ texture_font_load_glyph ---
 /* gweni: present_only (a font asked through another's fallback chain) loads
  * nothing for a codepoint neither its face nor its own chain has, and returns
- * 0, so the asking font goes on down its chain or loads its own missing glyph */
+ * 0, so the asking font goes on down its chain or loads its own missing glyph.
+ * notdef loads the face's missing glyph as self->notdef (codepoint unused). */
 static int
 texture_font_load_glyph_from( texture_font_t * self,
                               const char * codepoint, int phase,
-                              int present_only )
+                              int present_only, int notdef )
 {
     size_t i, x, y;
 
@@ -492,11 +533,17 @@ texture_font_load_glyph_from( texture_font_t * self,
     size_t missed = 0;
 
 
+    /* gweni: the missing glyph first, before the first glyph past ASCII, while
+     * the atlas has room for it (texture_font_t::notdef) */
+    if( !notdef && !present_only && !self->notdef && codepoint
+        && utf8_to_utf32( codepoint ) >= 128 )
+        texture_font_load_glyph_from( self, NULL, 0, 0, 1 );
+
     if (!texture_font_load_face(self, self->size, &library, &face))
         return 0;
 
     /* Check if codepoint has been already loaded */
-    if (texture_font_find_glyph_phase(self, codepoint, phase)) {
+    if (notdef ? self->notdef != NULL : texture_font_find_glyph_phase(self, codepoint, phase) != NULL) {
         FT_Done_Face(face);
         FT_Done_FreeType(library);
         return 1;
@@ -505,7 +552,7 @@ texture_font_load_glyph_from( texture_font_t * self,
     /* codepoint NULL is special : it is used for line drawing (overline,
      * underline, strikethrough) and background.
      */
-    if( !codepoint )
+    if( !codepoint && !notdef )
     {
         ivec4 region = texture_atlas_get_region( self->atlas, 5, 5 );
         texture_glyph_t * glyph = texture_glyph_new( );
@@ -537,16 +584,18 @@ texture_font_load_glyph_from( texture_font_t * self,
     flags = 0;
     ft_glyph_top = 0;
     ft_glyph_left = 0;
-    glyph_index = FT_Get_Char_Index( face, (FT_ULong)utf8_to_utf32( codepoint ) );
+    glyph_index = notdef ? 0 : FT_Get_Char_Index( face, (FT_ULong)utf8_to_utf32( codepoint ) );
 
     /* gweni: the glyph fallback chain, for a codepoint this face has no glyph
      * for: the first font of the chain that has it lends its glyph, which this
      * font keeps in fallback_glyphs; with none, this face's missing glyph */
-    if( glyph_index == 0 && utf8_to_utf32( codepoint ) != 0 )
+    if( !notdef && glyph_index == 0 && utf8_to_utf32( codepoint ) != 0 )
     {
         texture_glyph_t *found = NULL;
         texture_font_t *chained;
         size_t n;
+        /* a chain font's glyph that found no room on the shared atlas */
+        const size_t failed = self->atlas->failed_regions;
 
         for( n = 0; !found && self->fallback
              && (chained = self->fallback( self->fallback_data, n, utf8_to_utf32( codepoint ) )); ++n )
@@ -556,7 +605,7 @@ texture_font_load_glyph_from( texture_font_t * self,
         }
         if( found )
             vector_push_back( self->fallback_glyphs, &found );
-        if( found || present_only )
+        if( found || present_only || self->atlas->failed_regions != failed )
         {
             FT_Done_Face( face );
             FT_Done_FreeType( library );
@@ -778,9 +827,12 @@ cleanup_stroker:
 
     region = texture_atlas_get_region( self->atlas, tgt_w, tgt_h );
 
+    /* gweni: no room; the caller tells it from the atlas's failed_regions and
+     * reports it once (texture_font_set_unfit) */
     if ( region.x < 0 )
     {
-        fprintf( stderr, "Texture atlas is full (line %d)\n",  __LINE__ );
+        if( self->rendermode != RENDER_NORMAL && self->rendermode != RENDER_SIGNED_DISTANCE_FIELD )
+            FT_Done_Glyph( ft_glyph );
         FT_Done_Face( face );
         FT_Done_FreeType( library );
         return 0;
@@ -813,7 +865,7 @@ cleanup_stroker:
     free( buffer );
 
     glyph = texture_glyph_new( );
-    glyph->codepoint = utf8_to_utf32( codepoint );
+    glyph->codepoint = notdef ? TEXTURE_FONT_NOTDEF : utf8_to_utf32( codepoint );
     glyph->width    = tgt_w;
     glyph->height   = tgt_h;
     glyph->rendermode = self->rendermode;
@@ -840,12 +892,14 @@ cleanup_stroker:
     }
 
     vector_push_back( self->glyphs, &glyph );
+    if( notdef )
+        self->notdef = glyph;
 
     if( self->rendermode != RENDER_NORMAL && self->rendermode != RENDER_SIGNED_DISTANCE_FIELD )
         FT_Done_Glyph( ft_glyph );
 
-    /* a phase variant adds no codepoint, so no pair */
-    if( phase == 0 )
+    /* a phase variant adds no codepoint, so no pair; nor does the notdef */
+    if( phase == 0 && !notdef )
         texture_font_generate_kerning( self, &library, &face );
 
     FT_Done_Face( face );
@@ -858,7 +912,7 @@ static int
 texture_font_load_glyph_phase( texture_font_t * self,
                                const char * codepoint, int phase )
 {
-    return texture_font_load_glyph_from( self, codepoint, phase, 0 );
+    return texture_font_load_glyph_from( self, codepoint, phase, 0, 0 );
 }
 
 int
@@ -879,7 +933,7 @@ texture_font_get_glyph_present( texture_font_t * self,
     phase = texture_font_valid_phase( self, phase );
     if( (glyph = texture_font_find_glyph_phase( self, codepoint, phase )) )
         return glyph;
-    if( texture_font_load_glyph_from( self, codepoint, phase, 1 ) )
+    if( texture_font_load_glyph_from( self, codepoint, phase, 1, 0 ) )
         return texture_font_find_glyph_phase( self, codepoint, phase );
     return NULL;
 }
@@ -907,6 +961,7 @@ texture_font_get_glyph( texture_font_t * self,
                         const char * codepoint )
 {
     texture_glyph_t *glyph;
+    size_t failed;
 
     assert( self );
     assert( self->filename );
@@ -915,10 +970,16 @@ texture_font_get_glyph( texture_font_t * self,
     /* Check if codepoint has been already loaded */
     if( (glyph = texture_font_find_glyph( self, codepoint )) )
         return glyph;
+    /* gweni: one that did not fit, with no notdef either, is not tried again */
+    if( codepoint && texture_font_is_unfit( self, utf8_to_utf32( codepoint ) ) )
+        return NULL;
 
     /* Glyph has not been already loaded */
+    failed = self->atlas->failed_regions;
     if( texture_font_load_glyph( self, codepoint ) )
         return texture_font_find_glyph( self, codepoint );
+    if( codepoint && self->atlas->failed_regions != failed )
+        return texture_font_set_unfit( self, codepoint );
 
     return NULL;
 }
@@ -929,6 +990,7 @@ texture_font_get_glyph_phase( texture_font_t * self,
                               const char * codepoint, int phase )
 {
     texture_glyph_t *glyph;
+    size_t failed;
 
     assert( self );
     assert( self->atlas );
@@ -940,9 +1002,14 @@ texture_font_get_glyph_phase( texture_font_t * self,
 
     if( (glyph = texture_font_find_glyph_phase( self, codepoint, phase )) )
         return glyph;
+    if( texture_font_is_unfit( self, utf8_to_utf32( codepoint ) ) )
+        return NULL;
 
+    failed = self->atlas->failed_regions;
     if( texture_font_load_glyph_phase( self, codepoint, phase ) )
         return texture_font_find_glyph_phase( self, codepoint, phase );
+    if( self->atlas->failed_regions != failed )
+        return texture_font_set_unfit( self, codepoint );
 
     return NULL;
 }

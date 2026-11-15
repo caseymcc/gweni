@@ -152,7 +152,11 @@ TEST_CASE("Glyph fallback: a codepoint the face lacks is drawn from the chain fa
         // loaded nothing of its own for it
         CHECK(glyph == ftgl::texture_font_find_glyph(chain.fonts[0], arrow));
         CHECK(chain.fonts[0]->atlas == chain.primary->atlas);
-        CHECK(glyphCount(chain.primary) == ownGlyphs);
+        // the primary's one glyph more is its missing glyph, reserved before its
+        // first glyph past ASCII (texture_font_t::notdef), not the borrowed one
+        REQUIRE(chain.primary->notdef != nullptr);
+        CHECK(chain.primary->notdef->font == chain.primary);
+        CHECK(glyphCount(chain.primary) == ownGlyphs+1);
         CHECK(ftgl::vector_size(chain.primary->fallback_glyphs) == 1);
 
         // found again in the primary, with no face opened or callback made
@@ -175,7 +179,7 @@ TEST_CASE("Glyph fallback: a codepoint the face lacks is drawn from the chain fa
                 CHECK(variant != glyph);
                 CHECK(ftgl::texture_font_get_glyph_phase(chain.primary, arrow, phase) == variant);
             }
-            CHECK(glyphCount(chain.primary) == ownGlyphs);
+            CHECK(glyphCount(chain.primary) == ownGlyphs+1);
         }
     }
 }

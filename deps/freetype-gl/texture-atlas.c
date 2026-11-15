@@ -38,6 +38,7 @@ texture_atlas_new( const size_t width,
     self->id = 0;
     self->dirty_y0 = 0;
     self->dirty_y1 = 0;
+    self->failed_regions = 0;
 
     vector_push_back( self->nodes, &node );
     self->data = (unsigned char *)
@@ -222,6 +223,7 @@ texture_atlas_get_region( texture_atlas_t * self,
 
     if( best_index == -1 )
     {
+        ++self->failed_regions;
         region.x = -1;
         region.y = -1;
         region.width = 0;

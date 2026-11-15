@@ -119,6 +119,12 @@ typedef struct texture_atlas_t
     size_t dirty_y0;
     size_t dirty_y1;
 
+    /**
+     * The texture_atlas_get_region calls that found no room, so a font can tell
+     * a glyph that did not fit from one with no image (gweni patch).
+     */
+    size_t failed_regions;
+
 } texture_atlas_t;
 
 

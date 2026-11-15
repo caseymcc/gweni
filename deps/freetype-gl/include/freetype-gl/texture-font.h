@@ -414,7 +414,44 @@ typedef struct texture_font_t
      */
     int (*cells)( uint32_t codepoint );
 
+    /**
+     * gweni: the face's missing glyph (glyph index 0), its codepoint
+     * TEXTURE_FONT_NOTDEF, which no lookup asks for. A font asked through no
+     * other's chain rasterises it into its atlas before its first glyph past
+     * ASCII, so it is there when the atlas has no room left for a glyph: such
+     * a glyph's codepoint goes into unfit and draws as this one. Owned by
+     * glyphs; NULL until then.
+     */
+    texture_glyph_t * notdef;
+
+    /**
+     * gweni: the codepoints (uint32_t) whose glyph did not fit the atlas, its
+     * own or one a chain font lent, each looked up as notdef from then on and
+     * never rasterised again.
+     */
+    vector_t * unfit;
+
+    /**
+     * gweni: called with atlas_full_data, this font, the codepoint and the
+     * size of unfit each time a codepoint goes into unfit (count 1 the first
+     * time, the one to report). NULL (the calloc default) prints one line on
+     * stderr the first time instead.
+     */
+    void (*atlas_full)( void * data, struct texture_font_t * font,
+                        uint32_t codepoint, size_t count );
+
+    /**
+     * gweni: the first argument of every atlas_full call.
+     */
+    void * atlas_full_data;
+
 } texture_font_t;
+
+/**
+ * gweni: the codepoint of a font's notdef glyph: no Unicode scalar value, so
+ * no text asks for it.
+ */
+#define TEXTURE_FONT_NOTDEF 0xFFFFFFFEu
 
 
 
