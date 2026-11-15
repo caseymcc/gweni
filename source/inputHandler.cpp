@@ -372,8 +372,18 @@ static bool deliverMouseClick(controls::Base *canvas, int iMouseButton, bool dow
     if(!HoveredControl->visible())
         return false;
 
+    // A press on the bare canvas is the app's (its scene's, under a HUD): the
+    // keyboard focus is dropped, so the keys go there too. Under a modal it
+    // stays inside the modal.
     if(HoveredControl == canvas)
+    {
+        controls::Canvas *target=canvas->getCanvas();
+
+        if(down && KeyboardFocus && (KeyboardFocus->getCanvas() == target)
+            && target && !target->topModal())
+            KeyboardFocus->unfocus();
         return false;
+    }
 
     if(iMouseButton > static_cast<int>(c_MaxMouseButtons))
         return false;

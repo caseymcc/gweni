@@ -12,6 +12,7 @@
 #include <gweni/platforms/platform.h>
 #include <GLFW/glfw3.h>
 
+#include <bitset>
 #include <cmath>
 
 namespace gweni
@@ -34,6 +35,12 @@ inline double windowToLogical(double window, int windowSize, int framebufferSize
     return window*(static_cast<double>(framebufferSize)/windowSize)/scale;
 }
 
+//! GLFW's callbacks to a canvas (IInputEvent). Each process* returns what the
+//! canvas did: false is an event the UI did not take, for an app drawing gweni
+//! over its own scene to hand to that scene (Canvas's input calls say which;
+//! docs/architecture.md -> "gweni over an app's scene"). A key's OS repeats are
+//! taken exactly when its press was; the window losing focus and the cursor
+//! leaving are the scene's too.
 class GLFW3
 {
 public:
@@ -193,9 +200,13 @@ public:
             return false;
 
         // gweni repeats held keys itself (onCanvasThink), so the OS's repeats
-        // are dropped rather than treated as releases.
+        // are dropped rather than treated as releases; one is taken when its
+        // press was, so a scene under the UI does not see a held key's
+        // repeats while a control has it.
+        const bool known = (event.key >= 0) && (event.key <= GLFW_KEY_LAST);
+
         if (event.action == GLFW_REPEAT)
-            return false;
+            return known && m_keyTaken[(size_t)event.key];
 
         const bool bPressed = (event.action == GLFW_PRESS);
         const int keyCode = event.key;
@@ -214,7 +225,10 @@ public:
         // The key's own press or release comes after the sync, so it wins: on
         // X11 the mods are the state before the event, without Ctrl on Ctrl's
         // own press and with it on its release.
-        return m_eventCaller->inputModifierKey(key, bPressed) || handled;
+        handled = m_eventCaller->inputModifierKey(key, bPressed) || handled;
+        if (known)
+            m_keyTaken[(size_t)event.key] = bPressed && handled;
+        return handled;
     }
 
     // Typed text, from glfwSetCharCallback: one codepoint per call, forwarded
@@ -247,7 +261,9 @@ public:
 
         for (int key = keys::Invalid+1; key < keys::KeysCount; ++key)
             m_eventCaller->inputModifierKey(key, false);
-        return true;
+        m_keyTaken.reset();
+        // the app's scene lets its keys go too
+        return false;
     }
 
     //! What processMouseMove maps the cursor through: the window's size in
@@ -302,6 +318,9 @@ public:
 
     bool processMouseButtons(int button, int action, int mods)
     {
+        if (!m_eventCaller)
+            return false;
+
         return m_eventCaller->inputMouseButton(button, action == GLFW_PRESS);
     }
 
@@ -370,6 +389,9 @@ protected:
     float m_scale;
     // the last key event was a Ctrl+letter press (processCharEvent)
     bool m_controlChord;
+    // per GLFW key: its last press was taken (the canvas returned true), so
+    // its OS repeats are reported taken too
+    std::bitset<GLFW_KEY_LAST+1> m_keyTaken;
 
 };
 

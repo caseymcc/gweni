@@ -8,7 +8,8 @@
  *
  *  Input under a modal: a move over an app Button leaves it unhovered (the
  *  canvas is hovered), a click on it presses nothing, the wheel reaches no
- *  ScrollControl under it and a right press opens no context menu, while a
+ *  ScrollControl under it (taken all the same, so an app's scene under the
+ *  UI gets none) and a right press opens no context menu, while a
  *  Button inside the modal hovers and presses; a press made before the push
  *  still ends with its release. The hover under the mouse when the modal
  *  comes up is hit-tested again at the end of that update phase, and the app
@@ -250,11 +251,14 @@ TEST_CASE("Modal stack: the mouse reaches the top modal alone")
     scene.click(30, 20);
     CHECK(scene.appPresses == 1);
 
-    // the wheel over the ScrollControl scrolls nothing, a right press opens
-    // no context menu
+    // the wheel over the ScrollControl scrolls nothing (and is taken: the
+    // modal blocks an app's scene under the UI too), a right press opens no
+    // context menu
     scene.move(330, 220);
     CHECK(HoveredControl == static_cast<controls::Base *>(canvas));
-    CHECK_FALSE(canvas->inputMouseWheel(-60));
+    const int offset=scroll->getVerticalScrollOffset();
+    CHECK(canvas->inputMouseWheel(-60));
+    CHECK(scroll->getVerticalScrollOffset() == offset);
     scene.click(330, 220, 1);
     CHECK(canvas->shownContextMenu() == nullptr);
 

@@ -1064,18 +1064,21 @@ bool Canvas::inputMouseMoved(int x, int y, int deltaX, int deltaY)
         return true;
     }
 
+    // a modal blocks what is under it, the app's scene included
+    const bool modal=(topModal() != nullptr);
+
     if(!HoveredControl)
-        return false;
+        return modal;
 
     if(HoveredControl == this)
-        return false;
+        return modal;
 
     if(HoveredControl->getCanvas() != this)
-        return false;
+        return modal;
 
     // a stale hover under a modal; a capture's holder still gets its drag
     if((HoveredControl != MouseFocus) && !modalAllows(HoveredControl))
-        return false;
+        return modal;
 
     HoveredControl->onMouseMoved(x, y, deltaX, deltaY);
     HoveredControl->updateCursor();
@@ -1148,7 +1151,19 @@ bool Canvas::inputMouseButton(int button, bool down)
             m_toolTipSuppressed=pressed;
     }
 
-    return input::onMouseClicked(this, button, down);
+    // a modal blocks what is under it, the app's scene included
+    return input::onMouseClicked(this, button, down) || (topModal() != nullptr);
+}
+
+bool Canvas::pointerOverControl() const
+{
+    if(m_inputCapture || topModal())
+        return true;
+    if(draganddrop::isDragging() && (draganddrop::dragCanvas() == this))
+        return true;
+    if(MouseFocus && (MouseFocus->getCanvas() == this))
+        return true;
+    return HoveredControl && (HoveredControl != this) && (HoveredControl->getCanvas() == this);
 }
 
 //------------------------------------------------------------------------------
@@ -2237,13 +2252,22 @@ bool Canvas::inputModifierKey(int key, bool down)
     if(hidden())
         return false;
 
+    // a key gweni has no code for (a letter, whose text comes through
+    // inputCharacter) is the UI's while it has the keyboard
     if(key <= keys::Invalid)
-        return false;
+        return holdsKeyboard();
 
     if(key >= keys::KeysCount)
-        return false;
+        return holdsKeyboard();
 
-    return input::onKeyEvent(this, key, down);
+    return input::onKeyEvent(this, key, down) || holdsKeyboard();
+}
+
+bool Canvas::holdsKeyboard() const
+{
+    if(m_inputCapture || topModal())
+        return true;
+    return KeyboardFocus && (KeyboardFocus->getCanvas() == this) && KeyboardFocus->visible();
 }
 
 bool Canvas::inputCharacter(UnicodeChar chr)
@@ -2278,10 +2302,12 @@ bool Canvas::inputCharacter(UnicodeChar chr)
     if(!KeyboardFocus->visible())
         return false;
 
+    // the focus has the keyboard whether it takes the character or not
     if(input::isControlDown())
-        return false;
+        return true;
 
-    return KeyboardFocus->onChar(chr);
+    KeyboardFocus->onChar(chr);
+    return true;
 }
 
 bool Canvas::inputMouseLeave()
@@ -2296,7 +2322,8 @@ bool Canvas::inputMouseLeave()
         return false;
 
     input::onMouseLeft(this);
-    return true;
+    // the scene is told too
+    return false;
 }
 
 bool Canvas::inputMouseWheel(int val)
@@ -2330,17 +2357,20 @@ bool Canvas::inputMouseWheelOnAxis(int val, Dim dim)
         target=getControlAt(mouse.x, mouse.y);
     }
 
+    // a modal blocks what is under it, the app's scene included
+    const bool modal=(topModal() != nullptr);
+
     if(!target)
-        return false;
+        return modal;
 
     if(target == this)
-        return false;
+        return modal;
 
     if(target->getCanvas() != this)
-        return false;
+        return modal;
 
     if(!modalAllows(target))
-        return false;
+        return modal;
 
     const bool taken=(dim == Dim::X || input::isShiftDown())
         ? target->onMouseWheeledH(val) : target->onMouseWheeled(val);
@@ -2349,7 +2379,7 @@ bool Canvas::inputMouseWheelOnAxis(int val, Dim dim)
     // target and gap there again once that is laid out
     if(taken && dragging)
         draganddrop::wheeled(this);
-    return taken;
+    return taken || modal;
 }
 
 }//namespace controls

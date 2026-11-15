@@ -763,6 +763,21 @@ public:
     /// \}
 
     /// \sect{Input}
+    /// Each returns whether the UI took the event: false is the app's to hand
+    /// on to its own scene (gweni as a HUD, docs/architecture.md -> "gweni over
+    /// an app's scene"). A pointer event is taken when a control of this canvas
+    /// gets it: the pointer over one (not the bare canvas), a press held by
+    /// one, a live drag, an input capture, or any modal on the stack (which
+    /// blocks what is under it, the scene included); a wheel only when a
+    /// control scrolled or zoomed with it (ask pointerOverControl() for
+    /// whether the pointer is over the UI at all). A key or a text character
+    /// is taken while the UI has the keyboard (holdsKeyboard(): a visible
+    /// control of this canvas has the keyboard focus, a modal is up or an
+    /// input capture is set), whether the focus used it or not, and otherwise
+    /// when something took it (an accelerator, Escape closing a popup). A
+    /// press on the bare canvas drops the keyboard focus (but under a modal),
+    /// so the keys go back to the scene. inputMouseLeave() and inputQuit() are
+    /// for the scene too.
     bool inputMouseMoved(int x, int y, int deltaX, int deltaY) override;
     bool inputMouseButton(int button, bool down) override;
     /// A modifier key was inputted.
@@ -782,8 +797,16 @@ public:
     bool inputMouseLeave() override;
     bool inputQuit() override
     {
-        return true;
+        return false;
     }
+    /// Whether the pointer is over the UI: a control of this canvas is
+    /// hovered (not the canvas itself) or holds the mouse, a drag or an input
+    /// capture is live, or a modal is up. What an app asks before it moves its
+    /// scene with an event a control did not take (a wheel over a Label).
+    bool pointerOverControl() const;
+    /// Whether the UI has the keyboard: a visible control of this canvas has
+    /// the keyboard focus, a modal is up or an input capture is set.
+    bool holdsKeyboard() const;
     /// \}
 
     /// Whether the canvas fills itself with the skin's background (the
