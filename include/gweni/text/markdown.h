@@ -126,6 +126,50 @@ struct GWENI_EXPORT MarkdownBlock
 //! numeric one is decoded, U+FFFD for an invalid codepoint, as for NUL.
 GWENI_EXPORT std::vector<MarkdownBlock> parseMarkdown(const gweni::String &markdown);
 
+//! How one block of a new parse maps onto the previous parse's blocks at the
+//! same level (markdownDiff)
+struct GWENI_EXPORT MarkdownBlockMatch
+{
+    enum class Kind
+    {
+        //! The same block (equal hash): its controls are kept as they are,
+        //! moved at most
+        Kept,
+        //! The old block at old, of the same type, with other content: its
+        //! controls are kept and given the new content; for a container,
+        //! children holds the diff of its children
+        Changed,
+        //! No old block: built new
+        New
+    };
+
+    Kind kind=Kind::New;
+    //! The old block's index among its siblings (Kept, Changed)
+    size_t old=0;
+    //! A Changed container's children, matched against the old block's
+    std::vector<MarkdownBlockMatch> children;
+};
+
+//! Matches the blocks of a new parse against the previous one's, one entry
+//! per new block, in order:
+//! - the blocks equal at the start and at the end (by hash) are Kept;
+//! - in the middle, the longest common subsequence of hashes is Kept (when
+//!   the middle is no more than MarkdownDiffLimit old-times-new blocks; past
+//!   it, no subsequence is looked for);
+//! - a new block left over whose hash an old block left over has is Kept,
+//!   the old block moved (the first such old block in order, so a swap of
+//!   two blocks keeps both);
+//! - the rest are paired in order within each gap between two Kept blocks:
+//!   the i-th new block left in a gap with the i-th old block left in it when
+//!   they are of one type (Changed, a container's children diffed the same
+//!   way), else New.
+//! An old block no entry names is gone. Each old block is named once at most.
+GWENI_EXPORT std::vector<MarkdownBlockMatch> markdownDiff(const std::vector<MarkdownBlock> &old,
+    const std::vector<MarkdownBlock> &now);
+
+//! The most old-times-new blocks markdownDiff runs its subsequence over
+constexpr size_t MarkdownDiffLimit=1<<20;
+
 //! The type's name ("Paragraph", "ListItem", ...), for tests and dumps
 GWENI_EXPORT const char *markdownBlockTypeName(MarkdownBlock::Type type);
 

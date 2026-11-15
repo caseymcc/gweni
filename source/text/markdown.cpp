@@ -8,6 +8,7 @@
 
 #include <md4c.h>
 
+#include <algorithm>
 #include <cstring>
 #include <utility>
 
@@ -649,6 +650,146 @@ std::vector<MarkdownBlock> parseMarkdown(const gweni::String &markdown)
     for(MarkdownBlock &block:builder.root)
         block.updateHash();
     return std::move(builder.root);
+}
+
+std::vector<MarkdownBlockMatch> markdownDiff(const std::vector<MarkdownBlock> &old,
+    const std::vector<MarkdownBlock> &now)
+{
+    using Kind=MarkdownBlockMatch::Kind;
+    const size_t none=size_t(-1);
+    size_t oldCount=old.size();
+    size_t newCount=now.size();
+    std::vector<MarkdownBlockMatch> matches(newCount);
+    //! the old block each new one keeps, none for one not matched yet
+    std::vector<size_t> oldOf(newCount, none);
+    std::vector<bool> oldTaken(oldCount, false);
+    //! the in-order matches (prefix, subsequence, suffix), the gaps' bounds
+    std::vector<std::pair<size_t, size_t>> anchors;
+
+    auto keep=[&](size_t n, size_t o)
+    {
+        oldOf[n]=o;
+        oldTaken[o]=true;
+        matches[n].kind=Kind::Kept;
+        matches[n].old=o;
+    };
+
+    size_t prefix=0;
+
+    while((prefix < oldCount) && (prefix < newCount) && (old[prefix].hash == now[prefix].hash))
+    {
+        keep(prefix, prefix);
+        anchors.emplace_back(prefix, prefix);
+        ++prefix;
+    }
+
+    size_t suffix=0;
+
+    while((suffix < oldCount-prefix) && (suffix < newCount-prefix)
+        && (old[oldCount-1-suffix].hash == now[newCount-1-suffix].hash))
+        ++suffix;
+
+    // the middle: old [prefix, oldEnd), new [prefix, newEnd)
+    size_t oldEnd=oldCount-suffix;
+    size_t newEnd=newCount-suffix;
+    size_t a=oldEnd-prefix;
+    size_t b=newEnd-prefix;
+
+    if((a > 0) && (b > 0) && (a <= MarkdownDiffLimit/b))
+    {
+        // lengths[i*(b+1)+j]: the longest common subsequence of old's middle
+        // from i and new's from j
+        std::vector<uint32_t> lengths((a+1)*(b+1), 0);
+
+        for(size_t i=a; i-- > 0;)
+        {
+            for(size_t j=b; j-- > 0;)
+            {
+                uint32_t &length=lengths[i*(b+1)+j];
+
+                if(old[prefix+i].hash == now[prefix+j].hash)
+                    length=lengths[(i+1)*(b+1)+j+1]+1;
+                else
+                    length=std::max(lengths[(i+1)*(b+1)+j], lengths[i*(b+1)+j+1]);
+            }
+        }
+
+        size_t i=0;
+        size_t j=0;
+
+        while((i < a) && (j < b))
+        {
+            if(old[prefix+i].hash == now[prefix+j].hash)
+            {
+                keep(prefix+j, prefix+i);
+                anchors.emplace_back(prefix+j, prefix+i);
+                ++i;
+                ++j;
+            }
+            else if(lengths[(i+1)*(b+1)+j] >= lengths[i*(b+1)+j+1])
+                ++i;
+            else
+                ++j;
+        }
+    }
+
+    for(size_t k=0; k < suffix; ++k)
+    {
+        keep(newEnd+k, oldEnd+k);
+        anchors.emplace_back(newEnd+k, oldEnd+k);
+    }
+
+    // a block moved: the first old block left with its hash
+    for(size_t n=prefix; n < newEnd; ++n)
+    {
+        if(oldOf[n] != none)
+            continue;
+        for(size_t o=prefix; o < oldEnd; ++o)
+        {
+            if(!oldTaken[o] && (old[o].hash == now[n].hash))
+            {
+                keep(n, o);
+                break;
+            }
+        }
+    }
+
+    // the rest, paired in order within each gap between two anchors
+    size_t previousNew=0;
+    size_t previousOld=0;
+
+    for(size_t anchor=0; anchor <= anchors.size(); ++anchor)
+    {
+        size_t nextNew=(anchor < anchors.size())?anchors[anchor].first:newCount;
+        size_t nextOld=(anchor < anchors.size())?anchors[anchor].second:oldCount;
+        size_t o=previousOld;
+
+        for(size_t n=previousNew; n < nextNew; ++n)
+        {
+            if(oldOf[n] != none)
+                continue;
+            while((o < nextOld) && oldTaken[o])
+                ++o;
+            if(o >= nextOld)
+                break;
+            if(old[o].type == now[n].type)
+            {
+                oldOf[n]=o;
+                oldTaken[o]=true;
+                matches[n].kind=Kind::Changed;
+                matches[n].old=o;
+                if(!old[o].children.empty() || !now[n].children.empty())
+                    matches[n].children=markdownDiff(old[o].children, now[n].children);
+            }
+            ++o;
+        }
+        if(anchor < anchors.size())
+        {
+            previousNew=anchors[anchor].first+1;
+            previousOld=anchors[anchor].second+1;
+        }
+    }
+    return matches;
 }
 
 const char *markdownBlockTypeName(MarkdownBlock::Type type)
