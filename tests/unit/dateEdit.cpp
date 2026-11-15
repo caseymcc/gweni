@@ -26,8 +26,10 @@
  */
 #include "headlessFixture.h"
 
+#include <gweni/controls/calendar.h>
 #include <gweni/controls/canvas.h>
 #include <gweni/controls/dateEdit.h>
+#include <gweni/controls/popup.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/skins/textured/texturedSkin.h>
@@ -60,10 +62,12 @@ struct Scene
     controls::Canvas *canvas=nullptr;
     DateEdit *edit=nullptr;
     Changes events;
+    double clock=10.0;
 
     Scene()
     {
-        platform::setTimeSource([]() { return 10.0; });
+        // a second apart per press, so two presses are never a double click
+        platform::setTimeSource([this]() { return clock; });
         canvas=new controls::Canvas(&skin);
         canvas->setSize(640, 480);
         edit=canvas->newChild<DateEdit>();
@@ -77,6 +81,8 @@ struct Scene
 
     ~Scene()
     {
+        // the hovered control, the focus and the button state are process-global
+        input::onMouseClicked(canvas, 0, false);
         HoveredControl=nullptr;
         KeyboardFocus=nullptr;
         MouseFocus=nullptr;
@@ -95,6 +101,50 @@ struct Scene
         input::onKeyEvent(canvas, key, true);
         input::onKeyEvent(canvas, key, false);
         frame();
+    }
+
+    void altDown()
+    {
+        input::onKeyEvent(canvas, keys::Alt, true);
+        key(keys::Down);
+        input::onKeyEvent(canvas, keys::Alt, false);
+        frame();
+    }
+
+    void clickOn(controls::Base *control)
+    {
+        const Point at=control->localPosToCanvas();
+
+        clock+=1.0;
+        canvas->inputMouseMoved(at.x+control->getWidth()/2, at.y+control->getHeight()/2, 0, 0);
+        input::onMouseClicked(canvas, 0, true);
+        input::onMouseClicked(canvas, 0, false);
+        frame();
+    }
+
+    //! The calendar's cell showing \p date, nullptr if none does.
+    controls::internal::CalendarCell *cellFor(const Date &date)
+    {
+        controls::Calendar *calendar=edit->getCalendar();
+
+        for(int i=0; i < controls::Calendar::CellCount; ++i)
+        {
+            controls::internal::CalendarCell *cell=calendar->getCell(i);
+
+            if(!cell->hidden() && (cell->getDate() == date))
+                return cell;
+        }
+        return nullptr;
+    }
+
+    //! Every control under the canvas, counted.
+    static size_t countControls(controls::Base *control)
+    {
+        size_t count=1;
+
+        for(controls::Base *child : control->getChildren())
+            count+=countControls(child);
+        return count;
     }
 
     void caretAt(int pos)
@@ -331,4 +381,159 @@ TEST_CASE("DateEdit: empty allowed and not")
     edit->setAllowEmpty(false);
     CHECK(scene.date() == "2026-11-15");
     CHECK(scene.events.count == 2);
+}
+
+TEST_CASE("DateEdit: the calendar opens in a popup made once, with the field's date, limits and filter")
+{
+    Scene scene;
+    DateEdit *edit=scene.edit;
+
+    edit->setDate(Date(2026, 11, 13));
+    edit->setRange(Date(2026, 11, 5), Date(2026, 12, 18));
+    edit->setDateFilter(weekday);
+    edit->setToday(Date(2026, 11, 10));
+    scene.frame();
+    CHECK(edit->getPopup() == nullptr);
+    CHECK_FALSE(edit->isCalendarOpen());
+
+    // Alt+Down from the focused field
+    scene.caretAt(3);
+    scene.altDown();
+    REQUIRE(edit->isCalendarOpen());
+    controls::Popup *popup=edit->getPopup();
+    controls::Calendar *calendar=edit->getCalendar();
+    REQUIRE(popup != nullptr);
+    REQUIRE(calendar != nullptr);
+    CHECK(calendar->getSelectionMode() == controls::Calendar::SelectionMode::Single);
+    CHECK(calendar->getSelectedDate()->toIso() == "2026-11-13");
+    CHECK(calendar->getCursor().toIso() == "2026-11-13");
+    CHECK(calendar->getDisplayedMonth() == 11);
+    CHECK(calendar->getMinDate()->toIso() == "2026-11-05");
+    CHECK(calendar->getMaxDate()->toIso() == "2026-12-18");
+    CHECK(calendar->getToday()->toIso() == "2026-11-10");
+    CHECK_FALSE(calendar->isDateEnabled(Date(2026, 11, 14)));
+    CHECK_FALSE(calendar->isDateEnabled(Date(2026, 11, 4)));
+    CHECK(KeyboardFocus == calendar);
+    // below the field
+    CHECK(popup->localPosToCanvas().y >= edit->localPosToCanvas().y+edit->getHeight());
+
+    // Escape: closed, nothing changed, the focus back
+    scene.key(keys::Escape);
+    CHECK_FALSE(edit->isCalendarOpen());
+    CHECK(KeyboardFocus == edit);
+    CHECK(scene.date() == "2026-11-13");
+    CHECK(scene.events.count == 0);
+
+    // F4 opens it again with no new control, on the date the field has now
+    const size_t controls=Scene::countControls(scene.canvas);
+    edit->setDate(Date(2026, 12, 1));
+    scene.key(keys::F4);
+    REQUIRE(edit->isCalendarOpen());
+    CHECK(edit->getPopup() == popup);
+    CHECK(edit->getCalendar() == calendar);
+    CHECK(Scene::countControls(scene.canvas) == controls);
+    CHECK(calendar->getSelectedDate()->toIso() == "2026-12-01");
+    CHECK(calendar->getDisplayedMonth() == 12);
+    scene.key(keys::Escape);
+
+    // Down without Alt steps the section
+    scene.caretAt(9);
+    scene.key(keys::Down);
+    CHECK_FALSE(edit->isCalendarOpen());
+    CHECK(scene.date() == "2026-12-18");
+}
+
+TEST_CASE("DateEdit: a day picked sets the field, closes the calendar and gives the focus back")
+{
+    Scene scene;
+    DateEdit *edit=scene.edit;
+
+    edit->setDate(Date(2026, 11, 13));
+    scene.frame();
+
+    // the button opens it, the field taking the focus from the press
+    scene.clickOn(edit->getButton());
+    REQUIRE(edit->isCalendarOpen());
+    CHECK(KeyboardFocus == edit->getCalendar());
+    scene.frame();
+
+    controls::internal::CalendarCell *cell=scene.cellFor(Date(2026, 11, 20));
+    REQUIRE(cell != nullptr);
+    scene.clickOn(cell);
+    CHECK_FALSE(edit->isCalendarOpen());
+    CHECK(scene.date() == "2026-11-20");
+    CHECK(edit->getText() == "2026-11-20");
+    CHECK(KeyboardFocus == edit);
+    CHECK(scene.events.count == 1);
+
+    // the day already selected closes it too, with no event; Return picks
+    // the cursor's day
+    scene.key(keys::F4);
+    REQUIRE(edit->isCalendarOpen());
+    scene.frame();
+    scene.clickOn(scene.cellFor(Date(2026, 11, 20)));
+    CHECK_FALSE(edit->isCalendarOpen());
+    CHECK(scene.events.count == 1);
+    scene.key(keys::F4);
+    scene.key(keys::Right);
+    scene.key(keys::Return);
+    CHECK_FALSE(edit->isCalendarOpen());
+    CHECK(scene.date() == "2026-11-21");
+    CHECK(scene.events.count == 2);
+
+    // a second click on the button closes it with nothing chosen
+    scene.clickOn(edit->getButton());
+    REQUIRE(edit->isCalendarOpen());
+    scene.frame();
+    scene.clickOn(edit->getButton());
+    CHECK_FALSE(edit->isCalendarOpen());
+    CHECK(scene.date() == "2026-11-21");
+    CHECK(scene.events.count == 2);
+}
+
+TEST_CASE("DateEdit: typed text is read before the calendar opens, and an empty field opens on today")
+{
+    Scene scene;
+    DateEdit *edit=scene.edit;
+
+    edit->setDate(Date(2026, 11, 13));
+    scene.type("2026-11-25");
+    scene.key(keys::F4);
+    REQUIRE(edit->isCalendarOpen());
+    CHECK(scene.date() == "2026-11-25");
+    CHECK(edit->getCalendar()->getSelectedDate()->toIso() == "2026-11-25");
+    CHECK(scene.events.count == 1);
+    scene.key(keys::Escape);
+
+    edit->setAllowEmpty(true);
+    edit->setToday(Date(2027, 3, 4));
+    edit->setDate(std::nullopt);
+    scene.caretAt(0);
+    scene.key(keys::F4);
+    REQUIRE(edit->isCalendarOpen());
+    CHECK_FALSE(edit->getCalendar()->getSelectedDate().has_value());
+    CHECK(edit->getCalendar()->getCursor().toIso() == "2027-03-04");
+    scene.key(keys::Return);
+    CHECK(scene.date() == "2027-03-04");
+    CHECK(scene.events.count == 2);
+
+    // disabled, nothing opens
+    edit->setDisabled(true);
+    scene.key(keys::F4);
+    CHECK_FALSE(edit->isCalendarOpen());
+}
+
+TEST_CASE("DateEdit: the button is in the field's width")
+{
+    Scene scene;
+    DateEdit *edit=scene.edit;
+
+    scene.frame();
+    controls::internal::DateEditButton *button=edit->getButton();
+    CHECK(button->getWidth() == DateEdit::ButtonWidth);
+    CHECK((button->getDock() == DockPosition::Right));
+    // right of the text, inside the field
+    CHECK(button->getBounds().x > edit->getWidth()/2);
+    CHECK(button->getBounds().x+button->getWidth() <= edit->getWidth());
+    CHECK_FALSE(button->isTabable());
 }

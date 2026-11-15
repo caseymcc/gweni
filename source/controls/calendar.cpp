@@ -845,6 +845,7 @@ void Calendar::chooseDate(const Date &date)
     cursorMoved();
     if(changed)
         onSelectionChanged.call(this);
+    onDateChosen.call(this);
 }
 
 void Calendar::cursorMoved()

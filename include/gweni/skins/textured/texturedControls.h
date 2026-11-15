@@ -1911,6 +1911,23 @@ public:
     inline static const std::string_view name="TreeTableExpander";
 };
 
+// A DateEdit's calendar button: [0] a surface only while hovered or pressed
+// (DateEditButtonHover, DateEditButtonDown), [1] a down chevron (icon
+// kind 1) at getZIndex()+1 in the DateEditButton* text colours.
+class DateEditButton:public textured::ControlRegister<DateEditButton>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    // the chevron is drawn at getZIndex()+1
+    size_t depthLayers() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="DateEditButton";
+};
+
 
 // The track of both bars (VerticalScrollBar and HorizontalScrollBar find it
 // through their parent type): one ScrollTrack surface the whole length of the

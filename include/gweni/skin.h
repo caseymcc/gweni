@@ -545,6 +545,15 @@ public:
             gweni::Color ExpanderDisabled{0x80, 0x80, 0x80};
         } TreeTable;
 
+        //! A DateEdit's calendar button's chevron: at rest, hovered or
+        //! pressed, and disabled.
+        struct DateEdit_t
+        {
+            gweni::Color Button{0x60, 0x60, 0x60};
+            gweni::Color ButtonHover{0, 0, 0};
+            gweni::Color ButtonDisabled{0x80, 0x80, 0x80};
+        } DateEdit;
+
     } Colors;
 
     //! Sizes a skin sets for its controls, in logical units. Read when a

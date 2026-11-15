@@ -336,6 +336,10 @@ inline Surface DataTableStripe     { Color(0x1f,0x21,0x30), Color(0x1f,0x21,0x30
 // nothing at rest (the slot is hidden, so the row's fill shows).
 inline Surface TreeTableExpanderHover{ SurfHover,             SurfHi,                Blue,  Radius, BorderW };
 inline Surface TreeTableExpanderDown { Surf,                  BgStorm,               Blue,  Radius, BorderW };
+// A DateEdit's calendar button, inside the field: nothing at rest (the
+// field's fill shows), a button's hover and its press.
+inline Surface DateEditButtonHover   { SurfHover,             SurfHi,                Blue,  Radius, BorderW };
+inline Surface DateEditButtonDown    { Surf,                  BgStorm,               Blue,  Radius, BorderW };
 
 // A PlotHistogram: its frame (an inset, like a TextBox's) and its bars, flat
 // and square, so only top is read; the hovered bar is lifted.
@@ -603,6 +607,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"DataTableHeader",&DataTableHeader},{"DataTableHeaderHover",&DataTableHeaderHover},
         {"DataTableHeaderDown",&DataTableHeaderDown},{"DataTableStripe",&DataTableStripe},
         {"TreeTableExpanderHover",&TreeTableExpanderHover},{"TreeTableExpanderDown",&TreeTableExpanderDown},
+        {"DateEditButtonHover",&DateEditButtonHover},{"DateEditButtonDown",&DateEditButtonDown},
         {"PlotFrame",&PlotFrame},{"PlotBar",&PlotBar},{"PlotBarHover",&PlotBarHover},{"PlotLine",&PlotLine},
         {"ChartFrame",&ChartFrame},{"ChartGrid",&ChartGrid},{"ChartAxis",&ChartAxis},{"ChartSpan",&ChartSpan},
         {"ChartMarker",&ChartMarker},{"ChartCrosshair",&ChartCrosshair},

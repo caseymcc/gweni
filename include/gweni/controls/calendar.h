@@ -350,6 +350,11 @@ public:
 
     //! A user's selection changed: info.control the calendar.
     event::Caller onSelectionChanged;
+    //! The user chose an enabled day (a click, Space or Return in the month
+    //! view) in Single or Range mode, after onSelectionChanged if the choice
+    //! changed the selection, and also when it did not (the day already
+    //! selected): what a calendar in a popup closes on.
+    event::Caller onDateChosen;
     //! The shown month (or view) changed, by the user or the app.
     event::Caller onDisplayedMonthChanged;
 
@@ -385,7 +390,8 @@ protected:
     void onTitlePress(event::Info info);
 
     //! A day clicked or chosen at the cursor: selects it as the mode says,
-    //! showing its month, firing onSelectionChanged if it changed.
+    //! showing its month, firing onSelectionChanged if it changed, then
+    //! onDateChosen.
     void chooseDate(const Date &date);
     //! A month (Year view) or year (Decade view) chosen: zooms in on it.
     void zoomInOn(const Date &date);

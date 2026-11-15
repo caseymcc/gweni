@@ -606,6 +606,9 @@ std::unordered_map<std::string, gweni::Color*> TexturedSkin::textColorRegistry()
         {"TreeTableExpander",&Colors.TreeTable.Expander},
         {"TreeTableExpanderHover",&Colors.TreeTable.ExpanderHover},
         {"TreeTableExpanderDisabled",&Colors.TreeTable.ExpanderDisabled},
+        {"DateEditButton",&Colors.DateEdit.Button},
+        {"DateEditButtonHover",&Colors.DateEdit.ButtonHover},
+        {"DateEditButtonDisabled",&Colors.DateEdit.ButtonDisabled},
     };
 }
 
@@ -1467,6 +1470,10 @@ void TexturedSkin::setThemeColors()
     Colors.TreeTable.Expander=FgDark;
     Colors.TreeTable.ExpanderHover=Fg;
     Colors.TreeTable.ExpanderDisabled=Muted;
+    // a DateEdit's chevron as a ComboBox's arrow
+    Colors.DateEdit.Button=FgDark;
+    Colors.DateEdit.ButtonHover=Fg;
+    Colors.DateEdit.ButtonDisabled=Muted;
     // a RichText's links: the accent, lifted to cyan while hovered
     Colors.RichText.Link=tokyonight::Blue;
     Colors.RichText.LinkHover=tokyonight::Cyan;
