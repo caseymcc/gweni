@@ -353,7 +353,8 @@ public:
     //! The user chose an enabled day (a click, Space or Return in the month
     //! view) in Single or Range mode, after onSelectionChanged if the choice
     //! changed the selection, and also when it did not (the day already
-    //! selected): what a calendar in a popup closes on.
+    //! selected): what a Single-mode calendar in a popup closes on. In Range
+    //! mode it fires for each choice, the start's as well as the end's.
     event::Caller onDateChosen;
     //! The shown month (or view) changed, by the user or the app.
     event::Caller onDisplayedMonthChanged;
