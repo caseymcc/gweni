@@ -1307,6 +1307,17 @@ private:
         bool hasArea() const { return (x1 > x0) && (y1 > y0); }
     };
     static QuadBounds quadBounds(const Vertex *vertexes);
+    //! Control opacity (docs/architecture.md → "Control opacity"): each draw
+    //! packs its colours at surfaceOpacity() or textOpacity(), the level the
+    //! render drain set for the control drawing. Glyphs, icons (style 5) and
+    //! images (style 2) take the text level, every other style the surface level.
+    //! \a color with its alpha times \a level (as is at 1, the bytes unchanged).
+    static gweni::Color atLevel(gweni::Color color, float level);
+    //! \a level as an 8-bit alpha, rounded.
+    static uint8_t levelByte(float level);
+    //! At a \a level of 0 the slot just written is hidden (style 0, which the
+    //! vertex shader collapses), so it draws nothing and writes no depth.
+    void hideAtLevelZero(size_t primitiveId, float level);
     //! Writes primitiveId's slot as one of the SDF rounded-rect quads (styles 4, 6, 7),
     //! centred in rect. color0 and color3 are given per side (left, right), because
     //! style 6 interpolates them along x; color1 and the border colour are per quad.

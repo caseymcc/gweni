@@ -241,8 +241,8 @@ public:
     //! glyphs, icons and images (docs/architecture.md → "Control opacity").
     //! The render drain sets each control's effective levels
     //! (controls::Base::effectiveSurfaceOpacity()) before its hooks, and the
-    //! canvas sets 1 for the root. Stored here; a backend that applies them
-    //! overrides it (SlotRenderer). The default draws ignore them.
+    //! canvas sets 1 for the root. Stored here, where SlotRenderer reads them as
+    //! it packs each colour; the default draws ignore them.
     virtual void setOpacity(float surface, float text)
     {
         m_surfaceOpacity=surface;

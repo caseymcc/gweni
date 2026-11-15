@@ -1886,8 +1886,9 @@ bool SlotRenderer::slotTranslucent(const Vertex *vertexes) const
             alpha(vertex.ty);
             alpha(vertex.dy);
             break;
-        case 7: // checker: drawn opaque, whatever its colours' alphas
-            alpha(0xff);
+        case 7: // checker: drawn opaque, whatever its colours' alphas, but
+                // for its control's surface level, packed as its cells' alpha
+            alpha(vertex.cy);
             break;
         case 8: // grid: its minor and major lines
             alpha(vertex.cy);
@@ -3502,6 +3503,27 @@ void SlotRenderer::cullClippedQuad(size_t primitiveId)
     updateSlotVisibility(primitiveId, hasArea);
 }
 
+uint8_t SlotRenderer::levelByte(float level)
+{
+    return (uint8_t)std::lround(std::min(std::max(level, 0.0f), 1.0f)*255.0f);
+}
+
+gweni::Color SlotRenderer::atLevel(gweni::Color color, float level)
+{
+    if(level >= 1.0f)
+        return color;
+    color.a=(uint8_t)std::lround(color.a*std::max(level, 0.0f));
+    return color;
+}
+
+void SlotRenderer::hideAtLevelZero(size_t primitiveId, float level)
+{
+    if(level > 0.0f)
+        return;
+    for(size_t i=0; i<4; ++i)
+        m_vertexes[primitiveId*4+i].style=0;
+}
+
 void SlotRenderer::drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex)
 {
     translate(rect);
@@ -3520,15 +3542,18 @@ void SlotRenderer::drawFilledRect(size_t primitiveId, gweni::Rect rect, int zInd
     std::cout<<"Rendering Fill: "<<primitiveId<<"("<<rect.x<<", "<<rect.y<<", "<<rect.w<<", "<<rect.h<<" : "<<zIndex<<") color: "<<(int)m_color.r<<", "<<(int)m_color.g<<", "<<(int)m_color.b<<", "<<(int)m_color.a<<"\n";
 #endif//DEBUG_RENDER
 
-    setVertex(m_vertexes[vertexIndex++], 1, rect.x, rect.y, zIndex, m_color.rg(), m_color.ba());
-    setVertex(m_vertexes[vertexIndex++], 1, rect.x+rect.w, rect.y, zIndex, m_color.rg(), m_color.ba());
-    setVertex(m_vertexes[vertexIndex++], 1, rect.x, rect.y+rect.h, zIndex, m_color.rg(), m_color.ba());
+    const gweni::Color color=atLevel(m_color, surfaceOpacity());
+
+    setVertex(m_vertexes[vertexIndex++], 1, rect.x, rect.y, zIndex, color.rg(), color.ba());
+    setVertex(m_vertexes[vertexIndex++], 1, rect.x+rect.w, rect.y, zIndex, color.rg(), color.ba());
+    setVertex(m_vertexes[vertexIndex++], 1, rect.x, rect.y+rect.h, zIndex, color.rg(), color.ba());
 //    setVertex(m_vertexes[vertexIndex++], rect.x+rect.w, rect.y);
-    setVertex(m_vertexes[vertexIndex++], 1, rect.x+rect.w, rect.y+rect.h, zIndex, m_color.rg(), m_color.ba());
+    setVertex(m_vertexes[vertexIndex++], 1, rect.x+rect.w, rect.y+rect.h, zIndex, color.rg(), color.ba());
 //    setVertex(m_vertexes[vertexIndex++], rect.x, rect.y+rect.h);
 
     cullOutOfRangeQuad(primitiveId, rect);
     cullClippedQuad(primitiveId);
+    hideAtLevelZero(primitiveId, surfaceOpacity());
     markPrimitiveChanges(primitiveId, before);
 
 //    addVert(rect.x, rect.y);
@@ -3583,6 +3608,30 @@ void SlotRenderer::writeRoundedQuad(size_t primitiveId, gweni::Rect rect, int zI
     gweni::Color color1, gweni::Color color3Left, gweni::Color color3Right,
     gweni::Color borderColor, uint8_t edges, float reach)
 {
+    // every colour at the surface level; a checker's cells, whose alphas the
+    // shader does not read, carry the level itself, which it outputs as the
+    // composite's alpha
+    const float level=surfaceOpacity();
+
+    borderColor=atLevel(borderColor, level);
+    if(style == 7)
+    {
+        // its fill's alpha is over the cells, not over what is behind
+        const uint8_t alpha=levelByte(level);
+
+        color1.a=alpha;
+        color3Left.a=alpha;
+        color3Right.a=alpha;
+    }
+    else
+    {
+        color0Left=atLevel(color0Left, level);
+        color0Right=atLevel(color0Right, level);
+        color1=atLevel(color1, level);
+        color3Left=atLevel(color3Left, level);
+        color3Right=atLevel(color3Right, level);
+    }
+
     translate(rect);
 
     // A side without a border reaches over a neighbour's border of `reach`, as
@@ -3660,12 +3709,15 @@ void SlotRenderer::writeRoundedQuad(size_t primitiveId, gweni::Rect rect, int zI
 
     cullOutOfRangeQuad(primitiveId, rect);
     cullClippedQuad(primitiveId);
+    hideAtLevelZero(primitiveId, level);
     markPrimitiveChanges(primitiveId, before);
 }
 
 void SlotRenderer::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int direction,
     gweni::Color color, int zIndex)
 {
+    // an icon follows the text level
+    color=atLevel(color, textOpacity());
     translate(rect);
 
     size_t vertexIndex=primitiveId*4;
@@ -3706,12 +3758,15 @@ void SlotRenderer::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int 
 
     cullOutOfRangeQuad(primitiveId, rect);
     cullClippedQuad(primitiveId);
+    hideAtLevelZero(primitiveId, textOpacity());
     markPrimitiveChanges(primitiveId, before);
 }
 
 void SlotRenderer::drawArc(size_t primitiveId, gweni::Rect rect, float startTurns, float sweepTurns,
     float thickness, gweni::Color color, int zIndex)
 {
+    // an icon follows the text level
+    color=atLevel(color, textOpacity());
     // a negative sweep is the same arc from its other end
     if(sweepTurns < 0.0f)
     {
@@ -3778,12 +3833,15 @@ void SlotRenderer::drawArc(size_t primitiveId, gweni::Rect rect, float startTurn
 
     cullOutOfRangeQuad(primitiveId, rect);
     cullClippedQuad(primitiveId);
+    hideAtLevelZero(primitiveId, textOpacity());
     markPrimitiveChanges(primitiveId, before);
 }
 
 void SlotRenderer::drawGrid(size_t primitiveId, gweni::Rect rect, gweni::PointF origin, float spacing,
     int majorEvery, gweni::Color minor, gweni::Color major, int zIndex)
 {
+    minor=atLevel(minor, surfaceOpacity());
+    major=atLevel(major, surfaceOpacity());
     // the origin's device px, as drawLine places an endpoint coordinate, before
     // translate() moves the rect into device px
     const gweni::Point &offset=getRenderOffset();
@@ -3855,12 +3913,14 @@ void SlotRenderer::drawGrid(size_t primitiveId, gweni::Rect rect, gweni::PointF 
 
     cullOutOfRangeQuad(primitiveId, rect);
     cullClippedQuad(primitiveId);
+    hideAtLevelZero(primitiveId, surfaceOpacity());
     markPrimitiveChanges(primitiveId, before);
 }
 
 void SlotRenderer::drawTrapezoid(size_t primitiveId, float x0, float x1, float top0, float top1,
     float bottom0, float bottom1, gweni::Color color, int zIndex)
 {
+    color=atLevel(color, surfaceOpacity());
     size_t vertexIndex=primitiveId*4;
 
     ensurePrimitiveSlots(primitiveId);
@@ -3952,6 +4012,7 @@ void SlotRenderer::drawTrapezoid(size_t primitiveId, float x0, float x1, float t
         }
     }
     cullClippedQuad(primitiveId);
+    hideAtLevelZero(primitiveId, surfaceOpacity());
     markPrimitiveChanges(primitiveId, before);
 }
 
@@ -4040,11 +4101,13 @@ void SlotRenderer::drawLine(size_t primitiveId, gweni::PointF p0, gweni::PointF 
         joints=(uint16_t)(joints | ((i == 0) ? LineHasPrev : LineHasNext));
     }
 
+    const gweni::Color color=atLevel(m_color, surfaceOpacity());
+
     auto setLine=[&](size_t vi, int64_t px, int64_t py, int64_t lx, int64_t ly)
     {
         Vertex &v=m_vertexes[vi];
 
-        setVertex(v, 3, (int)px, (int)py, zIndex, m_color.rg(), m_color.ba());
+        setVertex(v, 3, (int)px, (int)py, zIndex, color.rg(), color.ba());
         v.lx=(int16_t)lx;
         v.ly=(int16_t)ly;
         v.radius=joints;
@@ -4074,6 +4137,7 @@ void SlotRenderer::drawLine(size_t primitiveId, gweni::PointF p0, gweni::PointF 
         }
     }
     cullClippedQuad(primitiveId);
+    hideAtLevelZero(primitiveId, surfaceOpacity());
     markPrimitiveChanges(primitiveId, before);
 }
 
@@ -4204,6 +4268,9 @@ void SlotRenderer::drawTexturedRect(const gweni::Texture &texture, size_t primit
     {
         return (float)std::lround(std::min(std::max(t, 0.0f), 1.0f)*65535.0f);
     };
+    // an image follows the text level
+    const gweni::Color tint=atLevel(m_color, textOpacity());
+
     auto setImageVertex=[&](size_t vi, int x, int y, float u, float v)
     {
         Vertex &vertex=m_vertexes[vi];
@@ -4211,8 +4278,8 @@ void SlotRenderer::drawTexturedRect(const gweni::Texture &texture, size_t primit
         setVertex(vertex, 2, x, y, zIndex, uv(u), uv(v));
         vertex.radius=(uint16_t)texData.m_imageClass;
         vertex.border=(uint16_t)texData.m_layer;
-        vertex.cx=m_color.rg();
-        vertex.cy=m_color.ba();
+        vertex.cx=tint.rg();
+        vertex.cy=tint.ba();
         vertex.bx=(uint16_t)texData.width;
         vertex.by=(uint16_t)texData.height;
     };
@@ -4224,6 +4291,7 @@ void SlotRenderer::drawTexturedRect(const gweni::Texture &texture, size_t primit
 
     cullOutOfRangeQuad(primitiveId, rect);
     cullClippedQuad(primitiveId);
+    hideAtLevelZero(primitiveId, textOpacity());
     markPrimitiveChanges(primitiveId, before);
 
 //    addVert(rect.x, rect.y, u1, v1);
@@ -4243,6 +4311,10 @@ void SlotRenderer::showPrimitive(int style, size_t primitiveId)
 //
 //    box.state=style;
     
+    // at a level of 0 (its control's, as the drain set it) it draws nothing
+    if(((style == 2) || (style == 5))?(textOpacity() <= 0.0f):(surfaceOpacity() <= 0.0f))
+        style=0;
+
     size_t vertexIndex=primitiveId*4;
 
     if(m_vertexes.size() < vertexIndex+4)
@@ -4433,7 +4505,8 @@ void SlotRenderer::allocateTextRun(size_t textId, TextRun &run, size_t glyphs)
 
 std::pair<size_t, size_t> SlotRenderer::drawnRange(const TextRun &run)
 {
-    if(run.hidden || run.culled || (run.glyphs == 0))
+    // at a text level of 0 (its colour's alpha) it draws nothing either
+    if(run.hidden || run.culled || (run.glyphs == 0) || (run.color.a == 0))
         return {0, 0};
     return {run.start, run.glyphs};
 }
@@ -4754,8 +4827,9 @@ void SlotRenderer::colorTextRun(TextRun &run, const TextRunSpans *spans, bool ma
         }
 
         // the arithmetic the markup's foreground colour is made with, so a glyph
-        // in the draw colour has the bytes the plain call gives it; opaque
-        const float r=color->r/255.0f, g=color->g/255.0f, b=color->b/255.0f, a=1.0f;
+        // in the draw colour has the bytes the plain call gives it; at the run's
+        // text level (run.color's alpha, 255 at 1), whatever a span's alpha
+        const float r=color->r/255.0f, g=color->g/255.0f, b=color->b/255.0f, a=run.color.a/255.0f;
         const size_t vertIndex=(run.start+i)*4;
         const ftgl::glyph_vertex_t &first=m_textVertexes[vertIndex];
 
@@ -4820,10 +4894,10 @@ void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::
         pos.y=baselineY-baselineOffset(m_lastFont->second, px);
     }
 
-    // The colour the rebuild below bakes into the glyphs. Its alpha is always
-    // opaque, so the draw colour's alpha takes no part: a change in alpha alone
-    // would rebuild the run into the same bytes.
-    const gweni::Color color(m_color.r, m_color.g, m_color.b, 255);
+    // The colour the rebuild below bakes into the glyphs. Its alpha is the
+    // control's text level (opaque at 1), so the draw colour's alpha takes no
+    // part: a change in alpha alone would rebuild the run into the same bytes.
+    const gweni::Color color(m_color.r, m_color.g, m_color.b, levelByte(textOpacity()));
 
     FontData &fontData=m_lastFont->second;
 
@@ -4833,11 +4907,11 @@ void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::
     // in an SDF font the same atlas.
     // With spans on either side (the call's or the run's), a new colour or new spans
     // keep the glyphs too: only their colours are written, and only where they
-    // changed. The plain call on a run without spans rebuilds for a new colour.
+    // changed. So does the plain call on a run without spans: a new colour or
+    // text level writes the glyphs' colours alone.
     const bool withSpans=(spans != nullptr) || run.hasSpans;
 
-    if((run.text == text) && (run.font == font) && (run.px == px) && ((run.color == color) || withSpans)
-        && (run.fontData == &fontData))
+    if((run.text == text) && (run.font == font) && (run.px == px) && (run.fontData == &fontData))
     {
         const std::pair<size_t, size_t> drawnBefore=drawnRange(run);
 
@@ -4867,6 +4941,11 @@ void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::
             run.color=color;
             if(changed)
                 colorTextRun(run, kept, true);
+        }
+        else if(!(run.color == color))
+        {
+            run.color=color;
+            colorTextRun(run, nullptr, true);
         }
 
         const bool moved=(pos.x != run.position.x) || (pos.y != run.position.y) || (zIndex != run.zIndex);

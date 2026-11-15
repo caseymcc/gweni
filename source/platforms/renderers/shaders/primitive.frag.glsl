@@ -472,10 +472,12 @@ void main()
     else if (ShaderType == 7u)
     {
         // Checker composite: VertexColor (with alpha) over 4 px cells of vColor1
-        // (light) and vColor3 (dark), counted from the rect's top-left; opaque.
+        // (light) and vColor3 (dark), counted from the rect's top-left; opaque
+        // but for the control's surface level, which SlotRenderer packs as the
+        // cells' alpha (255 at level 1).
         ivec2 cell = ivec2(floor((vLocal + vHalf)/4.0));
         vec3 checker = ((cell.x + cell.y) & 1) == 0 ? vColor1.rgb : vColor3.rgb;
-        FragColor = roundedRect(vec4(lerp(checker, VertexColor.rgb, VertexColor.a), 1.0));
+        FragColor = roundedRect(vec4(lerp(checker, VertexColor.rgb, VertexColor.a), vColor1.a));
     }
     else if (ShaderType == 8u)
     {
