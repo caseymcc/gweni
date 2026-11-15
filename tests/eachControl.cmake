@@ -6,11 +6,11 @@
 #  Runs one ControlTest check for every control in ControlTest --list, one
 #  process per control, as a cmake -P script (tests/CMakeLists.txt registers it
 #  as controltest_resize_each, controltest_one_pass_each,
-#  controltest_scale_roundtrip, controltest_verify_layout_each and
-#  controltest_hide_show_each):
+#  controltest_scale_roundtrip, controltest_verify_layout_each,
+#  controltest_hide_show_each and controltest_opacity_each):
 #
 #      cmake -DCONTROLTEST=<ControlTest> -DSOURCE_DIR=<repo root> \
-#            -DSCRATCH_DIR=<dir> -DMODE=resize|one-pass|scale|verify|hide-show [-DSKIP=<name>,<name>...] \
+#            -DSCRATCH_DIR=<dir> -DMODE=resize|one-pass|scale|verify|hide-show|opacity [-DSKIP=<name>,<name>...] \
 #            -P eachControl.cmake
 #
 #  MODE resize:   --scenario resize --require-one-pass, the 640->1024->640
@@ -31,6 +31,12 @@
 #                 that is hidden already (as the shell's pages are) and shown:
 #                 both have to come back byte for byte as the demo built
 #                 shown, every frame in one layout pass.
+#  MODE opacity:  --scenario opacity-round-trip --require-one-pass, the demo's
+#                 host page set to opacity 0.5 once settled, then cleared: the
+#                 0.5 state has to be the demo built into a host at 0.5
+#                 (listing, pixels, the renderer mirror slot by owner) and the
+#                 cleared one the demo before, byte for byte; each change frame
+#                 has nothing pending outside the host and lays nothing out.
 #
 #  Every control is run, and the failing ones are named together at the end,
 #  each with the lines ControlTest printed on stderr. SKIP leaves controls out
@@ -55,8 +61,10 @@ elseif(MODE STREQUAL "verify")
     set(mode_args --stats --verify-layout)
 elseif(MODE STREQUAL "hide-show")
     set(mode_args --scenario hide-show --require-one-pass)
+elseif(MODE STREQUAL "opacity")
+    set(mode_args --scenario opacity-round-trip --require-one-pass)
 else()
-    message(FATAL_ERROR "eachControl.cmake: MODE is resize, one-pass, scale, verify or hide-show, not '${MODE}'")
+    message(FATAL_ERROR "eachControl.cmake: MODE is resize, one-pass, scale, verify, hide-show or opacity, not '${MODE}'")
 endif()
 
 # a stale run must not be able to pass
@@ -99,7 +107,7 @@ foreach(name IN LISTS names)
         list(APPEND failed "${name}")
         # the --stats frame lines are noise here; the ControlTest: lines say
         # which frame or check failed
-        file(STRINGS "${log}" reasons REGEX "^(ControlTest:|resize |scale |hide-show |gweni: layout verify)")
+        file(STRINGS "${log}" reasons REGEX "^(ControlTest:|resize |scale |hide-show |opacity-round-trip |gweni: layout verify)")
         string(REPLACE ";" "\n    " reasons "${reasons}")
         message("FAILED: ${name} (exit '${result}', log ${log})\n    ${reasons}")
     endif()

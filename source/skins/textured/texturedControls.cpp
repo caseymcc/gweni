@@ -1158,7 +1158,8 @@ void NavigationRail::update(renderer::Base *renderer, controls::Base *baseContro
     const bool same=m_surfaceCurrent && m_surface.top == surface.top && m_surface.bottom == surface.bottom
         && m_surface.border == surface.border && m_surface.radius == surface.radius
         && m_surface.borderWidth == surface.borderWidth;
-    if(same && !(baseControl->getStateChange()
+    const bool levelsMoved=m_drawnOpacity.moved(renderer);
+    if(same && !levelsMoved && !(baseControl->getStateChange()
         &(controls::StateChange_Created|controls::StateChange_Geometry|controls::StateChange_Visibility)))
         return;
     tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, surface);
@@ -2553,7 +2554,9 @@ void PlotHistogram::update(renderer::Base *renderer, controls::Base *baseControl
     // ancestor's bounds), its visibility or its creation. Any other draws only
     // what differs from what the slot holds.
     const unsigned int sc=baseControl->getStateChange();
-    const bool all=(sc&(controls::StateChange_Created|controls::StateChange_Visibility
+    // drawn at other opacity levels: every slot again
+    const bool levelsMoved=m_drawnOpacity.moved(renderer);
+    const bool all=levelsMoved || (sc&(controls::StateChange_Created|controls::StateChange_Visibility
         |controls::StateChange_Geometry)) != 0;
 
     if(!baseControl->visible())
@@ -2630,7 +2633,9 @@ void RichText::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     controls::RichText *rich=static_cast<controls::RichText *>(baseControl);
     const unsigned int sc=baseControl->getStateChange();
-    const bool all=(sc&(controls::StateChange_Created|controls::StateChange_Visibility
+    // drawn at other opacity levels: every slot again
+    const bool levelsMoved=m_drawnOpacity.moved(renderer);
+    const bool all=levelsMoved || (sc&(controls::StateChange_Created|controls::StateChange_Visibility
         |controls::StateChange_Geometry)) != 0;
 
     // hidden, only what is shown is hidden: a hidden control is not laid out,
@@ -2832,7 +2837,9 @@ void MarkdownTable::update(renderer::Base *renderer, controls::Base *baseControl
     const std::vector<int> &rows=table->getRowEdges();
     const bool visible=table->visible() && (columns.size() > 1) && (rows.size() > 1);
     const unsigned int stateChange=table->getStateChange();
-    const bool all=(stateChange&(controls::StateChange_Geometry|controls::StateChange_Visibility
+    // drawn at other opacity levels: every slot again
+    const bool levelsMoved=m_drawnOpacity.moved(renderer);
+    const bool all=levelsMoved || (stateChange&(controls::StateChange_Geometry|controls::StateChange_Visibility
         |controls::StateChange_Created)) != 0;
     const Rect &bounds=table->getRenderBounds();
     const int z=table->getZIndex();
@@ -2919,7 +2926,9 @@ void PlotLines::update(renderer::Base *renderer, controls::Base *baseControl)
     // every slot, and such a frame marks the control's geometry, its
     // visibility or its creation. Any other draws only what differs.
     const unsigned int sc=baseControl->getStateChange();
-    const bool all=(sc&(controls::StateChange_Created|controls::StateChange_Visibility
+    // drawn at other opacity levels: every slot again
+    const bool levelsMoved=m_drawnOpacity.moved(renderer);
+    const bool all=levelsMoved || (sc&(controls::StateChange_Created|controls::StateChange_Visibility
         |controls::StateChange_Geometry)) != 0;
 
     if(!baseControl->visible())
@@ -3140,7 +3149,9 @@ void Link::update(renderer::Base *renderer, controls::Base *baseControl)
     m_segments.resize(slots);
 
     const unsigned int sc=baseControl->getStateChange();
-    const bool all=(sc&(controls::StateChange_Created|controls::StateChange_Visibility
+    // drawn at other opacity levels: every slot again
+    const bool levelsMoved=m_drawnOpacity.moved(renderer);
+    const bool all=levelsMoved || (sc&(controls::StateChange_Created|controls::StateChange_Visibility
         |controls::StateChange_Geometry)) != 0;
     auto hide=[&](size_t i)
     {
@@ -3396,7 +3407,9 @@ void Timeline::update(renderer::Base *renderer, controls::Base *baseControl)
     const unsigned int sc=baseControl->getStateChange();
     // A new rect, z, clip region or visibility reaches every slot: such a
     // frame marks the control's geometry, its visibility or its creation.
-    const bool all=(sc&(controls::StateChange_Created|controls::StateChange_Visibility
+    // drawn at other opacity levels: every slot again
+    const bool levelsMoved=m_drawnOpacity.moved(renderer);
+    const bool all=levelsMoved || (sc&(controls::StateChange_Created|controls::StateChange_Visibility
         |controls::StateChange_Geometry)) != 0;
     const gweni::Rect &bounds=baseControl->getRenderBounds();
     const gweni::Rect area=timeline->getBarArea();
@@ -3794,7 +3807,9 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
     // A new rect, z, clip region or visibility reaches every slot: such a
     // frame marks the control's geometry, its visibility or its creation.
     // Any other draws only what differs from what the slot holds.
-    const bool all=(sc&(controls::StateChange_Created|controls::StateChange_Visibility
+    // drawn at other opacity levels: every slot again
+    const bool levelsMoved=m_drawnOpacity.moved(renderer);
+    const bool all=levelsMoved || (sc&(controls::StateChange_Created|controls::StateChange_Visibility
         |controls::StateChange_Geometry)) != 0;
     const gweni::Rect &bounds=baseControl->getRenderBounds();
     const gweni::Rect plot=chart->getPlotBounds();

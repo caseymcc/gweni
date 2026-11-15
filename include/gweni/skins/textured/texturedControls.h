@@ -38,6 +38,29 @@ public:
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 };
 
+//! The opacity levels a skin Control's slots were last drawn at
+//! (docs/architecture.md -> "Control opacity"). A Control that keeps what it
+//! drew and draws again only what changed holds one, and draws every slot
+//! again when moved() says its control is drawn at other levels now: a level
+//! change marks its control StateChange_Background|StateChange_Text, which by
+//! itself would redraw only what its own look says changed.
+struct DrawnOpacity
+{
+    float surface=1.0f;
+    float text=1.0f;
+
+    //! Whether \p renderer's levels (the control's, as the drain set them)
+    //! are not the ones last drawn at; takes them.
+    bool moved(const renderer::Base *renderer)
+    {
+        const bool changed=(surface != renderer->surfaceOpacity()) || (text != renderer->textOpacity());
+
+        surface=renderer->surfaceOpacity();
+        text=renderer->textOpacity();
+        return changed;
+    }
+};
+
 struct Horizontal
 {
     inline static const std::string_view value="Horizontal";
@@ -737,6 +760,8 @@ public:
     inline static const std::string_view name="PlotHistogram";
 
 private:
+    //! the levels its slots were drawn at
+    DrawnOpacity m_drawnOpacity;
     //! What a slot holds, as last drawn.
     struct Drawn
     {
@@ -780,6 +805,8 @@ public:
     inline static const std::string_view name="PlotLines";
 
 private:
+    //! the levels its slots were drawn at
+    DrawnOpacity m_drawnOpacity;
     //! What a segment's slot holds, as last drawn.
     struct Segment
     {
@@ -852,6 +879,8 @@ public:
     inline static const std::string_view name="RichText";
 
 private:
+    //! the levels its slots were drawn at
+    DrawnOpacity m_drawnOpacity;
     //! What a slot holds, as last drawn: a surface (a code background) or a rule
     struct Drawn
     {
@@ -941,6 +970,8 @@ public:
     inline static const std::string_view name="MarkdownTable";
 
 private:
+    //! the levels its slots were drawn at
+    DrawnOpacity m_drawnOpacity;
     struct Drawn
     {
         bool valid=false;
@@ -1068,6 +1099,8 @@ public:
     static constexpr double AreaReach=4096.0;
 
 private:
+    //! the levels its slots were drawn at
+    DrawnOpacity m_drawnOpacity;
     //! What a slot holds, as last drawn: a rect, a segment or a trapezoid.
     struct Slot
     {
@@ -1198,6 +1231,8 @@ public:
     static tokyonight::Surface barSurface(const controls::TimelineBar &bar);
 
 private:
+    //! the levels its slots were drawn at
+    DrawnOpacity m_drawnOpacity;
     //! What a slot holds, as last drawn: a rect or a line.
     struct Slot
     {
@@ -1266,6 +1301,8 @@ public:
     static size_t slotsFor(controls::LinkStyle style);
 
 private:
+    //! the levels its slots were drawn at
+    DrawnOpacity m_drawnOpacity;
     //! What a segment's slot holds, as last drawn.
     struct Segment
     {
@@ -1531,6 +1568,8 @@ public:
     inline static const std::string_view name="NavigationRail";
 
 private:
+    //! the levels its slots were drawn at
+    DrawnOpacity m_drawnOpacity;
     tokyonight::Surface m_surface{};
     bool m_surfaceCurrent=false;
 };

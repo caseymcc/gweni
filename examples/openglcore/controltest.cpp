@@ -1933,6 +1933,7 @@ static void printUsage(std::ostream &out)
          "                     | virtual-list-variable\n"
          "                     | data-table-virtual | tree-table | tree-table-live\n"
          "                     | hide-show\n"
+         "                     | opacity-round-trip\n"
          "                     | demo-labels\n"
          "                     | plot-histogram | plot-lines | chart | timeline\n"
          "                     | inspector\n"
@@ -1966,6 +1967,8 @@ static void printUsage(std::ostream &out)
          "                     changing no pixel but the thumb's),\n"
          "                     hide-show whether a demo hidden and shown again, and\n"
          "                     one built hidden and shown, are the one built shown,\n"
+         "                     opacity-round-trip whether a demo set to 0.5 is one\n"
+         "                     built at 0.5 and set back to 1 the one before,\n"
          "                     demo-labels whether every demo-list label fits,\n"
          "                     plot-histogram whether a changed sample wrote its\n"
          "                     bar's slot alone, plot-lines whether it wrote the\n"
@@ -2999,7 +3002,8 @@ enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typ
     ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, TreeTable, TreeTableLive, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
     ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented, SplitButton,
-    RangeSlider, Stepper, CodeView, RichText, Markdown, SearchCombo, Reorder, Calendar, DateTime, Translucency };
+    RangeSlider, Stepper, CodeView, RichText, Markdown, SearchCombo, Reorder, Calendar, DateTime, Translucency,
+    OpacityRoundTrip };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -3023,6 +3027,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "tree-table") scenario=Scenario::TreeTable;
     else if(name == "tree-table-live") scenario=Scenario::TreeTableLive;
     else if(name == "hide-show") scenario=Scenario::HideShow;
+    else if(name == "opacity-round-trip") scenario=Scenario::OpacityRoundTrip;
     else if(name == "demo-labels") scenario=Scenario::DemoLabels;
     else if(name == "plot-histogram") scenario=Scenario::PlotHistogram;
     else if(name == "plot-lines") scenario=Scenario::PlotLines;
@@ -21875,6 +21880,142 @@ static bool runHideShowScenario(Session &s, const std::string &controlName,
 }
 
 //-----------------------------------------------------------------------------
+// --scenario opacity-round-trip: a demo set to an opacity at run time, and
+// built at it
+//
+// Every skin Control that keeps what it drew and redraws only the slots whose
+// own look changed (a Chart's series, a Timeline's bars, a plot's segments)
+// must draw again when its control's effective opacity changes, or a demo set
+// to 0.5 once it has settled keeps slots at 1 that one built at 0.5 does not
+// (docs/architecture.md -> "Control opacity"). The demo is built into a host
+// page, as for hide-show.
+//-----------------------------------------------------------------------------
+
+// The host's opacity set (or cleared, `level` < 0) and one frame rendered, its
+// update phase inspected before it renders: nothing outside the host has a
+// change pending and the update lays nothing out.
+static void setHostOpacity(Session &s, gweni::controls::Base *host, float level,
+    InteractionChecks &checks, const std::string &name)
+{
+    if(level < 0.0f)
+        host->clearOpacity();
+    else
+        host->setOpacity(level);
+
+    gweni::controls::resetChangeStats();
+    verifyIdleBefore(s);
+    s.canvas->updateCanvas();
+
+    std::vector<std::string> strays;
+    pendingOutside(s.canvas, {host}, strays);
+
+    const int passes=s.canvas->getLayoutStats().passes;
+
+    s.renderer->clearTarget(s.background);
+    s.canvas->renderCanvas();
+    verifyIdleAfter(s);
+    if(s.stats)
+        printFrameStats(s.frame, s.label, gweni::controls::getChangeStats(),
+            s.renderer->getFrameStats(), s.canvas->getLayoutStats(),
+            s.canvas->getUpdateStats());
+    checkOnePass(s, std::to_string(s.frame));
+    ++s.frame;
+
+    std::string strayList;
+    for(const std::string &stray : strays)
+        strayList+=" "+stray;
+    checks.check(name+"_local", strays.empty(),
+        "controls outside the host had a change pending:"+strayList);
+    checks.check(name+"_no_layout", passes == 0,
+        "the opacity change ran "+std::to_string(passes)+" layout passes");
+}
+
+// A: the demo built at 1 and settled. B: its host set to 0.5. C: the host's
+// opacity cleared. D: on a fresh canvas, the demo built into a host at 0.5
+// already. C has to be A byte for byte (listing, renderer mirror id by id,
+// pixels), and B has to be D (listing, pixels, the mirror slot by owner).
+static bool runOpacityRoundTripScenario(Session &s, const std::string &controlName,
+    const std::string &shotDir, bool &passed)
+{
+    const std::string fullShot=shotDir+"/opacity-01-full.png";
+    const std::string halfShot=shotDir+"/opacity-02-half.png";
+    const std::string againShot=shotDir+"/opacity-03-full-again.png";
+    const std::string builtShot=shotDir+"/opacity-04-built-half.png";
+
+    ResizeState fullState, halfState, againState, builtState;
+    InteractionChecks checks;
+    checks.scenario="opacity-round-trip control="+controlName;
+
+    // the shots are compared with each other: an animation stands still
+    s.freezeClock=true;
+
+    // A, on a new canvas as D is, so both hand out their ids alike
+    replaceCanvas(s);
+    gweni::controls::Base *host=addHost(s, controlName, false);
+    renderFrames(s, s.frames);
+    gweni::controls::Base *control=addHostedControl(host, controlName);
+    if(!control) return false;
+    renderFrames(s, s.frames);
+    if(!shootState(s, fullShot, fullState)) return false;
+    const size_t primitiveIds=livePrimitiveIds();
+    const size_t textIds=liveTextIds();
+
+    // B
+    setHostOpacity(s, host, 0.5f, checks, "half");
+    renderFrames(s, s.frames);
+    checkSteady(s, checks, "half_settles");
+    if(!shootState(s, halfShot, halfState)) return false;
+    std::map<std::string, std::vector<uint8_t>> halfSlots;
+    collectMirrorByOwner(s.canvas, s.canvas->getTypeName(), halfState.mirror, halfSlots);
+
+    // C
+    setHostOpacity(s, host, -1.0f, checks, "full");
+    renderFrames(s, s.frames);
+    checkSteady(s, checks, "full_settles");
+    if(!shootState(s, againShot, againState)) return false;
+    checks.check("ids_kept", livePrimitiveIds() == primitiveIds && liveTextIds() == textIds,
+        "live primitive ids "+std::to_string(primitiveIds)+" -> "+std::to_string(livePrimitiveIds())
+        +", text ids "+std::to_string(textIds)+" -> "+std::to_string(liveTextIds()));
+    dropControl(s, host);
+
+    // D
+    replaceCanvas(s);
+    host=addHost(s, controlName, false);
+    host->setOpacity(0.5f);
+    renderFrames(s, s.frames);
+    control=addHostedControl(host, controlName);
+    if(!control) return false;
+    renderFrames(s, s.frames);
+    checkSteady(s, checks, "built_half_settles");
+    if(!shootState(s, builtShot, builtState)) return false;
+    bool builtHalf=mirrorsMatchByOwner(s, halfState, halfSlots, builtState);
+    dropControl(s, host);
+
+    // Every comparison runs, so a failing run names all that differs.
+    bool roundTrip=listingsMatch(fullState, againState);
+    roundTrip=mirrorsMatch(fullState, againState) && roundTrip;
+    roundTrip=pixelsMatch(fullState, againState) && roundTrip;
+    checks.check("round_trip", roundTrip, "the demo set back to 1 is not the demo before (above)");
+
+    builtHalf=listingsMatch(halfState, builtState) && builtHalf;
+    builtHalf=pixelsMatch(halfState, builtState) && builtHalf;
+    checks.check("built_half", builtHalf,
+        "the demo set to 0.5 differs from one built at 0.5 (above)");
+
+    // and the level reached the pixels at all
+    checks.check("half_differs", fullState.pixels != halfState.pixels,
+        "the demo at 0.5 draws as at 1");
+
+    std::cout<<"opacity-round-trip control="<<controlName;
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second ? "yes" : "no");
+    std::cout<<"\n";
+
+    passed=checks.allPassed();
+    return true;
+}
+
+//-----------------------------------------------------------------------------
 // --check-teardown: teardown identity
 //
 // In a retained renderer a control's primitives are a persistent slot in the
@@ -23333,6 +23474,15 @@ int main(int argc, char *argv[])
             ok=runHideShowScenario(session, which, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a hide and show did not give the demo back: a failing assertion
+            break;
+        }
+
+        case Scenario::OpacityRoundTrip:
+        {
+            bool passed=false;
+            ok=runOpacityRoundTripScenario(session, which, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a renderer kept what it drew at the old level
             break;
         }
 

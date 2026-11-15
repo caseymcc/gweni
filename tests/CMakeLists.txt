@@ -177,7 +177,7 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # The modes that build a control again in the same process and compare the
-    # two (resize, scale, hide-show) leave InspectorDemo and StatsOverlayDemo
+    # two (resize, scale, hide-show, opacity) leave InspectorDemo and StatsOverlayDemo
     # out: the inspector shows control ids, which are process-wide and never
     # reused, so the second build's captions are other strings, and the stats
     # overlay shows the process's live ids and the frames before it, which the
@@ -232,6 +232,21 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
             -DSOURCE_DIR=${GWENI_SOURCE_DIR}
             -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/hide_show_each@VARIANT@
             -DMODE=hide-show
+            -DSKIP=InspectorDemo,StatsOverlayDemo
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/eachControl.cmake
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # every control in --list (Demo included), one process each, built into a
+    # host page: the host set to opacity 0.5 once settled has to be the demo
+    # built into a host at 0.5 (listing, renderer mirror slot by owner,
+    # pixels), so every skin Control that redraws only what changed draws again
+    # for a new level, and the host cleared has to give the first frame back
+    gweni_whole_app_test(controltest_opacity_each 600
+        COMMAND ${CMAKE_COMMAND}
+            -DCONTROLTEST=$<TARGET_FILE:ControlTest>
+            -DSOURCE_DIR=${GWENI_SOURCE_DIR}
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/opacity_each@VARIANT@
+            -DMODE=opacity
             -DSKIP=InspectorDemo,StatsOverlayDemo
             -P ${CMAKE_CURRENT_SOURCE_DIR}/eachControl.cmake
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
