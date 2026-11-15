@@ -4532,8 +4532,12 @@ two programs and the draws. What follows describes both together:
     another date under the mouse, so a cell takes a double-click only while it shows the
     date and view its first press hit (`CalendarCell::onMouseDoubleClickLeft`): a quick
     second press on Apr, on a year or on a day of the next month does nothing, instead of
-    choosing the date the first click put there. `setView()` shows the cursor's month
-    (year) in the view it sets. Zooming out and back in gives the month's frame back,
+    choosing the date the first click put there. The month and year kept
+    (`getDisplayedMonth/Year`) are the cursor's in every view (`cursorMoved`), and a
+    zoomed-out view fits the cursor from them, so `setView()` shows them whatever set
+    them last, a zoomed-out view's keys or `setDisplayedMonth`, in either order; a
+    press moves the cursor to its cell, and one let go elsewhere puts it back
+    (`fitCursorBack`). Zooming out and back in gives the month's frame back,
     byte for byte.
   `tests/unit/calendar.cpp` pins the grid for every first weekday, the month change,
   the limits and the filter, every key, both selections and the views headless;

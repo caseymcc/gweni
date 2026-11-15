@@ -90,6 +90,8 @@ void CalendarCell::onMouseClickLeft(int x, int y, bool down)
         m_calendar->m_pressedView=m_calendar->m_view;
     }
     Button::onMouseClickLeft(x, y, down);
+    if(!down && m_calendar)
+        m_calendar->fitCursorBack();
 }
 
 void CalendarCell::onMouseDoubleClickLeft(int x, int y)
@@ -247,8 +249,8 @@ void Calendar::fitCursor()
         break;
     case View::Year:
     {
-        // the cursor's month in the year shown, else the nearest enabled one
-        int month=m_cursor.month;
+        // the month kept for the year shown, else the nearest enabled one
+        int month=m_month;
 
         for(int offset=0; offset < 12; ++offset)
         {
@@ -263,16 +265,16 @@ void Calendar::fitCursor()
                 break;
             }
         }
+        m_month=month;
         m_cursor=clampedDay(m_year, month);
         break;
     }
     case View::Decade:
     {
-        // the cursor's year if the decade shows it, else the year shown; then
-        // the nearest enabled year of the decade
+        // the year kept for the decade shown, else the nearest enabled one
         const int first=decadeFirstYear()+1;
         const int last=first+9;
-        int year=((m_cursor.year >= first) && (m_cursor.year <= last))?m_cursor.year:m_year;
+        int year=m_year;
 
         for(int offset=0; offset < 10; ++offset)
         {
@@ -287,7 +289,8 @@ void Calendar::fitCursor()
                 break;
             }
         }
-        m_cursor=clampedDay(year, m_cursor.month);
+        m_year=year;
+        m_cursor=clampedDay(year, m_month);
         break;
     }
     }
@@ -419,12 +422,9 @@ void Calendar::setView(View view)
     if(view == m_view)
         return;
 
+    // the month and year kept are the cursor's (cursorMoved), so the view
+    // shows what a zoomed-out view's keys reached, whatever set them last
     m_view=view;
-    // the view shows what the cursor is in: the keys of a zoomed-out view
-    // move the cursor past the month kept for it
-    m_year=m_cursor.year;
-    if(view == View::Month)
-        m_month=m_cursor.month;
     fitCursor();
     m_preview.reset();
     viewChanged();
@@ -467,7 +467,7 @@ void Calendar::zoomInOn(const Date &date)
             return;
         m_view=View::Year;
         m_year=date.year;
-        m_cursor=Date(date.year, m_cursor.month, std::min(m_cursor.day, Date::daysInMonth(date.year, m_cursor.month)));
+        m_cursor=Date(date.year, m_month, std::min(m_cursor.day, Date::daysInMonth(date.year, m_month)));
     }
     else if(m_view == View::Year)
     {
@@ -863,11 +863,12 @@ void Calendar::cursorMoved()
     if((m_selectionMode == SelectionMode::Range) && m_rangeStart && !m_rangeEnd && month)
         m_preview=m_cursor;
 
+    // the month and year kept follow the cursor in every view, so a zoom (in
+    // or out, setView) shows the month and year the keys reached
+    m_year=m_cursor.year;
+    m_month=m_cursor.month;
     if(!shown)
     {
-        m_year=m_cursor.year;
-        if(month)
-            m_month=m_cursor.month;
         displayedMonthChanged();
         return;
     }
@@ -1153,6 +1154,16 @@ void Calendar::onCellDown(event::Info info)
         focus();
 }
 
+// A press moves the cursor to its cell (onCellDown); one let go off it, or
+// on a cell that chose nothing, puts the cursor back in what is shown.
+void Calendar::fitCursorBack()
+{
+    if((m_cursor.year == m_year) && (m_cursor.month == m_month))
+        return;
+    fitCursor();
+    rebind();
+}
+
 void Calendar::cursorToCell(const internal::CalendarCell *cell)
 {
     const Date &date=cell->getDate();
@@ -1161,7 +1172,7 @@ void Calendar::cursorToCell(const internal::CalendarCell *cell)
         m_cursor=date;
     else
     {
-        const int month=(m_view == View::Year)?date.month:m_cursor.month;
+        const int month=(m_view == View::Year)?date.month:m_month;
 
         m_cursor=Date(date.year, month, std::min(m_cursor.day, Date::daysInMonth(date.year, month)));
     }

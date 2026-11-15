@@ -68,7 +68,10 @@
  *  clicked) hit-tests the hover again, so the cell under the resting mouse,
  *  not the one pressed, is hovered. setView() shows the cursor's month (year)
  *  in the view it sets, so a cursor the zoomed-out view's keys moved past the
- *  month kept for it is ringed there and the next arrow moves on from it.
+ *  month kept for it is ringed there and the next arrow moves on from it; a
+ *  press let go off its cell puts the cursor back in what is shown, so the
+ *  title then zooms out to the year shown, and in the year view a month set
+ *  and the month view shown is that month in either order.
  *  A double-click whose first click changed what the cells show (a month or
  *  a year zoomed into, a day of the next month) acts once: its second press
  *  lands on a cell showing another date and does nothing, while one on a
@@ -1347,4 +1350,59 @@ TEST_CASE("Calendar: a double-click whose first click changed the view acts once
     scene.doubleClick(cellOf(calendar, Date(2026, 12, 16)));
     CHECK(events.selections == 2);
     CHECK(calendar->getRange().second.value_or(Date()).toIso() == "2026-12-16");
+}
+
+TEST_CASE("Calendar: what setView shows depends on neither a press let go elsewhere nor the order of calls")
+{
+    Scene scene;
+    Calendar *calendar=scene.calendar(2026, 1);
+
+    // the reviewer's case: a press on Dec 29 2025, let go off the calendar,
+    // puts the cursor back in January 2026, and the title shows 2026
+    CalendarCell *cell=cellOf(calendar, Date(2025, 12, 29));
+    REQUIRE(cell);
+    scene.hover(cell);
+    input::onMouseClicked(scene.canvas, 0, true);
+    scene.frame();
+    REQUIRE(calendar->getCursor().toIso() == "2025-12-29");
+    scene.canvas->inputMouseMoved(600, 470, 0, 0);
+    input::onMouseClicked(scene.canvas, 0, false);
+    scene.frame();
+    CHECK(calendar->getDisplayedYear() == 2026);
+    CHECK(calendar->getDisplayedMonth() == 1);
+    CHECK(calendar->getCursor().year == 2026);
+    CHECK(calendar->getCursor().month == 1);
+    CHECK_FALSE(calendar->getSelectedDate().has_value());
+    scene.click(calendar->getTitle());
+    REQUIRE(calendar->getView() == Calendar::View::Year);
+    CHECK(calendar->getDisplayedYear() == 2026);
+    CHECK(cursorCells(calendar) == 1);
+    CHECK(calendar->getCell(0)->getLook().cursor);
+
+    // the same in the year view: a press on Apr let go elsewhere leaves the
+    // cursor on January
+    scene.hover(calendar->getCell(3));
+    input::onMouseClicked(scene.canvas, 0, true);
+    scene.frame();
+    scene.canvas->inputMouseMoved(600, 470, 0, 0);
+    input::onMouseClicked(scene.canvas, 0, false);
+    scene.frame();
+    CHECK(calendar->getView() == Calendar::View::Year);
+    CHECK(calendar->getCursor().month == 1);
+    calendar->setView(Calendar::View::Month);
+    CHECK(calendar->getDisplayedMonth() == 1);
+
+    // the reviewer's probe: in the year view a month set and then the month
+    // view shown is that month, as the other order gives
+    calendar->setView(Calendar::View::Year);
+    calendar->setDisplayedMonth(2030, 2);
+    calendar->setView(Calendar::View::Month);
+    CHECK(calendar->getDisplayedYear() == 2030);
+    CHECK(calendar->getDisplayedMonth() == 2);
+    CHECK(calendar->getCursor().month == 2);
+
+    calendar->setView(Calendar::View::Year);
+    calendar->setView(Calendar::View::Month);
+    calendar->setDisplayedMonth(2030, 2);
+    CHECK(calendar->getDisplayedMonth() == 2);
 }

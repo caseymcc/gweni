@@ -239,7 +239,8 @@ public:
     bool canShowPrevious() const;
     bool canShowNext() const;
 
-    //! The view; setView shows the cursor's month (year, decade) in it and fires nothing.
+    //! The view; setView shows the month and year kept (getDisplayedMonth/Year, which
+    //! follow the cursor and setDisplayedMonth) in it, fits the cursor and fires nothing.
     void setView(View view);
     View getView() const { return m_view; }
     //! The title's press: Month to Year to Decade (nothing in Decade).
@@ -404,11 +405,14 @@ protected:
     //! Keeps the cursor on what the view shows and enables: an enabled day of the month
     //! (enabledDayIn), the nearest enabled month of the year, the nearest enabled year of
     //! the decade. Called when the month shown, the limits or the filter change, and when
-    //! the view changes (setView first showing the cursor's month or year, a zoom in the
-    //! clicked one).
+    //! the view changes (setView showing the month and year kept, a zoom in the clicked one).
     void fitCursor();
-    //! The cursor moved: shows its month (year, decade) and rebinds.
+    //! The cursor moved: shows its month (year, decade) and rebinds. The month and year
+    //! kept (getDisplayedMonth/Year) follow the cursor in every view.
     void cursorMoved();
+    //! A cell's release: a cursor its press left outside the month (year) kept is fitted
+    //! back into it.
+    void fitCursorBack();
     //! The cursor to what a pressed cell shows: its day, or its month or year
     //! with the cursor's day kept.
     void cursorToCell(const internal::CalendarCell *cell);
