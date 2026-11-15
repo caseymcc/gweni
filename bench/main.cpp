@@ -103,7 +103,7 @@ const char *const g_counterNames[]=
     "visited", "render_carried", "controls_changed", "created", "visibility", "geometry", "background", "text",
     "prim_slots_written", "text_slots_written", "upload_calls", "upload_bytes", "mirror_bytes",
     "draw_calls", "primitive_slots_drawn", "primitive_ranges", "primitive_slots_culled", "text_runs_culled", "text_draws", "atlas_upload_calls", "atlas_upload_bytes", "buffer_regrows",
-    "image_regrows",
+    "image_regrows", "sorted_slots", "sorted_runs", "sorted_groups", "sorted_builds", "overlap_visited",
     "layout_passes", "layout_capped", "render_layout", "layout_visited", "layout_children_scanned",
     "measure_calls", "measure_calls_input", "measure_calls_update", "measure_calls_render",
     "invalidations", "invalidations_input", "invalidations_update", "invalidations_render", "z_visited", "z_changed", "anims_run", "hit_tests", "prim_ids", "text_ids",
@@ -143,6 +143,7 @@ void collectCounters(FrameRecord &record, const bench::PhaseTotals &phases,
         gpu.primitiveSlotsWritten, gpu.textSlotsWritten, gpu.uploadCalls, gpu.uploadBytes,
         gpu.mirrorBytes, gpu.drawCalls, gpu.primitiveSlotsDrawn, gpu.primitiveRanges, gpu.primitiveSlotsCulled, gpu.textRunsCulled, gpu.textDraws, gpu.atlasUploadCalls, gpu.atlasUploadBytes,
         gpu.bufferRegrows, gpu.imagePageRegrows,
+        gpu.sortedSlots, gpu.sortedRuns, gpu.sortedGroups, gpu.sortedScheduleBuilds, gpu.overlapVisited,
         size_t(layout.passes), layout.capped ? 1u : 0u, layout.renderLayout ? 1u : 0u,
         layout.visited, layout.childrenScanned, measures, phases.measures[size_t(Phase::Input)],
         phases.measures[size_t(Phase::Update)], phases.measures[size_t(Phase::Render)],
@@ -480,6 +481,13 @@ void printUsage()
         "             primitive_slots_culled and text_runs_culled sizes, not work: the\n"
         "             shown slots and text runs whose last draw lay wholly outside its\n"
         "             clip box, left out of the draws (--clip-cull)\n"
+        "  sorted_slots sorted_runs sorted_groups sorted_builds overlap_visited\n"
+        "             SlotRenderer::FrameStats of the sorted pass: the primitive slots and\n"
+        "             text runs it drew (translucent slots, the opaque ones in front of\n"
+        "             one they overlap, the runs behind one), the groups it drew them\n"
+        "             in, whether the frame built its schedule again, and the overlap\n"
+        "             index's items that build's queries visited; 0 with no translucent\n"
+        "             slot\n"
         "  layout_passes layout_capped render_layout\n"
         "             controls::LayoutStats: update-phase layout passes, whether they hit\n"
         "             the cap, whether the render phase laid out again\n"

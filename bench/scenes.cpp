@@ -30,6 +30,7 @@
 #include <gweni/controls/windowControl.h>
 #include <gweni/platforms/inputEvent.h>
 #include <gweni/skin.h>
+#include <gweni/skins/textured/tokyoNight.h>
 
 #include <algorithm>
 #include <cmath>
@@ -607,6 +608,38 @@ private:
     controls::WindowControl *m_window=nullptr;
     Point m_mouse=Point(-1, -1);
     bool m_pressed=false;
+};
+
+//-----------------------------------------------------------------------------
+// translucent-drag: drag's scene with the Window's surfaces (focused and not)
+// at alpha 0xb0 for the scene's life, so the renderer's sorted pass draws the
+// Window over the Labels it covers, which show through it. Each frame moves the
+// Window, so the pass's set and schedule are built again every frame from the
+// cells the Window covers: what it overlaps, the same at any N.
+//-----------------------------------------------------------------------------
+class TranslucentDragScene: public DragScene
+{
+public:
+    TranslucentDragScene()
+        : m_window(skin::textured::tokyonight::Window)
+        , m_windowInactive(skin::textured::tokyonight::WindowInact)
+    {
+        for(skin::textured::tokyonight::Surface *surface:
+            {&skin::textured::tokyonight::Window, &skin::textured::tokyonight::WindowInact})
+        {
+            surface->top.a=0xb0;
+            surface->bottom.a=0xb0;
+        }
+    }
+    ~TranslucentDragScene() override
+    {
+        skin::textured::tokyonight::Window=m_window;
+        skin::textured::tokyonight::WindowInact=m_windowInactive;
+    }
+
+private:
+    const skin::textured::tokyonight::Surface m_window;
+    const skin::textured::tokyonight::Surface m_windowInactive;
 };
 
 //-----------------------------------------------------------------------------
@@ -1794,6 +1827,9 @@ const std::vector<SceneInfo> &scenes()
         {"drag", "drag a Window of 40 controls by its title bar over N Labels",
             true, 1000, 3, 20, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new DragScene()); }},
+        {"translucent-drag", "drag a translucent Window of 40 controls by its title bar over N Labels",
+            true, 1000, 3, 20, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new TranslucentDragScene()); }},
         {"tree-toggle", "collapse and expand a 50-leaf node near the top of an N-node TreeControl",
             true, 1000, 3, 20, Scaling::Linear,
             []{ return std::unique_ptr<Scene>(new TreeToggleScene()); }},

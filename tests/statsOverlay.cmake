@@ -26,8 +26,10 @@
 #     stepping so the overlay refreshes, are the same with --stats-overlay as
 #     without, but for the renderer's whole-frame counts, which hold its slots,
 #     uploads and draws (prim_slots_written, text_slots_written, upload_*,
-#     mirror_bytes, buffer_regrows, atlas_upload_*, draw_calls, prim_ids), and
-#     excluded_changed, which counts its changed controls by design.
+#     mirror_bytes, buffer_regrows, atlas_upload_*, draw_calls, prim_ids, and
+#     the sorted pass's sorted_* and overlap_visited, which its translucent
+#     panel starts), and excluded_changed, which counts its changed controls by
+#     design.
 #
 
 foreach(var CONTROLTEST SOURCE_DIR SCRATCH_DIR)
@@ -69,7 +71,8 @@ run(with ${stats} --stats-overlay)
 
 set(renderer_keys "prim_slots_written|text_slots_written|upload_calls|upload_bytes|mirror_bytes"
     "|buffer_regrows|atlas_upload_calls|atlas_upload_bytes|draw_calls|prim_ids|excluded_changed"
-    "|primitive_slots_culled|text_runs_culled")
+    "|primitive_slots_culled|text_runs_culled"
+    "|sorted_slots|sorted_runs|sorted_groups|sorted_builds|overlap_visited")
 string(JOIN "" renderer_keys ${renderer_keys})
 
 foreach(name without with)

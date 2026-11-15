@@ -76,6 +76,13 @@
  *                       rarely); image_regrows= the image pages made
  *                       again (twice the layers) since the last frame, an
  *                       image having found no layer free;
+ *                       sorted_slots= and sorted_runs= the slots and text
+ *                       runs the renderer's sorted pass drew (translucent
+ *                       slots, the opaque ones in front of one they overlap,
+ *                       the runs behind one), sorted_groups= the groups it
+ *                       drew them in, sorted_builds= 1 when the frame built
+ *                       its schedule again, overlap_visited= the overlap
+ *                       index's items that build's queries visited;
  *                       prim_ids= counts the live primitive ids (handed out
  *                       and not released) after the frame; the id bank is
  *                       process-wide, so it covers every canvas;
@@ -1972,7 +1979,8 @@ static void printFrameStats(int frame, const std::string &control,
         " atlas_upload_calls=%zu atlas_upload_bytes=%zu buffer_regrows=%zu image_regrows=%zu"
         " layout_passes=%d redirtied_by=%s render_layout=%d layout_requests=%d requested_by=%s"
         " layout_visited=%zu layout_children_scanned=%zu measure_calls=%zu invalidations=%zu"
-        " visited=%zu render_carried=%zu z_visited=%zu anims_run=%zu prim_ids=%zu excluded_changed=%zu\n",
+        " visited=%zu render_carried=%zu z_visited=%zu anims_run=%zu prim_ids=%zu excluded_changed=%zu"
+        " sorted_slots=%zu sorted_runs=%zu sorted_groups=%zu sorted_builds=%zu overlap_visited=%zu\n",
         frame, control.c_str(),
         changes.controls, changes.created, changes.visibility,
         changes.geometry, changes.background, changes.text,
@@ -1983,7 +1991,8 @@ static void printFrameStats(int frame, const std::string &control,
         layout.requests, requestedBy(layout).c_str(),
         layout.visited, layout.childrenScanned, measures, invalidations,
         changes.visited, changes.renderCarried, update.zVisited, update.animsRun,
-        gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount(), changes.excluded);
+        gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount(), changes.excluded,
+        gpu.sortedSlots, gpu.sortedRuns, gpu.sortedGroups, gpu.sortedScheduleBuilds, gpu.overlapVisited);
     std::fflush(stdout);
 }
 
