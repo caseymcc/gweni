@@ -15,7 +15,8 @@
  *  drag: the part keeps the mouse to its release. So do the press that
  *  focuses a select-all TextBox, a TextBox's double-click and the press that
  *  opens a filterable SearchComboBox's list from its field, keeping the text
- *  selected through the move and the list open. A press on the column's
+ *  selected through the move and the list open, and each lets the mouse go
+ *  at its release, a select-all latch still armed or not. A press on the column's
  *  scroll bar starts no drag. The card dragged is the one pressed, keyed at
  *  the press: a card added above it or a scroll between the press and the
  *  5-unit move drags it, not the card then under the press point, and one
@@ -465,10 +466,13 @@ TEST_CASE("CardReorder: a press that a part of the card takes for its own drag s
         scene.frame();
         scene.frame();
 
-        scene.clock+=5.0f;
+        // a clock no other subcase's press is at, so the first press is a
+        // single click whatever ran before
+        scene.clock+=7.0f;
         const Point at=box->localPosToCanvas(Point(4, box->getHeight()/2));
         scene.press(at);
         scene.release();
+        CHECK(box->getSelection() == "");
         scene.clock-=0.9f;  // press() steps a second: the second one 0.1 s on
         scene.press(at);
         CHECK(box->getSelection() == "select me");
@@ -516,6 +520,75 @@ TEST_CASE("CardReorder: a press that a part of the card takes for its own drag s
         CHECK(box->isListOpen());
         CHECK(KeyboardFocus == field);
         CHECK(field->getSelection() == "Alpha");
+        CHECK(scene.todo.drops.empty());
+    }
+
+    // A held press is let go by its release even where TextBox's select-all
+    // latch is still armed: a double-click on a box whose select-all was
+    // armed again, and the opening press of a field set to select all on
+    // focus, hold without consuming it. The next press on another card is
+    // that card's, a click toggling it.
+    SUBCASE("a double-click with select-all armed lets the mouse go at its release")
+    {
+        Scene scene;
+        controls::Button *card=scene.todo.cards[1];
+        auto *box=card->newChild<controls::TextBox>();
+        box->setDock(DockPosition::Center);
+        box->setText("select me");
+        scene.frame();
+        scene.frame();
+
+        scene.clock+=9.0f;
+        const Point at=box->localPosToCanvas(Point(4, box->getHeight()/2));
+        scene.press(at);
+        scene.release();
+        CHECK(box->getSelection() == "");
+        box->setSelectAllOnFocus(true);
+        scene.clock-=0.9f;  // the second press 0.1 s on: a double-click
+        scene.press(at);
+        CHECK(MouseFocus == box);
+        scene.release();
+        CHECK(MouseFocus == nullptr);
+        CHECK(box->getSelection() == "select me");
+
+        scene.clock+=5.0f;
+        controls::Button *other=scene.todo.cards[0];
+        scene.press(Scene::on(other, 10));
+        scene.release();
+        CHECK(other->getToggleState());
+        CHECK(scene.todo.drops.empty());
+    }
+
+    SUBCASE("a select-all field's opening press lets the mouse go at its release")
+    {
+        Scene scene;
+        controls::Button *card=scene.todo.cards[1];
+        auto *box=card->newChild<controls::SearchComboBox>();
+        box->setDock(DockPosition::Center);
+        box->addOption("Alpha");
+        box->addOption("Beta");
+        box->setFilterable(true);
+        box->setSelectedIndex(0);
+        scene.frame();
+        scene.frame();
+
+        controls::internal::SearchComboBoxField *field=box->getField();
+        REQUIRE(field);
+        field->setSelectAllOnFocus(true);
+        scene.clock+=11.0f;
+        const Point at=field->localPosToCanvas(Point(6, field->getHeight()/2));
+        scene.press(at);
+        REQUIRE(box->isListOpen());
+        CHECK(MouseFocus == field);
+        scene.release();
+        CHECK(MouseFocus == nullptr);
+        CHECK(field->getSelection() == "Alpha");
+
+        scene.clock+=5.0f;
+        controls::Button *other=scene.todo.cards[0];
+        scene.press(Scene::on(other, 10));
+        scene.release();
+        CHECK(other->getToggleState());
         CHECK(scene.todo.drops.empty());
     }
 }

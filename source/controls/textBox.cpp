@@ -965,6 +965,16 @@ void TextBox::onMouseClickLeft(int x, int y, bool down)
     if(down && onMessageLine(x, y))
         return;
 
+    // a held press is let go by its release whatever m_selectAll says: a
+    // double-click or a SearchComboBoxField's opening press holds without
+    // consuming that latch
+    if(!down && m_pressKeepsSelection && gweni::MouseFocus == this)
+    {
+        gweni::MouseFocus=nullptr;
+        m_pressKeepsSelection=false;
+        return;
+    }
+
     if(m_selectAll)
     {
         onSelectAll(this);
