@@ -75,7 +75,10 @@
  *  A double-click whose first click changed what the cells show (a month or
  *  a year zoomed into, a day of the next month) acts once: its second press
  *  lands on a cell showing another date and does nothing, while one on a
- *  cell still showing the date pressed first is a click as any other.
+ *  cell still showing the date pressed first is a click as any other; the
+ *  decade's first year zooms in to a January showing the same date, and is
+ *  zoomed one level only. A held cell a key rebinds (PageDown, Space zooming
+ *  in) chooses nothing on its release.
  */
 #include "headlessFixture.h"
 
@@ -1330,6 +1333,19 @@ TEST_CASE("Calendar: a double-click whose first click changed the view acts once
     CHECK(calendar->getView() == Calendar::View::Year);
     CHECK(calendar->getDisplayedYear() == calendar->decadeFirstYear()+3);
 
+    // the decade's first cell, the year before it: its zoom-in puts its
+    // January, the same date (Jan 1 2019), under the mouse, and the second
+    // press is the year view's, not the decade's, so it zooms one level only
+    calendar->setView(Calendar::View::Month);
+    calendar->setDisplayedMonth(2026, 11);
+    scene.click(calendar->getTitle());
+    scene.click(calendar->getTitle());
+    REQUIRE(calendar->getView() == Calendar::View::Decade);
+    REQUIRE(calendar->getCell(0)->getDate().toIso() == "2019-01-01");
+    scene.doubleClick(calendar->getCell(0));
+    CHECK(calendar->getView() == Calendar::View::Year);
+    CHECK(calendar->getDisplayedYear() == 2019);
+
     // a day of the next month selects it and shows that month; the second
     // press, on the cell now showing another date, selects nothing more
     calendar->setView(Calendar::View::Month);
@@ -1405,4 +1421,60 @@ TEST_CASE("Calendar: what setView shows depends on neither a press let go elsewh
     calendar->setView(Calendar::View::Month);
     calendar->setDisplayedMonth(2030, 2);
     CHECK(calendar->getDisplayedMonth() == 2);
+}
+
+TEST_CASE("Calendar: a held cell given another date by a key chooses nothing on its release")
+{
+    Scene scene;
+    Calendar *calendar=scene.calendar(2026, 11);
+    Events events;
+
+    events.attach(calendar);
+
+    // the reviewer's case: Nov 11 held, PageDown rebinds the cell to Dec 16,
+    // and the release selects nothing
+    CalendarCell *cell=cellOf(calendar, Date(2026, 11, 11));
+    REQUIRE(cell);
+    scene.hover(cell);
+    scene.clock+=1.0f;
+    input::onMouseClicked(scene.canvas, 0, true);
+    scene.frame();
+    scene.key(keys::PageDown);
+    REQUIRE(calendar->getDisplayedMonth() == 12);
+    REQUIRE(cell->getDate().toIso() == "2026-12-16");
+    input::onMouseClicked(scene.canvas, 0, false);
+    scene.frame();
+    CHECK_FALSE(calendar->getSelectedDate().has_value());
+    CHECK(events.selections == 0);
+    CHECK(calendar->getDisplayedMonth() == 12);
+
+    // a click on it now is a click
+    scene.click(cell);
+    CHECK(calendar->getSelectedDate().value_or(Date()).toIso() == "2026-12-16");
+    CHECK(events.selections == 1);
+
+    // the year view: January held where the month view's first cell will
+    // be, Space zooms into the cursor's month (January, which the press put
+    // it on), and the release on that cell, now Dec 29 2025, chooses nothing
+    const Point at=calendar->getCell(0)->localPosToCanvas();
+    const int x=at.x+calendar->getCell(0)->getWidth()/2;
+    const int y=at.y+calendar->getCell(0)->getHeight()/2;
+
+    scene.click(calendar->getTitle());
+    REQUIRE(calendar->getView() == Calendar::View::Year);
+    scene.canvas->inputMouseMoved(x, y, 0, 0);
+    scene.frame();
+    REQUIRE(HoveredControl == calendar->getCell(0));
+    scene.clock+=1.0f;
+    input::onMouseClicked(scene.canvas, 0, true);
+    scene.frame();
+    scene.key(keys::Space);
+    REQUIRE(calendar->getView() == Calendar::View::Month);
+    REQUIRE(calendar->getDisplayedMonth() == 1);
+    REQUIRE(calendar->getCell(0)->getDate().toIso() == "2025-12-29");
+    input::onMouseClicked(scene.canvas, 0, false);
+    scene.frame();
+    CHECK(calendar->getDisplayedMonth() == 1);
+    CHECK(calendar->getSelectedDate().value_or(Date()).toIso() == "2026-12-16");
+    CHECK(events.selections == 1);
 }

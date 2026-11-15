@@ -4532,7 +4532,9 @@ two programs and the draws. What follows describes both together:
     another date under the mouse, so a cell takes a double-click only while it shows the
     date and view its first press hit (`CalendarCell::onMouseDoubleClickLeft`): a quick
     second press on Apr, on a year or on a day of the next month does nothing, instead of
-    choosing the date the first click put there. The month and year kept
+    choosing the date the first click put there; a release chooses only the date and
+    view its press hit too (`Calendar::onCellPress`), so a held cell a PageDown or a
+    zoom by Space rebinds selects nothing. The month and year kept
     (`getDisplayedMonth/Year`) are the cursor's in every view (`cursorMoved`), and a
     zoomed-out view fits the cursor from them, so `setView()` shows them whatever set
     them last, a zoomed-out view's keys or `setDisplayedMonth`, in either order; a

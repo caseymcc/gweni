@@ -1184,6 +1184,10 @@ void Calendar::onCellPress(event::Info info)
 
     if(!cell || (cell->m_calendar != this))
         return;
+    // a key that rebound the held cell (a page, a zoom in) leaves it showing
+    // a date it was not pressed on: its release chooses nothing
+    if((cell->getDate() != m_pressedDate) || (m_view != m_pressedView))
+        return;
     if(m_view == View::Month)
         chooseDate(cell->getDate());
     else
