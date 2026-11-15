@@ -20,6 +20,7 @@
 #include <gweni/skins/textured/tokyoNight.h>
 
 #include "demo/translucency.h"
+#include "demo/opacity.h"
 
 namespace gweni
 {
@@ -96,6 +97,7 @@ GWENI_DEMO_TRANSPARENT(CalendarDemo)
 GWENI_DEMO_TRANSPARENT(DateTimeDemo)
 GWENI_DEMO_TRANSPARENT(ZoomPanelDemo)
 GWENI_DEMO_TRANSPARENT(TranslucencyDemo)
+GWENI_DEMO_TRANSPARENT(OpacityDemo)
 GWENI_DEMO_TRANSPARENT(FlowDemo)
 GWENI_DEMO_TRANSPARENT(ImageGridDemo)
 GWENI_DEMO_TRANSPARENT(NodeGraphDemo)
@@ -299,6 +301,7 @@ template class ControlRegister<CalendarDemo>;
 template class ControlRegister<DateTimeDemo>;
 template class ControlRegister<ZoomPanelDemo>;
 template class ControlRegister<TranslucencyDemo>;
+template class ControlRegister<OpacityDemo>;
 template class ControlRegister<TranslucencyPanel>;
 template class ControlRegister<TranslucencyBlock>;
 template class ControlRegister<FlowDemo>;

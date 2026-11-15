@@ -14,6 +14,7 @@
 #include <gweni/controls/chart.h>
 #include <gweni/controls/checkBox.h>
 #include <gweni/controls/codeEditor.h>
+#include <gweni/controls/groupBox.h>
 #include <gweni/controls/label.h>
 #include <gweni/controls/listBox.h>
 #include <gweni/controls/logView.h>
@@ -640,6 +641,57 @@ public:
 private:
     const skin::textured::tokyonight::Surface m_window;
     const skin::textured::tokyonight::Surface m_windowInactive;
+};
+
+//-----------------------------------------------------------------------------
+// opacity-step: N Labels and, over them, a GroupBox panel of a fixed 40
+// controls (Labels and Buttons, as drag's Window holds) whose opacity
+// (Base::setOpacity) steps each frame through 0.3 .. 0.9, never 1, so every
+// frame draws the panel's 41 controls again at a new level and the sorted
+// pass draws the panel over the Labels under it: what changes is the panel,
+// the same at any N, and nothing is laid out.
+//-----------------------------------------------------------------------------
+class OpacityStepScene: public Scene
+{
+public:
+    void build(SceneContext &ctx) override
+    {
+        labelGrid(ctx.canvas, ctx.n, 10, 10, (ctx.size.x-20)/100, "L");
+
+        m_panel=ctx.canvas->newChild<controls::GroupBox>();
+        m_panel->setText("Panel");
+        m_panel->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+        place(m_panel, 200, 150, 360, 560);
+
+        for(int i=0; i<40; ++i)
+        {
+            const Rect cell((i%2)*170+4, (i/2)*26+4, 160, 22);
+            if(i%4 < 2)
+            {
+                controls::Label *label=m_panel->newChild<controls::Label>();
+                label->setText(format("Inside %02d", i));
+                label->setBounds(cell);
+            }
+            else
+            {
+                controls::Button *button=m_panel->newChild<controls::Button>();
+                button->setText(format("Button %02d", i));
+                button->setBounds(cell);
+            }
+        }
+    }
+
+    void step(SceneContext &, int frame) override
+    {
+        // the warm-up frames too, so the first measured frame is a step
+        // like every other
+        const int at=(frame+64)%7;
+
+        m_panel->setOpacity(0.3f+0.1f*at, 0.9f-0.1f*at);
+    }
+
+private:
+    controls::GroupBox *m_panel=nullptr;
 };
 
 //-----------------------------------------------------------------------------
@@ -1889,6 +1941,9 @@ const std::vector<SceneInfo> &scenes()
         {"translucent-drag", "drag a translucent Window of 40 controls by its title bar over N Labels",
             true, 1000, 3, 20, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new TranslucentDragScene()); }},
+        {"opacity-step", "step the opacity of a 40-control panel over N Labels per frame",
+            true, 1000, 3, 20, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new OpacityStepScene()); }},
         {"tree-toggle", "collapse and expand a 50-leaf node near the top of an N-node TreeControl",
             true, 1000, 3, 20, Scaling::Linear,
             []{ return std::unique_ptr<Scene>(new TreeToggleScene()); }},

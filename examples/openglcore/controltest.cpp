@@ -1718,6 +1718,8 @@
 #include <demo/vectorField.h>
 #include <demo/zoomPanel.h>
 #include <demo/translucency.h>
+#include <demo/opacity.h>
+#include <gweni/controls/horizontalSlider.h>
 #include <demo/flow.h>
 #include <demo/board.h>
 #include <demo/reorder.h>
@@ -1842,7 +1844,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
     X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo) X(InspectorDemo) X(ThemeEditorDemo) \
-    X(StatsOverlayDemo) X(ZoomPanelDemo) X(TranslucencyDemo) X(NodeGraphDemo) X(FlowDemo) X(BoardDemo) X(ImageGridDemo) X(RichTextDemo) X(MarkdownDemo) X(ReorderDemo)
+    X(StatsOverlayDemo) X(ZoomPanelDemo) X(TranslucencyDemo) X(OpacityDemo) X(NodeGraphDemo) X(FlowDemo) X(BoardDemo) X(ImageGridDemo) X(RichTextDemo) X(MarkdownDemo) X(ReorderDemo)
 
 static const char *const g_controlNames[]=
 {
@@ -1933,7 +1935,7 @@ static void printUsage(std::ostream &out)
          "                     | virtual-list-variable\n"
          "                     | data-table-virtual | tree-table | tree-table-live\n"
          "                     | hide-show\n"
-         "                     | opacity-round-trip\n"
+         "                     | opacity-round-trip | opacity\n"
          "                     | demo-labels\n"
          "                     | plot-histogram | plot-lines | chart | timeline\n"
          "                     | inspector\n"
@@ -3003,7 +3005,7 @@ enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typ
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
     ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented, SplitButton,
     RangeSlider, Stepper, CodeView, RichText, Markdown, SearchCombo, Reorder, Calendar, DateTime, Translucency,
-    OpacityRoundTrip };
+    OpacityRoundTrip, Opacity };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -3028,6 +3030,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "tree-table-live") scenario=Scenario::TreeTableLive;
     else if(name == "hide-show") scenario=Scenario::HideShow;
     else if(name == "opacity-round-trip") scenario=Scenario::OpacityRoundTrip;
+    else if(name == "opacity") scenario=Scenario::Opacity;
     else if(name == "demo-labels") scenario=Scenario::DemoLabels;
     else if(name == "plot-histogram") scenario=Scenario::PlotHistogram;
     else if(name == "plot-lines") scenario=Scenario::PlotLines;
@@ -13212,6 +13215,228 @@ static bool runTranslucencyScenario(Session &s, const std::string &shotDir, bool
         std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
     std::cout<<" sorted_slots="<<sortedSlots<<" moved_prims="<<moved.primitives.size()
              <<" overlay_checked="<<checked<<"\n";
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
+// --scenario opacity: OpacityDemo, the clock frozen but for the fade (#686)
+//
+// A control's opacity (Base::setOpacity) is per-element alpha: each slot and
+// glyph of the panel is drawn again at the new levels and nothing is laid out.
+// The panel's levels set directly and each frame of the fade write only the
+// panel's slots, lay nothing out and change no pixel outside it; a slider step
+// writes the panel's and the slider's (its thumb moved), lays out no more than
+// the slider's own move does (the slider and the way down to it) and changes no
+// pixel outside the two; the panel's child at its own 1 keeps its pixels; the
+// fade ends with the frame before it; settled frames write nothing.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+// What a frame of an opacity change did, against the allowed subtrees.
+struct OpacityStep
+{
+    bool within=true;       // wrote only the allowed primitive and text ids
+    bool wrote=false;       // wrote some id at all
+    int passes=0;
+    size_t visited=0;       // the controls the layout entered
+    size_t outside=0;       // pixels changed outside the allowed rects
+};
+
+OpacityStep opacityStep(Session &s, const std::vector<gweni::controls::Base *> &allowed,
+    std::vector<uint8_t> &pixels)
+{
+    std::set<size_t> prims, texts;
+    std::vector<gweni::Rect> rects;
+
+    for(gweni::controls::Base *control : allowed)
+    {
+        subtreeIds(control, prims, texts);
+        rects.push_back(control->getCanvasBounds());
+    }
+
+    const CodeEditorFrame frame=codeEditorFrame(s);
+    OpacityStep step;
+
+    step.within=idsWithin(frame.primitives, prims) && idsWithin(frame.texts, texts);
+    step.wrote=!frame.primitives.empty() || !frame.texts.empty();
+    step.passes=frame.passes;
+    step.visited=frame.visited;
+    step.outside=differencesOutsideRects(s, pixels, frame.pixels, rects);
+    pixels=frame.pixels;
+    return step;
+}
+
+std::string opacityStepText(const OpacityStep &step)
+{
+    return std::string(step.within?"":"wrote ids outside the panel and the slider; ")
+        +(step.wrote?"":"wrote nothing; ")+std::to_string(step.passes)+" layout passes entering "
+        +std::to_string(step.visited)+", "
+        +std::to_string(step.outside)+" pixels changed outside";
+}
+
+// Whether `rect` (logical units, inset by `inset`) is the same in `a` and `b`.
+bool sameInside(const Session &s, const std::vector<uint8_t> &a, const std::vector<uint8_t> &b,
+    const gweni::Rect &rect, int inset)
+{
+    const gweni::Point topLeft=devicePixels(gweni::Point(rect.x+inset, rect.y+inset), s.scale);
+    const gweni::Point bottomRight=devicePixels(gweni::Point(rect.x+rect.w-inset, rect.y+rect.h-inset), s.scale);
+
+    for(int y=std::max(topLeft.y, 0); y < std::min(bottomRight.y, s.pixels.y); ++y)
+    {
+        const size_t at=(static_cast<size_t>(y)*s.pixels.x+std::max(topLeft.x, 0))*4;
+        const size_t bytes=static_cast<size_t>(std::max(0, std::min(bottomRight.x, s.pixels.x)-std::max(topLeft.x, 0)))*4;
+
+        if(std::memcmp(&a[at], &b[at], bytes) != 0)
+            return false;
+    }
+    return true;
+}
+
+}//namespace
+
+static bool runOpacityScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    checks.scenario="opacity";
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    gweni::controls::Base *control=addControl(s, "OpacityDemo");
+    auto *demo=gweni::gweni_cast<gweni::OpacityDemo>(control);
+
+    if(!demo)
+    {
+        std::cerr<<"ControlTest: opacity: OpacityDemo was not built\n";
+        return false;
+    }
+
+    s.label="opacity";
+    renderFrames(s, s.frames);
+
+    bool ok=shoot(s, shotDir+"/opacity-01-full.png");
+    gweni::controls::Base *panel=demo->panel();
+    gweni::controls::HorizontalSlider *surface=demo->surfaceSlider();
+    gweni::controls::HorizontalSlider *text=demo->textSlider();
+    const gweni::Rect opaque=demo->opaqueChild()->getCanvasBounds();
+    std::vector<uint8_t> pixels;
+    size_t idle=settleCodeEditor(s, pixels);
+    const std::vector<uint8_t> full=pixels;
+
+    // (1) the panel's levels set directly: nothing laid out
+    panel->setOpacity(0.25f, 0.75f);
+
+    const OpacityStep direct=opacityStep(s, {panel}, pixels);
+
+    checks.check("direct_step", direct.within && direct.wrote && direct.passes == 0 && direct.outside == 0,
+        "setOpacity on the panel "+opacityStepText(direct));
+    demo->applyLevels();
+
+    const OpacityStep back=opacityStep(s, {panel}, pixels);
+
+    idle+=settleCodeEditor(s, pixels);
+    checks.check("direct_back", back.within && back.passes == 0 && back.outside == 0 && pixels == full,
+        "the panel set back to 1 "+opacityStepText(back)+(pixels == full?"":"; not the frame before"));
+
+    // (2) slider steps: the surface level, then the text level; the slider's
+    // own move lays out the slider and the way down to it, no more
+    const auto sliderLayout=[](gweni::controls::Base *slider)
+        {
+            size_t depth=0;
+
+            for(gweni::controls::Base *at=slider->getParent(); at; at=at->getParent())
+                ++depth;
+            return 4*(subtreeControls(slider)+depth);
+        };
+
+    const size_t sliderBound=sliderLayout(surface);
+
+    surface->setFloatValue(0.5f);
+
+    const OpacityStep surfaceStep=opacityStep(s, {panel, surface}, pixels);
+
+    checks.check("surface_step", surfaceStep.within && surfaceStep.wrote && surfaceStep.passes <= 1
+        && surfaceStep.visited <= sliderLayout(surface) && surfaceStep.outside == 0,
+        "the surface slider's step "+opacityStepText(surfaceStep));
+    checks.check("surface_level", panel->effectiveSurfaceOpacity() == 0.5f
+        && panel->effectiveTextOpacity() == 1.0f, "the panel is at "
+        +std::to_string(panel->effectiveSurfaceOpacity())+", "+std::to_string(panel->effectiveTextOpacity()));
+    idle+=settleCodeEditor(s, pixels);
+
+    text->setFloatValue(0.75f);
+
+    const OpacityStep textStep=opacityStep(s, {panel, text}, pixels);
+
+    checks.check("text_step", textStep.within && textStep.wrote && textStep.passes <= 1
+        && textStep.visited <= sliderLayout(text) && textStep.outside == 0, "the text slider's step "+opacityStepText(textStep));
+    idle+=settleCodeEditor(s, pixels);
+    if(!shoot(s, shotDir+"/opacity-02-levels.png"))
+        ok=false;
+
+    const std::vector<uint8_t> levels=pixels;
+
+    // (3) the child at its own 1 kept its pixels, inside its rounded corners
+    checks.check("opaque_child", sameInside(s, full, levels, opaque, 4)
+        && demo->opaqueChild()->effectiveSurfaceOpacity() == 1.0f,
+        "the panel's child at its own level 1 changed with the panel's");
+    // and the panel did not
+    checks.check("panel_changed", !sameInside(s, full, levels, panel->getCanvasBounds(), 0),
+        "the panel draws as at 1");
+
+    // (4) the fade: every frame writes inside the panel alone, lays nothing
+    // out and ends with the frame before it
+    demo->startFade();
+
+    size_t fadeFrames=0, fadeWrites=0;
+    bool fadeOk=true;
+    std::string fadeProblem;
+    bool shotMid=false;
+
+    for(int i=0; i < 120 && gweni::anim::activeCount(panel) > 0; ++i)
+    {
+        ++g_clockSteps;
+
+        const OpacityStep step=opacityStep(s, {panel}, pixels);
+
+        ++fadeFrames;
+        if(step.wrote)
+            ++fadeWrites;
+        if(!step.within || step.passes != 0 || step.outside != 0)
+        {
+            if(fadeOk)
+                fadeProblem="fade frame "+std::to_string(fadeFrames)+" "+opacityStepText(step);
+            fadeOk=false;
+        }
+        if(!shotMid && (panel->effectiveSurfaceOpacity() < 0.25f))
+        {
+            shotMid=true;
+            if(!shoot(s, shotDir+"/opacity-03-fade.png"))
+                ok=false;
+        }
+    }
+    checks.check("fade_frames", fadeOk && fadeFrames >= 50 && fadeWrites >= 50
+        && gweni::anim::activeCount(panel) == 0, fadeProblem+" ("+std::to_string(fadeFrames)+" frames, "
+        +std::to_string(fadeWrites)+" writing)");
+    idle+=settleCodeEditor(s, pixels);
+    checks.check("fade_back", pixels == levels, "the fade did not end with the frame before it");
+
+    checks.check("settled", idle == 0, "settled frames wrote or changed "+std::to_string(idle));
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()+liveTextIds()-idsBefore;
+
+    checks.check("ids_back", idsLeft == 0, std::to_string(idsLeft)+" ids not given back");
+
+    passed=checks.allPassed();
+    std::cout<<"opacity";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<" fade_frames="<<fadeFrames<<" slider_visited="<<surfaceStep.visited<<","<<textStep.visited
+             <<" (at most "<<sliderBound<<")\n";
     return ok;
 }
 
@@ -23474,6 +23699,15 @@ int main(int argc, char *argv[])
             ok=runHideShowScenario(session, which, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a hide and show did not give the demo back: a failing assertion
+            break;
+        }
+
+        case Scenario::Opacity:
+        {
+            bool passed=false;
+            ok=runOpacityScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // an opacity change wrote or changed outside the panel
             break;
         }
 

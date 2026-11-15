@@ -283,13 +283,13 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # SearchComboBox's keystrokes, picks and chip wrap, the reorder drags'
     # looks and drops, the calendar's months and views, the date and time
     # fields' steps, commits and calendar popup, and a MarkdownView's
-    # edits, selection and code block, and the translucency scenario's panel,
-    # scrim and overlay
+    # edits, selection and code block, the translucency scenario's panel,
+    # scrim and overlay, and the opacity scenario's level changes and fade
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
             dialog toast flow switch spinner navigation-rail board field-validation segmented
             tree-table tree-table-live split-button range-slider stepper code-view rich-text markdown
-            search-combo reorder calendar date-time translucency)
+            search-combo reorder calendar date-time translucency opacity)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail")
@@ -695,6 +695,18 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_translucency 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario translucency --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/translucency@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # OpacityDemo, the clock frozen but for the fade (#686): the panel's
+    # levels set directly and each frame of its fade write the panel's slots
+    # alone, lay nothing out and change no pixel outside it; a slider step
+    # writes the panel's and the slider's, lays out no more than the slider's
+    # own move and changes no pixel outside them; the child at its own 1 keeps
+    # its pixels; the fade ends with the frame before it; settled frames write
+    # nothing and the demo gives its ids back
+    gweni_whole_app_test(controltest_opacity 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario opacity --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/opacity@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # SwitchDemo, the clock stepping: a hover writes the track's slot alone,

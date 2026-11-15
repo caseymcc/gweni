@@ -143,6 +143,8 @@ set(GWENI_DEMO_SOURCES
     demo/imageGridImages.inc
     demo/translucency.cpp
     demo/translucency.h
+    demo/opacity.cpp
+    demo/opacity.h
     demo/zoomPanel.cpp
     demo/zoomPanel.h
     demo/statsOverlay.cpp
