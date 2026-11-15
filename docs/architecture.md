@@ -1318,7 +1318,7 @@ translucent slot can show (so a UI that never has one allocates none of it) and 
 kept from the slots whose vertexes or clip box changed and the runs noted changed
 (`noteRunChanged`: `renderText`, a show, a hide, a release, a new font; an inline
 check that costs nothing while the index is not built), each moved from its old
-cells to its new ones; a new view size builds it again. Each cell also counts the
+cells to its new ones; a new view rect (its size or its origin) builds it again. Each cell also counts the
 sorted set's slots in it. The **sorted set and its schedule** are built again only
 when stale: a translucent slot dirty, a sorted slot moved or given another z, a slot
 that changed reaching a cell that holds a translucent or a sorted one, a run that
@@ -1363,9 +1363,11 @@ counter. `tests/translucency.cpp` (every backend) pins the cases; `--scenario
 translucency` (TranslucencyDemo) the whole app's.
 
 What is still not done: the anti-aliased edges of an opaque slot over an opaque one
-taken later (the #553 class, unchanged), and the depth view seen from behind, where the
-pass blends back to front in the canvas's z, not the camera's (occlusion still comes
-from opaque depth).
+taken later (the #553 class, unchanged), and the depth view, whose overlaps are still
+the front view's footprints: under a turned or perspective camera a run that only the
+projection puts behind a translucent slot is hidden by it as before #685, and seen from
+behind the pass blends back to front in the canvas's z, not the camera's (occlusion
+still comes from opaque depth).
 
 ## renderer::Vulkan (headless)
 
