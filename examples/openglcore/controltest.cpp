@@ -18282,10 +18282,10 @@ static bool runMarkdownScenario(Session &s, const std::string &shotDir, bool &pa
     auto *code=dynamic_cast<MarkdownCodeBlock *>(document->getBlockControl(3));
     auto *table=dynamic_cast<MarkdownTable *>(document->getBlockControl(4));
 
-    if(!paragraph || !code || !table || (paragraph->getLayout().lines().size() < 2))
+    if(!paragraph || !code || !table || (paragraph->getText().find("hard break") == gweni::String::npos))
     {
         std::cerr<<"ControlTest: markdown: the reference document is not the one expected "
-                   "(a paragraph of two lines, a list, a code block and a table after its heading)\n";
+                   "(a paragraph with a hard break, a list, a code block and a table after its heading)\n";
         return false;
     }
 
@@ -18451,8 +18451,16 @@ static bool runMarkdownScenario(Session &s, const std::string &shotDir, bool &pa
     settle("step4");
 
     // 4. a drag over the lists and the code block into the table, Ctrl+C
-    const gweni::text::RichLine &second=paragraph->getLayout().lines().at(1);
-    const gweni::Point dragFrom=richCaretPoint(paragraph, second.firstPiece, 2);
+    // the caret before "hard break", wherever the paragraph's lines break
+    const size_t hardBreak=paragraph->getText().find("hard break");
+    size_t fromPiece=0;
+
+    while((fromPiece+1 < paragraph->getLayout().pieces().size())
+        && (paragraph->getLayout().pieces()[fromPiece+1].offset <= hardBreak))
+        ++fromPiece;
+
+    const gweni::Point dragFrom=richCaretPoint(paragraph, fromPiece,
+        hardBreak-paragraph->getLayout().pieces()[fromPiece].offset);
     const gweni::Point dragTo=richCaretPoint(table->getCell(1, 1), 0, 3);
 
     gweni::platform::setClipboardText("");

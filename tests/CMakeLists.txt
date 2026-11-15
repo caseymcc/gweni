@@ -245,16 +245,20 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # buttons' menus, the range slider's drags and keys, the
     # steppers' step changes, the code view's copy button, a RichText, the
     # SearchComboBox's keystrokes, picks and chip wrap, the reorder drags'
-    # looks and drops, and the calendar's months and views
+    # looks and drops, the calendar's months and views, and a MarkdownView's
+    # edits, selection and code block
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
             dialog toast flow switch spinner navigation-rail board field-validation segmented
-            tree-table split-button range-slider stepper code-view rich-text search-combo reorder
-            calendar)
+            tree-table split-button range-slider stepper code-view rich-text markdown search-combo
+            reorder calendar)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail")
             list(APPEND verify_flags --require-one-pass)
+        endif()
+        if(verify_scenario STREQUAL "markdown")
+            list(APPEND verify_flags --size 865x545)
         endif()
         add_test(NAME controltest_verify_layout_${verify_name}
             COMMAND $<TARGET_FILE:ControlTest> --headless --scenario ${verify_scenario}

@@ -5571,6 +5571,149 @@ and `tests/unit/richTextSelection.cpp` pin the model and the paragraph's selecti
 `controltest_rich_text` (and `_vulkan`) runs RichTextDemo through a span edit, a new width,
 a link's hover and click, a drag, a double-click and Ctrl+A, each held to the paragraph.
 
+## Markdown: the block model, the diff and `MarkdownDocument`
+
+A Markdown text (CommonMark 0.31 with GFM tables, strikethrough and autolinks) is shown as
+a column of block controls that `setMarkdown` keeps across edits, so a live preview's
+keystroke lays out and redraws the block it changed. The parse and the diff are headless
+data (`include/gweni/text/markdown.h`), the controls `controls::MarkdownDocument` and
+`controls::MarkdownView` (`controls/markdownDocument.h`, `controls/markdownView.h`).
+
+**The block model.** `text::parseMarkdown` runs md4c (0.6.0, plain C, MIT, from vcpkg in
+every tree, wasm32 included; only `source/text/markdown.cpp` includes `<md4c.h>`) and
+builds, from its SAX callbacks, the document's top-level `MarkdownBlock`s: a `Paragraph`
+or a `Heading` (level 1..6) holds `MarkdownSpan`s (text, the style bits `Bold`, `Italic`,
+`Code`, `Strike`, a link's url, an image's alt text and src), a `CodeBlock` (fenced or
+indented, its language) and an `Html` block their text verbatim, a `List` (ordered, its
+start and delimiter or bullet, tight or loose), `ListItem`, `Quote`, `Table`, `TableRow`
+(the header row first, each column's `Align` on the table) and `TableCell` their children;
+a `Rule` holds nothing. A tight list item's text, which md4c reports with no paragraph,
+gets an implicit `Paragraph`, so a container holds blocks only. What is shown as text: an
+entity decoded (the numeric ones and 35 common names; another name as written), a soft
+break as a space, a hard break as `'\n'`, raw HTML (a block or inline) as it was written,
+a bare URL autolink without the trailing `?!.,:*_~` GFM leaves out (md4c keeps a `.`),
+`www.` given `http://`, an e-mail `mailto:`; footnotes and task lists are not enabled, so
+their syntax is text. Each block's `hash` is FNV-1a over its type, attributes, content and
+its children's hashes, over fixed-width fields, so two blocks with one hash are taken to
+be the same block, at any position and on every target (`tests/unit/markdownBlocks.cpp`
+pins its values, on wasm32 too).
+
+**The diff.** `text::markdownDiff(old, now)` gives each new block a `MarkdownBlockMatch`:
+`Kept` (an equal hash: the common prefix and suffix, then a longest common subsequence of
+the middle by hash, run only while the middle is at most `MarkdownDiffLimit`, 2^20,
+old-times-new blocks; then a block left over whose hash an old one left over has, so a
+swap or a move keeps both), `Changed` (paired in order within each gap between two
+in-order matches with an old block of its type: its control is kept and given the new
+content, and a container's children are diffed the same way) or `New`. An old block no
+entry names is gone. So an edit inside a nested list's item is the top list Changed, its
+items Kept but the one holding the nested list, that list Changed and the edited item's
+paragraph Changed (`tests/unit/markdownDiff.cpp`).
+
+**The document.** `MarkdownDocument` is an `internal::MarkdownColumn`: its blocks stacked
+top to bottom, each owner-placed (`Placement::Owner`), as wide as the column less its
+padding and as high as it asks to be there, the skin's `MarkdownBlockSpacing` between two
+(`MarkdownTightSpacing` between a tight list's items). Widths are placed in the X arrange
+and y and heights in the Y arrange, before the blocks are arranged, so a block that keeps
+its height lays out alone, and the blocks below one that grew are moved, which does not
+dirty their subtrees ("Which controls a pass enters"); their slots are still written,
+since vertices hold device positions. `setBlocks` applies the diff: a Kept block's control
+is untouched, a Changed one's `MarkdownBlockControl::setBlock` gets the new block, a New
+one is built, a gone one is hidden at once and deleted with the next delayed deletes (it
+may be the RichText whose link click called `setMarkdown`), and the controls are put in
+the blocks' order among the children by moving only those out of a longest run already in
+order, so an insert renumbers the z of the inserted block alone. The same text again does
+nothing at all, and a text parsing to the same blocks lays out nothing. The blocks:
+
+- a paragraph, a heading, a table cell and raw HTML are an `internal::MarkdownText`, a
+  `RichText` of the block's spans (an image's alt text, or "image", on a
+  `RichSpan::Placeholder` span, drawn on the `MarkdownImagePlaceholder` surface, until the
+  image itself is shown by the next task); a heading is bold at `headingSize(level)`, the
+  skin's `MarkdownHeading1..6` (24 to 12) scaled by the body font's size over 11, so the
+  large ones are SDF text and the body coverage; inline code is drawn on `MarkdownCode`;
+- a rule an `internal::MarkdownRule` (an icon kind 6 rule, `MarkdownRule`'s colour);
+- a quote an `internal::MarkdownQuote`, a column of its blocks right of a bar
+  (`MarkdownQuoteBar`), nested as deep as the text;
+- a list an `internal::MarkdownList`, a column of `internal::MarkdownListItem`s, each a
+  column of its blocks `MarkdownListIndent` in, its marker a MarkdownText right-aligned
+  `MarkerGap` before them on their first line: the number from the list's start and its
+  delimiter, or a bullet by the list's depth (U+2022, U+25E6, U+25AA); an item inserted in
+  an ordered list renumbers the ones after it;
+- a code block an `internal::MarkdownCodeBlock`: the code in `codeFont()` (the skin's mono
+  face at the body size) on `MarkdownCodeBlock`, `Padding` in, coloured by
+  `setCodeHighlighter((language, code) -> spans)` when the document has one (spans that do
+  not make up the code show plain; none ships). By default it scrolls sideways in an
+  `internal::MarkdownCodeScroll`, one line per line of code, the block taller by
+  `ScrollBarThickness` when the code is wider; a vertical wheel over it goes on to the
+  page. With `setCodeWrap(true)` the same text control is the block's own and wraps;
+- a table an `internal::MarkdownTable`, a grid of MarkdownText cells, the header row's bold
+  on `MarkdownTableHeader`, `Border` lines (`MarkdownTableBorder`) round and between them,
+  each column as wide as its widest cell on one line when they fit and narrowed by
+  `splitColumns` otherwise (a column under an even share keeps its width, the rest share
+  what is left in proportion), its cells then wrapping; a cell narrower than its column is
+  placed by the column's alignment. A cell keeps its control by its row and column, so an
+  edited cell is the only one measured again.
+
+**Width and height: hosting a `MarkdownDocument`.** The document is laid out at the width
+its parent gives it, and its preferred height, worked out in the Y pass from that width,
+is its blocks' heights and the spacing; its preferred width is its widest block's on one
+line. It is docked Top by default and needs no ScrollControl and no canvas-wide state:
+fonts come from the document (`setFont`, else the skin's), sizes from its skin's
+`Metrics`, and the selection is its own. So a host gives it a width in its X arrange and
+reads its preferred height in its Y pass, as a log view's row (#557) will. Like
+`layout::Flow`, a Y measure before this pass's X arrange (a ScrollControl measuring its
+content first) enters no block and keeps the last height.
+
+**`MarkdownView`** is a document in a vertical ScrollControl whose bar always shows,
+disabled while the document fits (a stable gutter: a bar that came and went with the height
+would change the width the document is laid out at, costing a second pass). Its preferred
+height is its requested height alone (`sizedByRequest(Y)`): a ScrollControl measures its
+content before laying it out, so the document's height there is one width late, which
+`--verify-layout` reports; a host that wants the content's height uses a
+MarkdownDocument. Its `onLinkClicked` forwards the document's, which forwards every
+block's: one `(url)` callback, gweni opening nothing.
+
+**The theme.** The surfaces `MarkdownCode`, `MarkdownCodeBlock`, `MarkdownQuoteBar`,
+`MarkdownRule`, `MarkdownTableHeader`, `MarkdownTableBorder` and `MarkdownImagePlaceholder`
+are in `tokyonight::surfaceRegistry()` (the theme editor's rows), the links take
+RichText's `RichTextLink`/`RichTextLinkHover`, and the sizes are `skin::Base::Metrics`
+a theme's `"metrics"` sets (`MarkdownBlockSpacing`, `MarkdownTightSpacing`,
+`MarkdownListIndent`, `MarkdownHeading1..6`): spacing is read as a column lays out, and a
+list item's indent and a heading's size are applied again in `updateColors()`, so
+`ThemeEditor::applyToCanvas(canvas, true)` shows a change (`tests/unit/markdownView.cpp`).
+
+**Selection across blocks.** The document holds one `text::SelectionModel` and gives every
+text it shows the model and its path in reading order (`getSelectables()`): a block's path
+is its index in the document's blocks and in each block holding it; a list item's marker
+is `{item..., 0}` and its blocks `{item..., 1+j}`, a table cell `{table..., row, column}`,
+a code block's text the block's own path. A press in a text puts both ends there (RichText's
+own handling, on the shared model); a drag goes on into whichever text is under the mouse
+(`positionAt`: the text over the point, else the nearest across on its line, else the start
+of the first text below it), a double-click selects a word, Ctrl+A everything and Escape
+clears (RichText's `selectAll`, `clearSelection` and `copySelection` are virtual, and a
+Markdown text hands them to its document). After each change only the texts whose part of
+the selection changed are marked (`selectionChanged()` compares each text's range with the
+one it was last told). Ctrl+C copies `getSelectedText()`, what is shown as plain text: each
+text's selected part, a tab between two cells of a row (an empty cell inside the selection
+keeps its tab), a space after a list marker, a newline between any other two texts. Across
+`setMarkdown` each end of the selection stays on the control of the text it was in, at
+that text's new path, its byte clamped to the new text, so an edit of another block or one
+inserted above keeps the selection; it is cleared when the block an end is in goes
+(`tests/unit/markdownSelection.cpp`). The paths are `(block path, char)`, which a log
+view's row maps to its `(item, char)`.
+
+**Tests.** `tests/unit/markdownBlocks.cpp`, `markdownDiff.cpp`, `markdownDocument.cpp`,
+`markdownCodeTable.cpp`, `markdownView.cpp` and `markdownSelection.cpp` are headless.
+`controltest_markdown` (and `_vulkan`, `controltest_verify_layout_markdown`) runs
+`--scenario markdown` on MarkdownDemo, the checked-in `resources/MarkdownDemo.md` in a
+MarkdownView: an edit of the first paragraph keeps every control, lays out in one pass
+entering no more than the paragraph and its ancestors (and the inner panel and the
+document once more, as the view measures its content again), renumbers no z and writes
+the paragraph's slots alone; one that makes it taller only moves the blocks below; an
+unchanged `setMarkdown` writes and lays out nothing; a drag across a paragraph, the lists,
+the code block and the table copies the expected plain text, which an edit of another
+block keeps selected; a link click reaches the demo; and the code block scrolls sideways
+and wraps.
+
 ## Reordering by drag and drop
 
 A list's items are reordered, within it or between lists, by dragging them

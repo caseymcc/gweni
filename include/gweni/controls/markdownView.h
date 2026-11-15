@@ -36,6 +36,17 @@ public:
     //! Its vertical scroll bar, which always shows
     BaseScrollBar *getScrollBar() const { return m_verticalScrollBar; }
 
+    //! Its height is what its parent gives it: it asks for its requested
+    //! height (none: 0), never its document's, which a ScrollControl measures
+    //! before laying the document out at its width and so one width late
+    //! (docs/layout.md -> "layout::Flow"). A host that wants the document's
+    //! own height uses a MarkdownDocument, which has no scroll bar. Its
+    //! width is its widest block's, as a ScrollControl's content's.
+    bool sizedByRequest(Dim dim) const override
+    {
+        return (dim == Dim::Y) || ScrollControl::sizedByRequest(dim);
+    }
+
     //! MarkdownDocument::setMarkdown: the controls of matching blocks kept,
     //! the same text again doing nothing
     void setMarkdown(const gweni::String &markdown) { m_document->setMarkdown(markdown); }
