@@ -26,9 +26,10 @@
 #    which is not in the .data: the page's directory holds a copy of it, which
 #    the renderer fetches on the first text drawn that misses one of its faces
 #    (SlotRenderer::lazyFacePending). Module.gweniLazyFiles (a generated
-#    --pre-js) names its faces, which pre.js fetches before main for a capture
-#    (--headless in argv), or always with PRELOAD_LAZY (gweni_unittests), so
-#    what a capture draws never waits on a fetch.
+#    --pre-js) names its faces, which pre.js fetches before main for a run that
+#    may be a capture (any flag the interactive window does not take), or
+#    always with PRELOAD_LAZY (gweni_unittests), so what a capture draws never
+#    waits on a fetch.
 #  An interactive window fills the shell's #canvas-container (capture.h's
 #  initGlfwContext), and runs one frame per animation frame.
 #  Defined once, for the examples here and gweni_unittests (tests/).

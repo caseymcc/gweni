@@ -18,8 +18,9 @@
  *    draw the regular face with one log line per face;
  *  - a family set after one of its fonts is loaded loads it again, so it then
  *    draws the family's face, and raises textLayoutSerial();
- *  - "mono" is DejaVu Sans Mono: it draws as that face does and the default
- *    glyph chain [DejaVuSansMono] is no chain of its own.
+ *  - "mono" is DejaVu Sans Mono: it draws as that face does, and the skin's
+ *    chains leave it out of its own: mono's (and DejaVuSansMono's) is
+ *    [DroidSansFallbackFull], OpenSans' [DejaVuSansMono, DroidSansFallbackFull].
  *  Each case uses a renderer of its own over the shared view.
  */
 #include <doctest/doctest.h>

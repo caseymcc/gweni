@@ -18,7 +18,7 @@
  *  of each range and on a string that ends inside a sequence.
  *
  *  Each case uses a renderer of its own with the default chain [DejaVuSansMono],
- *  as the skin sets it.
+ *  the skin's default chain without its lazy CJK face.
  */
 #include <doctest/doctest.h>
 
