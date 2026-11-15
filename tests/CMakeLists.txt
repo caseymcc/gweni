@@ -261,7 +261,8 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # resizes and rebuilds, the switches' toggles, the spinners' stops and
     # hides, the navigation rail's collapse/selection, the board's wheels and
     # edits, the fields' messages, the segmented buttons' selections, the
-    # tree table's expands, collapses and keys, the split and drop-down
+    # tree table's expands, collapses and keys, its live edits, lazy folder
+    # and sort, the split and drop-down
     # buttons' menus, the range slider's drags and keys, the
     # steppers' step changes, the code view's copy button, a RichText, the
     # SearchComboBox's keystrokes, picks and chip wrap, the reorder drags'
@@ -272,8 +273,8 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
             dialog toast flow switch spinner navigation-rail board field-validation segmented
-            tree-table split-button range-slider stepper code-view rich-text markdown search-combo
-            reorder calendar date-time translucency)
+            tree-table tree-table-live split-button range-slider stepper code-view rich-text markdown
+            search-combo reorder calendar date-time translucency)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail")
@@ -443,6 +444,19 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     gweni_whole_app_test(controltest_tree_table 120
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario tree-table --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/tree-table@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # TreeTableDemo's live tree at 1 000 and 100 000 nodes: the lazy folder's
+    # placeholder and its answer, a root inserted and removed above and below
+    # the viewport (no pixel changed but the thumb's) and a file inside it, the
+    # same counters at both counts and within the shown rows, a Name header
+    # click sorting every shown group in the demo's order, folders first, in
+    # one pass with the selection and the expansion kept, the Rename, Add file
+    # and Remove buttons, settled frames writing nothing and the demo's ids
+    # back; exits non-zero on any failed check
+    gweni_whole_app_test(controltest_tree_table_live 120
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario tree-table-live --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/tree-table-live@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # keys handled in one frame, after an edit and before the layout that

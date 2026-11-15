@@ -1457,6 +1457,32 @@
  *                 two rows' slots alone; the drag gives the column its width
  *                 in one pass; the demo gives every primitive id back. Exits
  *                 non-zero if any check is no.
+ *    tree-table-live
+ *                 TreeTableDemo at 1 000 and then 100 000 nodes, the clock
+ *                 frozen: the lazy "remote" folder's expander clicked (its
+ *                 "Loading…" row) and the demo's answer, then three rows
+ *                 down a root inserted and removed above the viewport, a
+ *                 file under src-8 inside it and a root below it, a click
+ *                 on the Name header, and the Rename, Add file and Remove
+ *                 buttons (tree-table-live-1000.png, -100000.png). One line
+ *                 per count
+ *                   tree-table-live nodes=N items=N ... lazy_open_... 
+ *                          lazy_answer_... above_insert_... above_outside=N,N
+ *                          ... sort_... ids_left=0
+ *                 and one line
+ *                   tree-table-live same_cost=yes|no edits_local=yes|no
+ *                          settled=yes|no lazy=yes|no sorted=yes|no
+ *                          buttons=yes|no ids_back=yes|no
+ *                 the checks: the steps cost the same at both counts; each
+ *                 edit writes within the shown rows (and the thumb), keeps
+ *                 the first shown node and, above and below the viewport,
+ *                 changes no pixel outside the thumb; the placeholder shows
+ *                 and the answer replaces it in one pass within the shown
+ *                 rows; the sort puts every shown group in the demo's order,
+ *                 folders first, in one pass with the selection and the
+ *                 expansion kept; the buttons rename, add and remove in
+ *                 sorted order; settled frames write nothing; the demo gives
+ *                 its ids back. Exits non-zero if any check is no.
  *    hide-show    one control (default ButtonDemo) built into a host page, a
  *                 plain Base docked to fill the canvas as PageControl::addPage
  *                 makes the shell's pages, the clock frozen. On a new canvas
@@ -1905,7 +1931,8 @@ static void printUsage(std::ostream &out)
          "                     | context-menu | popup | dialog | toast\n"
          "                     | virtual-list\n"
          "                     | virtual-list-variable\n"
-         "                     | data-table-virtual | tree-table | hide-show\n"
+         "                     | data-table-virtual | tree-table | tree-table-live\n"
+         "                     | hide-show\n"
          "                     | demo-labels\n"
          "                     | plot-histogram | plot-lines | chart | timeline\n"
          "                     | inspector\n"
@@ -1934,6 +1961,9 @@ static void printUsage(std::ostream &out)
          "                     records (and a sort and a column drag in one pass),\n"
          "                     tree-table the same for a TreeTable's nodes (an\n"
          "                     expand, a collapse, a scroll and Down),\n"
+         "                     tree-table-live that for its live edits, lazy\n"
+         "                     folder and sort (and edits off the viewport\n"
+         "                     changing no pixel but the thumb's),\n"
          "                     hide-show whether a demo hidden and shown again, and\n"
          "                     one built hidden and shown, are the one built shown,\n"
          "                     demo-labels whether every demo-list label fits,\n"
@@ -2966,7 +2996,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 // Scenarios
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
-    ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, TreeTable, HideShow, DemoLabels, PlotHistogram,
+    ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, TreeTable, TreeTableLive, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
     ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented, SplitButton,
     RangeSlider, Stepper, CodeView, RichText, Markdown, SearchCombo, Reorder, Calendar, DateTime, Translucency };
@@ -2991,6 +3021,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "virtual-list-variable") scenario=Scenario::VirtualListVariable;
     else if(name == "data-table-virtual") scenario=Scenario::DataTableVirtual;
     else if(name == "tree-table") scenario=Scenario::TreeTable;
+    else if(name == "tree-table-live") scenario=Scenario::TreeTableLive;
     else if(name == "hide-show") scenario=Scenario::HideShow;
     else if(name == "demo-labels") scenario=Scenario::DemoLabels;
     else if(name == "plot-histogram") scenario=Scenario::PlotHistogram;
@@ -20824,6 +20855,345 @@ static bool runTreeTableScenario(Session &s, const std::string &shotDir, bool &p
 }
 
 //-----------------------------------------------------------------------------
+// --scenario tree-table-live: TreeTableDemo's live edits, lazy folder and sort
+//
+// At 1 000 and 100 000 nodes, the clock frozen: the lazy "remote" folder
+// expanded by a click on its expander shows its one "Loading…" row, and the
+// demo's answer (answerPending(), which a canvas timer would call) puts its
+// children in that row's place in one frame writing no more than the shown
+// rows; then, scrolled three rows down, a root inserted above the viewport, a
+// file inserted inside it (under the expanded src-8) and a root inserted
+// below it, each removed again: the six frames cost the same at both counts,
+// and those above and below the viewport change no pixel outside the scroll
+// bar's thumb; a click on the Name header sorts every shown group in the
+// demo's order, folders first, in one update-phase pass with the selection
+// and the expansion kept; the Rename, Add file and Remove buttons rename the
+// selection (re-sorted), add a file to its folder in its sorted place and
+// remove it again; settled frames write nothing and the demo gives its ids
+// back.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+struct TreeTableLiveRun
+{
+    size_t nodes=0;
+    size_t items=0;
+    size_t rows=0;
+    size_t subtree=0;
+    size_t primIds=0;
+    size_t idleSlots=0;
+    size_t idleChanged=0;
+    size_t idsLeft=0;
+    VirtualListStep lazyOpen, lazyAnswer, sort;
+    VirtualListStep insert[3], remove[3];
+    size_t outside[3][2]={};    // pixels changed outside the thumb, per edit
+    bool anchored[3][2]={};     // the first shown node kept
+    bool placeholder=false;     // the lazy expand showed the Loading… row
+    bool answered=false;        // and the answer replaced it with the children
+    bool sorted=false;          // the shown groups in the demo's order
+    bool kept=false;            // the selection and the expansion kept
+    bool buttons=false;         // rename, add and remove did what they say
+};
+
+}//namespace
+
+static void settleTreeTableLive(Session &s, gweni::controls::VirtualList *body, TreeTableLiveRun &run)
+{
+    for(int i=0; i<2; ++i)
+    {
+        const VirtualListStep idle=virtualListFrame(s, body);
+
+        run.idleSlots+=idle.primSlots+idle.textSlots;
+        run.idleChanged+=idle.changed;
+    }
+}
+
+// Every shown group in the demo's order for the column: folders first, then
+// the demo's comparator, and every child of a shown expanded node shown.
+static bool treeTableShownSorted(gweni::TreeTableDemo *demo, int column)
+{
+    using gweni::controls::TreeTable;
+
+    TreeTable *table=demo->m_table;
+    std::map<TreeTable::NodeId, std::vector<TreeTable::NodeId>> groups;
+
+    for(const TreeTable::VisibleNode &visible : table->getVisibleNodes())
+    {
+        if(const TreeTable::Node *node=table->getNode(visible.id))
+            groups[node->parent].push_back(visible.id);
+    }
+    for(const auto &group : groups)
+    {
+        const TreeTable::Node *parent=table->getNode(group.first);
+        const size_t children=parent?parent->children.size():table->getShownChildren(TreeTable::Root).size();
+
+        if(group.second.size() != children)
+            return false;
+        for(size_t i=1; i < group.second.size(); ++i)
+        {
+            const TreeTable::NodeId a=group.second[i-1], b=group.second[i];
+            const bool folderA=table->getNode(a)->hasChildren, folderB=table->getNode(b)->hasChildren;
+
+            if(folderA != folderB ? !folderA : demo->less(column, b, a))
+                return false;
+        }
+    }
+    return true;
+}
+
+static bool runTreeTableLive(Session &s, const std::string &shotDir, size_t nodes, TreeTableLiveRun &run)
+{
+    using gweni::controls::TreeTable;
+    using gweni::controls::TreeTableRow;
+    using gweni::TreeTableDemo;
+
+    const size_t idsBefore=livePrimitiveIds();
+    gweni::controls::Base *control=addControl(s, "TreeTableDemo");
+    auto *demo=gweni::gweni_cast<TreeTableDemo>(control);
+
+    if(!demo)
+    {
+        std::cerr<<"ControlTest: tree-table-live: no TreeTableDemo\n";
+        return false;
+    }
+
+    s.label="TreeTableDemo-live-"+std::to_string(nodes);
+    demo->setNodeCount(nodes);
+    demo->setShowSelection(false);
+    renderFrames(s, s.frames);
+
+    TreeTable *table=demo->m_table;
+    gweni::controls::VirtualList *body=table->getVirtualBody();
+    gweni::controls::Base *bar=findControl(body, "VerticalScrollBar");
+    gweni::controls::Base *thumb=bar?findControl(bar, "ScrollBarBar"):nullptr;
+    const size_t lazyItem=table->itemForNode(TreeTableDemo::LazyFolder);
+    auto *lazyRow=gweni::gweni_cast<TreeTableRow>(table->rowForItem(lazyItem));
+
+    if(!lazyRow || lazyRow->getExpander()->hidden() || !thumb)
+    {
+        std::cerr<<"ControlTest: tree-table-live: TreeTableDemo does not show its lazy folder with an expander\n";
+        return false;
+    }
+
+    run.nodes=table->getNodeCount();
+    run.items=table->getItemCount();
+    run.rows=body->getRows().size();
+    run.subtree=subtreeControls(table);
+    run.primIds=livePrimitiveIds()-idsBefore;
+    settleTreeTableLive(s, body, run);
+
+    // the lazy folder: its expander clicked, then the demo's answer
+    const gweni::Point expanderAt=centreOf(lazyRow->getExpander());
+
+    moveMouse(s, expanderAt.x, expanderAt.y);
+    renderFrames(s, 1);
+    settleTreeTableLive(s, body, run);
+
+    gweni::Rect thumbBefore=thumb->getBounds();
+
+    clickMouse(s, expanderAt.x, expanderAt.y);
+    run.lazyOpen=treeTableFrame(s, body, thumbBefore, thumb);
+    {
+        auto *row=gweni::gweni_cast<TreeTableRow>(table->rowForItem(lazyItem+1));
+
+        run.placeholder=table->isExpanded(TreeTableDemo::LazyFolder)
+            && table->nodeForItem(lazyItem+1) == TreeTable::NoNode && row && row->isPlaceholder()
+            && row->getCellText(0) == TreeTable::PlaceholderText;
+    }
+    settleTreeTableLive(s, body, run);
+
+    thumbBefore=thumb->getBounds();
+    demo->answerPending();
+    run.lazyAnswer=treeTableFrame(s, body, thumbBefore, thumb);
+    {
+        bool anyPlaceholder=false;
+
+        for(gweni::controls::Base *row : body->getRows())
+        {
+            auto *treeRow=gweni::gweni_cast<TreeTableRow>(row);
+
+            anyPlaceholder=anyPlaceholder || (!row->hidden() && treeRow && treeRow->isPlaceholder());
+        }
+        run.answered=!anyPlaceholder && table->nodeForItem(lazyItem+1) == TreeTableDemo::LazyFolder+1
+            && table->getNode(TreeTableDemo::LazyFolder)->children.size() == TreeTableDemo::LazyChildren;
+    }
+    settleTreeTableLive(s, body, run);
+
+    // collapsed again, the mouse off the table, three rows down
+    clickMouse(s, expanderAt.x, expanderAt.y);
+    renderFrames(s, 1);
+    moveMouse(s, 2, s.size.y-2);
+    renderFrames(s, 1);
+    body->scrollByRows(3);
+    renderFrames(s, 1);
+    settleTreeTableLive(s, body, run);
+
+    // above the viewport (a first root), inside it (under the expanded src-8,
+    // item 3 at the top) and below it (a last root), each removed again
+    const TreeTable::NodeId src=TreeTableDemo::RootCount;
+    const struct { TreeTable::NodeId parent; size_t index; TreeTable::NodeId id; } edits[3]={
+        {TreeTable::Root, 0, 910000001}, {src, 5, 910000002}, {TreeTable::Root, size_t(-1), 910000003}};
+
+    for(int e=0; e<3; ++e)
+    {
+        for(int phase=0; phase<2; ++phase)
+        {
+            const TreeTable::NodeId anchor=table->nodeForItem(body->firstVisibleItem());
+            const std::vector<uint8_t> before=framePixels(s);
+            const gweni::Rect thumbRect=canvasRectOf(thumb);
+
+            thumbBefore=thumb->getBounds();
+            if(phase == 0)
+                table->insertNode(edits[e].parent, edits[e].index, edits[e].id);
+            else
+                table->removeNode(edits[e].id);
+            (phase == 0?run.insert[e]:run.remove[e])=treeTableFrame(s, body, thumbBefore, thumb);
+            run.outside[e][phase]=differencesOutsideRects(s, before, framePixels(s), {thumbRect, canvasRectOf(thumb)});
+            run.anchored[e][phase]=table->nodeForItem(body->firstVisibleItem()) == anchor;
+            settleTreeTableLive(s, body, run);
+        }
+    }
+
+    // the Name header: every shown group sorted, selection and expansion kept
+    const TreeTable::NodeId selected=table->getSelectedNode();
+    std::vector<TreeTable::NodeId> expanded;
+
+    for(const TreeTable::VisibleNode &visible : table->getVisibleNodes())
+    {
+        if(table->isExpanded(visible.id))
+            expanded.push_back(visible.id);
+    }
+
+    const gweni::Point nameAt=centreOf(table->getHeader()->getCells().at(0));
+
+    clickMouse(s, nameAt.x, nameAt.y);
+    run.sort=virtualListFrame(s, body);
+    run.sorted=table->isSorted() && treeTableShownSorted(demo, 0);
+    run.kept=table->getSelectedNode() == selected;
+    for(TreeTable::NodeId id : expanded)
+        run.kept=run.kept && table->isExpanded(id) && table->itemForNode(id) != gweni::controls::DataTable::NoItem;
+    moveMouse(s, 2, s.size.y-2);
+    renderFrames(s, 1);
+    settleTreeTableLive(s, body, run);
+
+    // the buttons, on the selected file and its folder
+    const TreeTable::NodeId folder=table->getNode(selected)->parent;
+    const size_t files=table->getNode(folder)->children.size();
+
+    clickMouse(s, centreOf(demo->m_rename).x, centreOf(demo->m_rename).y);
+    renderFrames(s, 1);
+    const bool renamed=demo->displayName(selected).rfind("renamed-", 0) == 0 && treeTableShownSorted(demo, 0);
+
+    clickMouse(s, centreOf(demo->m_add).x, centreOf(demo->m_add).y);
+    renderFrames(s, 1);
+    const TreeTable::NodeId added=table->getSelectedNode();
+    const bool addedOk=table->getNode(folder)->children.size() == files+1 && table->getNode(added)
+        && table->getNode(added)->parent == folder && treeTableShownSorted(demo, 0);
+
+    clickMouse(s, centreOf(demo->m_remove).x, centreOf(demo->m_remove).y);
+    renderFrames(s, 1);
+    run.buttons=renamed && addedOk && !table->getNode(added)
+        && table->getNode(folder)->children.size() == files && treeTableShownSorted(demo, 0);
+    moveMouse(s, 2, s.size.y-2);
+    renderFrames(s, 1);
+    settleTreeTableLive(s, body, run);
+
+    forgetMouse(s);
+    renderFrames(s, s.frames);
+
+    const bool shot=shoot(s, shotDir+"/tree-table-live-"+std::to_string(nodes)+".png");
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+    run.idsLeft=livePrimitiveIds()-idsBefore;
+    return shot;
+}
+
+static bool runTreeTableLiveScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    TreeTableLiveRun small, large;
+    bool ok=runTreeTableLive(s, shotDir, 1000, small);
+
+    ok=runTreeTableLive(s, shotDir, 100000, large) && ok;
+
+    auto withinRows=[](const TreeTableLiveRun &run, const VirtualListStep &step)
+    {
+        return step.passes <= 1 && step.zVisited == 0 && step.requests == 0
+            && step.visited <= run.subtree+2 && step.changed <= run.subtree
+            && step.primSlots <= step.rowPrims+(step.thumbMoved?1:0) && step.textSlots <= step.rowGlyphs;
+    };
+    bool sameCost=small.items == large.items && small.rows == large.rows && small.subtree == large.subtree
+        && small.primIds == large.primIds && small.lazyOpen == large.lazyOpen
+        && small.lazyAnswer == large.lazyAnswer && small.sort == large.sort;
+    bool edits=true;
+
+    for(int e=0; e<3; ++e)
+    {
+        sameCost=sameCost && small.insert[e] == large.insert[e] && small.remove[e] == large.remove[e];
+        for(const TreeTableLiveRun *run : {&small, &large})
+        {
+            edits=edits && withinRows(*run, run->insert[e]) && withinRows(*run, run->remove[e])
+                && run->anchored[e][0] && run->anchored[e][1];
+            // above and below the viewport: no pixel but the thumb's
+            if(e != 1)
+                edits=edits && run->outside[e][0] == 0 && run->outside[e][1] == 0;
+        }
+    }
+    const bool settled=small.idleSlots == 0 && small.idleChanged == 0
+        && large.idleSlots == 0 && large.idleChanged == 0;
+    const bool lazy=small.placeholder && large.placeholder && small.answered && large.answered
+        && withinRows(small, small.lazyOpen) && withinRows(large, large.lazyOpen)
+        && withinRows(small, small.lazyAnswer) && withinRows(large, large.lazyAnswer)
+        && small.lazyAnswer.passes == 1 && large.lazyAnswer.passes == 1;
+    const bool sortOk=small.sorted && large.sorted && small.kept && large.kept
+        && small.sort.passes == 1 && large.sort.passes == 1 && small.sort.zVisited == 0
+        && small.sort.requests == 0 && large.sort.requests == 0;
+    const bool buttons=small.buttons && large.buttons;
+    const bool idsBack=small.idsLeft == 0 && large.idsLeft == 0;
+
+    for(const TreeTableLiveRun *run : {&small, &large})
+    {
+        std::cout<<"tree-table-live nodes="<<run->nodes<<" items="<<run->items<<" rows="<<run->rows
+                 <<" subtree="<<run->subtree<<" prim_ids="<<run->primIds<<" idle_slots="<<run->idleSlots
+                 <<" idle_changed="<<run->idleChanged;
+        printVirtualListStep("lazy_open", run->lazyOpen);
+        printVirtualListStep("lazy_answer", run->lazyAnswer);
+        const char *names[3]={"above", "inside", "below"};
+        for(int e=0; e<3; ++e)
+        {
+            printVirtualListStep((std::string(names[e])+"_insert").c_str(), run->insert[e]);
+            printVirtualListStep((std::string(names[e])+"_remove").c_str(), run->remove[e]);
+            std::cout<<" "<<names[e]<<"_outside="<<run->outside[e][0]<<","<<run->outside[e][1];
+        }
+        printVirtualListStep("sort", run->sort);
+        std::cout<<" ids_left="<<run->idsLeft<<"\n";
+    }
+
+    passed=sameCost && edits && settled && lazy && sortOk && buttons && idsBack;
+
+    std::cout<<"tree-table-live same_cost="<<(sameCost?"yes":"no")<<" edits_local="<<(edits?"yes":"no")
+             <<" settled="<<(settled?"yes":"no")<<" lazy="<<(lazy?"yes":"no")<<" sorted="<<(sortOk?"yes":"no")
+             <<" buttons="<<(buttons?"yes":"no")<<" ids_back="<<(idsBack?"yes":"no")<<"\n";
+    if(!passed)
+        std::cerr<<"ControlTest: tree-table-live: "
+                 <<(!sameCost ? "an edit, the lazy folder or the sort did not cost at 100 000 nodes what it did at 1 000"
+                     : !edits ? "an insert or a remove wrote more than the shown rows, moved the first shown node"
+                         " or changed pixels outside the thumb from off the viewport"
+                     : !settled ? "a settled frame wrote slots or changed controls"
+                     : !lazy ? "the lazy folder did not show its placeholder, or its answer did not replace it"
+                         " in one frame within the shown rows"
+                     : !sortOk ? "the Name header did not sort the shown groups in one pass keeping the selection"
+                         " and the expansion"
+                     : !buttons ? "Rename, Add file or Remove did not do what it says in sorted order"
+                     : "the demo did not give its primitive ids back")<<"\n";
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // --scenario typing: the keyboard, through the GLFW translator
 //
 // Every keystroke is a synthesised GLFW event fed to gweni::input::GLFW3, the
@@ -22939,6 +23309,15 @@ int main(int argc, char *argv[])
             ok=runTreeTableScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a frame cost more at 100 000 nodes, or wrote outside its rows
+            break;
+        }
+
+        case Scenario::TreeTableLive:
+        {
+            bool passed=false;
+            ok=runTreeTableLiveScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // an edit, the lazy folder or the sort failed a check
             break;
         }
 
