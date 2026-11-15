@@ -5,6 +5,9 @@
 //
 //  web_controltest_shot, web_openglcore_screenshot: a capture in the browser
 //  writes a PNG of the size it was asked for that is not one flat colour.
+//  web_controltest_shot_no_headless: so does one without --headless, of
+//  UnicodeTextDemo, which exits 0 only if pre.js preloaded the lazy CJK face
+//  (the app reads every chain face for a capture, and exits 2 on a missing one).
 //
 //      node tests/web/shot.mjs --size <W>x<H> --png <name> [run.mjs options] <page.html> -- <args>
 //

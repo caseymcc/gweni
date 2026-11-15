@@ -488,7 +488,10 @@ public:
     virtual bool setGlyphFallbackSource(const gweni::String &face, const gweni::String &file,
         const gweni::String &unicodeRange) { return true; }
     //! Deterministic capture setup: read declared chain files before any text
-    //! is measured. This makes no atlas or chain font.
+    //! is measured. This makes no atlas or chain font. On the web it reads
+    //! what the page put in its file system before main (pre.js fetches the
+    //! lazy package for any run but the interactive window's); a file not there
+    //! is reported, returns false and is not fetched later in the session.
     virtual bool preloadGlyphFallbacks() { return true; }
 
     //! A font family: a Font whose facename is the family's draws its bold,

@@ -1250,7 +1250,16 @@ if(EMSCRIPTEN)
                 --out ${CMAKE_CURRENT_BINARY_DIR}/web_controltest_shot
                 $<TARGET_FILE:ControlTest>
                 -- --headless --control ButtonDemo --shot /out/ButtonDemo.png)
-        set(web_shot_tests web_controltest_shot)
+        # a capture without --headless (the window's context first, as natively)
+        # of the page showing CJK: pre.js preloads the lazy face for it too, as
+        # the app reads every chain face for any capture, so it exits 0
+        add_test(NAME web_controltest_shot_no_headless
+            COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} ${CMAKE_CURRENT_SOURCE_DIR}/web/shot.mjs
+                --size 640x480 --png UnicodeTextDemo.png
+                --out ${CMAKE_CURRENT_BINARY_DIR}/web_controltest_shot_no_headless
+                $<TARGET_FILE:ControlTest>
+                -- --control UnicodeTextDemo --shot /out/UnicodeTextDemo.png)
+        set(web_shot_tests web_controltest_shot web_controltest_shot_no_headless)
         if(TARGET OpenGLCore)
             add_test(NAME web_openglcore_screenshot
                 COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} ${CMAKE_CURRENT_SOURCE_DIR}/web/shot.mjs

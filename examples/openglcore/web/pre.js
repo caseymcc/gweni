@@ -49,7 +49,8 @@
 //              a run writes what the runner copies back
 //  Before main it also writes window.gweniMounts, the files the runner copies
 //  in (run.mjs --mount), e.g. a resources/ copy missing one file, and, for a
-//  capture (--headless in argv) or a page made with PRELOAD_LAZY
+//  run that may be a capture (any flag but the window's, below) or a page made
+//  with PRELOAD_LAZY
 //  (Module.gweniPreloadLazy, gweni_unittests), fetches the lazy package's faces
 //  (Module.gweniLazyFiles, page.cmake) into /resources-lazy, so a capture draws
 //  them as natively instead of fetching on its first miss (a face the runner
@@ -134,8 +135,19 @@ Module['preRun'] = (Module['preRun'] || []).concat([function()
         FS.writeFile(file.path, bytes);
     });
 
+    // a run is the interactive window only if every flag it has is one the
+    // window takes; anything else (--shot, --stats, --frames, a script step,
+    // --headless, ...) may be a capture, which the apps preload the chain faces
+    // for, so it gets them: a window misread as a capture only downloads the face
+    // early, a capture misread as a window would draw it missing and exit 2
+    var windowFlags = ['--control', '--demo', '--size', '--scale', '--resources',
+        '--renderer', '--loop', '--stats-overlay', '--depth-view', '--verify-layout',
+        '--verify-idle'];
     var capture = Module['gweniPreloadLazy'] === true ||
-        (Module['arguments'] || []).indexOf('--headless') >= 0;
+        (Module['arguments'] || []).some(function(arg)
+        {
+            return arg.lastIndexOf('--', 0) === 0 && windowFlags.indexOf(arg) < 0;
+        });
     if(capture && typeof location !== 'undefined')
     {
         (Module['gweniLazyFiles'] || []).forEach(function(name)
