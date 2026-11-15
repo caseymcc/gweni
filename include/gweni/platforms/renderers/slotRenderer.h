@@ -825,6 +825,11 @@ public:
 
     //! Clears the render target to color, and its depth to the far plane.
     virtual void clearTarget(const gweni::Color &color)=0;
+    //! Clears the render target's depth alone to the far plane (1.0), keeping
+    //! its colour: an app that drew its own scene into the target, with its own
+    //! depth, calls it before renderCanvas(), so the scene's depth hides no
+    //! control (docs/architecture.md -> "gweni over an app's scene").
+    virtual void clearDepth()=0;
     //! Reads the render target's top-left width x height back as RGBA8, top row
     //! first, once what was submitted has been drawn.
     virtual void readPixels(int width, int height, std::vector<uint8_t> &pixels)=0;

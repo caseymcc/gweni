@@ -78,6 +78,14 @@ bool setFloatDepth(bool on);
 //! them. Nothing without a renderer.
 void resetDrawState();
 
+//! Writes an app's own "scene" into the target through the backend's own API,
+//! not the renderer's: the colour cleared to color and the depth to depth (0 the
+//! near plane, 1 the far one), as a scene drawn with its own depth leaves them.
+//! GL: glClearColor, glClearDepth(f) and glClear, the clear depth set back to
+//! 1.0; Vulkan: a command buffer of its own clearing both attachments in a
+//! dynamic-rendering pass, the target's layouts kept, waited for.
+void writeAppScene(const Color &color, float depth);
+
 //! Clears the target to color, opaque whatever its alpha, and its depth.
 inline void clearView(const Color &color)
 {

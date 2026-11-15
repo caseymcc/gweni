@@ -1600,6 +1600,16 @@ void Vulkan::submit()
 
 void Vulkan::clearTarget(const gweni::Color &color)
 {
+    clearAttachments(&color);
+}
+
+void Vulkan::clearDepth()
+{
+    clearAttachments(nullptr);
+}
+
+void Vulkan::clearAttachments(const gweni::Color *color)
+{
     if(!m_deviceUsable)
         return;
     // at once, in the queue's order: another renderer drawing into the target
@@ -1660,7 +1670,8 @@ void Vulkan::clearTarget(const gweni::Color &color)
     colorAttachment.imageLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     colorAttachment.loadOp=VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttachment.storeOp=VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttachment.clearValue.color={ { color.r/255.0f, color.g/255.0f, color.b/255.0f, color.a/255.0f } };
+    if(color)
+        colorAttachment.clearValue.color={ { color->r/255.0f, color->g/255.0f, color->b/255.0f, color->a/255.0f } };
     VkRenderingAttachmentInfo depthAttachment=colorAttachment;
     depthAttachment.imageView=m_target->depthView();
     depthAttachment.imageLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
@@ -1670,8 +1681,9 @@ void Vulkan::clearTarget(const gweni::Color &color)
     rendering.sType=VK_STRUCTURE_TYPE_RENDERING_INFO;
     rendering.renderArea.extent={ (uint32_t)m_target->width(), (uint32_t)m_target->height() };
     rendering.layerCount=1;
-    rendering.colorAttachmentCount=1;
-    rendering.pColorAttachments=&colorAttachment;
+    // a depth clear alone has no colour attachment, so the colour is untouched
+    rendering.colorAttachmentCount=color?1:0;
+    rendering.pColorAttachments=color?&colorAttachment:nullptr;
     rendering.pDepthAttachment=&depthAttachment;
     vkCmdBeginRendering(commands, &rendering);
     vkCmdEndRendering(commands);

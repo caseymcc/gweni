@@ -210,6 +210,9 @@ public:
     //! Clears the target's colour and depth at once, in the queue's order, without
     //! waiting for the queue (its commands are reused once their fence signals).
     void clearTarget(const gweni::Color &color) override;
+    //! Clears the target's depth alone, as clearTarget() does (in the queue's
+    //! order, not waited for), with no colour attachment, so the colour is kept.
+    void clearDepth() override;
     void readPixels(int width, int height, std::vector<uint8_t> &pixels) override;
     bool textureExists(TextureHandle handle) const override;
     bool textureChannelSizes(TextureHandle handle, int bits[4]) const override;
@@ -367,6 +370,9 @@ private:
     void endRendering();
     //! Submits what the frame recorded, if anything.
     void submit();
+    //! clearTarget()'s commands: the depth cleared to the far plane, and the
+    //! colour to *color, or kept with color null.
+    void clearAttachments(const gweni::Color *color);
 
     //! The primitive slots' and the glyph slots' pipelines and their layouts, for the target's formats.
     bool createPipelines();

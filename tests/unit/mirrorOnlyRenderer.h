@@ -38,6 +38,7 @@ public:
     MirrorOnlyRenderer(): SlotRenderer(paths(), gweni::Rect(0, 0, 640, 480)) { setClipCulling(false); }
 
     void clearTarget(const gweni::Color &) override {}
+    void clearDepth() override {}
     void readPixels(int, int, std::vector<uint8_t> &pixels) override { pixels.clear(); }
     bool textureExists(TextureHandle) const override { return false; }
     bool textureChannelSizes(TextureHandle, int[4]) const override { return false; }

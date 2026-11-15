@@ -119,6 +119,42 @@ void OpenGLCore::clearTarget(const gweni::Color &color)
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
 }
 
+// glClearDepth on desktop GL (glClearDepthf is 4.1), glClearDepthf on GLES
+static void setClearDepth(GLfloat depth)
+{
+#ifdef GWENI_GL_ES
+    glClearDepthf(depth);
+#else
+    glClearDepth(depth);
+#endif
+}
+
+void OpenGLCore::clearDepth()
+{
+    // what an app's scene may have left that would change the clear
+    GLfloat clearDepth=1.0f;
+    GLboolean depthMask=GL_TRUE;
+    const GLboolean scissor=glIsEnabled(GL_SCISSOR_TEST);
+
+    glGetFloatv(GL_DEPTH_CLEAR_VALUE, &clearDepth);
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMask);
+    if(clearDepth != 1.0f)
+        setClearDepth(1.0f);
+    if(!depthMask)
+        glDepthMask(GL_TRUE);
+    if(scissor)
+        glDisable(GL_SCISSOR_TEST);
+
+    glClear(GL_DEPTH_BUFFER_BIT);
+
+    if(scissor)
+        glEnable(GL_SCISSOR_TEST);
+    if(!depthMask)
+        glDepthMask(GL_FALSE);
+    if(clearDepth != 1.0f)
+        setClearDepth(clearDepth);
+}
+
 void OpenGLCore::readPixels(int width, int height, std::vector<uint8_t> &pixels)
 {
     const size_t rowBytes=static_cast<size_t>(width)*4;

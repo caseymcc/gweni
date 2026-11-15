@@ -55,6 +55,10 @@ public:
     void setViewRect(const gweni::Rect &viewRect) override;
 
     void clearTarget(const gweni::Color &color) override;
+    //! glClear(GL_DEPTH_BUFFER_BIT) at a clear depth of 1.0, with depth writes
+    //! on and the scissor test off for the clear; the app's clear depth, depth
+    //! mask and scissor test are as they were after it.
+    void clearDepth() override;
     void readPixels(int width, int height, std::vector<uint8_t> &pixels) override;
     bool textureExists(TextureHandle handle) const override;
     bool textureChannelSizes(TextureHandle handle, int bits[4]) const override;

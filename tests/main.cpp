@@ -164,6 +164,99 @@ bool setFloatDepth(bool on)
     return glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE && glGetError() == GL_NO_ERROR;
 }
 
+#ifdef GWENI_HAS_VULKAN
+static void writeVulkanScene(const Color &color, float depth)
+{
+    const VkDevice device=g_vulkanDevice->device;
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType=VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags=VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    poolInfo.queueFamilyIndex=g_vulkanDevice->queueFamily;
+    VkCommandPool pool=VK_NULL_HANDLE;
+    REQUIRE(vkCreateCommandPool(device, &poolInfo, nullptr, &pool) == VK_SUCCESS);
+
+    VkCommandBufferAllocateInfo allocate{};
+    allocate.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocate.commandPool=pool;
+    allocate.level=VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocate.commandBufferCount=1;
+    VkCommandBuffer commands=VK_NULL_HANDLE;
+    REQUIRE(vkAllocateCommandBuffers(device, &allocate, &commands) == VK_SUCCESS);
+
+    VkCommandBufferBeginInfo begin{};
+    begin.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(commands, &begin);
+
+    // after whatever was submitted to the target before (a frame, a clear, a
+    // readback's copy), as an app's scene pass is
+    const VkPipelineStageFlags stages=VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT|
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    VkMemoryBarrier barrier{};
+    barrier.sType=VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    barrier.srcAccessMask=VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT|
+        VK_ACCESS_TRANSFER_READ_BIT|VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask=VK_ACCESS_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT|
+        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    vkCmdPipelineBarrier(commands, stages|VK_PIPELINE_STAGE_TRANSFER_BIT, stages, 0, 1, &barrier,
+        0, nullptr, 0, nullptr);
+
+    VkRenderingAttachmentInfo colorAttachment{};
+    colorAttachment.sType=VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    colorAttachment.imageView=g_vulkanTarget->colorView();
+    colorAttachment.imageLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment.loadOp=VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.storeOp=VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.clearValue.color={ { color.r/255.0f, color.g/255.0f, color.b/255.0f, color.a/255.0f } };
+    VkRenderingAttachmentInfo depthAttachment=colorAttachment;
+    depthAttachment.imageView=g_vulkanTarget->depthView();
+    depthAttachment.imageLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depthAttachment.clearValue.depthStencil={ depth, 0 };
+
+    VkRenderingInfo rendering{};
+    rendering.sType=VK_STRUCTURE_TYPE_RENDERING_INFO;
+    rendering.renderArea.extent={ (uint32_t)g_vulkanTarget->width(), (uint32_t)g_vulkanTarget->height() };
+    rendering.layerCount=1;
+    rendering.colorAttachmentCount=1;
+    rendering.pColorAttachments=&colorAttachment;
+    rendering.pDepthAttachment=&depthAttachment;
+    vkCmdBeginRendering(commands, &rendering);
+    vkCmdEndRendering(commands);
+    vkEndCommandBuffer(commands);
+
+    VkSubmitInfo info{};
+    info.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    info.commandBufferCount=1;
+    info.pCommandBuffers=&commands;
+    CHECK(vkQueueSubmit(g_vulkanDevice->queue, 1, &info, VK_NULL_HANDLE) == VK_SUCCESS);
+    vkQueueWaitIdle(g_vulkanDevice->queue);
+    vkDestroyCommandPool(device, pool, nullptr);
+}
+#endif
+
+void writeAppScene(const Color &color, float depth)
+{
+#ifdef GWENI_HAS_VULKAN
+    if(g_vulkanDevice)
+    {
+        writeVulkanScene(color, depth);
+        return;
+    }
+#endif
+    glClearColor(color.r/255.0f, color.g/255.0f, color.b/255.0f, color.a/255.0f);
+#ifdef GWENI_GL_ES
+    glClearDepthf(depth);
+#else
+    glClearDepth(depth);
+#endif
+    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+#ifdef GWENI_GL_ES
+    glClearDepthf(1.0f);
+#else
+    glClearDepth(1.0);
+#endif
+}
+
 void resetDrawState()
 {
     if(!g_renderer)
