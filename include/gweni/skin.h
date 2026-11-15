@@ -537,12 +537,13 @@ public:
         } Toast;
 
         //! A TreeTable expander's chevron: at rest, hovered or pressed, and
-        //! disabled.
+        //! disabled; and a lazy node's "Loading…" placeholder row's text.
         struct TreeTable_t
         {
             gweni::Color Expander{0x60, 0x60, 0x60};
             gweni::Color ExpanderHover{0, 0, 0};
             gweni::Color ExpanderDisabled{0x80, 0x80, 0x80};
+            gweni::Color Placeholder{0x80, 0x80, 0x80};
         } TreeTable;
 
         //! A DateEdit's calendar button's chevron: at rest, hovered or

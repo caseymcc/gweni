@@ -96,6 +96,40 @@ void TreeTableRow::setTreeState(int column, size_t depth, bool hasChildren, bool
     m_expander->setExpanded(expanded);
 }
 
+// Only a change marks anything: a node bound to a row that showed a node
+// sets nothing here.
+void TreeTableRow::setPlaceholder(bool placeholder)
+{
+    if(placeholder == m_placeholder)
+        return;
+
+    m_placeholder=placeholder;
+    updateColors();
+}
+
+// DataTableRow's cell colours, with a placeholder's tree cell dimmer: set once
+// per cell, so a colour that stays marks nothing.
+void TreeTableRow::updateColors()
+{
+    Selectable::updateColors();
+
+    const Color &color=getTextColor();
+
+    for(int column=0; column < getCellCount(); ++column)
+    {
+        const bool dim=m_placeholder && column == m_treeColumn && getSkin();
+
+        getCell(column)->setTextColor(dim?getSkin()->Colors.TreeTable.Placeholder:color);
+    }
+}
+
+void TreeTableRow::onPress(event::Info info)
+{
+    if(m_placeholder)
+        return;
+    ParentClass::onPress(info);
+}
+
 void TreeTableRow::expanderPressed()
 {
     if(!m_tree)
@@ -170,9 +204,13 @@ GWENI_CONTROL_CONSTRUCTOR(TreeTable)
                 return;
 
             const VisibleNode node=m_visible[item];
+            TreeTableRow *treeRow=gweni_cast<TreeTableRow>(row);
 
-            if(TreeTableRow *treeRow=gweni_cast<TreeTableRow>(row))
+            if(treeRow)
                 showNode(treeRow, node);
+            // a placeholder is no node: the app's binder is not asked
+            if(node.id == NoNode)
+                return;
             if(m_nodeBinder)
                 m_nodeBinder(row, node.id, node.depth);
         });
@@ -188,9 +226,28 @@ DataTableRow *TreeTable::newSourceRow(Base *parent)
 
 void TreeTable::showNode(TreeTableRow *row, const VisibleNode &visible)
 {
+    if(visible.id == NoNode)
+    {
+        showPlaceholder(row, visible);
+        return;
+    }
+
     const Node *node=getNode(visible.id);
 
+    row->setPlaceholder(false);
     row->setTreeState(m_treeColumn, visible.depth, node && node->hasChildren, node && node->expanded);
+}
+
+// The placeholder is at its loading node's child depth, with no expander; the
+// node binder may have filled every cell, so they are emptied.
+void TreeTable::showPlaceholder(TreeTableRow *row, const VisibleNode &visible)
+{
+    row->setTreeState(m_treeColumn, visible.depth, false, false);
+    for(int column=0; column < row->getCellCount(); ++column)
+        row->setCellText(column, column == m_treeColumn?String(PlaceholderText):String());
+    row->setPlaceholder(true);
+    // a tree column changed under a row that already was one
+    row->updateColors();
 }
 
 // The rows before the changed suffix keep their nodes, but one of them may be
@@ -312,12 +369,20 @@ bool TreeTable::insertNodes(NodeId parent, size_t index, const NodeId *ids, size
             || (count > 1 && !unique.insert(id).second))
             return false;
     }
+    // The first insert under a loading node is the app's answer: its children
+    // take the placeholder's place, or with none the expander goes.
+    const bool answer=parent != Root && getNode(parent)->loading;
+    size_t placeholder=NoItem;
+
+    if(answer)
+        placeholder=endLoading(m_nodes[m_nodeIndex.at(parent)], count == 0);
     if(count == 0)
         return true;
 
     index=std::min(index, childrenOf(parent).size());
 
-    const size_t at=insertionItem(parent, index);
+    const size_t at=answer?placeholder:insertionItem(parent, index);
+    const size_t replaced=answer?1:0;
     const size_t depth=parent == Root?0:getNode(parent)->depth+1;
     std::vector<VisibleNode> visible;
 
@@ -349,10 +414,10 @@ bool TreeTable::insertNodes(NodeId parent, size_t index, const NodeId *ids, size
         {
             const VisibleNode single{ids[0], depth};
 
-            spliceVisible(at, 0, &single, 1);
+            spliceVisible(at, replaced, &single, 1);
         }
         else
-            spliceVisible(at, 0, visible);
+            spliceVisible(at, replaced, visible);
     }
     nodeChanged(parent);
     return true;
@@ -393,10 +458,18 @@ bool TreeTable::removeNode(NodeId id)
     if(item != NoItem)
         spliceVisible(item, subtreeEnd(item)-item, {});
 
-    // Swap/pop just the removed subtree's records, keeping every surviving
-    // id's store lookup current; neither a store rebuild nor a recursive walk.
-    std::vector<NodeId> pending{id};
+    eraseRecords({id});
+    syncVisibleSelection();
+    nodeChanged(parent);
+    if(selected)
+        selectionEvent();
+    return true;
+}
 
+// Swap/pop just the removed subtrees' records, keeping every surviving id's
+// store lookup current; neither a store rebuild nor a recursive walk.
+void TreeTable::eraseRecords(std::vector<NodeId> pending)
+{
     while(!pending.empty())
     {
         const NodeId next=pending.back();
@@ -414,11 +487,121 @@ bool TreeTable::removeNode(NodeId id)
         m_nodes.pop_back();
         m_nodeIndex.erase(next);
     }
-    syncVisibleSelection();
-    nodeChanged(parent);
-    if(selected)
-        selectionEvent();
+}
+
+void TreeTable::setHasChildren(NodeId id, bool hasChildren)
+{
+    const auto found=m_nodeIndex.find(id);
+
+    if(found == m_nodeIndex.end())
+        return;
+
+    Node &node=m_nodes[found->second];
+
+    // a node with children shows them whatever the app advertises
+    if(!node.children.empty() || node.hasChildren == hasChildren)
+        return;
+    if(node.loading)
+    {
+        endLoading(node, true);
+        return;
+    }
+
+    const bool wasExpanded=node.expanded;
+
+    node.hasChildren=hasChildren;
+    node.expanded=node.expanded && hasChildren;
+    nodeChanged(id);
+    if(wasExpanded && !hasChildren)
+        expansionEvent(id, false);
+}
+
+bool TreeTable::beginRequest(Node &node)
+{
+    if(!node.hasChildren || !node.children.empty() || node.childrenRequested)
+        return false;
+
+    node.childrenRequested=true;
+    node.loading=true;
     return true;
+}
+
+void TreeTable::requestChildren(NodeId id)
+{
+    event::Info info(this);
+
+    info.integer=id;
+    onChildrenRequested.call(this, info);
+}
+
+// The placeholder is the row right after its shown, expanded node. An empty
+// answer removes it and collapses the node, binding the node's row again for
+// its expander; the reference is not used past the splice, whose binders may
+// add nodes.
+size_t TreeTable::endLoading(Node &node, bool empty)
+{
+    const NodeId id=node.id;
+    size_t item=NoItem;
+
+    node.loading=false;
+    if(node.expanded)
+    {
+        const size_t at=itemForNode(id);
+
+        if(at != NoItem)
+            item=at+1;
+    }
+    if(!empty)
+        return item;
+
+    const bool wasExpanded=node.expanded;
+
+    node.hasChildren=false;
+    node.expanded=false;
+    if(item != NoItem)
+        spliceVisible(item, 1, {});
+    nodeChanged(id);
+    if(wasExpanded)
+        expansionEvent(id, false);
+    return NoItem;
+}
+
+// One splice takes the node's visible subtree (its children or placeholder)
+// away; then the records go, as a removeNode of each child would drop them.
+void TreeTable::resetChildren(NodeId id)
+{
+    const auto found=m_nodeIndex.find(id);
+
+    if(found == m_nodeIndex.end())
+        return;
+
+    const bool selectionMoved=m_selectedNode != id && isInSubtree(m_selectedNode, id);
+    Node &node=m_nodes[found->second];
+    const bool wasExpanded=node.expanded;
+    const size_t item=wasExpanded?itemForNode(id):NoItem;
+    std::vector<NodeId> children;
+
+    children.swap(node.children);
+    node.expanded=false;
+    node.loading=false;
+    node.childrenRequested=false;
+    node.hasChildren=true;
+    if(selectionMoved)
+        m_selectedNode=id;
+    if(item != NoItem)
+    {
+        const size_t end=subtreeEnd(item);
+
+        if(end > item+1)
+            spliceVisible(item+1, end-item-1, {});
+    }
+    eraseRecords(std::move(children));
+    syncVisibleSelection();
+    nodeChanged(id);
+    if(wasExpanded)
+        expansionEvent(id, false);
+    if(selectionMoved)
+        selectionEvent();
 }
 
 bool TreeTable::moveNode(NodeId id, NodeId newParent, size_t index)
@@ -593,9 +776,19 @@ void TreeTable::appendVisible(std::vector<VisibleNode> &into,
 
         pending.pop_back();
         into.push_back({id, node.depth});
-        if(node.expanded)
+        if(node.expanded && node.loading)
+            into.push_back({NoNode, node.depth+1});
+        else if(node.expanded)
             pending.insert(pending.end(), node.children.rbegin(), node.children.rend());
     }
+}
+
+void TreeTable::appendSubtree(std::vector<VisibleNode> &into, const Node &node) const
+{
+    if(node.loading)
+        into.push_back({NoNode, node.depth+1});
+    else
+        appendVisible(into, node.children);
 }
 
 // The item count takes care of rows newly shown or hidden by a changed range.
@@ -653,7 +846,19 @@ void TreeTable::setExpanded(NodeId id, bool expanded)
     if(found == m_nodeIndex.end())
         return;
 
-    Node &node=m_nodes[found->second];
+    if(expanded && beginRequest(m_nodes[found->second]))
+    {
+        // Asked before the node expands, so an answer in the handler expands
+        // it with its children, and an empty one leaves it a collapsed leaf.
+        requestChildren(id);
+
+        const Node *now=getNode(id);
+
+        if(!now || now->expanded || !now->hasChildren)
+            return;
+    }
+
+    Node &node=m_nodes[m_nodeIndex.at(id)];
 
     if(node.expanded == expanded || (expanded && !node.hasChildren))
         return;
@@ -672,7 +877,7 @@ void TreeTable::setExpanded(NodeId id, bool expanded)
         {
             std::vector<VisibleNode> children;
 
-            appendVisible(children, node.children);
+            appendSubtree(children, node);
             if(!children.empty())
             {
                 spliceVisible(at, 0, children);
@@ -704,11 +909,14 @@ void TreeTable::setExpanded(NodeId id, bool expanded)
 void TreeTable::setAllExpanded(bool expanded)
 {
     std::vector<NodeId> changed;
+    std::vector<NodeId> requests;
 
     for(Node &node : m_nodes)
     {
         if(node.expanded != expanded && (!expanded || node.hasChildren))
         {
+            if(expanded && beginRequest(node))
+                requests.push_back(node.id);
             node.expanded=expanded;
             changed.push_back(node.id);
         }
@@ -741,6 +949,12 @@ void TreeTable::setAllExpanded(bool expanded)
         expansionEvent(id, expanded);
     if(shown != selected)
         selectionEvent();
+    // a bulk expansion shows the placeholders first, then asks
+    for(NodeId id : requests)
+    {
+        if(getNode(id))
+            requestChildren(id);
+    }
 }
 
 TreeTable::NodeId TreeTable::shownAncestor(NodeId id) const
@@ -764,6 +978,7 @@ void TreeTable::expandSubtree(NodeId id)
         return;
 
     std::vector<NodeId> changed;
+    std::vector<NodeId> requests;
     std::vector<NodeId> pending{id};
 
     while(!pending.empty())
@@ -773,6 +988,8 @@ void TreeTable::expandSubtree(NodeId id)
         pending.pop_back();
         if(node.hasChildren && !node.expanded)
         {
+            if(beginRequest(node))
+                requests.push_back(node.id);
             node.expanded=true;
             changed.push_back(node.id);
         }
@@ -791,12 +1008,17 @@ void TreeTable::expandSubtree(NodeId id)
         const size_t end=subtreeEnd(item);
         std::vector<VisibleNode> children;
 
-        appendVisible(children, getNode(id)->children);
+        appendSubtree(children, *getNode(id));
         spliceVisible(at, end-at, children);
     }
 
     for(NodeId changedId : changed)
         expansionEvent(changedId, true);
+    for(NodeId requested : requests)
+    {
+        if(getNode(requested))
+            requestChildren(requested);
+    }
 }
 
 bool TreeTable::setSelectedNode(NodeId id)
@@ -821,6 +1043,19 @@ bool TreeTable::setSelectedNode(NodeId id)
 // The item is the visible index: the node it shows is the selection.
 void TreeTable::selectedItemChanged(DataTableRow * /*row*/, size_t item, bool doEvents)
 {
+    // A placeholder is no node: a key moving down passes over it to the row
+    // after it, anything else (up, End onto it) lands on its loading node,
+    // the row before it. The row after a placeholder is always a node.
+    if(item < m_visible.size() && m_visible[item].id == NoNode)
+    {
+        const size_t from=itemForNode(m_selectedNode);
+        const bool down=from != NoItem && from < item && item+1 < m_visible.size();
+        const size_t to=down?item+1:item-1;
+
+        DataTable::setSelectedItem(to, doEvents && nodeForItem(to) != m_selectedNode);
+        return;
+    }
+
     m_selectedNode=nodeForItem(item);
 
     if(doEvents)

@@ -65,8 +65,15 @@ public:
     //! The depth of the node the row shows.
     size_t getDepth() const { return m_depth; }
 
+    //! Whether the row shows a lazy node's "Loading…" placeholder, which is
+    //! no node: a press on it selects nothing.
+    bool isPlaceholder() const { return m_placeholder; }
+
     //! A double-click toggles a parent and activates a leaf (onNodeActivated).
     void onMouseDoubleClickLeft(int x, int y) override;
+    void onPress(event::Info info) override;
+    //! A placeholder's tree cell in the skin's TreeTable.Placeholder colour.
+    void updateColors() override;
 
     //! The expander is drawn and hit-tested inside the tree cell only; the
     //! other children get Label's rects. The row marks the expander itself
@@ -84,12 +91,14 @@ private:
     //! What the row shows of its node: the tree column, the depth, and
     //! whether it has an expander and in which state.
     void setTreeState(int column, size_t depth, bool hasChildren, bool expanded);
+    void setPlaceholder(bool placeholder);
     void expanderPressed();
 
     TreeTable *m_tree=nullptr;
     internal::TreeTableExpander *m_expander=nullptr;
     int m_treeColumn=0;
     size_t m_depth=0;
+    bool m_placeholder=false;
     Rect m_expanderClip;
 };
 
@@ -101,7 +110,9 @@ private:
 //! App ids are unique, stable size_t values, also used as handles; Root
 //! denotes no parent and cannot be a node's id. Live edits splice the visible
 //! preorder and keep the first shown node anchored, with only changed or
-//! newly shown nodes bound again. Sorting is not yet supported.
+//! newly shown nodes bound again. A node may load its children lazily
+//! (setHasChildren, onChildrenRequested), showing a placeholder row until the
+//! app answers. Sorting is not yet supported.
 //! A header sort notification leaves the hierarchy in its original order.
 class GWENI_EXPORT TreeTable: public DataTable
 {
@@ -122,8 +133,14 @@ public:
         bool expanded=false;
         //! True even before children are supplied, if the app says so.
         bool hasChildren=false;
+        //! Lazy children: onChildrenRequested has fired for this node (until
+        //! resetChildren), and the app has not answered yet.
+        bool childrenRequested=false;
+        bool loading=false;
     };
 
+    //! A visible row. A lazy node waiting for its children (expanded and
+    //! loading) has one placeholder row under it, id NoNode.
     struct VisibleNode
     {
         NodeId id=NoNode;
@@ -156,6 +173,24 @@ public:
     bool moveNode(NodeId id, NodeId newParent, size_t index);
     //! The app's fields changed: bind this node again if on screen.
     void nodeChanged(NodeId id);
+
+    //! Lazy children. setHasChildren(id, true) gives a node with no children
+    //! an expander; its first expand fires onChildrenRequested (the id as the
+    //! info's `integer`) before the node expands. The app answers in that
+    //! call or later with insertNodes/insertNode/addNode under it, which put
+    //! the children in the place of its one "Loading…" placeholder row in a
+    //! single splice; or with no children (insertNodes with none, or
+    //! setHasChildren(id, false)), which takes the expander and the
+    //! placeholder away and collapses the node (onCollapsed if it had
+    //! expanded). A node with children keeps hasChildren whatever this says.
+    //! The request fires once per node until resetChildren.
+    void setHasChildren(NodeId id, bool hasChildren);
+    //! Removes the node's children (their subtrees; a selection among them
+    //! moves to the node, firing onSelectionChange once), collapses it
+    //! (onCollapsed if it was expanded) and keeps its expander, so its next
+    //! expand asks for the children again.
+    void resetChildren(NodeId id);
+    event::Caller onChildrenRequested;
     size_t getNodeCount() const { return m_nodes.size(); }
     //! Null for an unknown id. The pointer lasts until the next model edit.
     const Node *getNode(NodeId id) const;
@@ -165,6 +200,8 @@ public:
     //! The units a level of depth indents the tree cell by, and the
     //! expander's side; the tree cell's text starts after both.
     static constexpr int Indent=16;
+    //! A loading node's placeholder row's tree cell text.
+    static constexpr const char *PlaceholderText="Loading\xE2\x80\xA6";
     static constexpr int ExpanderSize=15;
     //! The column the tree is drawn in (0 by default). Out of range does
     //! nothing.
@@ -236,6 +273,21 @@ private:
 
     //! The row's tree cell, depth and expander for the node it shows.
     void showNode(TreeTableRow *row, const VisibleNode &node);
+    //! The row shows a placeholder: the tree cell "Loading…", the others empty.
+    void showPlaceholder(TreeTableRow *row, const VisibleNode &node);
+    //! The loading node is answered: with no children its placeholder goes
+    //! (and the node collapses), otherwise the caller splices the children
+    //! into the placeholder's place. Returns the placeholder's item (NoItem
+    //! when not shown) for that splice.
+    size_t endLoading(Node &node, bool empty);
+    //! Marks a lazy node with nothing yet as requested and loading, so its
+    //! expansion shows the placeholder; false when it needs no request.
+    static bool beginRequest(Node &node);
+    void requestChildren(NodeId id);
+    //! The node's children, or its placeholder while it is loading.
+    void appendSubtree(std::vector<VisibleNode> &into, const Node &node) const;
+    //! Drops the store records of these nodes and their whole subtrees.
+    void eraseRecords(std::vector<NodeId> pending);
     //! Every pooled row shows its node's expansion again (the toggled node's
     //! row is before the changed suffix and is not bound again).
     void syncExpanders(size_t before);

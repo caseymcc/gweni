@@ -609,6 +609,7 @@ std::unordered_map<std::string, gweni::Color*> TexturedSkin::textColorRegistry()
         {"DateEditButton",&Colors.DateEdit.Button},
         {"DateEditButtonHover",&Colors.DateEdit.ButtonHover},
         {"DateEditButtonDisabled",&Colors.DateEdit.ButtonDisabled},
+        {"TreeTablePlaceholderText",&Colors.TreeTable.Placeholder},
     };
 }
 
@@ -1474,6 +1475,8 @@ void TexturedSkin::setThemeColors()
     Colors.DateEdit.Button=FgDark;
     Colors.DateEdit.ButtonHover=Fg;
     Colors.DateEdit.ButtonDisabled=Muted;
+    // a lazy node's "Loading…" row, dimmer than a row's own text
+    Colors.TreeTable.Placeholder=Muted;
     // a RichText's links: the accent, lifted to cyan while hovered
     Colors.RichText.Link=tokyonight::Blue;
     Colors.RichText.LinkHover=tokyonight::Cyan;

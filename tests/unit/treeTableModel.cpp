@@ -10,7 +10,13 @@
  *  previous sibling, then parent, notifying once. The first shown node and
  *  its partial-row offset anchor edits above the view. Only changed or newly
  *  shown nodes are bound, with the same pool, controls and live ids at 1 000
- *  and 100 000 nodes; no context or resources are needed.
+ *  and 100 000 nodes; no context or resources are needed. Lazy children: a
+ *  node's first expand asks once (until resetChildren), shows one "Loading…"
+ *  placeholder row in the placeholder colour that the app's binder never
+ *  sees and a press does not select, and an answer in the request or later
+ *  takes its place in one splice on the same pooled rows; an empty answer
+ *  takes the expander away; keys pass over a placeholder; a loading node
+ *  under a collapsed ancestor, expandAll and expandSubtree ask once each.
  */
 #include "headlessFixture.h"
 
@@ -665,4 +671,314 @@ TEST_CASE("TreeTable model: live edits bind locally with the same pool controls 
     }
     REQUIRE(costs.size() == 2);
     CHECK(costs[0] == costs[1]);
+}
+
+namespace
+{
+
+struct Requests: event::Handler
+{
+    Tree *tree=nullptr;
+    std::vector<Id> ids;
+    std::vector<Id> expanded;
+    std::vector<Id> collapsed;
+    //! What the request handler answers with, if anything.
+    std::function<void(Id)> answer;
+    void requested(event::Info info)
+    {
+        ids.push_back(info.integer);
+        if(answer)
+            answer(info.integer);
+    }
+    void onExpanded(event::Info info) { expanded.push_back(info.integer); }
+    void onCollapsed(event::Info info) { collapsed.push_back(info.integer); }
+
+    void listen(Tree *table)
+    {
+        tree=table;
+        tree->onChildrenRequested.add(this, &Requests::requested);
+        tree->onExpanded.add(this, &Requests::onExpanded);
+        tree->onCollapsed.add(this, &Requests::onCollapsed);
+    }
+};
+
+std::vector<Id> visibleIds(const Tree *tree)
+{
+    std::vector<Id> ids;
+    for(const auto &node : tree->getVisibleNodes())
+        ids.push_back(node.id);
+    return ids;
+}
+
+controls::TreeTableRow *treeRow(Tree *tree, size_t item)
+{
+    return gweni_cast<controls::TreeTableRow>(tree->rowForItem(item));
+}
+
+constexpr Id P=Tree::NoNode;
+
+}//namespace
+
+TEST_CASE("TreeTable model: a lazy node asks once and shows its placeholder until a later answer replaces it")
+{
+    Scene scene;
+    Requests requests;
+    Selections selections;
+    requests.listen(scene.tree);
+    scene.tree->onSelectionChange.add(&selections, &Selections::changed);
+    scene.roots(5);
+    scene.settle();
+
+    // advertised children give a leaf on screen its expander
+    scene.tree->setHasChildren(2, true);
+    scene.frame();
+    REQUIRE(treeRow(scene.tree, 2) != nullptr);
+    CHECK_FALSE(treeRow(scene.tree, 2)->getExpander()->hidden());
+    CHECK(scene.tree->getNode(2)->hasChildren);
+    scene.settle();
+    const auto pool=scene.tree->getVirtualBody()->getRows();
+    const auto controls=controlsIn(scene.tree);
+
+    scene.tree->setExpanded(2, true);
+    CHECK(requests.ids == std::vector<Id>{2});
+    CHECK(requests.expanded == std::vector<Id>{2});
+    CHECK(scene.tree->isExpanded(2));
+    CHECK(scene.tree->getNode(2)->loading);
+    CHECK(visibleIds(scene.tree) == std::vector<Id>{0, 1, 2, P, 3, 4});
+    CHECK(scene.tree->getVisibleNodes()[3].depth == 1);
+    scene.frame();
+    controls::TreeTableRow *placeholder=treeRow(scene.tree, 3);
+    REQUIRE(placeholder != nullptr);
+    CHECK(placeholder->isPlaceholder());
+    CHECK(placeholder->getCellText(0) == Tree::PlaceholderText);
+    CHECK(placeholder->getCellText(1) == "");
+    CHECK(placeholder->getExpander()->hidden());
+    CHECK((placeholder->getCell(0)->getTextColor() == scene.skin.Colors.TreeTable.Placeholder));
+    CHECK_FALSE((placeholder->getCell(1)->getTextColor() == scene.skin.Colors.TreeTable.Placeholder));
+    // the app's binder never sees a placeholder
+    CHECK(std::find(scene.binds.begin(), scene.binds.end(), P) == scene.binds.end());
+    scene.settle();
+
+    // a press on it selects nothing
+    const Point at=placeholder->getCell(1)->localPosToCanvas();
+    scene.canvas.inputMouseMoved(at.x+2, at.y+2, 0, 0);
+    input::onMouseClicked(&scene.canvas, 0, true);
+    input::onMouseClicked(&scene.canvas, 0, false);
+    scene.frame();
+    CHECK(scene.tree->getSelectedNode() == Tree::NoNode);
+    CHECK(selections.ids.empty());
+    scene.canvas.inputMouseMoved(590, 390, 0, 0);
+    scene.settle();
+
+    // collapsed and expanded again while loading: no second request
+    scene.tree->setExpanded(2, false);
+    CHECK(visibleIds(scene.tree) == std::vector<Id>{0, 1, 2, 3, 4});
+    scene.tree->setExpanded(2, true);
+    CHECK(requests.ids == std::vector<Id>{2});
+    CHECK(visibleIds(scene.tree) == std::vector<Id>{0, 1, 2, P, 3, 4});
+    scene.settle();
+
+    // the later answer takes the placeholder's place in one splice
+    REQUIRE(scene.tree->insertNodes(2, 0, {20, 21}));
+    CHECK_FALSE(scene.tree->getNode(2)->loading);
+    CHECK(visibleIds(scene.tree) == std::vector<Id>{0, 1, 2, 20, 21, 3, 4});
+    scene.frame();
+    CHECK(treeRow(scene.tree, 3) == placeholder);
+    CHECK_FALSE(placeholder->isPlaceholder());
+    CHECK(placeholder->getCellText(0) == "node 20");
+    CHECK_FALSE((placeholder->getCell(0)->getTextColor() == scene.skin.Colors.TreeTable.Placeholder));
+    // the answered node's row and its two children; 3 and 4 keep their rows
+    CHECK(std::set<Id>(scene.binds.begin(), scene.binds.end()) == std::set<Id>{2, 20, 21});
+    CHECK(scene.tree->getVirtualBody()->getRows() == pool);
+    CHECK(controlsIn(scene.tree) == controls);
+    CHECK(requests.ids == std::vector<Id>{2});
+    CHECK(requests.expanded == std::vector<Id>{2, 2});
+    CHECK(requests.collapsed == std::vector<Id>{2});
+    scene.settle();
+    scene.frame();
+    CHECK(scene.renderer.frameStats().primitiveSlotsWritten == 0);
+    CHECK(scene.renderer.frameStats().textSlotsWritten == 0);
+}
+
+TEST_CASE("TreeTable model: lazy children answered in the request, or with none now or later")
+{
+    Scene scene;
+    Requests requests;
+    requests.listen(scene.tree);
+    scene.roots(4);
+    for(Id id=0; id < 4; ++id)
+        scene.tree->setHasChildren(id, true);
+    scene.settle();
+
+    // answered in the call: the node expands straight onto its children
+    requests.answer=[&](Id id)
+        {
+            if(id == 1)
+                REQUIRE(scene.tree->insertNodes(1, 0, {10, 11}));
+            if(id == 2)
+                scene.tree->setHasChildren(2, false);
+            if(id == 3)
+                REQUIRE(scene.tree->insertNodes(3, 0, {}));
+        };
+    scene.tree->setExpanded(1, true);
+    CHECK(requests.ids == std::vector<Id>{1});
+    CHECK(requests.expanded == std::vector<Id>{1});
+    CHECK(visibleIds(scene.tree) == std::vector<Id>{0, 1, 10, 11, 2, 3});
+    scene.frame();
+    for(controls::Base *control : scene.tree->getVirtualBody()->getRows())
+    {
+        if(!control->hidden())
+            CHECK_FALSE(gweni_cast<controls::TreeTableRow>(control)->isPlaceholder());
+    }
+
+    // answered empty in the call, two ways: a leaf, never expanded
+    for(Id id : {Id(2), Id(3)})
+    {
+        CAPTURE(id);
+        scene.settle();
+        scene.tree->setExpanded(id, true);
+        CHECK_FALSE(scene.tree->isExpanded(id));
+        CHECK_FALSE(scene.tree->getNode(id)->hasChildren);
+        CHECK_FALSE(scene.tree->getNode(id)->loading);
+        scene.frame();
+        CHECK(treeRow(scene.tree, scene.tree->itemForNode(id))->getExpander()->hidden());
+    }
+    CHECK(requests.ids == std::vector<Id>{1, 2, 3});
+    CHECK(requests.expanded == std::vector<Id>{1});
+    CHECK(requests.collapsed.empty());
+    CHECK(visibleIds(scene.tree) == std::vector<Id>{0, 1, 10, 11, 2, 3});
+    // a leaf now: no expand and no new request
+    scene.tree->setExpanded(2, true);
+    CHECK(requests.ids == std::vector<Id>{1, 2, 3});
+
+    // answered empty later: the placeholder and the expander go, it collapses
+    requests.answer=nullptr;
+    scene.tree->setExpanded(0, true);
+    CHECK(visibleIds(scene.tree) == std::vector<Id>{0, P, 1, 10, 11, 2, 3});
+    scene.settle();
+    REQUIRE(scene.tree->insertNodes(0, 0, {}));
+    CHECK(visibleIds(scene.tree) == std::vector<Id>{0, 1, 10, 11, 2, 3});
+    CHECK_FALSE(scene.tree->isExpanded(0));
+    CHECK_FALSE(scene.tree->getNode(0)->hasChildren);
+    CHECK(requests.collapsed == std::vector<Id>{0});
+    scene.frame();
+    CHECK(treeRow(scene.tree, 0)->getExpander()->hidden());
+    for(controls::Base *control : scene.tree->getVirtualBody()->getRows())
+    {
+        if(!control->hidden())
+            CHECK_FALSE(gweni_cast<controls::TreeTableRow>(control)->isPlaceholder());
+    }
+}
+
+TEST_CASE("TreeTable model: resetChildren drops the children and the next expand asks again")
+{
+    Scene scene;
+    Requests requests;
+    Selections selections;
+    requests.listen(scene.tree);
+    scene.tree->onSelectionChange.add(&selections, &Selections::changed);
+    scene.roots(3);
+    scene.tree->setHasChildren(1, true);
+    requests.answer=[&](Id id)
+        {
+            REQUIRE(scene.tree->insertNodes(id, 0, {100+requests.ids.size(), 200+requests.ids.size()}));
+        };
+    scene.tree->setExpanded(1, true);
+    REQUIRE(scene.tree->addNode(101, 1010) == 1010);
+    scene.tree->setExpanded(101, true);
+    REQUIRE(scene.tree->setSelectedNode(1010));
+    scene.settle();
+    CHECK(visibleIds(scene.tree) == std::vector<Id>{0, 1, 101, 1010, 201, 2});
+    const size_t nodes=scene.tree->getNodeCount();
+
+    scene.tree->resetChildren(1);
+    CHECK(visibleIds(scene.tree) == std::vector<Id>{0, 1, 2});
+    CHECK(scene.tree->getNodeCount() == nodes-3);
+    CHECK(scene.tree->getNode(1010) == nullptr);
+    CHECK(scene.tree->getNode(201) == nullptr);
+    CHECK_FALSE(scene.tree->isExpanded(1));
+    CHECK(scene.tree->getNode(1)->hasChildren);
+    CHECK_FALSE(scene.tree->getNode(1)->childrenRequested);
+    CHECK(scene.tree->getSelectedNode() == 1);
+    CHECK(selections.ids == std::vector<Id>{1});
+    CHECK(requests.collapsed == std::vector<Id>{1});
+    scene.frame();
+    CHECK_FALSE(treeRow(scene.tree, 1)->getExpander()->hidden());
+    CHECK(treeRow(scene.tree, 1)->isSelected());
+
+    scene.tree->setExpanded(1, true);
+    CHECK(requests.ids == std::vector<Id>{1, 1});
+    CHECK(visibleIds(scene.tree) == std::vector<Id>{0, 1, 102, 202, 2});
+    // reset while it waits for an answer: the placeholder goes too
+    requests.answer=nullptr;
+    scene.tree->resetChildren(1);
+    scene.tree->setExpanded(1, true);
+    CHECK(requests.ids == std::vector<Id>{1, 1, 1});
+    CHECK(visibleIds(scene.tree) == std::vector<Id>{0, 1, P, 2});
+    scene.tree->resetChildren(1);
+    CHECK(visibleIds(scene.tree) == std::vector<Id>{0, 1, 2});
+    CHECK(selections.ids == std::vector<Id>{1});
+}
+
+TEST_CASE("TreeTable model: keys pass over a placeholder, and hidden or bulk lazy expands ask once")
+{
+    Scene scene;
+    Requests requests;
+    Selections selections;
+    requests.listen(scene.tree);
+    scene.tree->onSelectionChange.add(&selections, &Selections::changed);
+    scene.roots(3);
+    scene.tree->setHasChildren(1, true);
+    scene.tree->setExpanded(1, true);
+    scene.settle();
+    REQUIRE(visibleIds(scene.tree) == std::vector<Id>{0, 1, P, 2});
+
+    KeyboardFocus=scene.tree;
+    REQUIRE(scene.tree->setSelectedNode(1));
+    scene.tree->onKeyDown(true);
+    CHECK(scene.tree->getSelectedNode() == 2);
+    CHECK(scene.tree->getSelectedItem() == 3);
+    scene.tree->onKeyUp(true);
+    CHECK(scene.tree->getSelectedNode() == 1);
+    CHECK(scene.tree->getSelectedItem() == 1);
+    CHECK(selections.ids == std::vector<Id>{2, 1});
+    // a placeholder last: End lands on its loading node
+    REQUIRE(scene.tree->addNode(Root, 3, true) == 3);
+    scene.tree->setExpanded(3, true);
+    REQUIRE(visibleIds(scene.tree) == std::vector<Id>{0, 1, P, 2, 3, P});
+    scene.tree->onKeyend(true);
+    CHECK(scene.tree->getSelectedNode() == 3);
+    CHECK(scene.tree->getSelectedItem() == 4);
+    CHECK(selections.ids == std::vector<Id>{2, 1, 3});
+    KeyboardFocus=nullptr;
+
+    // a loading node under a collapsed ancestor takes its answer in the model
+    REQUIRE(scene.tree->addNode(0, 30, true) == 30);
+    scene.tree->setExpanded(0, true);
+    scene.tree->setExpanded(30, true);
+    scene.tree->setExpanded(0, false);
+    CHECK(requests.ids == std::vector<Id>{1, 3, 30});
+    REQUIRE(scene.tree->insertNodes(30, 0, {300}));
+    CHECK(visibleIds(scene.tree) == std::vector<Id>{0, 1, P, 2, 3, P});
+    scene.tree->setExpanded(0, true);
+    CHECK(visibleIds(scene.tree) == std::vector<Id>{0, 30, 300, 1, P, 2, 3, P});
+
+    // expandAll and expandSubtree show the placeholders, then ask once each
+    scene.tree->collapseAll();
+    REQUIRE(scene.tree->addNode(2, 40, true) == 40);
+    REQUIRE(scene.tree->addNode(2, 41, true) == 41);
+    scene.tree->expandSubtree(2);
+    CHECK(requests.ids == std::vector<Id>{1, 3, 30, 40, 41});
+    CHECK(visibleIds(scene.tree) == std::vector<Id>{0, 1, 2, 40, P, 41, P, 3});
+    REQUIRE(scene.tree->addNode(Root, 50, true) == 50);
+    scene.tree->collapseAll();
+    scene.tree->expandAll();
+    CHECK(requests.ids == std::vector<Id>{1, 3, 30, 40, 41, 50});
+    CHECK(visibleIds(scene.tree) == std::vector<Id>{0, 30, 300, 1, P, 2, 40, P, 41, P, 3, P, 50, P});
+    scene.frame();
+    for(size_t item=0; item < scene.tree->getItemCount(); ++item)
+    {
+        if(controls::TreeTableRow *row=treeRow(scene.tree, item))
+            CHECK(row->isPlaceholder() == (scene.tree->nodeForItem(item) == P));
+    }
 }

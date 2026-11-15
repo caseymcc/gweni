@@ -232,6 +232,13 @@ void checkIndex(TreeTable *table, const std::vector<NodeId> &expected)
     for(size_t item=0; item < expected.size(); ++item)
     {
         CHECK(table->nodeForItem(item) == expected[item]);
+        // a lazy node's placeholder, a level under the node before it
+        if(expected[item] == TreeTable::NoNode)
+        {
+            REQUIRE(item > 0);
+            CHECK(table->getVisibleNodes()[item].depth == table->getVisibleNodes()[item-1].depth+1);
+            continue;
+        }
         CHECK(table->itemForNode(expected[item]) == item);
         const TreeTable::Node *node=table->getNode(expected[item]);
 
@@ -323,9 +330,11 @@ TEST_CASE("TreeTable: expand-all and collapse-all change hidden parents and noti
     table->addNode(2, 3);
     table->addNode(Root, 4, true); // advertised children, none supplied yet
     table->addNode(Root, 5);
+    constexpr NodeId Loading=TreeTable::NoNode;
 
+    // 4 asks for its children and shows a placeholder until answered
     table->expandAll();
-    checkIndex(table, {1, 2, 3, 4, 5});
+    checkIndex(table, {1, 2, 3, 4, Loading, 5});
     CHECK(table->isExpanded(1));
     CHECK(table->isExpanded(2));
     CHECK(table->isExpanded(4));
@@ -336,7 +345,7 @@ TEST_CASE("TreeTable: expand-all and collapse-all change hidden parents and noti
     CHECK(events.expanded.size() == 3);
 
     table->setExpanded(1, false);
-    checkIndex(table, {1, 4, 5});
+    checkIndex(table, {1, 4, Loading, 5});
     CHECK(events.collapsed == std::vector<NodeId>{1});
     table->setExpanded(1, false);
     CHECK(events.collapsed.size() == 1);
@@ -570,6 +579,15 @@ TEST_CASE("TreeTable: the tree cell is indented by depth and a parent's expander
             CAPTURE(item);
             controls::TreeTableRow *row=scene.row(item);
             REQUIRE(row != nullptr);
+            if(table->nodeForItem(item) == TreeTable::NoNode)
+            {
+                CHECK(row->isPlaceholder());
+                CHECK(row->getExpander()->hidden());
+                CHECK(row->getCell(treeColumn)->getPadding().left
+                    == Row::CellPaddingX+int(row->getDepth())*TreeTable::Indent+TreeTable::Indent);
+                return;
+            }
+            CHECK_FALSE(row->isPlaceholder());
             const TreeTable::Node *node=table->getNode(table->nodeForItem(item));
             REQUIRE(node != nullptr);
             CHECK(row->getDepth() == node->depth);
@@ -608,16 +626,18 @@ TEST_CASE("TreeTable: the tree cell is indented by depth and a parent's expander
     for(size_t item=0; item < 6; ++item)
         checkRow(item, 0);
 
-    // an expand that adds no row (advertised children) marks its expander
-    // alone, with no binding and no layout
+    // an expand of advertised children adds its placeholder row: the node's
+    // own row only marks its expander, and the app's binder is not asked
     controls::TreeTableRow *advertised=scene.row(4);
     table->setExpanded(20, true);
     CHECK(advertised->getExpander()->isExpanded());
     CHECK(advertised->getExpander()->getStateChange() == controls::StateChange_Background);
     scene.frame();
     CHECK(scene.binds.empty());
-    CHECK(scene.canvas->getLayoutStats().passes == 0);
-    checkRow(4, 0);
+    CHECK(scene.canvas->getLayoutStats().passes <= 1);
+    checkIndex(table, {10, 11, 12, 13, 20, TreeTable::NoNode, 30});
+    for(size_t item=0; item < table->getItemCount(); ++item)
+        checkRow(item, 0);
 
     // a collapse shows the toggled row's new state without binding it
     controls::TreeTableRow *toggled=scene.row(0);
@@ -627,16 +647,16 @@ TEST_CASE("TreeTable: the tree cell is indented by depth and a parent's expander
     CHECK_FALSE(toggled->getExpander()->isExpanded());
     for(const auto &bind : scene.binds)
         CHECK(std::get<0>(bind) != toggled);
-    checkIndex(table, {10, 20, 30});
-    for(size_t item=0; item < 3; ++item)
+    checkIndex(table, {10, 20, TreeTable::NoNode, 30});
+    for(size_t item=0; item < table->getItemCount(); ++item)
         checkRow(item, 0);
     table->expandAll();
     scene.frame();
-    for(size_t item=0; item < 6; ++item)
+    for(size_t item=0; item < table->getItemCount(); ++item)
         checkRow(item, 0);
     table->collapseAll();
     scene.frame();
-    for(size_t item=0; item < 3; ++item)
+    for(size_t item=0; item < table->getItemCount(); ++item)
         checkRow(item, 0);
     table->expandAll();
     scene.settle();
@@ -649,13 +669,13 @@ TEST_CASE("TreeTable: the tree cell is indented by depth and a parent's expander
     CHECK(table->getTreeColumn() == 1);
     scene.frame();
     CHECK(scene.binds.empty());
-    for(size_t item=0; item < 6; ++item)
+    for(size_t item=0; item < table->getItemCount(); ++item)
         checkRow(item, 1);
 
     // a narrow tree column cuts the expander: the clip follows the column
     table->setColumnWidth(1, TreeTable::DefaultMinColumnWidth);
     scene.frame();
-    for(size_t item=0; item < 6; ++item)
+    for(size_t item=0; item < table->getItemCount(); ++item)
         checkRow(item, 1);
 }
 
@@ -911,6 +931,7 @@ TEST_CASE("TreeTable: the textured expander draws a chevron by its state and a s
     CHECK(textColors.count("TreeTableExpander") == 1);
     CHECK(textColors.count("TreeTableExpanderHover") == 1);
     CHECK(textColors.count("TreeTableExpanderDisabled") == 1);
+    CHECK(textColors.count("TreeTablePlaceholderText") == 1);
 
     HoveredControl=nullptr;
     KeyboardFocus=nullptr;
@@ -1245,19 +1266,20 @@ TEST_CASE("TreeTable: Right Left star and Return expand collapse move and activa
     CHECK(table->getSelectedNode() == 6);
     checkIndex(table, {1, 6, 7});
 
-    // an advertised parent expands with nothing to show, then Right stops
+    // an advertised parent expands onto its placeholder, then Right stops
+    // (a placeholder is no node to move to)
     REQUIRE(table->setSelectedNode(7));
     scene.key(keys::Right);
     CHECK(table->isExpanded(7));
     scene.key(keys::Right);
     CHECK(table->getSelectedNode() == 7);
-    checkIndex(table, {1, 6, 7});
+    checkIndex(table, {1, 6, 7, TreeTable::NoNode});
 
     // * expands the whole subtree once per node, building it at once
     REQUIRE(table->setSelectedNode(1));
     events.expanded.clear();
     scene.character('*');
-    checkIndex(table, {1, 2, 3, 4, 5, 6, 7});
+    checkIndex(table, {1, 2, 3, 4, 5, 6, 7, TreeTable::NoNode});
     CHECK(events.expanded == std::vector<NodeId>{1, 2});
     CHECK(table->getSelectedNode() == 1);
     scene.character('*');
@@ -1269,7 +1291,7 @@ TEST_CASE("TreeTable: Right Left star and Return expand collapse move and activa
     scene.key(keys::Return);
     CHECK(events.activated == std::vector<NodeId>{1, 4});
     // an activation changes nothing else
-    checkIndex(table, {1, 2, 3, 4, 5, 6, 7});
+    checkIndex(table, {1, 2, 3, 4, 5, 6, 7, TreeTable::NoNode});
     CHECK(table->getSelectedNode() == 4);
 }
 
