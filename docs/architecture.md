@@ -4106,7 +4106,9 @@ two programs and the draws. What follows describes both together:
   that order, stably (ties in the app's order), descending reversing the comparator,
   and `setFoldersFirst(true)` puts nodes with children (advertised ones included) first
   in both directions. `Node::children` stays the app's order; each group keeps its shown
-  order in `Node::sorted`, valid while `Node::sortedFor` is the table's sort generation,
+  order in a side map, `m_sortedGroups` (only the groups sorted, so an unsorted table's
+  nodes carry nothing for it, and dropped when the sort ends), each valid while its
+  generation is the table's sort generation,
   which every change of the order (a sort, a comparator or folders-first change) raises.
   A new sort rebuilds the projection from the roots, sorting only the groups it walks,
   the shown expanded ones (`getShownChildren`, a `std::stable_sort` of the app's order),

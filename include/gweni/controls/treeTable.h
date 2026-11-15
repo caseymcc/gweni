@@ -137,11 +137,6 @@ public:
         //! resetChildren), and the app has not answered yet.
         bool childrenRequested=false;
         bool loading=false;
-        //! The children in the active sort's order, valid while sortedFor is
-        //! the table's sort generation (a collapsed subtree is sorted when it
-        //! is next shown). `children` stays the app's order.
-        std::vector<NodeId> sorted;
-        uint32_t sortedFor=0;
     };
 
     //! A visible row. A lazy node waiting for its children (expanded and
@@ -389,11 +384,19 @@ private:
     size_t m_stripePhase=0;
     std::vector<Comparator> m_comparators;
     bool m_foldersFirst=false;
-    //! Raised by every change of the shown order; a group whose sortedFor
-    //! differs is stale. The roots' sorted order is kept here.
+    //! A parent's children in the active sort's order (`children` stays the
+    //! app's), valid while `generation` is m_sortGeneration, which every
+    //! change of the shown order raises: a stale group (collapsed or hidden)
+    //! is sorted when it is next shown. Kept beside the store, only for the
+    //! groups sorted (the roots' under Root), so an unsorted table's nodes
+    //! carry nothing for it; dropped when the sort ends.
+    struct SortedGroup
+    {
+        std::vector<NodeId> order;
+        uint32_t generation=0;
+    };
     uint32_t m_sortGeneration=1;
-    std::vector<NodeId> m_rootsSorted;
-    uint32_t m_rootsSortedFor=0;
+    std::unordered_map<NodeId, SortedGroup> m_sortedGroups;
     //! Whether m_visible is in a sort's order (so a sort's end rebuilds it).
     bool m_projectionSorted=false;
 };

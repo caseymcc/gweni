@@ -417,7 +417,7 @@ bool TreeTable::insertNodes(NodeId parent, size_t index, const NodeId *ids, size
 
     if(isSorted() && priorEmpty)
     {
-        (parent == Root?m_rootsSortedFor:m_nodes[m_nodeIndex.at(parent)].sortedFor)=0;
+        m_sortedGroups.erase(parent);
         if(at != NoItem)
         {
             std::vector<VisibleNode> run;
@@ -524,6 +524,8 @@ void TreeTable::eraseRecords(std::vector<NodeId> pending)
         }
         m_nodes.pop_back();
         m_nodeIndex.erase(next);
+        if(!m_sortedGroups.empty())
+            m_sortedGroups.erase(next);
     }
 }
 
@@ -620,8 +622,7 @@ void TreeTable::resetChildren(NodeId id)
     std::vector<NodeId> children;
 
     children.swap(node.children);
-    node.sorted.clear();
-    node.sortedFor=0;
+    m_sortedGroups.erase(id);
     node.expanded=false;
     node.loading=false;
     node.childrenRequested=false;
@@ -804,12 +805,11 @@ std::vector<TreeTable::NodeId> *TreeTable::currentSorted(NodeId parent)
 {
     if(!isSorted())
         return nullptr;
-    if(parent == Root)
-        return m_rootsSortedFor == m_sortGeneration?&m_rootsSorted:nullptr;
 
-    Node &node=m_nodes[m_nodeIndex.at(parent)];
+    const auto found=m_sortedGroups.find(parent);
 
-    return node.sortedFor == m_sortGeneration?&node.sorted:nullptr;
+    return found != m_sortedGroups.end() && found->second.generation == m_sortGeneration?
+        &found->second.order:nullptr;
 }
 
 // A stale group is sorted from the app's order the first time it is asked
@@ -825,12 +825,13 @@ const std::vector<TreeTable::NodeId> &TreeTable::getShownChildren(NodeId parent)
     if(std::vector<NodeId> *order=currentSorted(parent))
         return *order;
 
-    std::vector<NodeId> &order=parent == Root?m_rootsSorted:m_nodes[m_nodeIndex.at(parent)].sorted;
+    // (map references stay valid as other groups are added)
+    SortedGroup &group=m_sortedGroups[parent];
 
-    order=childrenOf(parent);
-    std::stable_sort(order.begin(), order.end(), [this](NodeId a, NodeId b) { return shownLess(a, b); });
-    (parent == Root?m_rootsSortedFor:m_nodes[m_nodeIndex.at(parent)].sortedFor)=m_sortGeneration;
-    return order;
+    group.order=childrenOf(parent);
+    std::stable_sort(group.order.begin(), group.order.end(), [this](NodeId a, NodeId b) { return shownLess(a, b); });
+    group.generation=m_sortGeneration;
+    return group.order;
 }
 
 // Where stable_sort would put it: after the nodes that sort before it and
@@ -939,6 +940,9 @@ void TreeTable::keepSorted(NodeId id)
 void TreeTable::applySort()
 {
     ++m_sortGeneration;
+    // every group is stale now; with no sort none is needed again
+    if(!isSorted())
+        m_sortedGroups.clear();
     if(!isSorted() && !m_projectionSorted)
         return;
     m_projectionSorted=isSorted();
