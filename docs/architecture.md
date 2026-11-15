@@ -4006,8 +4006,8 @@ two programs and the draws. What follows describes both together:
   given, for lazy loading), a `std::vector<Node>` with a hash map from id to index.
   `addNode` builds it; `setExpanded`, `isExpanded`, `expandAll`, `collapseAll` and
   `expandSubtree` change it, firing `onExpanded`/`onCollapsed` once per node that
-  changed (`integer` the id, a hidden node's too); changing the hierarchy once shown,
-  and sorting across it, are the next task's (#638). **The visible rows** are a
+  changed (`integer` the id, a hidden node's too); live edits, lazy children and sorting
+  are below. **The visible rows** are a
   flattened index, `std::vector<VisibleNode>` of (id, depth) in display order, the
   expanded tree in preorder (built iteratively, so any depth works): it is the
   source-mode item index, `setItemCount(visible.size())` and the row binder mapping a
@@ -4060,11 +4060,78 @@ two programs and the draws. What follows describes both together:
   moves to its first child, Left collapses an expanded node or else moves to its parent
   (the nearest row above at a lesser depth), `*` (a character) expands the selected
   node's whole subtree, Return activates it; with nothing selected, or while a control
-  in a cell has the focus, none of them is taken. TreeTableDemo has a generated file-system-like tree of 100 000 nodes, 8 folders
-  with 10 files and folders each, numbered breadth first so the rows near the top are
-  the same at any node count, Name, Size and Modified columns, and a label following the
-  selection; `controltest_tree_table` holds its counts to the same at 1 000 and 100 000
-  nodes.
+  in a cell has the focus, none of them is taken. **Live edits** (#638):
+  `insertNode(parent, index, id)`, `insertNodes(parent, index, ids)` (checked whole
+  first: a duplicate or reserved id changes nothing), `removeNode(id)` (its subtree,
+  the store records dropped by swap and pop), `moveNode(id, parent, index)` (the index
+  after detaching; a move into its own subtree refused) and `nodeChanged(id)` each change
+  the store and then splice the flattened index in place, `spliceVisible(at, removed,
+  added)`: the vector's erase and insert, and the body's `VirtualList::removeItems` /
+  `insertItems`, which shift the pooled rows' item associations and the scroll offset by
+  index arithmetic, so a row that keeps its node is not bound again and only the rows
+  that now show a new node are; a parent whose child count or expander changed is bound
+  again through `nodeChanged`, and `nodeChanged` binds a shown node's row alone (an
+  off-screen or hidden node costs nothing). Indexes are in the app's order and clamp to
+  the end. **The anchor** is the first shown row's node and the offset into its row:
+  `VirtualList`'s shifts keep it for an edit above the viewport (the thumb alone moves),
+  and a move whose subtree holds the anchor puts the offset back on its node at its new
+  place. The stripes are by item parity, so an odd run added or removed above the view
+  would flip every row on screen: `m_stripePhase` is flipped with the first shown item's
+  parity, so the rows on screen keep their stripes (`DataTable::syncSourceRows`). **The
+  selection** stays on its node through every edit, also under a collapsed parent (shown
+  as no item until it shows again); a removed selection (itself or an ancestor) goes to
+  the removed subtree's next sibling as shown, else the previous one, else the parent
+  (QTreeView), with one `onSelectionChange`. **Lazy children:** `setHasChildren(id,
+  true)` (or `addNode(..., true)`) gives a node with no children an expander; its first
+  expand fires `onChildrenRequested` (`integer` the id) once (`Node::childrenRequested`)
+  until `resetChildren(id)`, which drops the children, collapses the node and arms the
+  request again. From `setExpanded` the request comes before the node expands, so an
+  answer in the handler expands it straight onto its children and an empty one leaves a
+  collapsed leaf; from `expandAll`/`expandSubtree` the placeholders show first and the
+  requests come after. While the answer is pending (`Node::loading`) an expanded node
+  shows one placeholder row, a `VisibleNode` of id `NoNode` at its children's depth: the
+  row binder gives it `TreeTable::PlaceholderText` ("Loading…") in the tree cell, the
+  other cells empty, in the skin's `TreeTable.Placeholder` colour (the theme's
+  `TreeTablePlaceholderText`) and never calls the app's binder; a press on it selects
+  nothing and the row keys pass over it (down to the row after it, else up to its node).
+  The answer is the first `insertNodes`/`insertNode`/`addNode` under it, in this frame or
+  any later one: its children take the placeholder's place in one splice; an empty
+  `insertNodes` or `setHasChildren(id, false)` takes the placeholder and the expander away
+  and collapses the node (`onCollapsed` if it had expanded). **Sorting across the
+  hierarchy:** `setSortComparator(column, less)` gives a column a strict weak order over
+  app ids; while that column is DataTable's sort column (its own cycle, ascending then
+  descending, through the protected `DataTable::sortOrderChanged()` hook, which
+  `setSortColumn` calls before `onSortChanged`, so the app's handler sees the new order;
+  `setSortColumn(-1, None)` gives the app's order back) every sibling group is shown in
+  that order, stably (ties in the app's order), descending reversing the comparator,
+  and `setFoldersFirst(true)` puts nodes with children (advertised ones included) first
+  in both directions. `Node::children` stays the app's order; each group keeps its shown
+  order in `Node::sorted`, valid while `Node::sortedFor` is the table's sort generation,
+  which every change of the order (a sort, a comparator or folders-first change) raises.
+  A new sort rebuilds the projection from the roots, sorting only the groups it walks,
+  the shown expanded ones (`getShownChildren`, a `std::stable_sort` of the app's order),
+  so a collapsed or hidden group stays stale and is sorted when it is next shown (its
+  expand calls the same); the rows from the first changed item are bound again, the
+  anchor's node goes back to the top at its offset, and the selection and the expansion
+  are untouched. While sorted, an insert or a move binary-searches its node's place in
+  the current group (`sortedPlace`: the comparator's equal run, then the app's order) and
+  splices it there; a batch into an empty group (a lazy answer) is sorted whole and shown
+  as one run; `nodeChanged` re-places its node among its siblings, its visible subtree
+  with it, so a rename re-sorts it and, folders first, a leaf that became a folder (the
+  insert under it calls `nodeChanged` on its parent) moves before the leaves. The
+  comparator is called during an insert, so the app's data for a new id exists before it
+  is inserted. Without a comparator for the sort column the order is the app's and a
+  header click only fires `onSortChanged`. TreeTableDemo has a generated
+  file-system-like tree of 100 000 nodes, 8 folders with 10 files and folders each,
+  numbered breadth first so the rows near the top are the same at any node count, a
+  first root "remote" whose 12 files load lazily (`LazyDelay` 0.4 s on the canvas clock,
+  `answerPending()`), Name, Size and Modified columns sorting with folders first, Add
+  file, Remove and Rename buttons and a label following the selection;
+  `controltest_tree_table` holds its counts to the same at 1 000 and 100 000 nodes, and
+  `controltest_tree_table_live` its edits, lazy folder and sort. `gweni_bench --scene
+  tree-table-insert` (a leaf inserted under and removed from an expanded node near the
+  top, among about N shown roots) is `scaling=local`: every per-frame counter is the same
+  at 1 000 and 10 000 nodes.
 - **The plot histogram: one slot per bar, redrawn where a bar changed.**
   `controls::PlotHistogram` (`include/gweni/controls/plotHistogram.h`, imgui's
   PlotHistogram) draws a series (`setValues`, `setValue(i, v)`) as bars from the bottom of

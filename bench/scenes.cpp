@@ -764,6 +764,65 @@ private:
 };
 
 //-----------------------------------------------------------------------------
+// tree-table-insert: a TreeTable filling the canvas's height, three columns,
+// with N nodes: an expanded first root holding 50 leaves and the rest roots of
+// their own, all shown. Every frame, the warm-up's included (so a store or
+// index that grows does it before the measured frames), alternates inserting a
+// leaf under the first root at index 10, on screen, and removing it again: the
+// flattened index takes or gives one entry (a memmove of the entries after
+// it) and the rows on screen below it are bound again, the same rows at any N.
+//-----------------------------------------------------------------------------
+class TreeTableInsertScene: public Scene
+{
+public:
+    static constexpr size_t Added=size_t(1)<<30;
+
+    void build(SceneContext &ctx) override
+    {
+        using controls::TreeTable;
+
+        m_table=ctx.canvas->newChild<TreeTable>();
+        place(m_table, 10, 10, 600, ctx.size.y-20);
+        m_table->setColumnCount(3);
+        m_table->setColumnCaption(0, "Name");
+        m_table->setColumnCaption(1, "Size");
+        m_table->setColumnCaption(2, "Modified");
+        m_table->setColumnWidth(0, 300);
+
+        size_t made=0;
+        const size_t n=static_cast<size_t>(std::max(ctx.n, 0));
+
+        if(made < n)
+            m_table->addNode(TreeTable::Root, made++);
+        for(int i=0; i < 50 && made < n; ++i)
+            m_table->addNode(0, made++);
+        while(made < n)
+            m_table->addNode(TreeTable::Root, made++);
+
+        m_table->setNodeBinder([](controls::DataTableRow *row, size_t id, size_t depth)
+            {
+                row->setCellText(0, id == Added?String("Added node"):format("Node %06d", static_cast<int>(id)));
+                row->setCellText(1, format("%d", static_cast<int>(depth)));
+                row->setCellText(2, "2026-11-14 12:00");
+            });
+        m_table->setExpanded(0, true);
+    }
+
+    void step(SceneContext &/*ctx*/, int frame) override
+    {
+        if(!m_table->getNode(0))
+            return;
+        if(m_table->getNode(Added))
+            m_table->removeNode(Added);
+        else if(frame%2 == 0)
+            m_table->insertNode(0, 10, Added);
+    }
+
+private:
+    controls::TreeTable *m_table=nullptr;
+};
+
+//-----------------------------------------------------------------------------
 // tree-relabel: a TreeControl with an open node of 10 leaves and a closed node
 // holding N leaves. Measured frames give the closed node a new label of the
 // same length. Its rows count in its width though it is closed, and are
@@ -1836,6 +1895,9 @@ const std::vector<SceneInfo> &scenes()
         {"tree-table-toggle", "collapse and expand a 50-row node near the top of an N-node TreeTable",
             true, 1000, 3, 20, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new TreeTableToggleScene()); }},
+        {"tree-table-insert", "insert a leaf under and remove it from an expanded node near the top of an N-node TreeTable",
+            true, 1000, 4, 20, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new TreeTableInsertScene()); }},
         {"tree-relabel", "relabel a closed TreeControl node holding N rows per frame",
             true, 1000, 3, 20, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new TreeRelabelScene()); }},
