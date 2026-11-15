@@ -1406,6 +1406,9 @@ void SlotRenderer::init()
 void SlotRenderer::setViewRect(const gweni::Rect &viewRect)
 {
     m_viewRect=viewRect;
+    // the overlap index's grid covers the view
+    if(m_overlap.built && ((viewRect.w != m_overlap.width) || (viewRect.h != m_overlap.height)))
+        m_overlap.rebuild=true;
 }
 
 void SlotRenderer::setViewTransform(const float matrix[16])
@@ -1655,9 +1658,36 @@ void SlotRenderer::updateSlotVisibility(size_t slot, bool hasArea)
     if(translucent || wasTranslucent)
         m_sortedScheduleStale=true;
 
+    if(translucent != wasTranslucent)
+    {
+        if(translucent)
+        {
+            if(m_translucentSlots.size() <= word)
+                m_translucentSlots.resize(m_visibleSlots.size(), 0);
+            m_translucentSlots[word]|=bit;
+            ++m_translucentCount;
+            if(m_translucentPosition.size() <= slot)
+                m_translucentPosition.resize(m_vertexes.size()/4, 0);
+            m_translucentList.push_back(slot);
+            m_translucentPosition[slot]=m_translucentList.size();
+        }
+        else
+        {
+            m_translucentSlots[word]&=~bit;
+            --m_translucentCount;
+
+            const size_t position=m_translucentPosition[slot]-1;
+
+            m_translucentList[position]=m_translucentList.back();
+            m_translucentPosition[m_translucentList[position]]=position+1;
+            m_translucentList.pop_back();
+            m_translucentPosition[slot]=0;
+        }
+    }
+
     const bool wasVisible=(m_visibleSlots[word]&bit) != 0;
 
-    if((wasVisible == visible) && (wasTranslucent == translucent))
+    if(wasVisible == visible)
         return;
 
     const size_t chunk=slot/m_chunkSlots;
@@ -1668,109 +1698,563 @@ void SlotRenderer::updateSlotVisibility(size_t slot, bool hasArea)
     PrimitiveChunkSlots &slots=m_primitiveChunks[chunk];
 
     slots.stale=true;
-    if(visible != wasVisible)
+    if(visible)
     {
-        if(visible)
-        {
-            m_visibleSlots[word]|=bit;
-            ++slots.visible;
-        }
-        else
-        {
-            m_visibleSlots[word]&=~bit;
-            --slots.visible;
-        }
+        m_visibleSlots[word]|=bit;
+        ++slots.visible;
     }
-    if(translucent != wasTranslucent)
+    else
     {
-        if(translucent)
-        {
-            if(m_translucentSlots.size() <= word)
-                m_translucentSlots.resize(m_visibleSlots.size(), 0);
-            m_translucentSlots[word]|=bit;
-            ++slots.translucent;
-            ++m_translucentCount;
-        }
-        else
-        {
-            m_translucentSlots[word]&=~bit;
-            --slots.translucent;
-            --m_translucentCount;
-        }
+        m_visibleSlots[word]&=~bit;
+        --slots.visible;
     }
 }
 
 void SlotRenderer::setTranslucentSort(bool sort)
 {
-    if(sort == m_translucentSort)
-        return;
+    const bool active=sortActive();
+
     m_translucentSort=sort;
+    if(sortActive() != active)
+        markSortStale();
+}
+
+void SlotRenderer::setDrawEveryPrimitiveSlot(bool every)
+{
+    const bool active=sortActive();
+
+    m_drawEveryPrimitiveSlot=every;
+    // only what the sorted pass takes out of the other passes is to be put back
+    if(sortActive() != active)
+        markSortStale();
+}
+
+void SlotRenderer::markSortStale()
+{
     for(PrimitiveChunkSlots &slots:m_primitiveChunks)
         slots.stale=true;
+    for(auto &entry:m_fonts)
+        entry.second.drawListStale=true;
     m_sortedScheduleStale=true;
+}
+
+SlotRenderer::OverlapRect SlotRenderer::slotFootprint(size_t slot) const
+{
+    OverlapRect rect;
+
+    if(m_vertexes.size() < slot*4+4)
+        return rect;
+
+    const Vertex *vertexes=&m_vertexes[slot*4];
+
+    if((vertexes[0].style|vertexes[1].style|vertexes[2].style|vertexes[3].style) == 0)
+        return rect;
+
+    rect.x0=rect.x1=vertexes[0].x;
+    rect.y0=rect.y1=vertexes[0].y;
+    for(size_t i=1; i<4; ++i)
+    {
+        rect.x0=std::min<int32_t>(rect.x0, vertexes[i].x);
+        rect.x1=std::max<int32_t>(rect.x1, vertexes[i].x);
+        rect.y0=std::min<int32_t>(rect.y0, vertexes[i].y);
+        rect.y1=std::max<int32_t>(rect.y1, vertexes[i].y);
+    }
+    if(slot < m_clippingBoxes.size())
+    {
+        const Box &box=m_clippingBoxes[slot];
+
+        rect.x0=std::max<int32_t>(rect.x0, box.x0);
+        rect.y0=std::max<int32_t>(rect.y0, box.y0);
+        rect.x1=std::min<int32_t>(rect.x1, box.x1);
+        rect.y1=std::min<int32_t>(rect.y1, box.y1);
+    }
+    rect.x0=std::max<int32_t>(rect.x0, 0);
+    rect.y0=std::max<int32_t>(rect.y0, 0);
+    rect.x1=std::min<int32_t>(rect.x1, m_overlap.width);
+    rect.y1=std::min<int32_t>(rect.y1, m_overlap.height);
+    if(rect.empty())
+        rect=OverlapRect();
+    return rect;
+}
+
+SlotRenderer::OverlapRect SlotRenderer::runFootprint(size_t textId) const
+{
+    OverlapRect rect;
+
+    if(textId >= m_textRuns.size())
+        return rect;
+
+    const TextRun &run=m_textRuns[textId];
+
+    if(!run.fontData || (drawnRange(run).second == 0) || (m_textVertexes.size() < (run.start+run.glyphs)*4))
+        return rect;
+
+    float x0=std::numeric_limits<float>::max(), y0=x0;
+    float x1=-x0, y1=-x0;
+
+    for(size_t i=run.start*4; i<(run.start+run.glyphs)*4; ++i)
+    {
+        const ftgl::glyph_vertex_t &vertex=m_textVertexes[i];
+
+        x0=std::min(x0, vertex.x);
+        x1=std::max(x1, vertex.x);
+        y0=std::min(y0, vertex.y);
+        y1=std::max(y1, vertex.y);
+    }
+    rect.x0=(int32_t)std::floor(std::max(x0, -65536.0f));
+    rect.y0=(int32_t)std::floor(std::max(y0, -65536.0f));
+    rect.x1=(int32_t)std::ceil(std::min(x1, 65536.0f));
+    rect.y1=(int32_t)std::ceil(std::min(y1, 65536.0f));
+    if(run.start < m_textClipBoxes.size())
+    {
+        const Box &box=m_textClipBoxes[run.start];
+
+        rect.x0=std::max<int32_t>(rect.x0, box.x0);
+        rect.y0=std::max<int32_t>(rect.y0, box.y0);
+        rect.x1=std::min<int32_t>(rect.x1, box.x1);
+        rect.y1=std::min<int32_t>(rect.y1, box.y1);
+    }
+    rect.x0=std::max<int32_t>(rect.x0, 0);
+    rect.y0=std::max<int32_t>(rect.y0, 0);
+    rect.x1=std::min<int32_t>(rect.x1, m_overlap.width);
+    rect.y1=std::min<int32_t>(rect.y1, m_overlap.height);
+    if(rect.empty())
+        rect=OverlapRect();
+    return rect;
+}
+
+bool SlotRenderer::moveOverlapItem(uint32_t key, const OverlapRect &before, bool wasTranslucent,
+    const OverlapRect &after, bool translucent)
+{
+    OverlapIndex &index=m_overlap;
+    bool touched=false;
+    // the cells a rect reaches, [c0, c1) x [r0, r1)
+    auto cellsOf=[&](const OverlapRect &rect, int &c0, int &r0, int &c1, int &r1)
+    {
+        c0=rect.x0 >> OverlapIndex::kCellLog2;
+        r0=rect.y0 >> OverlapIndex::kCellLog2;
+        c1=std::min(((rect.x1-1) >> OverlapIndex::kCellLog2)+1, index.cols);
+        r1=std::min(((rect.y1-1) >> OverlapIndex::kCellLog2)+1, index.rows);
+    };
+    int c0, r0, c1, r1;
+
+    if(!before.empty())
+    {
+        cellsOf(before, c0, r0, c1, r1);
+        for(int r=r0; r<r1; ++r)
+        {
+            for(int c=c0; c<c1; ++c)
+            {
+                OverlapIndex::Cell &cell=index.cells[size_t(r)*index.cols+c];
+                std::vector<uint32_t> &items=cell.items;
+
+                for(size_t i=0; i<items.size(); ++i)
+                {
+                    if(items[i] != key)
+                        continue;
+                    items[i]=items.back();
+                    items.pop_back();
+                    break;
+                }
+                if(wasTranslucent)
+                    --cell.translucent;
+                touched=touched || (cell.translucent > 0);
+            }
+        }
+    }
+    if(!after.empty())
+    {
+        cellsOf(after, c0, r0, c1, r1);
+        for(int r=r0; r<r1; ++r)
+        {
+            for(int c=c0; c<c1; ++c)
+            {
+                OverlapIndex::Cell &cell=index.cells[size_t(r)*index.cols+c];
+
+                touched=touched || (cell.translucent > 0);
+                cell.items.push_back(key);
+                if(translucent)
+                    ++cell.translucent;
+            }
+        }
+    }
+    return touched;
+}
+
+void SlotRenderer::updateOverlapSlot(size_t slot)
+{
+    OverlapIndex &index=m_overlap;
+
+    if(index.slotRects.size() <= slot)
+    {
+        index.slotRects.resize(slot+1);
+        index.slotTranslucent.resize(slot+1, 0);
+        index.slotZ.resize(slot+1, 0);
+    }
+
+    const OverlapRect after=slotFootprint(slot);
+    const bool translucent=(slot/64 < m_translucentSlots.size()) && ((m_translucentSlots[slot/64]>>(slot%64))&1);
+    const uint16_t z=(m_vertexes.size() >= slot*4+4)?m_vertexes[slot*4].z:0;
+    OverlapRect &before=index.slotRects[slot];
+    const bool wasTranslucent=index.slotTranslucent[slot] != 0;
+
+    // a new colour alone changes nothing the set is made from
+    if((memcmp(&before, &after, sizeof(OverlapRect)) == 0) && (wasTranslucent == translucent) && (index.slotZ[slot] == z))
+        return;
+    if(moveOverlapItem((uint32_t)slot, before, wasTranslucent, after, translucent))
+        m_sortedScheduleStale=true;
+    before=after;
+    index.slotTranslucent[slot]=translucent?1:0;
+    index.slotZ[slot]=z;
+}
+
+void SlotRenderer::updateOverlapRun(size_t textId)
+{
+    OverlapIndex &index=m_overlap;
+
+    if(index.runRects.size() <= textId)
+    {
+        index.runRects.resize(textId+1);
+        index.runZ.resize(textId+1, 0);
+    }
+
+    const OverlapRect after=runFootprint(textId);
+    const uint16_t z=(textId < m_textRuns.size())?(uint16_t)runZ(m_textRuns[textId].zIndex):0;
+    OverlapRect &before=index.runRects[textId];
+
+    // a run in the set may have new glyph slots, which its group's draws list
+    if((textId < index.sortedRunFlags.size()) && index.sortedRunFlags[textId])
+        m_sortedScheduleStale=true;
+    if((memcmp(&before, &after, sizeof(OverlapRect)) == 0) && (index.runZ[textId] == z))
+        return;
+    if(moveOverlapItem((uint32_t)textId|OverlapIndex::kRunBit, before, false, after, false))
+        m_sortedScheduleStale=true;
+    before=after;
+    index.runZ[textId]=z;
+}
+
+void SlotRenderer::noteRunChanged(size_t textId)
+{
+    OverlapIndex &index=m_overlap;
+
+    if(!index.built)
+        return;
+    if(index.runNoted.size() <= textId)
+        index.runNoted.resize(textId+1, 0);
+    if(index.runNoted[textId])
+        return;
+    index.runNoted[textId]=1;
+    index.changedRuns.push_back(textId);
+}
+
+void SlotRenderer::buildOverlapIndex()
+{
+    OverlapIndex &index=m_overlap;
+
+    index.width=std::max(m_viewRect.w, 0);
+    index.height=std::max(m_viewRect.h, 0);
+    index.cols=(index.width+OverlapIndex::kCellSide-1) >> OverlapIndex::kCellLog2;
+    index.rows=(index.height+OverlapIndex::kCellSide-1) >> OverlapIndex::kCellLog2;
+    index.cells.assign(size_t(index.cols)*index.rows, OverlapIndex::Cell());
+    index.slotRects.assign(m_vertexes.size()/4, OverlapRect());
+    index.slotTranslucent.assign(m_vertexes.size()/4, 0);
+    index.slotZ.assign(m_vertexes.size()/4, 0);
+    index.runRects.assign(m_textRuns.size(), OverlapRect());
+    index.runZ.assign(m_textRuns.size(), 0);
+    for(size_t textId:index.changedRuns)
+        index.runNoted[textId]=0;
+    index.changedRuns.clear();
+    index.built=true;
+    index.rebuild=false;
+
+    for(size_t word=0; word<m_visibleSlots.size(); ++word)
+    {
+        for(uint64_t bits=m_visibleSlots[word]; bits != 0; bits&=bits-1)
+            updateOverlapSlot(word*64+lowestBit(bits));
+    }
+    for(size_t textId=0; textId<m_textRuns.size(); ++textId)
+        updateOverlapRun(textId);
+    markSortStale();
+
+    // The schedule's lists start with room for a few draws, so how many chunks a
+    // set's slots happen to cross (which follows the ids, so the tree's size) does
+    // not make a later frame allocate; past that they grow as they need.
+    auto reserveDraws=[](std::vector<ChunkDraw> &draws)
+    {
+        if(draws.size() < kReservedSortedDraws)
+            draws.resize(kReservedSortedDraws);
+        for(ChunkDraw &draw:draws)
+        {
+            draw.counts.reserve(kReservedSortedDraws);
+            draw.offsets.reserve(kReservedSortedDraws);
+        }
+    };
+
+    reserveDraws(m_sortedDraws);
+    reserveDraws(m_sortedTextDraws);
+    m_sortedAtlases.reserve(kReservedSortedDraws);
+    m_sortedGroups.reserve(kReservedSortedDraws);
 }
 
 void SlotRenderer::buildSortedSchedule()
 {
-    // the translucent slots back to front, z from the slot's first vertex (a
-    // quad's four share it), ties by slot id
-    m_sortedOrder.clear();
-    for(size_t word=0; word<m_translucentSlots.size(); ++word)
-    {
-        for(uint64_t bits=m_translucentSlots[word]; bits != 0; bits&=bits-1)
-        {
-            const size_t slot=word*64+lowestBit(bits);
+    OverlapIndex &index=m_overlap;
+    const bool active=sortActive();
 
-            m_sortedOrder.emplace_back(m_vertexes[slot*4].z, slot);
+    ++m_frameStats.sortedScheduleBuilds;
+    m_sortedScheduleStale=false;
+
+    // The sorted set: each translucent slot, and from the index the items its
+    // footprint overlaps: an opaque slot in front of it (or at its z with a
+    // higher id, which slot order drew after it), whose edges are to blend over
+    // it, and a run behind it, which is to show through it. Each is kept once,
+    // its flag set as it is found.
+    std::vector<size_t> &slots=m_overlapSlotsScratch;
+    std::vector<size_t> &runs=m_overlapRunsScratch;
+
+    slots.clear();
+    runs.clear();
+    if(index.sortedSlotBits.size() < m_visibleSlots.size())
+        index.sortedSlotBits.resize(m_visibleSlots.size(), 0);
+    if(index.sortedRunFlags.size() < m_textRuns.size())
+        index.sortedRunFlags.resize(m_textRuns.size(), 0);
+
+    // the new set is marked 2 (in it) on top of the old one's 1, then the old
+    // entries not marked again are cleared: a diff of the two lists alone
+    std::vector<uint8_t> &slotMark=m_overlapSlotMark;
+
+    if(slotMark.size() < m_vertexes.size()/4)
+        slotMark.resize(m_vertexes.size()/4, 0);
+    for(size_t slot:index.sortedSlots)
+        slotMark[slot]=1;
+    for(size_t textId:index.sortedRuns)
+        index.sortedRunFlags[textId]=1;
+
+    // the chunks whose slots enter or leave the set draw their ranges again, and
+    // the fonts whose runs do their draw lists
+    auto chunkOf=[&](size_t slot) -> PrimitiveChunkSlots &
+    {
+        const size_t chunk=slot/m_chunkSlots;
+
+        if(m_primitiveChunks.size() <= chunk)
+            m_primitiveChunks.resize(chunk+1);
+        return m_primitiveChunks[chunk];
+    };
+    auto addSlot=[&](size_t slot)
+    {
+        if(slotMark[slot] == 2)
+            return;
+        if(slotMark[slot] == 0)
+        {
+            PrimitiveChunkSlots &chunk=chunkOf(slot);
+
+            index.sortedSlotBits[slot/64]|=uint64_t(1)<<(slot%64);
+            ++chunk.sorted;
+            chunk.stale=true;
+        }
+        slotMark[slot]=2;
+        slots.push_back(slot);
+    };
+    auto addRun=[&](size_t textId)
+    {
+        uint8_t &flag=index.sortedRunFlags[textId];
+
+        if(flag == 2)
+            return;
+        if((flag == 0) && m_textRuns[textId].fontData)
+            m_textRuns[textId].fontData->drawListStale=true;
+        flag=2;
+        runs.push_back(textId);
+    };
+
+    if(active)
+    {
+        {
+            for(size_t slot:m_translucentList)
+            {
+                const OverlapRect &rect=index.slotRects[slot];
+                const int z=m_vertexes[slot*4].z;
+
+                addSlot(slot);
+                if(rect.empty())
+                    continue;
+
+                const int c0=rect.x0 >> OverlapIndex::kCellLog2;
+                const int r0=rect.y0 >> OverlapIndex::kCellLog2;
+                const int c1=std::min(((rect.x1-1) >> OverlapIndex::kCellLog2)+1, index.cols);
+                const int r1=std::min(((rect.y1-1) >> OverlapIndex::kCellLog2)+1, index.rows);
+
+                for(int r=r0; r<r1; ++r)
+                {
+                    for(int c=c0; c<c1; ++c)
+                    {
+                        for(uint32_t key:index.cells[size_t(r)*index.cols+c].items)
+                        {
+                            ++m_frameStats.overlapVisited;
+                            if(key&OverlapIndex::kRunBit)
+                            {
+                                const size_t textId=key&~OverlapIndex::kRunBit;
+
+                                if((index.sortedRunFlags[textId] != 2) && (runZ(m_textRuns[textId].zIndex) < z)
+                                    && index.runRects[textId].overlaps(rect))
+                                    addRun(textId);
+                                continue;
+                            }
+
+                            const size_t other=key;
+
+                            if((slotMark[other] == 2) || index.slotTranslucent[other])
+                                continue;
+
+                            const int otherZ=m_vertexes[other*4].z;
+
+                            if(((otherZ > z) || ((otherZ == z) && (other > slot)))
+                                && index.slotRects[other].overlaps(rect))
+                                addSlot(other);
+                        }
+                    }
+                }
+            }
         }
     }
+
+    // what was in the set and is not now
+    for(size_t slot:index.sortedSlots)
+    {
+        if(slotMark[slot] == 2)
+            continue;
+        slotMark[slot]=0;
+        index.sortedSlotBits[slot/64]&=~(uint64_t(1)<<(slot%64));
+
+        PrimitiveChunkSlots &chunk=chunkOf(slot);
+
+        --chunk.sorted;
+        chunk.stale=true;
+    }
+    for(size_t slot:slots)
+        slotMark[slot]=0;
+    for(size_t textId:index.sortedRuns)
+    {
+        if(index.sortedRunFlags[textId] == 2)
+            continue;
+        index.sortedRunFlags[textId]=0;
+        if(m_textRuns[textId].fontData)
+            m_textRuns[textId].fontData->drawListStale=true;
+    }
+    for(size_t textId:runs)
+        index.sortedRunFlags[textId]=1;
+    index.sortedSlots.swap(slots);
+    index.sortedRuns.swap(runs);
+
+    // Back to front: a slot at z before a run at z (whose glyphs are between z
+    // and z+1), ties by id
+    m_sortedOrder.clear();
+    for(size_t slot:index.sortedSlots)
+        m_sortedOrder.emplace_back((uint64_t(m_vertexes[slot*4].z)*2) << 40 | slot, slot);
+    for(size_t textId:index.sortedRuns)
+        m_sortedOrder.emplace_back((uint64_t(runZ(m_textRuns[textId].zIndex))*2+1) << 40 | textId,
+            textId|size_t(OverlapIndex::kRunBit));
     std::sort(m_sortedOrder.begin(), m_sortedOrder.end());
 
-    // a group of consecutive slots in one chunk is one draw of its ranges in that
-    // order (a multi-draw draws its ranges in order), a run of consecutive ids one
-    // range
+    // consecutive slots are a slot group, a draw per chunk they cross in order
+    // (a multi-draw draws its ranges in order), a run of consecutive ids one
+    // range; consecutive runs a text group, a draw per atlas and chunk of theirs
+    m_sortedGroups.clear();
     m_sortedDrawCount=0;
-    m_sortedSlotsDrawn=m_sortedOrder.size();
-    for(size_t i=0; i<m_sortedOrder.size(); ++i)
+    m_sortedAtlases.clear();
+    m_sortedTextDrawCount=0;
+    for(size_t i=0; i<m_sortedOrder.size();)
     {
-        const size_t slot=m_sortedOrder[i].second;
-        const size_t chunk=slot/m_chunkSlots;
-        const size_t first=chunk*m_chunkSlots;
+        const bool text=(m_sortedOrder[i].second&OverlapIndex::kRunBit) != 0;
+        SortedGroup group;
 
-        if((m_sortedDrawCount == 0) || (m_sortedDraws[m_sortedDrawCount-1].chunk != chunk))
+        group.text=text;
+        if(!text)
         {
-            if(m_sortedDraws.size() <= m_sortedDrawCount)
-                m_sortedDraws.emplace_back();
+            group.first=m_sortedDrawCount;
+            for(; (i < m_sortedOrder.size()) && !(m_sortedOrder[i].second&OverlapIndex::kRunBit); ++i)
+            {
+                const size_t slot=m_sortedOrder[i].second;
+                const size_t chunk=slot/m_chunkSlots;
+                const size_t first=chunk*m_chunkSlots;
 
-            ChunkDraw &draw=m_sortedDraws[m_sortedDrawCount++];
+                if((m_sortedDrawCount == group.first) || (m_sortedDraws[m_sortedDrawCount-1].chunk != chunk))
+                {
+                    if(m_sortedDraws.size() <= m_sortedDrawCount)
+                        m_sortedDraws.emplace_back();
 
-            draw.chunk=chunk;
-            draw.counts.clear();
-            draw.offsets.clear();
+                    ChunkDraw &draw=m_sortedDraws[m_sortedDrawCount++];
+
+                    draw.chunk=chunk;
+                    draw.counts.clear();
+                    draw.offsets.clear();
+                }
+
+                ChunkDraw &draw=m_sortedDraws[m_sortedDrawCount-1];
+                const uintptr_t offset=uintptr_t((slot-first)*6*sizeof(uint16_t));
+
+                if(!draw.counts.empty() && (draw.offsets.back()+uintptr_t(draw.counts.back())*sizeof(uint16_t) == offset))
+                    draw.counts.back()+=6;
+                else
+                {
+                    draw.counts.push_back(6);
+                    draw.offsets.push_back(offset);
+                }
+            }
+            group.count=m_sortedDrawCount-group.first;
         }
-
-        ChunkDraw &draw=m_sortedDraws[m_sortedDrawCount-1];
-
-        if((i > 0) && (m_sortedOrder[i-1].second+1 == slot) && !draw.counts.empty())
-            draw.counts.back()+=6;
         else
         {
-            draw.counts.push_back(6);
-            draw.offsets.push_back(uintptr_t((slot-first)*6*sizeof(uint16_t)));
+            m_sortedGroupRuns.clear();
+            for(; (i < m_sortedOrder.size()) && (m_sortedOrder[i].second&OverlapIndex::kRunBit); ++i)
+            {
+                const size_t textId=m_sortedOrder[i].second&~size_t(OverlapIndex::kRunBit);
+
+                m_sortedGroupRuns.emplace_back(m_textRuns[textId].fontData, textId);
+            }
+            // by font, the fonts in m_fonts' order as the text pass goes
+            std::stable_sort(m_sortedGroupRuns.begin(), m_sortedGroupRuns.end(),
+                [](const std::pair<FontData *, size_t> &a, const std::pair<FontData *, size_t> &b)
+                { return a.first < b.first; });
+            group.first=m_sortedAtlases.size();
+            for(size_t j=0; j<m_sortedGroupRuns.size();)
+            {
+                FontData *font=m_sortedGroupRuns[j].first;
+                std::vector<std::pair<size_t, size_t>> &ranges=m_textDrawRanges;
+
+                ranges.clear();
+                for(; (j < m_sortedGroupRuns.size()) && (m_sortedGroupRuns[j].first == font); ++j)
+                {
+                    const std::pair<size_t, size_t> range=drawnRange(m_textRuns[m_sortedGroupRuns[j].second]);
+
+                    if(range.second > 0)
+                        ranges.push_back(range);
+                }
+                if(!font || ranges.empty())
+                    continue;
+
+                SortedAtlas atlas;
+
+                atlas.font=font;
+                atlas.first=m_sortedTextDrawCount;
+                m_sortedTextDrawCount=fillDrawChunks(ranges, m_sortedTextDraws, m_sortedTextDrawCount);
+                atlas.count=m_sortedTextDrawCount-atlas.first;
+                m_sortedAtlases.push_back(atlas);
+            }
+            group.count=m_sortedAtlases.size()-group.first;
         }
+        if(group.count > 0)
+            m_sortedGroups.push_back(group);
     }
-    m_sortedScheduleStale=false;
 }
 
 bool SlotRenderer::sortedSlotIn(size_t begin, size_t end) const
 {
-    if(!sortingTranslucent())
+    if(!sortActive())
         return false;
     for(size_t slot=begin; slot<end; ++slot)
     {
-        const size_t word=slot/64;
-
-        if((word < m_translucentSlots.size()) && ((m_translucentSlots[word]>>(slot%64))&1))
+        if(slotSorted(slot))
             return true;
     }
     return false;
@@ -1902,8 +2386,8 @@ void SlotRenderer::recountPrimitiveChunks()
             if(m_primitiveChunks.size() <= chunk)
                 m_primitiveChunks.resize(chunk+1);
             ++m_primitiveChunks[chunk].visible;
-            if((word < m_translucentSlots.size()) && ((m_translucentSlots[word]>>(slot%64))&1))
-                ++m_primitiveChunks[chunk].translucent;
+            if(slotSorted(slot))
+                ++m_primitiveChunks[chunk].sorted;
         }
     }
     m_sortedScheduleStale=true;
@@ -2258,6 +2742,11 @@ void SlotRenderer::flush()
     m_frameStats.bufferRegrows=0;
     m_frameStats.imagePageRegrows=m_imagePageRegrows;
     m_imagePageRegrows=0;
+    m_frameStats.sortedSlots=0;
+    m_frameStats.sortedRuns=0;
+    m_frameStats.sortedGroups=0;
+    m_frameStats.sortedScheduleBuilds=0;
+    m_frameStats.overlapVisited=0;
     //the slots this frame uploads: every draw, hide, show and release since the last
     //flush, each slot once however many of them touched it
     m_frameStats.primitiveSlotsWritten=m_dirtyVertexSlots.count();
@@ -2304,13 +2793,58 @@ void SlotRenderer::flush()
                     updateSlotVisibility(slot);
             }
         }
+    }
 
+    // The overlap index, built when the first translucent slot can show, made
+    // again for a new view, and otherwise kept from the slots whose vertexes or
+    // clip box changed and the runs noted changed (noteRunChanged)
+    if(m_overlap.built && m_overlap.rebuild)
+        buildOverlapIndex();
+    else if(m_overlap.built)
+    {
+        for(size_t slot: m_dirtyVertexSlots.slots())
+            updateOverlapSlot(slot);
+        for(size_t slot: m_dirtyClipSlots.slots())
+        {
+            if(!m_dirtyVertexSlots.marked(slot))
+                updateOverlapSlot(slot);
+        }
+        for(size_t textId: m_overlap.changedRuns)
+        {
+            m_overlap.runNoted[textId]=0;
+            updateOverlapRun(textId);
+        }
+        m_overlap.changedRuns.clear();
+    }
+    else if((m_translucentCount > 0) && m_translucentSort)
+        buildOverlapIndex();
+
+    // the sorted set and its schedule, which also marks the chunks and fonts whose
+    // slots and runs entered or left it, before their ranges are built below
+    const bool sorting=sortActive();
+
+    if(m_overlap.built && m_sortedScheduleStale && m_translucentSort)
+        buildSortedSchedule();
+
+    if(!m_vertexes.empty())
+    {
         //copy only the primitive slots that changed since the last frame
         uploadDirty(SlotPath::Primitives, m_vertexBufferCapacity, m_vertexBufferSent,
             m_vertexes.data(), sizeof(Vertex), m_vertexes.size(), m_dirtyVertexSlots, 4);
         uploadDirtyClipBoxes(SlotPath::Primitives, m_clipTextureRows, m_clipBoxesSent,
             m_clippingBoxes, m_dirtyClipSlots);
+    }
+    if(!m_textVertexes.empty())
+    {
+        //copy only the glyph slots that changed since the last frame
+        uploadDirty(SlotPath::Text, m_textVertexBufferCapacity, m_textVertexBufferSent,
+            m_textVertexes.data(), sizeof(glyph_vertex_t), m_textVertexes.size(), m_dirtyTextVertexSlots, 4);
+        uploadDirtyClipBoxes(SlotPath::Text, m_textClipTextureRows, m_textClipBoxesSent,
+            m_textClipBoxes, m_dirtyTextClipSlots);
+    }
 
+    if(!m_vertexes.empty())
+    {
         // One draw per chunk of m_chunkSlots slots, in slot order as a single draw
         // over the whole buffer would go, so blending and depth come out the same.
         // Each draws its runs of slots that can show (small gaps between them
@@ -2320,9 +2854,8 @@ void SlotRenderer::flush()
         // shader's slot is then slotBase + (vertex index >> 2). A chunk with no
         // slot that can show is not drawn: a style-0 slot makes no fragment, so
         // leaving it out changes no pixel. A chunk's ranges are built again only
-        // when its bits changed.
+        // when its bits changed. The slots the sorted pass draws are left out.
         const size_t slots=m_vertexes.size()/4;
-        const bool sorting=sortingTranslucent();
 
         beginPrimitiveDraws();
         for(size_t chunk=0, first=0; first<slots; ++chunk, first+=m_chunkSlots)
@@ -2346,7 +2879,7 @@ void SlotRenderer::flush()
 
             PrimitiveChunkSlots &chunkSlots=m_primitiveChunks[chunk];
 
-            if(chunkSlots.visible == (sorting?chunkSlots.translucent:0))
+            if(chunkSlots.visible == (sorting?chunkSlots.sorted:0))
                 continue;
             if(chunkSlots.stale)
                 buildPrimitiveRanges(chunk);
@@ -2356,34 +2889,59 @@ void SlotRenderer::flush()
             m_frameStats.primitiveRanges+=chunkSlots.draw.counts.size();
             m_frameStats.primitiveSlotsDrawn+=chunkSlots.slots;
         }
-
-        // The sorted pass: the translucent slots after every other, back to front
-        // by z (ties by slot id), so each blends over what is behind it whatever
-        // the order its id would have drawn it in. They keep writing depth: drawn
-        // back to front, a later one is never behind one drawn before it.
-        if(sorting)
-        {
-            if(m_sortedScheduleStale)
-                buildSortedSchedule();
-            for(size_t i=0; i<m_sortedDrawCount; ++i)
-            {
-                drawPrimitiveChunk(m_sortedDraws[i]);
-                ++m_frameStats.drawCalls;
-                m_frameStats.primitiveRanges+=m_sortedDraws[i].counts.size();
-            }
-            m_frameStats.primitiveSlotsDrawn+=m_sortedSlotsDrawn;
-        }
         endPrimitiveDraws();
+    }
+
+    // The sorted pass: back to front by z (ties by id, a run after the slots at
+    // its z), the translucent slots, the opaque slots in front of one they
+    // overlap, so their edges blend over it, and the runs behind one they
+    // overlap, so they show through it; each group of consecutive slots or runs
+    // drawn as the passes draw theirs. The slots keep writing depth: drawn back
+    // to front, none is behind one drawn before it.
+    if(sorting)
+    {
+        for(const SortedGroup &group:m_sortedGroups)
+        {
+            if(!group.text)
+            {
+                beginPrimitiveDraws();
+                for(size_t i=group.first; i<group.first+group.count; ++i)
+                {
+                    const ChunkDraw &draw=m_sortedDraws[i];
+
+                    drawPrimitiveChunk(draw);
+                    ++m_frameStats.drawCalls;
+                    m_frameStats.primitiveRanges+=draw.counts.size();
+                    for(int count:draw.counts)
+                        m_frameStats.primitiveSlotsDrawn+=size_t(count/6);
+                }
+                endPrimitiveDraws();
+            }
+            else
+            {
+                beginTextDraws();
+                for(size_t i=group.first; i<group.first+group.count; ++i)
+                {
+                    const SortedAtlas &atlas=m_sortedAtlases[i];
+
+                    beginTextAtlas(*atlas.font);
+                    for(size_t j=atlas.first; j<atlas.first+atlas.count; ++j)
+                    {
+                        drawTextChunk(m_sortedTextDraws[j]);
+                        ++m_frameStats.drawCalls;
+                        ++m_frameStats.textDraws;
+                    }
+                }
+                endTextDraws();
+            }
+            ++m_frameStats.sortedGroups;
+        }
+        m_frameStats.sortedSlots=m_overlap.sortedSlots.size();
+        m_frameStats.sortedRuns=m_overlap.sortedRuns.size();
     }
 
     if(!m_textVertexes.empty())
     {
-        //copy only the glyph slots that changed since the last frame
-        uploadDirty(SlotPath::Text, m_textVertexBufferCapacity, m_textVertexBufferSent,
-            m_textVertexes.data(), sizeof(glyph_vertex_t), m_textVertexes.size(), m_dirtyTextVertexSlots, 4);
-        uploadDirtyClipBoxes(SlotPath::Text, m_textClipTextureRows, m_textClipBoxesSent,
-            m_textClipBoxes, m_dirtyTextClipSlots);
-
         // Each atlas draws the runs laid out in its font: one draw per index chunk
         // its runs reach (one per atlas until the glyph slots outgrow a chunk),
         // none for an atlas with nothing to show. A chunk's draw reads the static
@@ -2391,7 +2949,7 @@ void SlotRenderer::flush()
         // slotBase plus the slot within the chunk. The atlases go in the same
         // order, and each one's chunks in slot order, as the one draw per atlas
         // over the whole buffer did. The slots are not moved, so the upload above
-        // stays per dirty slot.
+        // stays per dirty slot. The runs the sorted pass drew are left out.
         beginTextDraws();
         for(auto &entry:m_fonts)
         {
@@ -3571,6 +4129,7 @@ void SlotRenderer::setTextRunFont(size_t textId, FontData *fontData)
 
     FontData *previous=run.fontData;
 
+    noteRunChanged(textId);
     if(previous)
     {
         previous->textRuns.erase(textId);
@@ -3633,16 +4192,23 @@ size_t SlotRenderer::fillTextDrawList(const FontData &fontData, std::vector<Chun
     {
         const std::pair<size_t, size_t> range=drawnRange(m_textRuns[textId]);
 
-        if(range.second > 0)
+        // a run the sorted pass draws is drawn there alone
+        if((range.second > 0) && !runSorted(textId))
             ranges.push_back(range);
     }
 
-    // in slot order, as the single draw over the whole buffer went
-    std::sort(ranges.begin(), ranges.end());
-
     // The entries already there are refilled in order, their vectors cleared but
     // not freed, so a rebuild into as many chunks as last time allocates nothing.
-    size_t used=0;
+    return fillDrawChunks(ranges, drawChunks, 0);
+}
+
+size_t SlotRenderer::fillDrawChunks(std::vector<std::pair<size_t, size_t>> &ranges, std::vector<ChunkDraw> &drawChunks,
+    size_t used)
+{
+    const size_t firstUsed=used;
+
+    // in slot order, as the single draw over the whole buffer went
+    std::sort(ranges.begin(), ranges.end());
 
     // Only glyphs in use are listed, and a merge joins ranges that touch, so a
     // run's tail, a freed block or another font's run between two runs keeps them
@@ -3664,7 +4230,7 @@ size_t SlotRenderer::fillTextDrawList(const FontData &fontData, std::vector<Chun
             const size_t chunkStart=chunk*m_chunkSlots;
             const size_t pieceEnd=std::min(end, chunkStart+m_chunkSlots);
 
-            if((used == 0) || (drawChunks[used-1].chunk != chunk))
+            if((used == firstUsed) || (drawChunks[used-1].chunk != chunk))
             {
                 if(used == drawChunks.size())
                     drawChunks.emplace_back();
@@ -3729,6 +4295,7 @@ void SlotRenderer::releaseTextPrimitive(size_t primitiveId)
         // and inherit the dead control's glyphs.
         freeTextRun(run);
         setTextRunFont(primitiveId, nullptr);
+        noteRunChanged(primitiveId);
         if(run.hasSpans)
             m_textRunSpans.erase(primitiveId);
         run=TextRun();
@@ -3945,6 +4512,7 @@ void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::
         writeTextClipBoxes(run, box);
         cullTextRun(textId, run, box);
         markTextDrawList(run, drawnBefore);
+        noteRunChanged(textId);
         return;
     }
 
@@ -4090,6 +4658,7 @@ void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::
     markTextDrawList(run, drawnBefore);
     markTextVertexes(run);
     writeTextClipBoxes(run, box);
+    noteRunChanged(textId);
 
     if(textDebugMatches(text))
     {
@@ -4469,6 +5038,7 @@ void SlotRenderer::showText(size_t textId)
 
     run.hidden=false;
     markTextDrawList(run, drawn);
+    noteRunChanged(textId);
 }
 
 void SlotRenderer::hideText(size_t textId)
@@ -4489,6 +5059,7 @@ void SlotRenderer::hideText(size_t textId)
 
     run.hidden=true;
     markTextDrawList(run, drawn);
+    noteRunChanged(textId);
 }
 
 // The size is in canvas (unscaled) units at any scale(): the text is measured at

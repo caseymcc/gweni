@@ -33,6 +33,10 @@
  *                      opaque), taken first, shows the opaque slot taken
  *                      later behind it, and one whose texels are all opaque
  *                      or transparent draws in today's order;
+ *    moved             a panel moved over a run, and a run moved under a
+ *                      panel, from a frame where they did not overlap, blend
+ *                      in the frame of the move (the overlap index kept up
+ *                      to date from the slots and runs that changed);
  *    chunks            two translucent slots and an opaque one behind them in
  *                      different index chunks (setIndexChunkSlots(64)).
  *
@@ -400,4 +404,35 @@ TEST_CASE("Translucency: an image with half-transparent texels shows the slot ta
     renderer.begin();
     renderer.end();
     renderer.freeTexture(image);
+}
+
+TEST_CASE("Translucency: a panel moved over text and text moved under a panel blend in the next frame")
+{
+    Ids ids;
+    const std::vector<size_t> prims=ids.primitives(2);
+    const size_t run=ids.text();
+    const Item backdrop=rect(prims[1], Rect(10, 120, 200, 60), Color(60, 160, 60, 255), 1);
+
+    SUBCASE("the panel moved")
+    {
+        const std::vector<Item> before{backdrop, text(run, Point(30, 130), "HHHH", ink, 2),
+            rect(prims[0], Rect(240, 20, 150, 80), panel, 5)};
+        const std::vector<Item> after{backdrop, text(run, Point(30, 130), "HHHH", ink, 2),
+            rect(prims[0], Rect(20, 110, 150, 80), panel, 5)};
+        const Frame reference=drawReference(after);
+
+        drawScene(before);
+        CHECK(badPixels(drawScene(after), reference) == 0);
+    }
+    SUBCASE("the run moved")
+    {
+        const std::vector<Item> before{backdrop, text(run, Point(250, 30), "HHHH", ink, 2),
+            rect(prims[0], Rect(20, 110, 150, 80), panel, 5)};
+        const std::vector<Item> after{backdrop, text(run, Point(30, 130), "HHHH", ink, 2),
+            rect(prims[0], Rect(20, 110, 150, 80), panel, 5)};
+        const Frame reference=drawReference(after);
+
+        drawScene(before);
+        CHECK(badPixels(drawScene(after), reference) == 0);
+    }
 }

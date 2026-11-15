@@ -680,6 +680,18 @@ public:
         //! layer free (SlotRenderer::ImageClasses), each copying its layers once;
         //! a page doubles, so over K images that is O(log K) loads
         size_t imagePageRegrows=0;
+        //! The sorted pass (setTranslucentSort): the primitive slots and text runs
+        //! it drew (translucent slots, the opaque slots in front of one they
+        //! overlap, the runs behind one they overlap), the groups it drew them in
+        //! (a run of consecutive slots or of consecutive runs, each one or more
+        //! draws, all counted in drawCalls), whether this flush built its
+        //! schedule again (0 or 1), and the items of the overlap index that
+        //! build's queries visited
+        size_t sortedSlots=0;
+        size_t sortedRuns=0;
+        size_t sortedGroups=0;
+        size_t sortedScheduleBuilds=0;
+        size_t overlapVisited=0;
         //! how long this flush took, from its start to the end of submitFrame(), on
         //! platform::profileTimeMicros(): two reads of that clock per frame
         uint64_t flushMicros=0;
@@ -720,7 +732,7 @@ public:
     //! Draws every primitive slot up to the mirror's end, each chunk whole and none
     //! skipped, as flush() did before it drew only the slots that can show. A test
     //! hook, to check the skip draws the same pixels; off by default.
-    void setDrawEveryPrimitiveSlot(bool every) { m_drawEveryPrimitiveSlot=every; }
+    void setDrawEveryPrimitiveSlot(bool every);
     //! Whether a primitive quad or a text run drawn wholly outside its clip box is
     //! left out of the draws, which would rasterise it only for the fragment
     //! shaders' clip test to discard every pixel of it. On by default;
@@ -1313,30 +1325,111 @@ private:
     //! allocated) until the first translucent slot can show
     std::vector<uint64_t> m_translucentSlots;
     size_t m_translucentCount=0;
+    //! the same slots as a list, and each one's place in it plus 1 (0: not in it)
+    std::vector<size_t> m_translucentList;
+    std::vector<size_t> m_translucentPosition;
     //! The image layers whose image has a texel that is neither transparent nor
     //! opaque, per image page, set at load (finishTextureLoad), so a style 2 slot
     //! of one is translucent; empty until such an image is loaded
     std::vector<uint8_t> m_translucentImageLayers[ImageClasses];
     bool m_imageTranslucencyChanged=false;
     bool m_translucentSort=true;
-    //! The sorted pass's draws (flush()): its slots back to front, a group of
-    //! consecutive ones in one chunk a draw, built again when stale (a dirty
-    //! translucent slot, one turning translucent or opaque, a new chunk size)
-    std::vector<ChunkDraw> m_sortedDraws;
-    size_t m_sortedDrawCount=0;
-    size_t m_sortedSlotsDrawn=0;
-    bool m_sortedScheduleStale=true;
-    //! buildSortedSchedule's scratch: (z, slot) of the sorted slots
-    std::vector<std::pair<uint32_t, size_t>> m_sortedOrder;
     //! Whether the slot's vertexes blend with what is behind them: the alphas of
     //! the colours its style draws (a border's only with a border) neither all 255
     //! nor all 0, or an image (style 2) with a texel neither transparent nor
     //! opaque. All 255 or all 0 draw in the opaque pass, as every slot did.
     bool slotTranslucent(const Vertex *vertexes) const;
-    //! Whether the sorted pass draws translucent slots this frame
-    bool sortingTranslucent() const
+
+    //! A device-px rect [x0, x1) x [y0, y1), empty when x0 >= x1 or y0 >= y1
+    struct OverlapRect
     {
-        return m_translucentSort && !m_drawEveryPrimitiveSlot && (m_translucentCount > 0);
+        int32_t x0=0, y0=0, x1=0, y1=0;
+
+        bool empty() const { return (x0 >= x1) || (y0 >= y1); }
+        bool overlaps(const OverlapRect &other) const
+        {
+            return (x0 < other.x1) && (other.x0 < x1) && (y0 < other.y1) && (other.y0 < y1);
+        }
+    };
+    //! The sorted pass's spatial index: a grid of kCellSide device px cells over
+    //! the view, each listing the slots and runs that can show whose footprint
+    //! (slotFootprint, runFootprint) reaches it, and how many of them are
+    //! translucent. Built when the first translucent slot can show, then kept from
+    //! the dirty slots and the changed runs (flush()), so a UI that never has one
+    //! allocates none of it, and a translucent slot costs what it overlaps.
+    struct OverlapIndex
+    {
+        static constexpr int kCellLog2=6;
+        static constexpr int kCellSide=1 << kCellLog2;
+        //! an item: a slot id, or a text id with kRunBit
+        static constexpr uint32_t kRunBit=0x80000000u;
+
+        struct Cell
+        {
+            std::vector<uint32_t> items;
+            uint32_t translucent=0;
+        };
+
+        bool built=false;
+        //! the view changed: made again from every slot and run at the next flush
+        bool rebuild=false;
+        int width=0, height=0;
+        int cols=0, rows=0;
+        std::vector<Cell> cells;
+        //! each slot's and run's footprint as indexed (empty: in no cell), and
+        //! whether the slot was indexed as translucent
+        std::vector<OverlapRect> slotRects;
+        std::vector<uint8_t> slotTranslucent;
+        std::vector<uint16_t> slotZ;
+        std::vector<OverlapRect> runRects;
+        std::vector<uint16_t> runZ;
+        //! the runs noted changed since the last flush (noteRunChanged), each once
+        std::vector<size_t> changedRuns;
+        std::vector<uint8_t> runNoted;
+        //! the sorted set: its slots (a bit per slot) and runs (a byte per text
+        //! id), and the lists they were built from, for the next build's diff
+        std::vector<uint64_t> sortedSlotBits;
+        std::vector<uint8_t> sortedRunFlags;
+        std::vector<size_t> sortedSlots;
+        std::vector<size_t> sortedRuns;
+    };
+    OverlapIndex m_overlap;
+    //! Whether the sorted pass draws this frame: on, not drawing every slot, and
+    //! the index built
+    bool sortActive() const { return m_translucentSort && !m_drawEveryPrimitiveSlot && m_overlap.built; }
+    //! Every chunk's ranges, every font's draw list and the schedule stale, for a
+    //! change of what sortActive() says
+    void markSortStale();
+    //! A slot's footprint: its quad's bounds in device px intersected with its
+    //! clip box and the view; empty for one that cannot show
+    OverlapRect slotFootprint(size_t slot) const;
+    //! A run's: its glyph quads' bounds intersected with its clip box and the
+    //! view; empty for one that draws nothing
+    OverlapRect runFootprint(size_t textId) const;
+    //! Moves item \a key from \a before's cells to \a after's, the cells'
+    //! translucent counts with it; true if a cell either touched holds a
+    //! translucent slot (other than this one as it was or is)
+    bool moveOverlapItem(uint32_t key, const OverlapRect &before, bool wasTranslucent, const OverlapRect &after,
+        bool translucent);
+    //! Indexes every slot and run that can show, from nothing
+    void buildOverlapIndex();
+    //! Brings the slot's footprint in the index up to date, the schedule marked
+    //! stale where it can have changed
+    void updateOverlapSlot(size_t slot);
+    void updateOverlapRun(size_t textId);
+    //! A run's layout, visibility or font changed: its footprint is brought up to
+    //! date at the next flush. Nothing while the index is not built.
+    void noteRunChanged(size_t textId);
+    //! The z the sorted pass orders a run by: its zIndex, clamped as a vertex's
+    static int runZ(int zIndex) { return std::clamp(zIndex, 0, kMaxZIndex); }
+    //! Whether the slot or the run is drawn by the sorted pass
+    bool slotSorted(size_t slot) const
+    {
+        return (slot/64 < m_overlap.sortedSlotBits.size()) && ((m_overlap.sortedSlotBits[slot/64]>>(slot%64))&1);
+    }
+    bool runSorted(size_t textId) const
+    {
+        return sortActive() && (textId < m_overlap.sortedRunFlags.size()) && (m_overlap.sortedRunFlags[textId] != 0);
     }
     //! Bit word `word` of the slots the opaque pass draws: m_visibleSlots less the
     //! sorted pass's
@@ -1344,13 +1437,49 @@ private:
     {
         uint64_t bits=m_visibleSlots[word];
 
-        if(sortingTranslucent() && (word < m_translucentSlots.size()))
-            bits&=~m_translucentSlots[word];
+        if(sortActive() && (word < m_overlap.sortedSlotBits.size()))
+            bits&=~m_overlap.sortedSlotBits[word];
         return bits;
     }
     //! Whether a slot in [begin, end) is drawn by the sorted pass this frame
     bool sortedSlotIn(size_t begin, size_t end) const;
-    //! Builds m_sortedDraws from m_translucentSlots
+
+    //! The sorted pass's schedule: its items back to front, consecutive slots a
+    //! slot group (a draw per chunk of them, m_sortedDraws[first, first+count)),
+    //! consecutive runs a text group (a draw per atlas and chunk,
+    //! m_sortedAtlases[first, first+count)), built again when stale
+    struct SortedGroup
+    {
+        bool text=false;
+        size_t first=0;
+        size_t count=0;
+    };
+    struct SortedAtlas
+    {
+        FontData *font=nullptr;
+        size_t first=0;  //!< into m_sortedTextDraws
+        size_t count=0;
+    };
+    std::vector<SortedGroup> m_sortedGroups;
+    std::vector<ChunkDraw> m_sortedDraws;
+    size_t m_sortedDrawCount=0;
+    std::vector<SortedAtlas> m_sortedAtlases;
+    std::vector<ChunkDraw> m_sortedTextDraws;
+    size_t m_sortedTextDrawCount=0;
+    bool m_sortedScheduleStale=true;
+    //! the draws, ranges, atlases and groups the schedule has room for once the
+    //! index is built (buildOverlapIndex)
+    static constexpr size_t kReservedSortedDraws=16;
+    //! buildSortedSchedule's scratch: each item's order key (z, run after slot
+    //! at a z, id) and the runs of a text group by font
+    std::vector<std::pair<uint64_t, size_t>> m_sortedOrder;
+    std::vector<std::pair<FontData *, size_t>> m_sortedGroupRuns;
+    std::vector<size_t> m_overlapSlotsScratch;
+    std::vector<size_t> m_overlapRunsScratch;
+    //! per slot: 1 in the last set, 2 found by this build, else 0
+    std::vector<uint8_t> m_overlapSlotMark;
+    //! Builds the sorted set from the index and its schedule, marking the chunks
+    //! and fonts whose slots and runs entered or left it
     void buildSortedSchedule();
     //! Per primitive index chunk of m_chunkSlots slots: how many of its slots can
     //! show, and its draw's ranges, built from its bits when it is drawn after a
@@ -1358,7 +1487,7 @@ private:
     struct PrimitiveChunkSlots
     {
         size_t visible=0;
-        size_t translucent=0; //!< of the visible, those in m_translucentSlots
+        size_t sorted=0;    //!< of the visible, those the sorted pass draws
         bool stale=true;
         size_t slots=0;     //!< the slots draw's ranges cover
         ChunkDraw draw;
@@ -1513,6 +1642,11 @@ private:
     //! how many it filled; the entries past those are left as they were, for the
     //! caller to drop (buildTextDrawList) or keep (verifyTextDrawList).
     size_t fillTextDrawList(const FontData &fontData, std::vector<ChunkDraw> &drawChunks);
+    //! Appends to drawChunks from entry `used` on the draws of `ranges` ((first
+    //! glyph slot, count) pairs, sorted here), merged where they touch and split
+    //! at the chunks' edges; returns the entries in use after them.
+    size_t fillDrawChunks(std::vector<std::pair<size_t, size_t>> &ranges, std::vector<ChunkDraw> &drawChunks,
+        size_t used);
     //! In a debug build (no NDEBUG), asserts that fontData's drawChunks, not
     //! stale, are what a rebuild gives, so a run change that did not mark them
     //! really left them as they were. flush() calls it for every such font.
