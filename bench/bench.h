@@ -164,6 +164,13 @@ public:
     //! The input or edit of one frame, before its updateCanvas(). Warm-up
     //! frames are numbered -warmup..-1, measured frames 0..frames-1.
     virtual void step(SceneContext &/*ctx*/, int /*frame*/) {}
+
+    //! Whether the bench draws the built tree twice before the warm-up, with
+    //! the clip cull off and then on, so that llvmpipe has compiled what each
+    //! index chunk's first draw needs before the measured frames (main.cpp's
+    //! primeChunks). Those two frames lay the tree out before the first step:
+    //! a scene whose first layout must come after its first input says false.
+    virtual bool primesChunks() const { return true; }
 };
 
 //! How a scene's per-frame work is meant to grow with N. A local scene changes

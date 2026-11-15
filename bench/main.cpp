@@ -206,7 +206,8 @@ void primeShaders(gweni::skin::Base *skin, const gweni::Point &size)
 // that frame. So the scene's first frame is drawn with the cull off, every chunk
 // in it, and the whole tree drawn again with it on: two frames before the
 // warm-up, with no input and the clock standing, leaving the tree as a first
-// frame with the cull on would. Not for a scene measured from its first frame.
+// frame with the cull on would. Not for a scene measured from its first frame,
+// nor for one that says it needs no priming (Scene::primesChunks()).
 // A run with the cull off is primed too (its second frame drawn with it off), so
 // --clip-cull on and off have the same frames before the warm-up.
 void primeChunks(gweni::controls::Canvas *canvas)
@@ -729,7 +730,7 @@ int main(int argc, char *argv[])
     summary.constructAllocBytes=bench::phaseTotals().allocBytes[size_t(Phase::Construct)];
     summary.constructInvalidations=bench::phaseTotals().invalidations[size_t(Phase::Construct)];
 
-    if(warmup > 0)
+    if(warmup > 0 && scene->primesChunks())
         primeChunks(canvas);
 
     for(int frame=-warmup; frame<0; ++frame)

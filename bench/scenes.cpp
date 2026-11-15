@@ -1574,6 +1574,12 @@ public:
             m_log->append(logBenchRow(m_appended++));
     }
 
+    // Primed, the log would lay out and bind the prefilled rows at its end
+    // before the first appends move them on, a history of its row pool and
+    // glyph slots the log has nowhere else. Its few rows on screen never
+    // leave the first index chunk, so there is nothing to prime.
+    bool primesChunks() const override { return false; }
+
 private:
     Mode m_mode;
     controls::LogView *m_log=nullptr;
