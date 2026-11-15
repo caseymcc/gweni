@@ -202,6 +202,165 @@ struct Date
     constexpr bool operator>=(const Date &other) const { return !(*this < other); }
 };
 
+
+//! A time of day: an hour (0-23) and a minute (0-59), with no date, seconds
+//! or time zone, as Date is a day with no clock.
+struct TimeOfDay
+{
+    int hour=0;
+    int minute=0;
+
+    constexpr TimeOfDay()=default;
+    constexpr TimeOfDay(int h, int m):hour(h), minute(m) {}
+
+    constexpr bool isValid() const
+    {
+        return (hour >= 0) && (hour <= 23) && (minute >= 0) && (minute <= 59);
+    }
+
+    //! Minutes since midnight, 0..1439 for a valid time.
+    constexpr int toMinutes() const { return hour*60+minute; }
+    //! The time \p n minutes after midnight, taken modulo a day.
+    static constexpr TimeOfDay fromMinutes(int64_t n)
+    {
+        int64_t m=n%1440;
+        if(m < 0)
+            m+=1440;
+        return TimeOfDay(int(m/60), int(m%60));
+    }
+
+    //! n minutes on (back, for a negative n), wrapping at midnight: 23:50
+    //! plus 20 minutes is 00:10.
+    constexpr TimeOfDay addMinutes(int64_t n) const { return fromMinutes(toMinutes()+n); }
+
+    //! The hour on a 12-hour clock, 1-12 (00:30 is 12:30 AM, 12:30 12:30 PM).
+    constexpr int hour12() const { return (hour%12 == 0)?12:hour%12; }
+    constexpr bool isPm() const { return hour >= 12; }
+    //! The 24-hour hour of \p h12 (1-12) AM or PM: 12 AM is 0, 12 PM is 12.
+    static constexpr int hourFrom12(int h12, bool pm) { return (h12%12)+(pm?12:0); }
+
+    //! "14:30", or with \p twelveHour "2:30 PM" (no leading zero on the hour).
+    std::string toText(bool twelveHour=false) const
+    {
+        char buffer[16];
+        if(twelveHour)
+            std::snprintf(buffer, sizeof(buffer), "%d:%02d %s", hour12(), minute%100, isPm()?"PM":"AM");
+        else
+            std::snprintf(buffer, sizeof(buffer), "%02d:%02d", hour%100, minute%100);
+        return buffer;
+    }
+
+    //! Reads a time leniently: the hour and minute as one group of 1-4 digits
+    //! ("9" is 09:00, "930" 09:30, "1430" 14:30) or two groups split by
+    //! anything that is no digit or letter ("14:30", "2.05"), and an optional
+    //! AM or PM marker after them ("a", "am", "p", "pm", "A.M.", any case,
+    //! with or without a space). With a marker the hour must be 1-12 (12 AM is
+    //! 00, 12 PM 12), without one 0-23. Spaces around it are ignored. Empty for
+    //! anything else: other letters, a third group, an hour or minute out of
+    //! range, a minute of more than two digits, an empty text.
+    static std::optional<TimeOfDay> fromText(const std::string &text)
+    {
+        int groups[2]={0, 0};
+        size_t digits[2]={0, 0};
+        int groupCount=0;
+        int marker=0;               // 0 none, 1 AM, 2 PM
+        bool inGroup=false;
+        size_t i=0;
+
+        while(i < text.size())
+        {
+            const char c=text[i];
+
+            if((c >= '0') && (c <= '9'))
+            {
+                if(!inGroup)
+                {
+                    if((groupCount == 2) || (marker != 0))
+                        return std::nullopt;
+                    inGroup=true;
+                    ++groupCount;
+                }
+                const int g=groupCount-1;
+                if(++digits[g] > 4)
+                    return std::nullopt;
+                groups[g]=groups[g]*10+(c-'0');
+                ++i;
+                continue;
+            }
+            inGroup=false;
+
+            const char lower=((c >= 'A') && (c <= 'Z'))?char(c-'A'+'a'):c;
+            if((lower == 'a') || (lower == 'p'))
+            {
+                if(marker != 0)
+                    return std::nullopt;
+                marker=(lower == 'a')?1:2;
+                ++i;
+                // "m", "M", "." in any order after it: "am", "a.m.", "pm."
+                bool m=false;
+                while(i < text.size())
+                {
+                    const char next=text[i];
+                    if(!m && ((next == 'm') || (next == 'M')))
+                        m=true;
+                    else if(next != '.')
+                        break;
+                    ++i;
+                }
+                continue;
+            }
+            if(((lower >= 'a') && (lower <= 'z')) || (static_cast<unsigned char>(c) >= 0x80))
+                return std::nullopt;
+            ++i;
+        }
+
+        if(groupCount == 0)
+            return std::nullopt;
+
+        int h=0;
+        int m=0;
+        if(groupCount == 1)
+        {
+            if(digits[0] <= 2)
+                h=groups[0];
+            else
+            {
+                h=groups[0]/100;
+                m=groups[0]%100;
+            }
+        }
+        else
+        {
+            if((digits[0] > 2) || (digits[1] > 2))
+                return std::nullopt;
+            h=groups[0];
+            m=groups[1];
+        }
+
+        if(marker != 0)
+        {
+            if((h < 1) || (h > 12))
+                return std::nullopt;
+            h=hourFrom12(h, marker == 2);
+        }
+
+        const TimeOfDay time(h, m);
+        if(!time.isValid())
+            return std::nullopt;
+        return time;
+    }
+
+    constexpr bool operator==(const TimeOfDay &other) const
+    {
+        return (hour == other.hour) && (minute == other.minute);
+    }
+    constexpr bool operator!=(const TimeOfDay &other) const { return !(*this == other); }
+    constexpr bool operator<(const TimeOfDay &other) const { return toMinutes() < other.toMinutes(); }
+    constexpr bool operator>(const TimeOfDay &other) const { return other < *this; }
+    constexpr bool operator<=(const TimeOfDay &other) const { return !(other < *this); }
+    constexpr bool operator>=(const TimeOfDay &other) const { return !(*this < other); }
+};
+
 }//namespace gweni
 
 #endif//_gweni_date_h_

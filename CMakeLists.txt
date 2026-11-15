@@ -344,6 +344,8 @@ set(GWENI_CONTROL_SOURCES
     include/gweni/controls/reorderable.h
     include/gweni/controls/searchComboBox.h
     source/controls/searchComboBox.cpp
+    include/gweni/controls/sectionedEdit.h
+    source/controls/sectionedEdit.cpp
     include/gweni/controls/selectable.h
     source/controls/reorderable.cpp
     source/controls/selectable.cpp
