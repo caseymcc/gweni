@@ -215,16 +215,12 @@ bool SearchComboBoxField::onKeyBackspace(bool down)
 
 void SearchComboBoxField::onMouseClickLeft(int x, int y, bool down)
 {
-    if(down)
+    // The opening press selects the text and holds the mouse as a TextBox
+    // press does, so an item drag around the box starts none; its release is
+    // the TextBox's, which keeps the selection.
+    if(down && m_box && m_box->fieldClicked())
     {
-        m_pressOpened=m_box && m_box->fieldClicked();
-
-        if(m_pressOpened)
-            return;
-    }
-    else if(m_pressOpened)
-    {
-        m_pressOpened=false;
+        holdPressKeepingSelection();
         return;
     }
 

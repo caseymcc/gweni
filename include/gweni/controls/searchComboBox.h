@@ -176,8 +176,6 @@ private:
     //! Inside insertText(), and whether the text changed there.
     bool m_inserting=false;
     bool m_changedInInsert=false;
-    //! The press opened the list and selected the text: its release is ours.
-    bool m_pressOpened=false;
     //! The box took the Return press: the release is the field's too, so it
     //! does not move the focus on as a TextBox's would.
     bool m_returnTaken=false;

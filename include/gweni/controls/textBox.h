@@ -329,8 +329,16 @@ protected:
     virtual int displayPos(int realPos) const { return realPos; }
     virtual int realPos(int displayPos) const { return displayPos; }
 
+    //! Holds the mouse for the press under way (MouseFocus) to its release,
+    //! keeping the selection: its moves and its release move no caret. For a
+    //! press that selected the text (a select-all box's first one, a
+    //! double-click, a SearchComboBoxField's opening one).
+    void holdPressKeepingSelection();
+
     bool m_editable;
     bool m_selectAll;
+    //! The press under way holds the mouse through holdPressKeepingSelection().
+    bool m_pressKeepsSelection=false;
 
     int m_cursorPos;
     int m_cursorEnd;

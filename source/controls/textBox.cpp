@@ -757,6 +757,7 @@ void TextBox::onMouseDoubleClickLeft(int x, int y)
         return;
 
     onSelectAll(this);
+    holdPressKeepingSelection();
 }
 
 String TextBox::getSelection()
@@ -968,6 +969,9 @@ void TextBox::onMouseClickLeft(int x, int y, bool down)
     {
         onSelectAll(this);
         m_selectAll=false;
+
+        if(down)
+            holdPressKeepingSelection();
         return;
     }
 
@@ -975,6 +979,7 @@ void TextBox::onMouseClickLeft(int x, int y, bool down)
 
     if(down)
     {
+        m_pressKeepsSelection=false;
         setCursorPos(value);
 
         if(!gweni::input::isShiftDown())
@@ -986,15 +991,26 @@ void TextBox::onMouseClickLeft(int x, int y, bool down)
     {
         if(gweni::MouseFocus == this)
         {
-            setCursorPos(value);
+            if(!m_pressKeepsSelection)
+                setCursorPos(value);
             gweni::MouseFocus=nullptr;
         }
+
+        m_pressKeepsSelection=false;
     }
+}
+
+// The press is the box's, as any press on it is (an item drag around it
+// starts none), but neither its moves nor its release move the caret.
+void TextBox::holdPressKeepingSelection()
+{
+    m_pressKeepsSelection=true;
+    gweni::MouseFocus=this;
 }
 
 void TextBox::onMouseMoved(int x, int y, int /*deltaX*/, int /*deltaY*/)
 {
-    if(gweni::MouseFocus != this)
+    if(gweni::MouseFocus != this || m_pressKeepsSelection)
         return;
 
     int value=realPos(m_text->getClosestCharacter(m_text->canvasPosToLocal(gweni::Point(x, y))));

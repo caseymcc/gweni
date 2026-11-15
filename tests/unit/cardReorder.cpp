@@ -12,7 +12,10 @@
  *  Button is let go without a click (not toggled, not depressed). A press
  *  moved less is a plain click. A press that a part of the card takes for a
  *  drag of its own (a Slider's thumb, a TextBox's selection) starts no card
- *  drag: the part keeps the mouse to its release. A press on the column's
+ *  drag: the part keeps the mouse to its release. So do the press that
+ *  focuses a select-all TextBox, a TextBox's double-click and the press that
+ *  opens a filterable SearchComboBox's list from its field, keeping the text
+ *  selected through the move and the list open. A press on the column's
  *  scroll bar starts no drag. The card dragged is the one pressed, keyed at
  *  the press: a card added above it or a scroll between the press and the
  *  5-unit move drags it, not the card then under the press point, and one
@@ -88,6 +91,7 @@
 #include <gweni/controls/label.h>
 #include <gweni/controls/reorderable.h>
 #include <gweni/controls/scrollControl.h>
+#include <gweni/controls/searchComboBox.h>
 #include <gweni/controls/textBox.h>
 #include <gweni/dragAndDrop.h>
 #include <gweni/inputHandler.h>
@@ -416,6 +420,102 @@ TEST_CASE("CardReorder: a press that a part of the card takes for its own drag s
         CHECK(MouseFocus == box);
         scene.release();
         CHECK(MouseFocus == nullptr);
+        CHECK(scene.todo.drops.empty());
+    }
+
+    // The press that focuses a select-all box selects its text and holds the
+    // mouse to its release: a move neither drags the card nor undoes the
+    // select-all with a drag selection.
+    SUBCASE("a select-all TextBox's first press")
+    {
+        Scene scene;
+        controls::Button *card=scene.todo.cards[1];
+        auto *box=card->newChild<controls::TextBox>();
+        box->setDock(DockPosition::Center);
+        box->setText("select me");
+        box->setSelectAllOnFocus(true);
+        scene.frame();
+        scene.frame();
+
+        // the last click's time is the input handler's, over scenes: a press
+        // at the subcase before's point and clock would be a double-click
+        scene.clock+=5.0f;
+        const Point at=box->localPosToCanvas(Point(4, box->getHeight()/2));
+        scene.press(at);
+        CHECK(MouseFocus == box);
+        scene.move(Point(at.x+6, at.y));
+        scene.move(Point(at.x+6, at.y+90));
+        CHECK_FALSE(draganddrop::isDragging());
+        CHECK(box->getSelection() == "select me");
+        scene.release();
+        CHECK(MouseFocus == nullptr);
+        CHECK(box->getSelection() == "select me");
+        CHECK(scene.todo.drops.empty());
+    }
+
+    // A double-click selects the text too and holds the mouse to the
+    // release of its second press.
+    SUBCASE("a TextBox's double-click")
+    {
+        Scene scene;
+        controls::Button *card=scene.todo.cards[1];
+        auto *box=card->newChild<controls::TextBox>();
+        box->setDock(DockPosition::Center);
+        box->setText("select me");
+        scene.frame();
+        scene.frame();
+
+        scene.clock+=5.0f;
+        const Point at=box->localPosToCanvas(Point(4, box->getHeight()/2));
+        scene.press(at);
+        scene.release();
+        scene.clock-=0.9f;  // press() steps a second: the second one 0.1 s on
+        scene.press(at);
+        CHECK(box->getSelection() == "select me");
+        CHECK(MouseFocus == box);
+        scene.move(Point(at.x+6, at.y));
+        scene.move(Point(at.x+6, at.y+90));
+        CHECK_FALSE(draganddrop::isDragging());
+        CHECK(box->getSelection() == "select me");
+        scene.release();
+        CHECK(MouseFocus == nullptr);
+        CHECK(box->getSelection() == "select me");
+        CHECK(scene.todo.drops.empty());
+    }
+
+    // A filterable SearchComboBox's field, pressed while the box is closed,
+    // opens the list with the text selected and holds the mouse as a TextBox
+    // press does: no card drag with the list open, the selection kept.
+    SUBCASE("a filterable SearchComboBox's opening press on its field")
+    {
+        Scene scene;
+        controls::Button *card=scene.todo.cards[1];
+        auto *box=card->newChild<controls::SearchComboBox>();
+        box->setDock(DockPosition::Center);
+        box->addOption("Alpha");
+        box->addOption("Beta");
+        box->setFilterable(true);
+        box->setSelectedIndex(0);
+        scene.frame();
+        scene.frame();
+
+        controls::internal::SearchComboBoxField *field=box->getField();
+        REQUIRE(field);
+        scene.clock+=5.0f;
+        const Point at=field->localPosToCanvas(Point(6, field->getHeight()/2));
+        scene.press(at);
+        REQUIRE(box->isListOpen());
+        CHECK(MouseFocus == field);
+        scene.move(Point(at.x+6, at.y));
+        scene.move(Point(at.x+6, at.y+90));
+        CHECK_FALSE(draganddrop::isDragging());
+        CHECK(box->isListOpen());
+        CHECK(field->getSelection() == "Alpha");
+        scene.release();
+        CHECK(MouseFocus == nullptr);
+        CHECK(box->isListOpen());
+        CHECK(KeyboardFocus == field);
+        CHECK(field->getSelection() == "Alpha");
         CHECK(scene.todo.drops.empty());
     }
 }
