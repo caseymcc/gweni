@@ -181,7 +181,7 @@
  *                       split-button | range-slider | stepper |
  *                       code-view | rich-text | markdown | search-combo |
  *                       reorder |
- *                       calendar (see below)
+ *                       calendar | translucency (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -891,6 +891,24 @@
  *                 the log holds are the same at both counts, and the demo
  *                 gives every primitive id back. Exits non-zero if any check
  *                 is no.
+ *    translucency TranslucencyDemo, the clock frozen (translucency.png):
+ *                 its translucent panel over Labels, the opaque block
+ *                 behind it (its slot taken after the panel's) and the
+ *                 Button on it; the panel hidden and shown, moved one unit
+ *                 and back; a 200x120 Dialog opened, Canvas::setModalScrim
+ *                 on and off; the stats overlay opened over the Labels
+ *                 meant for it. One line
+ *                   translucency later_behind=yes|no ... ids_back=yes|no
+ *                 reports the checks: the block's slot is the later and its
+ *                 z the lower; settled frames write nothing and build no
+ *                 sorted schedule; under the panel, the frame is the one
+ *                 without it blended under its colour; the move builds the
+ *                 schedule once and writes the panel subtree's ids alone;
+ *                 the Labels left of the dialog are the demo blended under
+ *                 the scrim, and the scrim off gives the dialog's frame
+ *                 back; the Labels under the overlay are blended under its
+ *                 panel where it draws nothing of its own; the demo gives
+ *                 its ids back. Exits non-zero if any check is no.
  *    chip-badge   ChipBadgeDemo, the clock frozen (chip-badge.png): the
  *                 Inbox entry's badge counted one more (the same width),
  *                 then 9 -> 10 (wider); the "Corners" button, a badge at
@@ -1540,6 +1558,7 @@
 #include <gweni/tools/depthView.h>
 #include <gweni/tools/inspector.h>
 #include <gweni/tools/statsOverlay.h>
+#include <gweni/controls/dialogs/dialog.h>
 #include <gweni/tools/themeEditor.h>
 #include <GLFW/glfw3.h>
 #include <gweni/utils/filesystem.h>
@@ -1644,6 +1663,7 @@
 #include <gweni/controls/dragNumber.h>
 #include <demo/vectorField.h>
 #include <demo/zoomPanel.h>
+#include <demo/translucency.h>
 #include <demo/flow.h>
 #include <demo/board.h>
 #include <demo/reorder.h>
@@ -1768,7 +1788,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
     X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo) X(InspectorDemo) X(ThemeEditorDemo) \
-    X(StatsOverlayDemo) X(ZoomPanelDemo) X(NodeGraphDemo) X(FlowDemo) X(BoardDemo) X(ImageGridDemo) X(RichTextDemo) X(MarkdownDemo) X(ReorderDemo)
+    X(StatsOverlayDemo) X(ZoomPanelDemo) X(TranslucencyDemo) X(NodeGraphDemo) X(FlowDemo) X(BoardDemo) X(ImageGridDemo) X(RichTextDemo) X(MarkdownDemo) X(ReorderDemo)
 
 static const char *const g_controlNames[]=
 {
@@ -1866,7 +1886,7 @@ static void printUsage(std::ostream &out)
          "                     | navigation-rail | flow | board | switch | spinner\n"
          "                     | image-grid | segmented | split-button\n"
          "                     | range-slider | stepper | code-view | rich-text\n"
-         "                     | search-combo | reorder | calendar;\n"
+         "                     | search-combo | reorder | calendar | translucency;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -2922,7 +2942,7 @@ enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typ
     ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, TreeTable, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
     ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented, SplitButton,
-    RangeSlider, Stepper, CodeView, RichText, Markdown, SearchCombo, Reorder, Calendar };
+    RangeSlider, Stepper, CodeView, RichText, Markdown, SearchCombo, Reorder, Calendar, Translucency };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -2959,6 +2979,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "code-editor") scenario=Scenario::CodeEditor;
     else if(name == "log-view") scenario=Scenario::LogView;
     else if(name == "chip-badge") scenario=Scenario::ChipBadge;
+    else if(name == "translucency") scenario=Scenario::Translucency;
     else if(name == "navigation-rail") scenario=Scenario::NavigationRail;
     else if(name == "flow") scenario=Scenario::Flow;
     else if(name == "board") scenario=Scenario::Board;
@@ -12856,6 +12877,281 @@ static bool runSearchComboScenario(Session &s, const std::string &shotDir, bool 
 }
 
 //-----------------------------------------------------------------------------
+// --scenario translucency: TranslucencyDemo, the clock frozen (#685)
+//
+// The renderer draws the translucent slots, the opaque ones in front of one
+// they overlap and the text runs behind one back to front after the opaque
+// pass (SlotRenderer's sorted pass), so what is under a translucent slot shows
+// through it: the Labels under the demo's panel and its block, whose slot is
+// taken after the panel's; the Labels under the modal scrim; and the Labels
+// under the stats overlay. Each is checked against the frame without the
+// translucent thing, blended under its colour. The schedule is built again
+// only when what it is made from changed.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+// The pixels of `rect` (logical units) in `frame` more than 2 off `under`
+// blended under `over` in a channel; with `only`, just where `only` holds
+// for (under, overOnly) at that pixel. `checked` counts the pixels tested,
+// `text` those of them where `under` is unlike its rect's first pixel.
+size_t badBlends(const Session &s, const std::vector<uint8_t> &frame, const std::vector<uint8_t> &under,
+    const gweni::Rect &rect, const gweni::Color &over, size_t &checked, size_t &text,
+    const std::vector<uint8_t> *overOnly=nullptr)
+{
+    const gweni::Point topLeft=devicePixels(gweni::Point(rect.x, rect.y), s.scale);
+    const gweni::Point bottomRight=devicePixels(gweni::Point(rect.x+rect.w, rect.y+rect.h), s.scale);
+    const float a=over.a/255.0f;
+    const int blend[3]={over.r, over.g, over.b};
+    const size_t first=(static_cast<size_t>(std::max(topLeft.y, 0))*s.pixels.x+std::max(topLeft.x, 0))*4;
+    size_t bad=0;
+
+    checked=0;
+    text=0;
+    for(int y=std::max(topLeft.y, 0); y < std::min(bottomRight.y, s.pixels.y); ++y)
+    {
+        for(int x=std::max(topLeft.x, 0); x < std::min(bottomRight.x, s.pixels.x); ++x)
+        {
+            const size_t at=(static_cast<size_t>(y)*s.pixels.x+x)*4;
+            bool differs=false;
+
+            for(int c=0; c < 3; ++c)
+                differs=differs || (under[at+c] != under[first+c]);
+
+            // where the overlay draws something of its own the blend is not
+            // the panel's alone
+            if(overOnly)
+            {
+                bool plain=true;
+
+                for(int c=0; c < 3; ++c)
+                    plain=plain && (std::abs((*overOnly)[at+c]-(blend[c]*a+under[first+c]*(1.0f-a))) <= 2.5f);
+                if(!plain)
+                    continue;
+            }
+            ++checked;
+            if(differs)
+                ++text;
+            for(int c=0; c < 3; ++c)
+            {
+                if(std::abs(frame[at+c]-(blend[c]*a+under[at+c]*(1.0f-a))) > 2.5f)
+                {
+                    ++bad;
+                    break;
+                }
+            }
+        }
+    }
+    return bad;
+}
+
+gweni::Rect insetRect(const gweni::Rect &rect, int inset)
+{
+    return gweni::Rect(rect.x+inset, rect.y+inset, std::max(0, rect.w-2*inset), std::max(0, rect.h-2*inset));
+}
+
+gweni::Rect intersectRects(const gweni::Rect &a, const gweni::Rect &b)
+{
+    const int x0=std::max(a.x, b.x);
+    const int y0=std::max(a.y, b.y);
+    const int x1=std::min(a.x+a.w, b.x+b.w);
+    const int y1=std::min(a.y+a.h, b.y+b.h);
+
+    return gweni::Rect(x0, y0, std::max(0, x1-x0), std::max(0, y1-y0));
+}
+
+}//namespace
+
+static bool runTranslucencyScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    using gweni::tools::StatsOverlay;
+
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    checks.scenario="translucency";
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    gweni::controls::Base *control=addControl(s, "TranslucencyDemo");
+    auto *demo=gweni::gweni_cast<gweni::TranslucencyDemo>(control);
+
+    if(!demo)
+    {
+        std::cerr<<"ControlTest: translucency: TranslucencyDemo was not built\n";
+        return false;
+    }
+
+    s.label="translucency";
+    // the block is made on a timer after the first frame
+    renderFrames(s, std::max(s.frames, 3));
+
+    bool ok=shoot(s, shotDir+"/translucency.png");
+    gweni::controls::Base *panel=demo->panel();
+    gweni::controls::Base *block=demo->block();
+    std::set<size_t> panelPrims, panelTexts, blockPrims, blockTexts;
+
+    subtreeIds(panel, panelPrims, panelTexts);
+    if(block)
+        subtreeIds(block, blockPrims, blockTexts);
+
+    std::vector<size_t> panelOwn, panelOwnTexts;
+
+    if(panel->getSkinControl())
+        panel->getSkinControl()->appendIds(panelOwn, panelOwnTexts);
+
+    // (1) the block's slot was taken after the panel's, and it is behind it
+    checks.check("later_behind",
+        block && !blockPrims.empty() && !panelOwn.empty() && *blockPrims.begin() > panelOwn.front()
+            && block->getZIndex() < panel->getZIndex(),
+        std::string(block?"":"the block was not made; ")+"the block's first slot "
+        +std::to_string(blockPrims.empty()?0:*blockPrims.begin())+" (z "+std::to_string(block?block->getZIndex():0)
+        +"), the panel's "+std::to_string(panelOwn.empty()?0:panelOwn.front())+" (z "
+        +std::to_string(panel->getZIndex())+"): the block's slot must be the later, its z the lower");
+
+    // (2) a settled frame: nothing written, no schedule built, the pass drawing
+    size_t idleWork=0, idleBuilds=0, sortedSlots=0;
+    std::vector<uint8_t> pixels;
+
+    for(int i=0; i < 2; ++i)
+    {
+        CodeEditorFrame frame=codeEditorFrame(s);
+
+        idleWork+=frame.written+frame.changed;
+        idleBuilds+=s.renderer->getFrameStats().sortedScheduleBuilds;
+        sortedSlots=s.renderer->getFrameStats().sortedSlots;
+        pixels=std::move(frame.pixels);
+    }
+    checks.check("settled", idleWork == 0 && idleBuilds == 0 && sortedSlots > 0,
+        "settled frames wrote or changed "+std::to_string(idleWork)+", built the schedule "
+        +std::to_string(idleBuilds)+" times, sorted "+std::to_string(sortedSlots)+" slots");
+
+    // (3) under the panel: the Labels and the block blend under it, away from
+    // its corners, its caption and its Button
+    panel->hide();
+
+    const std::vector<uint8_t> withoutPanel=codeEditorFrame(s).pixels;
+
+    panel->show();
+    renderFrames(s, 1);
+
+    const gweni::Rect panelRect=panel->getCanvasBounds();
+    const gweni::Rect body(panelRect.x+8, panelRect.y+28, panelRect.w-16, 140);
+    size_t checked=0, text=0;
+    const size_t underBad=badBlends(s, pixels, withoutPanel, body, gweni::TranslucencyDemo::panelColor(),
+        checked, text);
+
+    checks.check("under_panel", underBad == 0 && text > 200,
+        std::to_string(underBad)+" of "+std::to_string(checked)+" pixels under the panel are not the frame"
+        " without it blended under it ("+std::to_string(text)+" of them text or the block)");
+
+    // (4) the panel moved one unit: the schedule built again, the panel
+    // subtree's slots alone written
+    panel->setPos(panel->getX()+1, panel->getY());
+
+    const CodeEditorFrame moved=codeEditorFrame(s);
+    const size_t movedBuilds=s.renderer->getFrameStats().sortedScheduleBuilds;
+
+    checks.check("panel_moved",
+        movedBuilds == 1 && !moved.primitives.empty() && idsWithin(moved.primitives, panelPrims)
+            && idsWithin(moved.texts, panelTexts),
+        "the move built the schedule "+std::to_string(movedBuilds)+" times and wrote "
+        +std::to_string(moved.primitives.size())+" primitive and "+std::to_string(moved.texts.size())
+        +" text ids (the panel subtree's alone allowed)");
+    panel->setPos(panel->getX()-1, panel->getY());
+    renderFrames(s, 1);
+    idleWork=settleCodeEditor(s, pixels);
+
+    // (5) the modal scrim: a dialog opened over the demo dims its Labels, not
+    // cuts them out, and the scrim off gives the dialog's frame back
+    auto *dialog=s.canvas->newChild<gweni::dialogs::Dialog>();
+
+    dialog->setTitle("Over the demo");
+    dialog->setDialogSize(gweni::dialogs::Extent::units(200), gweni::dialogs::Extent::units(120));
+    dialog->setDeleteOnClose(false);
+    dialog->open();
+    renderFrames(s, 2);
+
+    const std::vector<uint8_t> withDialog=codeEditorFrame(s).pixels;
+    const gweni::Rect dialogRect=dialog->getCanvasBounds();
+
+    s.canvas->setModalScrim(true);
+    renderFrames(s, 2);
+
+    const std::vector<uint8_t> scrim=codeEditorFrame(s).pixels;
+    const gweni::Rect left(0, 0, std::min(dialogRect.x, panelRect.x), s.size.y);
+    const size_t scrimBad=badBlends(s, scrim, pixels, left, gweni::skin::textured::tokyonight::ModalScrim.top,
+        checked, text);
+
+    checks.check("scrim_dims", scrimBad == 0 && text > 100,
+        std::to_string(scrimBad)+" of "+std::to_string(checked)+" pixels left of the dialog are not the demo"
+        " blended under the scrim ("+std::to_string(text)+" of them text)");
+
+    s.canvas->setModalScrim(false);
+    renderFrames(s, 2);
+
+    const std::vector<uint8_t> scrimOff=codeEditorFrame(s).pixels;
+
+    checks.check("scrim_off", scrimOff == withDialog, "the scrim off did not give the dialog's frame back");
+    dialog->close();
+    dropControl(s, dialog);
+    renderFrames(s, 2);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (6) the stats overlay (0xe0) over the Labels under it: dimmed, not cut
+    // out, where the overlay draws nothing of its own
+    StatsOverlay::open(s.canvas);
+    renderFrames(s, 2);
+
+    const std::vector<uint8_t> overlayFrame=codeEditorFrame(s).pixels;
+    StatsOverlay *overlay=StatsOverlay::find(s.canvas);
+    const gweni::Rect overlayRect=overlay ? insetRect(overlay->getCanvasBounds(), 8) : gweni::Rect();
+
+    for(gweni::controls::Label *label : demo->underOverlay())
+        label->hide();
+    renderFrames(s, 2);
+
+    const std::vector<uint8_t> overlayOnly=codeEditorFrame(s).pixels;
+
+    for(gweni::controls::Label *label : demo->underOverlay())
+        label->show();
+    renderFrames(s, 2);
+
+    gweni::Rect labels;
+
+    for(gweni::controls::Label *label : demo->underOverlay())
+        labels=labels.w ? unionRect(labels, label->getCanvasBounds()) : label->getCanvasBounds();
+
+    const gweni::Rect underOverlay=intersectRects(labels, overlayRect);
+    const size_t overlayBad=badBlends(s, overlayFrame, pixels, underOverlay,
+        gweni::skin::textured::tokyonight::StatsOverlay.top, checked, text, &overlayOnly);
+
+    checks.check("overlay_dims", overlay && overlayBad == 0 && text > 50,
+        std::to_string(overlayBad)+" of "+std::to_string(checked)+" pixels under the stats overlay are not"
+        " the Labels blended under it ("+std::to_string(text)+" of them text)");
+    StatsOverlay::close(s.canvas);
+    renderFrames(s, 2);
+
+    idleWork+=settleCodeEditor(s, pixels);
+    checks.check("settled_after", idleWork == 0, "settled frames wrote or changed "+std::to_string(idleWork));
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()+liveTextIds()-idsBefore;
+
+    checks.check("ids_back", idsLeft == 0, std::to_string(idsLeft)+" ids not given back");
+
+    passed=checks.allPassed();
+    std::cout<<"translucency";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<" sorted_slots="<<sortedSlots<<" moved_prims="<<moved.primitives.size()
+             <<" overlay_checked="<<checked<<"\n";
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // --scenario switch: SwitchDemo's switches, the clock stepping
 //
 // A Switch draws its track and its thumb in two slots of its own, its label
@@ -22046,6 +22342,15 @@ int main(int argc, char *argv[])
             ok=runChipBadgeScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a count, a move, a hover or a removal did more than its part
+            break;
+        }
+
+        case Scenario::Translucency:
+        {
+            bool passed=false;
+            ok=runTranslucencyScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // something under a translucent slot did not show through it
             break;
         }
 

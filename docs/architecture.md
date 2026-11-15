@@ -683,12 +683,18 @@ CodeEditor, a DragNumber and a Selectable keep Return; a Selectable takes only i
 (`KeyboardFocus` is the row), so a field in a row (a DataTableRow cell) does not press the
 row on Enter, and the press goes on to a dialog above it.
 
-**No backdrop.** Nothing is drawn between a modal and the app: what is under it stays as
-it is, and only its input is blocked. A translucent scrim over the app would hide the
-app's text rather than dim it: every primitive slot is drawn before every glyph, and the
-scrim's slot, in front, writes the depth that rejects the glyphs behind it (the same
-reason as for the stats overlay's panel, "The stats overlay"). A real scrim needs the
-renderer to draw glyphs behind a translucent slot, which is its own change.
+**The backdrop is opt-in.** By default nothing is drawn between a modal and the app: what
+is under it stays as it is, and only its input is blocked. `Canvas::setModalScrim(true)`
+draws a scrim: an `internal::ModalScrim` canvas child (`controls/modalScrim.h`),
+owner-placed over the whole canvas, one slot in the translucent theme surface
+`ModalScrim` (in `tokyonight::surfaceRegistry()`, so a theme file and the ThemeEditor set
+it), shown while the stack is not empty and kept by `keepModalsInPlace` just before the
+top modal, so the modals below the top one are under it too and it moves as modals are
+pushed and popped. It takes no mouse or keyboard input (the stack already blocks the
+app), and the app's text shows through it dimmed, since the renderer's sorted pass
+draws the runs behind a translucent slot before it ("Translucent slots: the sorted
+pass"). Off, it is deleted and nothing of it is left (`tests/unit/modalScrim.cpp`,
+`tests/modalBackdrop.cpp`).
 
 #### Dialogs: `dialogs::Dialog` and the standard dialogs
 
@@ -730,10 +736,11 @@ dialog's own child, measured at this pass's width, in one pass.
 
 **Its look** is four surfaces in `tokyonight::surfaceRegistry()`: `Dialog` (the panel, a
 window's with a stronger border), `DialogTitle` and `DialogFooter` (strips inside the
-border, their outer corners rounded) and `DialogShadow`. The shadow is **opaque**,
+border, their outer corners rounded) and `DialogShadow`. The shadow is
 `Dialog::ShadowSize` (4) units below and right of the panel and inside the dialog's
-bounds: a translucent one would hide the app's text under it (as the backdrop would), and
-inside the bounds the canvas clamps it with the panel. The panel is drawn at `z+1` over
+bounds, so the canvas clamps it with the panel. The shipped one is opaque; a theme that
+gives it alpha gets a shadow that dims what is under it, the app's text included
+(the sorted pass, `tests/modalBackdrop.cpp`). The panel is drawn at `z+1` over
 the shadow (`depthLayers()` 2).
 
 **The standard dialogs** (`controls/dialogs/query.h`): `message(canvas, title, text,
@@ -1205,10 +1212,16 @@ sizes, ranges and the core's own data, never an API object:
 | `maxClipBoxRows()`, `allocateClipBoxes(path, rows)`, `uploadClipBoxRows(path, x, y, w, h, boxes)` | the device's row limit; (re)allocate a path's clip-box table, `kClipColumns` boxes a row; copy a block of boxes to it |
 | `createAtlasTexture(atlas)`, `uploadAtlasRows(texture, atlas, firstRow, rows)`, `destroyAtlasTexture(texture)` | a font atlas's texture (R8, or RGB8 for depth 3), its dirty rows, its end |
 | `createImageTexture(image, rgba)`, `destroyImageTexture(texture)`, `readTextureRgba(...)` | an image's texture with its mip levels, each uploaded from `imageMipChain`, its end, a read back (`pixelColor`, `readFontAtlas`) |
-| `beginPrimitiveDraws()`, `drawPrimitiveChunk(draw)`, `endPrimitiveDraws()` | one draw per chunk with a slot that can show, in slot order, of the chunk's `ChunkDraw`: its runs of such slots ("Only the slots that can show are drawn") |
-| `beginTextDraws()`, `beginTextAtlas(font)`, `drawTextChunk(draw)`, `endTextDraws()` | per atlas with runs to draw: its texture and `TextMode` (an LCD one blended per channel), then one draw per `ChunkDraw` |
+| `beginPrimitiveDraws()`, `drawPrimitiveChunk(draw)`, `endPrimitiveDraws()` | one draw per chunk with a slot that can show, in slot order, of the chunk's `ChunkDraw`: its runs of such slots ("Only the slots that can show are drawn"); begun again for each slot group of the sorted pass, whose `ChunkDraw`s hold their ranges back to front, not in slot order ("Translucent slots: the sorted pass") |
+| `beginTextDraws()`, `beginTextAtlas(font)`, `drawTextChunk(draw)`, `endTextDraws()` | per atlas with runs to draw: its texture and `TextMode` (an LCD one blended per channel), then one draw per `ChunkDraw`; begun again for each text group of the sorted pass, interleaved with its slot groups, each group's atlases drawing only the group's runs |
 | `submitFrame()` | the end of `flush()`: the frame's commands go to the device |
 | `indexChunkSlotsChanged()` | `setIndexChunkSlots()` changed the chunk size |
+
+Both paths' uploads come before the first draw, so a backend may begin the primitive and
+the text draws as many times a frame as the sorted pass has groups, in any order, and
+must not write a descriptor or binding a draw recorded before still reads
+(`renderer::Vulkan` writes its primitive descriptor set once a frame, at its first
+`beginPrimitiveDraws`).
 
 `path` is `SlotPath::Primitives` or `SlotPath::Text`. A `TextureHandle` is the
 backend's name for a texture (OpenGLCore's GL texture name; 0 is none): an atlas's is
@@ -1251,6 +1264,79 @@ the one place that picks it. What checks GL itself (`glslDialects.cpp`,
 `GWENI_RENDERER=vulkan` makes `main.cpp` create a Vulkan device and a
 `renderer::Vulkan` instead, with no GL or EGL context, and `unittests_vulkan` is that
 run ("renderer::Vulkan" below).
+
+## Translucent slots: the sorted pass
+
+Every primitive slot writes depth (`GL_LESS`, Vulkan's `depthWriteEnable`), and the
+glyphs are drawn after every slot. So, before #685, a translucent slot hid the text
+behind it instead of dimming it (its depth rejected the glyphs), and a slot behind a
+translucent one showed through it only if its id was lower. `flush()` now draws in
+two passes when a translucent slot can show (`SlotRenderer`, #685):
+
+1. **The opaque pass**: the chunk draws above ("Only the slots that can show are
+   drawn"), less the slots the sorted pass draws.
+2. **The sorted pass**, after it and before the text, back to front by z, ties by
+   slot id, a run sorted after the slots at its z (its glyphs lie between `z` and
+   `z+1`): the **translucent slots**; the **opaque slots in front of one** whose
+   footprint overlaps its own (or at its z with a higher id, which slot order drew
+   after it), so an opaque Button's anti-aliased corners on a translucent panel
+   blend over the panel and not over what is behind it; and the **text runs behind
+   one** that overlap it, so they show through it. Consecutive slots are a *slot
+   group*, a draw per chunk they cross in order, its ranges in that order (a
+   multi-draw draws its ranges in order; a run of consecutive ids is one range);
+   consecutive runs a *text group*, a draw per atlas and chunk of its runs. Then the
+   text pass draws every other run, as before.
+
+**Translucent** (`slotTranslucent()`): the alphas of the colours the slot's style
+draws (a rounded rect's gradient and, with a border, its border; a bilinear fill's
+edges; a checker's cells; a grid's lines; an image's tint) neither all 255 nor all 0,
+or an image (style 2) whose layer holds an image with a texel neither transparent nor
+opaque, flagged when it is loaded (`finishTextureLoad`; a transparent texel is
+discarded, so it does not count). All 255 or all 0 draw in the opaque pass. A bit
+per slot (`m_translucentSlots`, with a list of them) is kept from the dirty slots with
+the visibility bits (`updateSlotVisibility`), so it costs O(slots changed), and is
+allocated only when the first translucent slot shows.
+
+**The overlap index** (`SlotRenderer::OverlapIndex`): a grid of 64-device-px cells
+over the view, each listing the slots and runs that can show whose **footprint**
+reaches it (a slot's quad's bounds, a run's glyph quads' bounds, each cut to its clip
+box and the view) and how many of them are translucent. It is built the first time a
+translucent slot can show (so a UI that never has one allocates none of it) and then
+kept from the slots whose vertexes or clip box changed and the runs noted changed
+(`noteRunChanged`: `renderText`, a show, a hide, a release, a new font; an inline
+check that costs nothing while the index is not built), each moved from its old
+cells to its new ones; a new view size builds it again. The **sorted set and its
+schedule** are built again only when stale: a translucent slot dirty, a slot or run
+that changed reaching a cell that holds a translucent one, a run in the set changed,
+a new chunk size or switch. The build queries, for each translucent slot, the cells
+its footprint covers, so it costs what the translucent slots overlap, not the tree:
+a dragged translucent Window over 10 000 Labels visits the same 269 index items a
+frame as over 1 000 (`gweni_bench --scene translucent-drag`), the NodeGraph marquee
+36. The chunks whose slots enter or leave the set build their ranges again and never
+merge a gap across a sorted slot; the fonts whose runs do, their draw lists. With no
+translucent slot it is exactly the old order and draws, and the samples are the same
+bytes (ChartLinesDemo's and ChartAreasDemo's translucent areas and spans included).
+
+**Depth stays on** in the sorted pass: drawn back to front, no slot of it is behind
+one drawn before it, and `tests/lines.cpp`'s polyline rule (a pixel the first segment
+covers fully is blended once) and the equal-z ties rely on the depth writes, so no
+kind of slot turns them off. The z-only split the task allowed as a fallback was not
+needed.
+
+`setTranslucentSort(false)` (or `GWENI_TRANSLUCENT_SORT=0` at construction), and
+`setDrawEveryPrimitiveSlot`, draw in the old order; the tests use it to show each case
+fails without the pass. `FrameStats` counts the pass: `sortedSlots`, `sortedRuns`,
+`sortedGroups` (each one or more draws, in `drawCalls`), `sortedScheduleBuilds` and
+`overlapVisited` (the index items the build's queries visited), printed by `ControlTest
+--stats` and `gweni_bench` as `sorted_slots`, `sorted_runs`, `sorted_groups`,
+`sorted_builds` and `overlap_visited`, which `bench_scaling` checks like every work
+counter. `tests/translucency.cpp` (every backend) pins the cases; `--scenario
+translucency` (TranslucencyDemo) the whole app's.
+
+What is still not done: the anti-aliased edges of an opaque slot over an opaque one
+taken later (the #553 class, unchanged), and the depth view seen from behind, where the
+pass blends back to front in the canvas's z, not the camera's (occlusion still comes
+from opaque depth).
 
 ## renderer::Vulkan (headless)
 
@@ -1907,7 +1993,8 @@ two programs and the draws. What follows describes both together:
   `primitiveRanges` the ranges, `drawCalls` the chunks drawn (one each, multi-draw or
   loop), and `GWENI_UPLOAD_STATS=1` prints `N of M primitive slots drawn in R ranges
   (B chunks' ranges built)`; `gweni_bench` reports them as `primitive_slots_drawn`
-  and `primitive_ranges`. Slots are not moved (see "free-slot compaction" under "Not
+  and `primitive_ranges`. The slots the sorted pass draws are left out of these ranges
+  ("Translucent slots: the sorted pass"). Slots are not moved (see "free-slot compaction" under "Not
   yet done") and ids are handed out lowest first, so before the runs, when a chunk's
   draw ended at its last shown slot, a control that took a slot after the rest (a
   hover surface, a newly shown page) held every hidden slot below it in the draw.
@@ -5862,9 +5949,10 @@ is placed from the item's index, not applied to the row that shows it, so on a
 pooled list it is over whichever row holds the item, follows it as rows are
 bound to other items and goes while the item is out of view, with no change to
 the bind path; the cards' and the tables' work the same way. It is in front of
-the item in depth, and a glyph is drawn after every slot, so the item's text
-fails the depth test there: the item shows as a placeholder, its fill and text
-covered. A look's visibility changed inside a layout pass dirties layout again,
+the item in depth and translucent (`DragSource`, 0xc0), so the item shows as a
+placeholder, its fill and text dimmed through it (the renderer's sorted pass draws
+the text behind it first; before #685 the text was hidden, since every glyph was
+drawn after every slot). A look's visibility changed inside a layout pass dirties layout again,
 so while its list is in the drag a look that shows nothing (a refused gap, the
 item scrolled out) is parked far above the panel, a pure move. The indicator is
 created or unhidden and parked when the target is entered, even for a refused
@@ -6094,8 +6182,11 @@ pointer (`setUserId`, `setUserData`), and nothing in it knows what a pin carries
   Shift; a release that never got that far is a click, which clears the selection
   (not under Ctrl or Shift); Escape gives the earlier selection back. Its outline
   (four `drawLine`s, a canvas unit thick) is in the overlay layer and its
-  translucent fill in the link layer, under the nodes: text is drawn after every
-  slot, and a translucent box over it would hide it (as the stats overlay does). A
+  translucent fill in the link layer, under the nodes. It was put there because text
+  was drawn after every slot and a translucent box over it hid it; the renderer's
+  sorted pass now draws the text behind a translucent slot before it, so a fill over
+  the nodes would dim their text, but moving it would change the graph's look and is
+  left for later. A
   link is hovered within `Link::HoverDistance` (4) canvas units on screen of its
   curve (`Link::getControlAt`, `distanceTo`) and drawn in `LinkHover`, measured
   from the exact graph point of the tested canvas unit's centre, which
@@ -6295,12 +6386,12 @@ set by its bare name and one with some of them as `Name.field` per missing field
 the shipped theme with `"strict": true` added):
 
 ```
-theme strict: 225 of 229 surfaces not set: Badge, ButtonDisabled, ButtonDown, ...
+theme strict: 226 of 230 surfaces not set: Badge, ButtonDisabled, ButtonDown, ...
 theme strict: 84 of 86 text colors not set: AxisTagText, BadgeText, ButtonDisabled, ...
 ```
 
-(`theme strict: all 229 surfaces set` for a kind with no gaps, and a single
-`theme strict: all 229 surfaces and 86 text colors set` when there are none at all). A
+(`theme strict: all 230 surfaces set` for a kind with no gaps, and a single
+`theme strict: all 230 surfaces and 86 text colors set` when there are none at all). A
 rejected value counts as not set. A surface that is transparent at rest on purpose
 (`WindowButton`, `SelectableHover`: a transparent fill hides the slot) is magenta too
 until the theme sets it to `[0,0,0,0]`; the theme has not said what it looks like. The
@@ -6521,9 +6612,11 @@ canvas as a canvas overlay (`Canvas::addOverlay`), numbered above the app; made 
 other control's child (StatsOverlayDemo's page) it is that control's. The panel is the
 textured skin's `StatsOverlay` renderer painting the theme surface `StatsOverlay`
 (`tokyonight::surfaceRegistry()`, so the ThemeEditor and a theme file's `"surfaces"`
-reach it, and strict mode counts it), a dark fill at alpha 0xe0: the app's fills show
-dimly through it, but the app's text under it does not, since every primitive slot is
-drawn before every glyph and the panel's depth rejects the glyphs behind it.
+reach it, and strict mode counts it), a dark fill at alpha 0xe0: the app's fills and
+text show dimly through it, the renderer's sorted pass drawing the runs behind it
+before it ("Translucent slots: the sorted pass"; `--scenario translucency` checks the
+Labels under it). Before #685 the app's text under it did not show: every glyph was
+drawn after every slot, and the panel's depth rejected it.
 
 **Open and closed: the notification.** `StatsOverlay::onOpenChangedCaller`, a static
 `event::Caller`, is called when `open()` makes a canvas's overlay and when `close()`

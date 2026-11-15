@@ -19,6 +19,8 @@
 #include <gweni/skins/textured/texturedSkin.h>
 #include <gweni/skins/textured/tokyoNight.h>
 
+#include "demo/translucency.h"
+
 namespace gweni
 {
 namespace skin
@@ -92,6 +94,7 @@ GWENI_DEMO_TRANSPARENT(StepperDemo)
 GWENI_DEMO_TRANSPARENT(SearchComboDemo)
 GWENI_DEMO_TRANSPARENT(CalendarDemo)
 GWENI_DEMO_TRANSPARENT(ZoomPanelDemo)
+GWENI_DEMO_TRANSPARENT(TranslucencyDemo)
 GWENI_DEMO_TRANSPARENT(FlowDemo)
 GWENI_DEMO_TRANSPARENT(ImageGridDemo)
 GWENI_DEMO_TRANSPARENT(NodeGraphDemo)
@@ -148,6 +151,44 @@ public:
             renderer->showPrimitive(visible?1:0, m_primitives[0]);
     }
     inline static const std::string_view name="TextDemoLightPanel";
+};
+
+// TranslucencyDemo's panel: one translucent rounded slot, the demo's colour;
+// and its block: one opaque slot.
+class TranslucencyPanel:public textured::ControlRegister<TranslucencyPanel>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+    size_t requiredPrimitives() override { return 1; }
+    void update(renderer::Base *renderer, controls::Base *baseControl) override
+    {
+        if(m_primitives.empty())
+            return;
+
+        const Color color=gweni::TranslucencyDemo::panelColor();
+        const tokyonight::Surface surface{color, color, color, 8.0f, 0.0f};
+
+        tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, surface);
+    }
+    inline static const std::string_view name="TranslucencyPanel";
+};
+
+class TranslucencyBlock:public textured::ControlRegister<TranslucencyBlock>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+    size_t requiredPrimitives() override { return 1; }
+    void update(renderer::Base *renderer, controls::Base *baseControl) override
+    {
+        if(m_primitives.empty())
+            return;
+
+        const Color color(0x9e, 0xce, 0x6a);
+        const tokyonight::Surface surface{color, color, color, 0.0f, 0.0f};
+
+        tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, surface);
+    }
+    inline static const std::string_view name="TranslucencyBlock";
 };
 
 // FlowDemo's card: the GroupBox surface behind its title and body.
@@ -255,6 +296,9 @@ template class ControlRegister<StepperDemo>;
 template class ControlRegister<SearchComboDemo>;
 template class ControlRegister<CalendarDemo>;
 template class ControlRegister<ZoomPanelDemo>;
+template class ControlRegister<TranslucencyDemo>;
+template class ControlRegister<TranslucencyPanel>;
+template class ControlRegister<TranslucencyBlock>;
 template class ControlRegister<FlowDemo>;
 template class ControlRegister<ImageGridDemo>;
 template class ControlRegister<FlowDemoCard>;

@@ -246,12 +246,13 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # steppers' step changes, the code view's copy button, a RichText, the
     # SearchComboBox's keystrokes, picks and chip wrap, the reorder drags'
     # looks and drops, the calendar's months and views, and a MarkdownView's
-    # edits, selection and code block
+    # edits, selection and code block, and the translucency scenario's panel,
+    # scrim and overlay
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
             dialog toast flow switch spinner navigation-rail board field-validation segmented
             tree-table split-button range-slider stepper code-view rich-text markdown search-combo
-            reorder calendar)
+            reorder calendar translucency)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail")
@@ -631,6 +632,19 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_chip_badge 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario chip-badge --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/chip_badge@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # TranslucencyDemo, the clock frozen (#685): the block whose slot is taken
+    # after the translucent panel's is behind it; settled frames write nothing
+    # and build no sorted schedule; the Labels and the block under the panel are
+    # the frame without it blended under it; a one-unit move builds the schedule
+    # again and writes the panel subtree's ids alone; with the modal scrim on, a
+    # dialog's frame has the Labels left of it blended under the scrim, and the
+    # scrim off gives the dialog's frame back; the stats overlay's panel blends
+    # over the Labels under it; and the demo gives its ids back
+    gweni_whole_app_test(controltest_translucency 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario translucency --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/translucency@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # SwitchDemo, the clock stepping: a hover writes the track's slot alone,
