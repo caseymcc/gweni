@@ -191,4 +191,8 @@ target_link_libraries(gweni_demo gweni)
 
 if(GWENI_RENDER_OPENGL_CORE)
     add_subdirectory(openglcore)
+    # gweni over an app's own GL scene; not a page in the web tree
+    if(NOT EMSCRIPTEN)
+        add_subdirectory(hud)
+    endif()
 endif()

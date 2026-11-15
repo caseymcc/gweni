@@ -1369,6 +1369,97 @@ projection puts behind a translucent slot is hidden by it as before #685, and se
 behind the pass blends back to front in the canvas's z, not the camera's (occlusion
 still comes from opaque depth).
 
+## gweni over an app's scene
+
+An app that draws its own 3D scene (a game, a viewer, an editor's viewport) can draw
+gweni over it as a HUD, into the same target, in the same frame (#687).
+`examples/hud/hud.cpp` (`HudExample`) is the whole of it with a GL scene.
+
+**The frame order.** Each frame:
+
+1. `canvas->updateCanvas()`, as always (it makes no GL or Vulkan call);
+2. the app's scene: its own clear (colour and depth) and draws, with its own depth;
+3. `renderer->clearDepth()` (`SlotRenderer::clearDepth()`), the target's depth alone
+   cleared to the far plane (1.0), its colour kept;
+4. `canvas->renderCanvas()`.
+
+Without step 3 the scene's depth is in front of gweni's (a control's depth comes from
+its z, every one of them farther than a near scene object), so every control over the
+scene's geometry is hidden there. On GL, GLES and WebGL `clearDepth()` is a
+`glClear(GL_DEPTH_BUFFER_BIT)` at a clear depth of 1.0 with depth writes on and the
+scissor test off for the clear, the app's clear depth, depth mask and scissor test put
+back after it; on Vulkan it is `clearTarget()`'s clear with no colour attachment (in
+the queue's order, not waited for), so the colour is the scene's. `clearTarget()`
+clears both, for an app with no scene of its own. `tests/hudComposite.cpp` (every
+backend: `unittests`, `unittests_vulkan`, `web_unittests`) writes a scene colour and a
+near depth through the backend's own API, then `clearDepth()` and a frame of an opaque
+Button and a translucent panel: the scene where no control is, the Button as drawn over
+a plain clear, the panel blended over the scene; without `clearDepth()` the frame is
+the scene alone.
+
+**The background.** A canvas draws no background unless
+`Canvas::setDrawBackground(true)` asks for one, so the scene shows wherever no control
+draws. On, the textured skin's Canvas renderer fills the canvas with the theme's
+`Canvas` surface (a theme's `"Canvas"`), in a slot the canvas takes the first time it
+is turned on and hides when it is turned off again; a change marks the canvas. Off is
+the default because no canvas ever drew one before (`Canvas::render` was empty, and the
+apps cleared the target to the `Canvas` colour, which is what still shows in them), so
+every existing app, sample and counter is as it was. The old `setBackgroundColor` and
+`getBackgroundColor` coloured nothing and are gone: the colour is the theme's.
+`tests/unit/canvasBackground.cpp` pins the slot. A translucent control over the scene
+(a panel in a surface given alpha) blends over it as over any other slot, and the
+sorted pass ("Translucent slots: the sorted pass") blends it over gweni's own controls
+and text under it.
+
+**Input pass-through.** Every `Canvas::input*` call, and `input::GLFW3`'s `process*`
+over them, returns whether the UI took the event; the app hands every event that got
+`false` to its scene. A pointer event is taken when a control of the canvas gets it:
+the pointer over one (not the bare canvas), a press held by one, a live drag, an input
+capture (the depth view), or any modal on the stack, which blocks what is under it, the
+scene included. A wheel is taken only when a control scrolled or zoomed with it
+(`Canvas::pointerOverControl()` says whether the pointer is over the UI at all, for an
+app that wants a wheel over a Label kept from its scene). A key or a typed character is
+taken while the UI has the keyboard (`Canvas::holdsKeyboard()`: a visible control of
+the canvas has the keyboard focus, a modal is up or an input capture is set), whether
+the focus used it or not, and otherwise only when something took it (an accelerator,
+Escape closing a popup); a key's OS repeats are taken exactly when its press was. A
+press on the bare canvas drops the keyboard focus (but under a modal), so the keys go
+back to the scene. The cursor leaving, the window losing focus and quitting are the
+scene's too (`false`). `tests/unit/inputPassThrough.cpp` pins them.
+
+**The GL state.** `OpenGLCore::setPreserveAppState(true)` (off by default, so a frame
+makes no GL call beyond its own) has `begin()` save what the frame and its uploads
+change or depend on and set gweni's own, and `end()`, after `flush()`, put it all back:
+the program, the vertex array, the array buffer, the active unit and units 0..6's 2D
+and 2D-array textures and samplers, blend enable, function (separate) and equation,
+depth test, function, mask and range, cull face, scissor test and box, stencil test,
+colour mask, the viewport, the pixel pack and unpack state, and on desktop GL the
+polygon mode and `GL_FRAMEBUFFER_SRGB` (the sorted pass sets nothing more than the
+opaque one: it draws through the same programs, blend and depth state). gweni's own
+state for the frame is the viewport at the view rect, unit 0 active, no sampler objects
+on its units, the scissor, stencil and cull tests off, depth and colour writes on,
+`GL_FUNC_ADD`, the depth range 0..1, unpack alignment 4 with no row length or skips,
+and on desktop GL `GL_FILL` and no `GL_FRAMEBUFFER_SRGB`. It all stays inside the
+GL 3.3 / GLES 3.0 subset. GL calls gweni makes outside a frame (a font or image
+loaded, `readPixels`) still change state. `tests/glAppState.cpp` (`gl_only`) sets a
+non-default value of each, draws a frame and compares every one through `glGet*`.
+
+**HudExample** (`examples/hud/`, with `GWENI_BUILD_EXAMPLES` and the GL renderer, not
+in the web tree): a spinning, depth-tested cube with its own shader (GLSL 3.30 core, or
+ES 3.00 in the GLES tree), a translucent panel (the theme's `Panel` surface given
+alpha 0xb0) with a label and buttons, a `Cube` tag (a Button the app places over the
+cube's centre each frame, drawn over the cube only because of `clearDepth()`) and the
+stats overlay (F10, `--stats-overlay`), with preserve on. In the window (always
+continuous: the scene moves every frame) a left drag that starts on the bare canvas
+orbits the cube, the wheel over the scene zooms, and Space and R are the scene's while
+no control has the keyboard. `--headless --screenshot <png>` captures on the stepped
+clock and prints the probe points it drew at; `--renderer vulkan` prints one line and
+exits 1 (a Vulkan HUD example is later). `hud_example` (`tests/hudExample.mjs`, label
+`gpu`) captures it twice, byte for byte the same, and over another scene colour
+(`--clear`), and holds the probes: the scene colour where no control is, the Spin
+button the same pixel over both scenes, the tag the Faster button's look over the
+cube, and the panel its colour blended over each scene's.
+
 ## renderer::Vulkan (headless)
 
 `renderer::Vulkan` (`include/gweni/platforms/renderers/vulkan.h`,

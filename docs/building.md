@@ -213,6 +213,28 @@ page. Without it, CJK draws as the missing glyph, as before the face was added,
 and the first CJK miss prints one line on stderr naming the path tried; text
 without CJK never looks for it (`docs/architecture.md` -> "The lazy CJK face").
 
+## gweni as a HUD: HudExample
+
+`HudExample` (`examples/hud/hud.cpp`) draws gweni over the app's own GL scene: a
+spinning cube with its own shader and depth, a translucent panel with buttons and
+a label, a tag over the cube and the stats overlay (F10 or `--stats-overlay`). It
+is built with the examples and the GL renderer (not in the web tree), into
+`build_linux_x64_<type>/examples/hud/` with its own `resources/` copy:
+
+```bash
+./build_linux_x64_debug/examples/hud/HudExample                 # the window: drag the bare canvas to orbit
+mm run --lock render -- ./build_linux_x64_debug/examples/hud/HudExample \
+    --headless --stats-overlay --screenshot /tmp/hud.png         # in the container
+```
+
+The frame is the app's scene, `SlotRenderer::clearDepth()`, then `renderCanvas()`
+over a canvas with no background, and every input the UI did not take (each
+`Canvas::input*` and `input::GLFW3::process*` returning false) goes to the
+scene; `docs/architecture.md` → "gweni over an app's scene" has the rules.
+`--renderer vulkan` prints one line and exits 1. Its test is `hud_example`
+(label `gpu`): two captures byte for byte the same, and the scene, a Button, the
+tag and the panel's blend at the probe points it prints.
+
 ## GLES tree
 
 `./generate.sh linux gles` configures `build_linux_x64_debug_gles/` (with

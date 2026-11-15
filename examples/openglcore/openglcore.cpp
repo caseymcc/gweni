@@ -737,10 +737,10 @@ int main(int argc, char *argv[])
 
     // Create a Canvas (it's root, on which all other Gweni panels are created)
     // The canvas fill comes from the theme, so a "theme" block in
-    // resources/DefaultSkin.json moves it too. The textured skin fills the
-    // canvas with that surface (Canvas::setDrawBackground, on by default); the
-    // target is cleared to its colour each frame as well, which shows only
-    // until the first frame has drawn.
+    // resources/DefaultSkin.json moves it too. The target is cleared to its
+    // colour each frame, which shows wherever no control draws: the canvas
+    // draws no background of its own (Canvas::setDrawBackground, off by
+    // default).
     const gweni::Color background=gweni::skin::textured::tokyonight::Canvas.top;
 
     // The framebuffer is screenSize device pixels and the canvas that in logical

@@ -135,6 +135,26 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
             TIMEOUT 300)
     endif()
 
+    # HudExample, gweni over the app's own GL scene, captured twice byte for
+    # byte, the scene, a Button and the translucent panel where they should be
+    # (hudExample.mjs; GL only, as the example is). node is emsdk's, as for
+    # backends.mjs; without it the test fails, saying so.
+    if(TARGET HudExample)
+        find_program(GWENI_NODE node HINTS "$ENV{EMSDK_NODE}/.." /opt/emsdk/node/current/bin
+            DOC "node, which runs backends.mjs and hudExample.mjs (the image's is emsdk's)")
+        if(GWENI_NODE)
+            set(hud_example ${GWENI_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/hudExample.mjs)
+        else()
+            set(hud_example sh -c "echo 'hudExample.mjs: FAIL: no node (EMSDK_NODE, PATH), which this test runs on' >&2; exit 1" hudExample.mjs)
+        endif()
+        add_test(NAME hud_example
+            COMMAND ${hud_example} $<TARGET_FILE:HudExample> ${CMAKE_CURRENT_BINARY_DIR}/hud_example
+            WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+        set_tests_properties(hud_example PROPERTIES
+            LABELS gpu
+            TIMEOUT 300)
+    endif()
+
     # build, render and destroy every demo; exits non-zero unless the canvas
     # renders as the empty canvas it started as, and every frame of it takes
     # one layout pass. Since it builds every demo in --list, it is also the
