@@ -21079,23 +21079,29 @@ static bool runTreeTableLive(Session &s, const std::string &shotDir, size_t node
     settleTreeTableLive(s, body, run);
 
     // the buttons, on the selected file and its folder
-    const TreeTable::NodeId folder=table->getNode(selected)->parent;
-    const size_t files=table->getNode(folder)->children.size();
+    const TreeTable::Node *selectedNode=table->getNode(selected);
+    const TreeTable::NodeId folder=selectedNode?selectedNode->parent:TreeTable::NoNode;
+    const TreeTable::Node *folderNode=table->getNode(folder);
 
-    clickMouse(s, centreOf(demo->m_rename).x, centreOf(demo->m_rename).y);
-    renderFrames(s, 1);
-    const bool renamed=demo->displayName(selected).rfind("renamed-", 0) == 0 && treeTableShownSorted(demo, 0);
+    if(selectedNode && folderNode)
+    {
+        const size_t files=folderNode->children.size();
 
-    clickMouse(s, centreOf(demo->m_add).x, centreOf(demo->m_add).y);
-    renderFrames(s, 1);
-    const TreeTable::NodeId added=table->getSelectedNode();
-    const bool addedOk=table->getNode(folder)->children.size() == files+1 && table->getNode(added)
-        && table->getNode(added)->parent == folder && treeTableShownSorted(demo, 0);
+        clickMouse(s, centreOf(demo->m_rename).x, centreOf(demo->m_rename).y);
+        renderFrames(s, 1);
+        const bool renamed=demo->displayName(selected).rfind("renamed-", 0) == 0 && treeTableShownSorted(demo, 0);
 
-    clickMouse(s, centreOf(demo->m_remove).x, centreOf(demo->m_remove).y);
-    renderFrames(s, 1);
-    run.buttons=renamed && addedOk && !table->getNode(added)
-        && table->getNode(folder)->children.size() == files && treeTableShownSorted(demo, 0);
+        clickMouse(s, centreOf(demo->m_add).x, centreOf(demo->m_add).y);
+        renderFrames(s, 1);
+        const TreeTable::NodeId added=table->getSelectedNode();
+        const bool addedOk=table->getNode(folder) && table->getNode(folder)->children.size() == files+1
+            && table->getNode(added) && table->getNode(added)->parent == folder && treeTableShownSorted(demo, 0);
+
+        clickMouse(s, centreOf(demo->m_remove).x, centreOf(demo->m_remove).y);
+        renderFrames(s, 1);
+        run.buttons=renamed && addedOk && !table->getNode(added) && table->getNode(folder)
+            && table->getNode(folder)->children.size() == files && treeTableShownSorted(demo, 0);
+    }
     moveMouse(s, 2, s.size.y-2);
     renderFrames(s, 1);
     settleTreeTableLive(s, body, run);

@@ -103,6 +103,33 @@ void TreeTableRow::setPlaceholder(bool placeholder)
     if(placeholder == m_placeholder)
         return;
 
+    // Cell contents installed by the app must neither draw nor take input
+    // while a placeholder shows. The Label's own caption still draws.
+    // Keep only the ids we hide, so an already-hidden child stays hidden and
+    // deleting a child while the request is pending leaves no dangling pointer.
+    for(int column=0; column < getCellCount(); ++column)
+    {
+        const Label *cell=getCell(column);
+
+        for(Base *child : cell->getActualChildren())
+        {
+            if(child == cell->getTextControl())
+                continue;
+            if(placeholder)
+            {
+                if(!child->hidden())
+                {
+                    m_placeholderContents.push_back(child->getControlId());
+                    child->setHidden(true);
+                }
+            }
+            else if(std::find(m_placeholderContents.begin(), m_placeholderContents.end(),
+                child->getControlId()) != m_placeholderContents.end())
+                child->setHidden(false);
+        }
+    }
+    if(!placeholder)
+        m_placeholderContents.clear();
     m_placeholder=placeholder;
     updateColors();
 }
@@ -753,15 +780,15 @@ bool TreeTable::moveNode(NodeId id, NodeId newParent, size_t index)
         spliceVisible(at, replaced, visible);
     }
 
-    // insert/remove already anchor surviving rows. If the anchor itself was
-    // in the moved subtree, follow its node at its new position as well.
-    restoreAnchor(anchor);
-    syncVisibleSelection();
     // the new parent's key changed with the insert: placed among siblings
     // whose keys are all current (the old parent's was placed above)
     if(oldParent != newParent)
         refreshNode(newParent, false);
     refreshNode(oldParent, false);
+    // Follow the original node after every re-placement, including one of
+    // its parents. Intermediate removals may have clamped the viewport.
+    restoreAnchor(anchor);
+    syncVisibleSelection();
     if(emptied)
         expansionEvent(oldParent, false);
     return true;
@@ -970,10 +997,29 @@ void TreeTable::keepSorted(NodeId id, bool verify)
     const size_t from=static_cast<size_t>(found-order->begin());
 
     order->erase(found);
-    // a binary search needs the others in order: siblings renamed before
-    // their own nodeChanged are not, so the group is sorted again whole
-    if(verify && !std::is_sorted(order->begin(), order->end(),
-        [this](NodeId a, NodeId b) { return shownLess(a, b); }))
+    // A binary search needs the others in order. Siblings renamed before
+    // their own nodeChanged may have changed keys or formed a new tie run;
+    // ties must also follow the app's order. Build its indices once so this
+    // verification is linear in the group size, including a group of ties.
+    bool resort=false;
+
+    if(verify)
+    {
+        const std::vector<NodeId> &app=childrenOf(parent);
+        std::unordered_map<NodeId, size_t> appIndex;
+
+        appIndex.reserve(app.size());
+        for(size_t i=0; i < app.size(); ++i)
+            appIndex.emplace(app[i], i);
+        resort=!std::is_sorted(order->begin(), order->end(),
+            [this, &appIndex](NodeId a, NodeId b)
+            {
+                if(shownLess(a, b))
+                    return true;
+                return !shownLess(b, a) && appIndex.at(a) < appIndex.at(b);
+            });
+    }
+    if(resort)
     {
         resortGroup(parent);
         return;
@@ -1035,7 +1081,8 @@ void TreeTable::resortGroup(NodeId parent)
     {
         const size_t item=getVirtualBody()->itemForRow(control);
 
-        if(item != NoItem && item >= start && item < end && m_visible[item].id != run[item-start].id)
+        if(item != NoItem && item >= start && item < end
+            && (m_visible[item].id != run[item-start].id || m_visible[item].depth != run[item-start].depth))
             changed.push_back(item);
     }
     std::copy(run.begin(), run.end(), m_visible.begin()+start);
@@ -1156,11 +1203,10 @@ void TreeTable::spliceVisible(size_t at, size_t removed, const VisibleNode *adde
     m_visible.erase(m_visible.begin()+at, m_visible.begin()+at+removed);
     if(count > 0)
         m_visible.insert(m_visible.begin()+at, added, added+count);
-    // A range replaced with the top row inside it (a placeholder answered)
-    // shows its first new row at the top: inserted after the range, below
-    // the top, and the range's removal then puts its start there. Otherwise
-    // an insert at or above the top moves the view down with what it shows.
-    if(removed > 0 && count > 0 && top >= at && top < at+removed)
+    // Grow before shrinking for any replacement, so the list never clamps
+    // the offset to a temporarily shorter content height at its end. If the
+    // top lies inside the old range, its removal puts the first new row there.
+    if(removed > 0 && count > 0)
     {
         body->insertItems(at+removed, count);
         body->removeItems(at, removed);

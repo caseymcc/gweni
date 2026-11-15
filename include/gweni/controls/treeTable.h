@@ -66,7 +66,9 @@ public:
     size_t getDepth() const { return m_depth; }
 
     //! Whether the row shows a lazy node's "Loading…" placeholder, which is
-    //! no node: a press on it selects nothing.
+    //! no node: a press on it selects nothing. Cell contents are hidden until
+    //! it binds a node again; their prior visibility is restored before the
+    //! app's binder runs.
     bool isPlaceholder() const { return m_placeholder; }
 
     //! A double-click toggles a parent and activates a leaf (onNodeActivated).
@@ -99,6 +101,7 @@ private:
     int m_treeColumn=0;
     size_t m_depth=0;
     bool m_placeholder=false;
+    std::vector<size_t> m_placeholderContents;
     Rect m_expanderClip;
 };
 

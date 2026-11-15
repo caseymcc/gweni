@@ -36,11 +36,15 @@
  *  a sorted move that changes its old and new parents' keys (folders first,
  *  a child-count key) leaves every group sorted, and seeded random edits
  *  while sorted match a sorted rebuild after each one, ties in the app's
- *  order.
+ *  order. Combined seeded edits also cover lazy answers, batched renames
+ *  into ties, every pooled row's depth/text/selection/stripes, and the anchor;
+ *  lazy answers at the list end keep the view, placeholders at a new depth
+ *  rebind, and placeholder cell contents hide and restore their own flags.
  */
 #include "headlessFixture.h"
 
 #include <gweni/controls/treeTable.h>
+#include <gweni/controls/checkBox.h>
 #include <doctest/doctest.h>
 
 #include <cmath>
@@ -2028,6 +2032,878 @@ TEST_CASE("TreeTable model: sorted random edits match a sorted rebuild")
             CAPTURE(step);
             CAPTURE(what);
             REQUIRE(shownIds(tree) == expected);
+        }
+    }
+}
+
+
+// Batched renames can turn previously different keys into a single tie run.
+TEST_CASE("TreeTable model: siblings renamed into a tie keep the app order")
+{
+    Scene scene;
+    Tree *tree=scene.tree;
+    scene.names={{1, "k"}, {2, "k"}, {3, "z"}, {4, "a"}};
+    for(Id id=1; id <= 4; ++id)
+        REQUIRE(tree->addNode(Root, id) == id);
+    tree->setSortComparator(0, [&scene](Id a, Id b) { return scene.names.at(a) < scene.names.at(b); });
+    tree->setSortColumn(0, controls::SortDirection::Ascending);
+    scene.settle();
+    REQUIRE(visibleIds(tree) == std::vector<Id>{4, 1, 2, 3});
+    scene.names[3]="k";
+    scene.names[4]="k";
+    tree->nodeChanged(3);
+    tree->nodeChanged(4);
+    scene.frame();
+    CHECK(tree->getShownChildren(Root) == std::vector<Id>{1, 2, 3, 4});
+    CHECK(visibleIds(tree) == std::vector<Id>{1, 2, 3, 4});
+}
+
+TEST_CASE("TreeTable model: a resort rebinds placeholders whose depth changed")
+{
+    Scene scene;
+    Tree *tree=scene.tree;
+    scene.names={{1, "b"}, {2, "a"}, {3, "c"}, {4, "x"}};
+    REQUIRE(tree->addNode(Root, 1, true) == 1);
+    REQUIRE(tree->addNode(Root, 2) == 2);
+    REQUIRE(tree->addNode(Root, 3) == 3);
+    REQUIRE(tree->addNode(2, 4, true) == 4);
+    for(Id id : {1, 2, 4})
+        tree->setExpanded(id, true);
+    tree->setSortComparator(0, [&scene](Id a, Id b) { return scene.names.at(a) < scene.names.at(b); });
+    tree->setSortColumn(0, controls::SortDirection::Ascending);
+    scene.settle();
+    REQUIRE(visibleIds(tree) == std::vector<Id>{2, 4, P, 1, P, 3});
+    REQUIRE(treeRow(tree, 2)->getDepth() == 2);
+    scene.names[2]="z";
+    scene.names[3]="0";
+    tree->nodeChanged(2);
+    tree->nodeChanged(3);
+    scene.frame();
+    REQUIRE(visibleIds(tree) == std::vector<Id>{3, 1, P, 2, 4, P});
+    for(size_t item=0; item < 6; ++item)
+    {
+        const auto *row=treeRow(tree, item);
+        REQUIRE(row != nullptr);
+        CAPTURE(item);
+        CHECK(row->getDepth() == tree->getVisibleNodes()[item].depth);
+    }
+}
+
+TEST_CASE("TreeTable model: a lazy answer inside a viewport at the end keeps its top")
+{
+    for(bool move : {false, true})
+    {
+        CAPTURE(move);
+        Scene scene;
+        Tree *tree=scene.tree;
+        for(Id id=1; id <= 30; ++id)
+            REQUIRE(tree->addNode(Root, id, id == 25) == id);
+        if(move)
+        {
+            REQUIRE(tree->addNode(1, 100) == 100);
+            REQUIRE(tree->addNode(100, 101) == 101);
+            tree->setExpanded(100, true);
+        }
+        tree->setExpanded(25, true);
+        scene.settle();
+        auto *body=tree->getVirtualBody();
+        body->setVerticalScrollOffset(100000);
+        scene.settle();
+        const Id top=scene.top();
+        const int offset=body->getVerticalScrollOffset();
+        REQUIRE(offset == body->getMaxVerticalScrollOffset());
+        REQUIRE(tree->itemForNode(top) < tree->itemForNode(25));
+        if(move)
+            REQUIRE(tree->moveNode(100, 25, 0));
+        else
+            REQUIRE(tree->insertNodes(25, 0, {100, 101}));
+        scene.frame();
+        CHECK(scene.top() == top);
+        CHECK(body->getVerticalScrollOffset() == offset);
+    }
+}
+
+TEST_CASE("TreeTable model: placeholders hide pooled cell contents and restore their visibility")
+{
+    Scene scene;
+    Tree *tree=scene.tree;
+    std::map<controls::DataTableRow *, std::pair<controls::CheckBox *, controls::CheckBox *>> contents;
+    scene.roots(5);
+    tree->setHasChildren(2, true);
+    scene.settle();
+    // The pool is already made: cell controls are installed outside layout,
+    // including rows which have not bound an item yet.
+    for(auto *control : tree->getVirtualBody()->getRows())
+    {
+        auto *row=gweni_cast<controls::DataTableRow>(control);
+        REQUIRE(row != nullptr);
+        auto *shown=scene.canvas.newChild<controls::CheckBox>();
+        auto *hidden=scene.canvas.newChild<controls::CheckBox>();
+        row->setCellContents(1, shown);
+        row->setCellContents(1, hidden);
+        shown->sendToBack(); // app cell contents need not follow the caption
+        hidden->setHidden(true);
+        contents[row]={shown, hidden};
+    }
+    scene.settle();
+    const auto pool=tree->getVirtualBody()->getRows();
+    const auto controls=controlsIn(tree);
+    tree->setExpanded(2, true);
+    scene.frame();
+    auto *placeholder=treeRow(tree, 3);
+    REQUIRE(placeholder != nullptr);
+    REQUIRE(placeholder->isPlaceholder());
+    REQUIRE(contents.count(placeholder));
+    const auto held=contents.at(placeholder);
+    CHECK_FALSE(placeholder->getCell(0)->getTextControl()->hidden());
+    CHECK_FALSE(placeholder->getCell(1)->getTextControl()->hidden());
+    CHECK(held.first->hidden());
+    CHECK_FALSE(held.first->visible());
+    CHECK(held.second->hidden());
+    REQUIRE(tree->insertNodes(2, 0, {20, 21}));
+    scene.frame();
+    CHECK_FALSE(placeholder->isPlaceholder());
+    CHECK_FALSE(held.first->hidden());
+    CHECK(held.first->visible());
+    CHECK(held.second->hidden());
+    CHECK(tree->getVirtualBody()->getRows() == pool);
+    CHECK(controlsIn(tree) == controls);
+}
+
+namespace
+{
+
+constexpr Id NoNode=Tree::NoNode;
+
+// App-side lazy hierarchy and selection, separate from the control store.
+struct MNode
+{
+    Id parent=Root;
+    std::vector<Id> children;
+    bool expanded=false;
+    bool hasChildren=false;
+    bool requested=false;
+    bool loading=false;
+};
+
+struct LiveModelScene: Scene, event::Handler
+{
+    std::mt19937 rng;
+
+    std::map<Id, MNode> m;
+    std::vector<Id> roots;
+    std::map<Id, double> bytes;
+    Id next=1;
+    Id selected=NoNode;
+    int selectionEvents=0;
+    std::vector<Id> requests;
+    std::vector<Id> pending;
+    std::string what;
+    bool answering=false;
+
+    explicit LiveModelScene(unsigned seed): rng(seed)
+    {
+        tree->setStriped(true);
+        tree->setNodeBinder([this](controls::DataTableRow *row, Id id, size_t)
+            {
+                row->setCellText(0, names.at(id));
+                row->setCellText(1, std::to_string(bytes.at(id)));
+            });
+        tree->onSelectionChange.add(this, &LiveModelScene::selectionChanged);
+        tree->onChildrenRequested.add(this, &LiveModelScene::childrenRequested);
+    }
+
+    void selectionChanged(event::Info info)
+    {
+        ++selectionEvents;
+        CHECK(static_cast<Id>(info.integer) == tree->getSelectedNode());
+    }
+
+    std::vector<Id> &kids(Id parent) { return parent == Root?roots:m.at(parent).children; }
+
+    bool inSubtree(Id id, Id ancestor) const
+    {
+        for(Id at=id; at != Root && at != NoNode; at=m.at(at).parent)
+            if(at == ancestor)
+                return true;
+        return false;
+    }
+
+    Id fresh()
+    {
+        const Id id=next++;
+        names[id]="n"+std::to_string(rng()%8);
+        bytes[id]=(rng()%8)*0.5;
+        m[id];
+        return id;
+    }
+
+    // the model's half of an insert under parent (the answer included)
+    void modelInsert(Id parent, size_t at, const std::vector<Id> &ids)
+    {
+        if(parent != Root)
+        {
+            MNode &p=m.at(parent);
+            if(p.loading)
+            {
+                p.loading=false;
+                if(ids.empty())
+                {
+                    p.hasChildren=false;
+                    p.expanded=false;
+                }
+            }
+        }
+        if(ids.empty())
+            return;
+        auto &siblings=kids(parent);
+        siblings.insert(siblings.begin()+std::min(at, siblings.size()), ids.begin(), ids.end());
+        for(Id id : ids)
+            m.at(id).parent=parent;
+        if(parent != Root)
+            m.at(parent).hasChildren=true;
+    }
+
+    void insert(Id parent, size_t at, size_t count, bool lazy)
+    {
+        std::vector<Id> ids;
+        for(size_t i=0; i < count; ++i)
+            ids.push_back(fresh());
+        modelInsert(parent, at, ids);
+        if(count == 1 && lazy)
+        {
+            // addNode appends with an advertised expander
+            auto &siblings=kids(parent);
+            siblings.erase(std::find(siblings.begin(), siblings.end(), ids[0]));
+            siblings.push_back(ids[0]);
+            m.at(ids[0]).hasChildren=true;
+            REQUIRE(tree->addNode(parent, ids[0], true) == ids[0]);
+        }
+        else if(count == 1)
+            REQUIRE(tree->insertNode(parent, at, ids[0]) == ids[0]);
+        else
+            REQUIRE(tree->insertNodes(parent, at, ids));
+    }
+
+    void childrenRequested(event::Info info)
+    {
+        const Id id=static_cast<Id>(info.integer);
+        CAPTURE(id);
+        REQUIRE(m.count(id));
+        // once per node until resetChildren
+        CHECK(std::find(requests.begin(), requests.end(), id) == requests.end());
+        requests.push_back(id);
+        CHECK(m.at(id).children.empty());
+        CHECK(m.at(id).hasChildren);
+        CHECK(m.at(id).requested);
+        if(answering || rng()%3 != 0)
+        {
+            pending.push_back(id);
+            return;
+        }
+        answer(id);
+    }
+
+    void answer(Id id)
+    {
+        const unsigned kind=rng()%4;
+        if(kind == 0)
+        {
+            // an empty answer
+            modelInsert(id, 0, {});
+            REQUIRE(tree->insertNodes(id, 0, {}));
+        }
+        else if(kind == 1 && m.at(id).children.empty())
+        {
+            MNode &node=m.at(id);
+            if(node.loading)
+            {
+                node.loading=false;
+                node.hasChildren=false;
+                node.expanded=false;
+            }
+            else if(node.hasChildren)
+            {
+                node.hasChildren=false;
+                node.expanded=false;
+            }
+            tree->setHasChildren(id, false);
+        }
+        else
+            insert(id, rng()%3, 1+rng()%3, false);
+    }
+
+    // the model's setExpanded(id, true), with the request in the middle
+    void expand(Id id)
+    {
+        MNode &node=m.at(id);
+        if(node.hasChildren && node.children.empty() && !node.requested)
+        {
+            node.requested=true;
+            node.loading=true;
+            tree->setExpanded(id, true);
+            // the handler has run (and maybe answered); the table carries on
+            // unless the node expanded, went or lost its expander
+            if(m.count(id) && !m.at(id).expanded && m.at(id).hasChildren)
+                m.at(id).expanded=true;
+            return;
+        }
+        if(node.hasChildren)
+            node.expanded=true;
+        tree->setExpanded(id, true);
+    }
+
+    void collapse(Id id)
+    {
+        MNode &node=m.at(id);
+        if(!node.expanded)
+        {
+            tree->setExpanded(id, false);
+            return;
+        }
+        const bool shown=itemOf(id) != Tree::NoItem;
+        bool hasShownBelow=shown && (node.loading || !node.children.empty());
+        node.expanded=false;
+        if(shown && hasShownBelow && selected != id && selected != NoNode && inSubtree(selected, id))
+            selected=id;
+        tree->setExpanded(id, false);
+    }
+
+    size_t itemOf(Id id) const { return tree->itemForNode(id); }
+
+    void eraseSubtree(Id id)
+    {
+        std::vector<Id> stack{id};
+        while(!stack.empty())
+        {
+            const Id at=stack.back();
+            stack.pop_back();
+            stack.insert(stack.end(), m.at(at).children.begin(), m.at(at).children.end());
+            m.erase(at);
+            pending.erase(std::remove(pending.begin(), pending.end(), at), pending.end());
+            requests.erase(std::remove(requests.begin(), requests.end(), at), requests.end());
+        }
+    }
+
+    void emptied(Id parent)
+    {
+        if(parent != Root && m.at(parent).children.empty())
+        {
+            m.at(parent).hasChildren=false;
+            m.at(parent).expanded=false;
+        }
+    }
+
+    bool sorted() const { return tree->isSorted(); }
+
+    double key(Id id) const
+    {
+        const MNode &node=m.at(id);
+        return node.hasChildren?static_cast<double>(node.children.size()):bytes.at(id);
+    }
+
+    bool lessIds(Id a, Id b) const
+    {
+        if(tree->getFoldersFirst())
+        {
+            const bool fa=m.at(a).hasChildren, fb=m.at(b).hasChildren;
+            if(fa != fb)
+                return fa;
+        }
+        const bool desc=tree->getSortDirection() == controls::SortDirection::Descending;
+        const int column=tree->getSortColumn();
+        const auto less=[&](Id x, Id y) { return column == 0?names.at(x) < names.at(y):key(x) < key(y); };
+        return desc?less(b, a):less(a, b);
+    }
+
+    std::vector<Id> shownOrder(Id parent) const
+    {
+        std::vector<Id> group=parent == Root?roots:m.at(parent).children;
+        if(sorted())
+            std::stable_sort(group.begin(), group.end(), [this](Id a, Id b) { return lessIds(a, b); });
+        return group;
+    }
+
+    void remove(Id id)
+    {
+        const Id parent=m.at(id).parent;
+        std::vector<Id> allowedFallbacks;
+        const auto fallback=[&](const std::vector<Id> &order)
+            {
+                const size_t index=std::find(order.begin(), order.end(), id)-order.begin();
+                return index+1 < order.size()?order[index+1]:index > 0?order[index-1]:parent;
+            };
+
+        if(selected != NoNode && inSubtree(selected, id))
+        {
+            // A shown group has its current sorted order. A hidden group may
+            // still use the app order until its next expand; either policy is
+            // allowed, but both fallbacks come from this independent model.
+            const bool groupShown=parent == Root || (m.at(parent).expanded && itemOf(parent) != Tree::NoItem);
+            if(groupShown)
+                selected=fallback(shownOrder(parent));
+            else
+            {
+                allowedFallbacks={fallback(kids(parent)), fallback(shownOrder(parent))};
+                selected=Id(-2); // read after
+            }
+        }
+        auto &siblings=kids(parent);
+        siblings.erase(std::find(siblings.begin(), siblings.end(), id));
+        eraseSubtree(id);
+        emptied(parent);
+        REQUIRE(tree->removeNode(id));
+        if(selected == Id(-2))
+        {
+            selected=tree->getSelectedNode();
+            CHECK(std::find(allowedFallbacks.begin(), allowedFallbacks.end(), selected) != allowedFallbacks.end());
+        }
+    }
+
+    void move(Id id, Id parent, size_t at)
+    {
+        if(parent != Root && inSubtree(parent, id))
+        {
+            CHECK_FALSE(tree->moveNode(id, parent, at));
+            return;
+        }
+        const Id from=m.at(id).parent;
+        auto &old=kids(from);
+        const size_t oldIndex=std::find(old.begin(), old.end(), id)-old.begin();
+        const size_t finalSize=kids(parent).size()-(from == parent?1:0);
+        const size_t index=std::min(at, finalSize);
+        if(!(from == parent && oldIndex == index))
+        {
+            old.erase(old.begin()+oldIndex);
+            emptied(from);
+            if(parent != Root)
+            {
+                MNode &p=m.at(parent);
+                p.loading=false;
+                p.hasChildren=true;
+            }
+            auto &dest=kids(parent);
+            dest.insert(dest.begin()+index, id);
+            m.at(id).parent=parent;
+        }
+        REQUIRE(tree->moveNode(id, parent, at));
+    }
+
+    void reset(Id id)
+    {
+        if(selected != NoNode && selected != id && inSubtree(selected, id))
+            selected=id;
+        MNode &node=m.at(id);
+        const auto children=node.children;
+        for(Id child : children)
+            eraseSubtree(child);
+        MNode &again=m.at(id);
+        again.children.clear();
+        again.expanded=false;
+        again.loading=false;
+        again.requested=false;
+        again.hasChildren=true;
+        requests.erase(std::remove(requests.begin(), requests.end(), id), requests.end());
+        pending.erase(std::remove(pending.begin(), pending.end(), id), pending.end());
+        tree->resetChildren(id);
+    }
+
+    void setAll(bool expanded)
+    {
+        const bool wasShown=selected != NoNode && itemOf(selected) != Tree::NoItem;
+        for(auto &entry : m)
+        {
+            MNode &node=entry.second;
+            if(node.expanded != expanded && (!expanded || node.hasChildren))
+            {
+                if(expanded && node.hasChildren && node.children.empty() && !node.requested)
+                {
+                    node.requested=true;
+                    node.loading=true;
+                }
+                node.expanded=expanded;
+            }
+        }
+        if(wasShown && !expanded)
+        {
+            // the topmost collapsed ancestor shows in its place
+            Id shown=selected;
+            for(Id at=m.at(selected).parent; at != Root; at=m.at(at).parent)
+                shown=at;
+            selected=shown;
+        }
+        answering=true;
+        if(expanded)
+            tree->expandAll();
+        else
+            tree->collapseAll();
+        answering=false;
+    }
+
+    void expandSubtree(Id id)
+    {
+        std::vector<Id> stack{id};
+        while(!stack.empty())
+        {
+            const Id at=stack.back();
+            stack.pop_back();
+            MNode &node=m.at(at);
+            if(node.hasChildren && !node.expanded)
+            {
+                if(node.children.empty() && !node.requested)
+                {
+                    node.requested=true;
+                    node.loading=true;
+                }
+                node.expanded=true;
+            }
+            stack.insert(stack.end(), node.children.begin(), node.children.end());
+        }
+        answering=true;
+        tree->expandSubtree(id);
+        answering=false;
+    }
+
+    struct Row
+    {
+        Id id;
+        size_t depth;
+    };
+
+    std::vector<Row> rebuild() const
+    {
+        std::vector<Row> rows;
+        std::vector<std::pair<Id, size_t>> stack;
+        const auto push=[&](Id parent, size_t depth)
+            {
+                const auto order=shownOrder(parent);
+                for(auto it=order.rbegin(); it != order.rend(); ++it)
+                    stack.emplace_back(*it, depth);
+            };
+        push(Root, 0);
+        while(!stack.empty())
+        {
+            const auto entry=stack.back();
+            stack.pop_back();
+            rows.push_back({entry.first, entry.second});
+            const MNode &node=m.at(entry.first);
+            if(node.expanded && node.loading)
+                rows.push_back({NoNode, entry.second+1});
+            else if(node.expanded)
+                push(entry.first, entry.second+1);
+        }
+        return rows;
+    }
+
+    void check()
+    {
+        CAPTURE(what);
+        // the store
+        REQUIRE(tree->getNodeCount() == m.size());
+        for(const auto &entry : m)
+        {
+            CAPTURE(entry.first);
+            const Tree::Node *node=tree->getNode(entry.first);
+            REQUIRE(node != nullptr);
+            CHECK(node->parent == entry.second.parent);
+            CHECK(node->children == entry.second.children);
+            CHECK(node->expanded == entry.second.expanded);
+            CHECK(node->hasChildren == entry.second.hasChildren);
+            CHECK(node->loading == entry.second.loading);
+            CHECK(node->childrenRequested == entry.second.requested);
+        }
+        // the projection
+        const auto rows=rebuild();
+        const auto &visible=tree->getVisibleNodes();
+        REQUIRE(visible.size() == rows.size());
+        REQUIRE(tree->getItemCount() == rows.size());
+        for(size_t i=0; i < rows.size(); ++i)
+        {
+            CAPTURE(i);
+            REQUIRE(visible[i].id == rows[i].id);
+            CHECK(visible[i].depth == rows[i].depth);
+        }
+        // the selection
+        CHECK(tree->getSelectedNode() == selected);
+        const size_t selItem=selected == NoNode?Tree::NoItem:itemOf(selected);
+        CHECK(tree->getSelectedItem() == selItem);
+    }
+
+    // after a frame: every pooled row that shows an item shows it right
+    void checkRows()
+    {
+        CAPTURE(what);
+        controls::VirtualList *body=tree->getVirtualBody();
+        std::map<size_t, controls::TreeTableRow *> shown;
+        for(controls::Base *control : body->getRows())
+        {
+            auto *row=gweni_cast<controls::TreeTableRow>(control);
+            REQUIRE(row);
+            const size_t item=body->itemForRow(control);
+            if(item == Tree::NoItem || row->hidden())
+                continue;
+            REQUIRE(item < tree->getVisibleNodes().size());
+            shown[item]=row;
+            const auto &node=tree->getVisibleNodes()[item];
+            CAPTURE(item);
+            CAPTURE(node.id);
+            CHECK(row->getDepth() == node.depth);
+            if(node.id == NoNode)
+            {
+                CHECK(row->isPlaceholder());
+                CHECK(row->getCellText(0) == String(Tree::PlaceholderText));
+                CHECK(row->getExpander()->hidden());
+            }
+            else
+            {
+                CHECK_FALSE(row->isPlaceholder());
+                CHECK(row->getCellText(0) == names.at(node.id));
+                CHECK(row->getCellText(1) == std::to_string(bytes.at(node.id)));
+                CHECK(row->getExpander()->hidden() == !m.at(node.id).hasChildren);
+                CHECK(row->getExpander()->isExpanded() == m.at(node.id).expanded);
+            }
+            CHECK(row->isSelected() == (node.id != NoNode && node.id == selected));
+        }
+        // stripes alternate down the rows on screen
+        for(auto it=shown.begin(); it != shown.end(); ++it)
+        {
+            auto after=std::next(it);
+            if(after != shown.end() && after->first == it->first+1)
+                CHECK(after->second->isStriped() != it->second->isStriped());
+        }
+    }
+
+    Id top() const { return tree->nodeForItem(tree->getVirtualBody()->firstVisibleItem()); }
+
+
+};
+
+}//namespace
+
+TEST_CASE("TreeTable model: combined lazy sorted selected and scrolled edits match an independent model")
+{
+    for(unsigned seed=1; seed <= 1000; ++seed)
+    {
+        CAPTURE(seed);
+        LiveModelScene p(seed);
+        Tree *tree=p.tree;
+
+        tree->setSortComparator(0, [&p](Id a, Id b) { return p.names.at(a) < p.names.at(b); });
+        // the table's own state for a folder's child count, as the demo
+        const auto tableKey=[&p](Id id)
+            {
+                const Tree::Node *node=p.tree->getNode(id);
+                return node->hasChildren?static_cast<double>(node->children.size()):p.bytes.at(id);
+            };
+        tree->setSortComparator(1, [tableKey](Id a, Id b) { return tableKey(a) < tableKey(b); });
+        for(int i=0; i < 15; ++i)
+            p.insert(Root, i, 1, p.rng()%4 == 0);
+        for(int i=0; i < 30; ++i)
+        {
+            std::vector<Id> ids;
+            for(const auto &entry : p.m)
+                ids.push_back(entry.first);
+            const Id parent=ids[p.rng()%ids.size()];
+            if(!p.m.at(parent).loading)
+                p.insert(parent, p.rng()%3, 1+p.rng()%2, p.rng()%4 == 0);
+        }
+        const unsigned sortMode=p.rng()%3;
+        tree->setFoldersFirst(p.rng()%2 != 0);
+        if(sortMode > 0)
+            tree->setSortColumn(static_cast<int>(sortMode-1),
+                p.rng()%2?controls::SortDirection::Ascending:controls::SortDirection::Descending);
+        p.check();
+        p.frame();
+        p.frame();
+
+        for(int step=0; step < 150; ++step)
+        {
+            CAPTURE(step);
+            std::vector<Id> ids;
+            for(const auto &entry : p.m)
+                ids.push_back(entry.first);
+            const auto any=[&]() { return ids[p.rng()%ids.size()]; };
+            const unsigned op=p.rng()%22;
+            const Id topBefore=p.top();
+            const int offsetBefore=tree->getVirtualBody()->getVerticalScrollOffset();
+            bool anchorKept=true;
+            p.selectionEvents=0;
+            const Id selBefore=p.selected;
+            if(op <= 2)
+            {
+                const Id parent=p.rng()%6 == 0?Root:any();
+                const size_t count=p.rng()%3 == 0?0:1+p.rng()%3;
+                p.what="insert "+std::to_string(count)+" under "+std::to_string(parent);
+                if(count == 0)
+                {
+                    p.modelInsert(parent, 0, {});
+                    REQUIRE(tree->insertNodes(parent, 0, {}));
+                }
+                else
+                    p.insert(parent, p.rng()%5, count, p.rng()%4 == 0);
+            }
+            else if(op == 3 && ids.size() > 12)
+            {
+                const Id id=any();
+                p.what="remove "+std::to_string(id);
+                anchorKept=!(topBefore != NoNode && (p.inSubtree(topBefore, id)));
+                p.remove(id);
+            }
+            else if(op <= 5)
+            {
+                const Id id=any();
+                const Id parent=p.rng()%5 == 0?Root:any();
+                p.what="move "+std::to_string(id)+" to "+std::to_string(parent);
+                p.move(id, parent, p.rng()%5);
+            }
+            else if(op == 6)
+            {
+                // several renames, then nodeChanged on each
+                const size_t count=1+p.rng()%3;
+                std::vector<Id> changed;
+                for(size_t i=0; i < count; ++i)
+                {
+                    const Id id=any();
+                    p.names[id]="n"+std::to_string(p.rng()%8);
+                    p.bytes[id]=(p.rng()%8)*0.5;
+                    changed.push_back(id);
+                }
+                p.what="rename x"+std::to_string(count);
+                for(Id id : changed)
+                    tree->nodeChanged(id);
+            }
+            else if(op <= 8)
+            {
+                const Id id=any();
+                p.what="expand "+std::to_string(id);
+                p.expand(id);
+            }
+            else if(op == 9)
+            {
+                const Id id=any();
+                p.what="collapse "+std::to_string(id);
+                anchorKept=!(topBefore != NoNode && topBefore != id && p.inSubtree(topBefore, id));
+                p.collapse(id);
+            }
+            else if(op == 10 && !p.pending.empty())
+            {
+                const size_t at=p.rng()%p.pending.size();
+                const Id id=p.pending[at];
+                p.pending.erase(p.pending.begin()+at);
+                p.what="answer "+std::to_string(id);
+                if(p.m.count(id))
+                    p.answer(id);
+            }
+            else if(op == 11)
+            {
+                const Id id=any();
+                p.what="reset "+std::to_string(id);
+                anchorKept=!(topBefore != NoNode && topBefore != id && p.inSubtree(topBefore, id));
+                p.reset(id);
+            }
+            else if(op == 12)
+            {
+                const Id id=any();
+                const bool flag=p.rng()%2 != 0;
+                p.what="setHasChildren "+std::to_string(id)+" "+std::to_string(flag);
+                MNode &node=p.m.at(id);
+                if(node.children.empty() && node.hasChildren != flag)
+                {
+                    if(node.loading)
+                    {
+                        node.loading=false;
+                        node.hasChildren=false;
+                        node.expanded=false;
+                    }
+                    else
+                    {
+                        node.hasChildren=flag;
+                        node.expanded=node.expanded && flag;
+                    }
+                }
+                tree->setHasChildren(id, flag);
+            }
+            else if(op == 13)
+            {
+                const Id id=any();
+                p.what="select "+std::to_string(id);
+                if(tree->setSelectedNode(id))
+                    p.selected=id;
+            }
+            else if(op == 14)
+            {
+                p.what="scroll";
+                tree->getVirtualBody()->setVerticalScrollOffset(static_cast<int>(p.rng()%(20*static_cast<unsigned>(ids.size()+2))));
+                anchorKept=false;
+            }
+            else if(op == 15 && p.rng()%3 == 0)
+            {
+                const unsigned mode=p.rng()%3;
+                p.what="sort "+std::to_string(mode);
+                if(mode == 0)
+                    tree->setSortColumn(-1, controls::SortDirection::None);
+                else
+                    tree->setSortColumn(static_cast<int>(mode-1),
+                        p.rng()%2?controls::SortDirection::Ascending:controls::SortDirection::Descending);
+            }
+            else if(op == 16 && p.rng()%3 == 0)
+            {
+                p.what="folders first";
+                tree->setFoldersFirst(!tree->getFoldersFirst());
+            }
+            else if(op == 17 && p.rng()%4 == 0)
+            {
+                const bool expanded=p.rng()%2 != 0;
+                p.what=expanded?"expandAll":"collapseAll";
+                anchorKept=false;
+                p.setAll(expanded);
+            }
+            else if(op == 18 && p.rng()%2 == 0)
+            {
+                const Id id=any();
+                p.what="expandSubtree "+std::to_string(id);
+                p.expandSubtree(id);
+            }
+            else if(op == 19)
+            {
+                // A single rename between the batch updates.
+                const Id id=any();
+                p.what="rename one "+std::to_string(id);
+                p.names[id]="n"+std::to_string(p.rng()%8);
+                p.bytes[id]=(p.rng()%8)*0.5;
+                tree->nodeChanged(id);
+            }
+            else
+                p.what="frame";
+
+            p.check();
+            // the selection's events: one per change of the selection by an
+            // edit, none for setSelectedNode or no change
+            if(p.what.rfind("select ", 0) != 0)
+            {
+                CAPTURE(selBefore);
+                CHECK(p.selectionEvents == (p.selected != selBefore?1:0));
+            }
+            p.frame();
+            p.checkRows();
+            // the first shown node stays at the top, unless the edit removed
+            // or hid it, scrolled, or the content no longer reaches as far
+            controls::VirtualList *body=tree->getVirtualBody();
+            const bool clamped=body->getVerticalScrollOffset() >= body->getMaxVerticalScrollOffset()
+                || offsetBefore >= body->getMaxVerticalScrollOffset();
+            if(anchorKept && topBefore != NoNode && p.m.count(topBefore) && p.itemOf(topBefore) != Tree::NoItem && !clamped)
+            {
+                CAPTURE(topBefore);
+                CAPTURE(p.what);
+                CAPTURE(offsetBefore);
+                const int offsetAfter=body->getVerticalScrollOffset();
+                const int maxAfter=body->getMaxVerticalScrollOffset();
+                CAPTURE(offsetAfter);
+                CAPTURE(maxAfter);
+                const size_t itemAfter=p.itemOf(topBefore);
+                CAPTURE(itemAfter);
+                CHECK(p.top() == topBefore);
+            }
         }
     }
 }

@@ -94,6 +94,9 @@ public:
 
     virtual int textLength() { return m_text->length(); }
 
+    //! The caption child, separate from controls parented to this Label.
+    const internal::Text *getTextControl() const { return m_text; }
+
     gweni::Rect getCharacterPosition(int value);
 
     virtual void setTextPadding(const Padding &padding)
