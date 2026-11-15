@@ -1003,7 +1003,6 @@ texture_font_get_glyph_phase( texture_font_t * self,
                               const char * codepoint, int phase )
 {
     texture_glyph_t *glyph;
-    size_t failed;
 
     assert( self );
     assert( self->atlas );
@@ -1018,7 +1017,6 @@ texture_font_get_glyph_phase( texture_font_t * self,
     if( texture_font_is_unfit( self, utf8_to_utf32( codepoint ) ) )
         return NULL;
 
-    failed = self->atlas->failed_regions;
     self->fallback_pending = 0;
     if( texture_font_load_glyph_phase( self, codepoint, phase ) )
         return texture_font_find_glyph_phase( self, codepoint, phase );
@@ -1027,9 +1025,9 @@ texture_font_get_glyph_phase( texture_font_t * self,
         self->fallback_pending = 0;
         return self->notdef;
     }
-    if( self->atlas->failed_regions != failed )
-        return texture_font_set_unfit( self, codepoint );
 
+    /* gweni: a phase that found no room is not unfit: its phase 0 image exists
+     * and the caller draws that one instead */
     return NULL;
 }
 
