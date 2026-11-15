@@ -124,6 +124,10 @@ struct GWENI_EXPORT MarkdownBlock
 //! middot, times, divide, deg, plusmn, para, sect, laquo, raquo, larr, rarr,
 //! uarr, darr, harr, euro, pound, yen, cent); any other stays as written. A
 //! numeric one is decoded, U+FFFD for an invalid codepoint, as for NUL.
+//! Quotes and lists nest MarkdownMaxNesting deep at most: one deeper is not a
+//! block of its own, its blocks going into the deepest one kept (a tight
+//! item's text a paragraph there), so a hostile input cannot build a model,
+//! or controls, deep enough to exhaust the stack.
 GWENI_EXPORT std::vector<MarkdownBlock> parseMarkdown(const gweni::String &markdown);
 
 //! How one block of a new parse maps onto the previous parse's blocks at the
@@ -166,6 +170,9 @@ struct GWENI_EXPORT MarkdownBlockMatch
 //! An old block no entry names is gone. Each old block is named once at most.
 GWENI_EXPORT std::vector<MarkdownBlockMatch> markdownDiff(const std::vector<MarkdownBlock> &old,
     const std::vector<MarkdownBlock> &now);
+
+//! The most quotes and lists parseMarkdown nests inside one another
+constexpr int MarkdownMaxNesting=32;
 
 //! The most old-times-new blocks markdownDiff runs its subsequence over
 constexpr size_t MarkdownDiffLimit=1<<20;

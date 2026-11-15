@@ -24,7 +24,10 @@
  *    the long cell wraps; a cell's edit keeps every cell's control and
  *    measures the others' spans no more;
  *  - splitColumns: natural widths that fit, an even share kept by the
- *    narrow columns and the rest in proportion, adding up to the room;
+ *    narrow columns and the rest in proportion, adding up to the room (a
+ *    share raised to 1 taken from the widest);
+ *  - an edit that moves the column edges inside the table's bounds marks
+ *    the table (its grid drawn again), one that keeps them marks nothing;
  *  - an image is its alt text (or "image") on a Placeholder span in
  *    italics, and raw HTML its literal text.
  */
@@ -341,6 +344,55 @@ TEST_CASE("Markdown table: splitColumns")
     // every column over its share: all in proportion
     CHECK(MarkdownTable::splitColumns(Widths{ 100, 100 }, 50) == Widths{ 25, 25 });
     CHECK(MarkdownTable::splitColumns(Widths{}, 50).empty());
+    // a share raised to 1 is taken back from the widest, so they still add
+    // up to the room
+    CHECK(MarkdownTable::splitColumns(Widths{ 12, 12, 12, 4000 }, 30) == Widths{ 1, 1, 1, 27 });
+    for(int room=4; room < 60; ++room)
+    {
+        const Widths widths=MarkdownTable::splitColumns(Widths{ 12, 12, 12, 4000 }, room);
+        int sum=0;
+
+        for(int width:widths)
+        {
+            CHECK(width >= 1);
+            sum+=width;
+        }
+        CHECK(sum == room);
+    }
+}
+
+TEST_CASE("Markdown table: an edit that moves the column edges marks the table")
+{
+    const std::string before="| a | b |\n|---|---|\n| c | d |\n";
+    const std::string after="| a much longer cell | b |\n|---|---|\n| c | d |\n";
+    Scene fresh;
+
+    fresh.show(after);
+
+    Scene scene;
+
+    scene.show(before);
+
+    MarkdownTable *table=scene.block<MarkdownTable>(0);
+    const Rect bounds=table->getBounds();
+    const std::vector<int> edges=table->getColumnEdges();
+
+    scene.document->setMarkdown(after);
+    scene.canvas->updateCanvas();
+    // the same bounds, the lines moved: the table is to be drawn again
+    CHECK((table->getBounds() == bounds));
+    CHECK(table->getColumnEdges() != edges);
+    CHECK(table->getColumnEdges() == fresh.block<MarkdownTable>(0)->getColumnEdges());
+    CHECK((table->getStateChange()&controls::StateChange_Background) != 0);
+    scene.canvas->renderCanvas();
+    scene.settle();
+
+    // a cell edit that keeps the edges marks nothing on the table
+    scene.document->setMarkdown("| a much longer cell | e |\n|---|---|\n| c | d |\n");
+    scene.canvas->updateCanvas();
+    CHECK(table->getColumnEdges() == fresh.block<MarkdownTable>(0)->getColumnEdges());
+    CHECK(table->getStateChange() == controls::StateChange_Nothing);
+    scene.canvas->renderCanvas();
 }
 
 TEST_CASE("Markdown images and raw HTML")

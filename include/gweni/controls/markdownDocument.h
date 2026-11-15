@@ -265,8 +265,9 @@ public:
     //! available units: the natural widths when they fit; else each column
     //! wanting no more than an even share of what is left keeps its width
     //! and the rest share what remains in proportion to theirs, the integer
-    //! remainder to the lowest-index ones, each at least 1, so the widths add
-    //! up to available (when it is at least one a column).
+    //! remainder to the lowest-index ones, each at least 1 (a share raised
+    //! to 1 taken back from the widest), so the widths add up to available
+    //! (when it is at least one a column).
     static std::vector<int> splitColumns(const std::vector<int> &natural, int available);
 
     //! X: its columns at their natural widths and the lines. Y: its rows at
@@ -445,7 +446,8 @@ public:
     const MarkdownHighlighter &getCodeHighlighter() const { return m_highlighter; }
 
     //! Called with a link's url in info.string when one of the document's
-    //! links is clicked (RichText::onLinkClicked); gweni opens nothing
+    //! links is clicked (RichText::onLinkClicked), info.control the
+    //! document; gweni opens nothing
     event::Caller onLinkClicked;
 
     //! \sect{Selection}
@@ -458,9 +460,10 @@ public:
     //! (path, byte of that text). A drag selects from the pressed text into
     //! whichever text is under the mouse, in reading order; a double-click a
     //! word; Ctrl+A everything; Ctrl+C copies getSelectedText(). Kept across
-    //! setMarkdown: each end stays on its text's control, at its new path,
-    //! its byte clamped to the new text, unless that block is gone (then the
-    //! selection is cleared), so an edit of a block outside it keeps it.
+    //! setMarkdown, a collapsed caret too: each end stays on its text's
+    //! control, at its new path, its byte clamped to the new text and moved
+    //! back to the start of its code point, unless that block is gone (then
+    //! the selection is cleared), so an edit of a block outside it keeps it.
 
     //! A text the selection runs through, in reading order
     struct Selectable
@@ -491,8 +494,9 @@ public:
     void clearSelection();
     bool hasSelection() const { return !m_selection.empty(); }
     //! The selection as shown, as plain text: each text's selected part, a
-    //! tab between two cells of a row, a space after a marker, a newline
-    //! between any other two texts
+    //! tab between two cells of a row, a space between a marker and its
+    //! item's first text, a newline between any other two texts (an empty
+    //! item's marker and the next one's included)
     gweni::String getSelectedText();
     //! Puts getSelectedText() on the clipboard; false (nothing done) for none
     bool copySelection();
@@ -522,6 +526,10 @@ private:
     //! each text's part of the selection as last told: whether it had one,
     //! and its bytes
     std::unordered_map<const Base *, std::pair<bool, std::pair<size_t, size_t>>> m_shown;
+
+    // a document's blocks come from setMarkdown alone, which keeps the text,
+    // the paths and the selection in step with them
+    using internal::MarkdownColumn::setBlocks;
 };
 
 }//namespace controls

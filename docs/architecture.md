@@ -5591,9 +5591,16 @@ a `Rule` holds nothing. A tight list item's text, which md4c reports with no par
 gets an implicit `Paragraph`, so a container holds blocks only. What is shown as text: an
 entity decoded (the numeric ones and 35 common names; another name as written), a soft
 break as a space, a hard break as `'\n'`, raw HTML (a block or inline) as it was written,
-a bare URL autolink without the trailing `?!.,:*_~` GFM leaves out (md4c keeps a `.`),
+a bare URL autolink without the trailing `?!.,:*_~` GFM leaves out (md4c keeps a `.`; a
+`<...>` autolink keeps them, told apart by the `<` just before its text in the source),
 `www.` given `http://`, an e-mail `mailto:`; footnotes and task lists are not enabled, so
-their syntax is text. Each block's `hash` is FNV-1a over its type, attributes, content and
+their syntax is text. A NUL byte is U+FFFD everywhere, replaced in the input before md4c
+sees it (which copies it raw, twice, into a code or HTML block). Quotes and lists nest
+`MarkdownMaxNesting` (32) deep at most: one deeper is no block of its own, its blocks (a
+tight item's text a paragraph) going into the deepest container kept, so the model, its
+hashing, the diff and the controls built from it all recurse a bounded depth: 1 KB of `>`
+was enough to overflow the browser's stack in `Base::getCanvas()`, and 20 KB natively.
+Each block's `hash` is FNV-1a over its type, attributes, content and
 its children's hashes, over fixed-width fields, so two blocks with one hash are taken to
 be the same block, at any position and on every target (`tests/unit/markdownBlocks.cpp`
 pins its values, on wasm32 too).
@@ -5601,7 +5608,8 @@ pins its values, on wasm32 too).
 **The diff.** `text::markdownDiff(old, now)` gives each new block a `MarkdownBlockMatch`:
 `Kept` (an equal hash: the common prefix and suffix, then a longest common subsequence of
 the middle by hash, run only while the middle is at most `MarkdownDiffLimit`, 2^20,
-old-times-new blocks; then a block left over whose hash an old one left over has, so a
+old-times-new blocks; then a block left over whose hash an old one left over has, the
+first such in order, through a map of each hash's old blocks, so the pass is linear and a
 swap or a move keeps both), `Changed` (paired in order within each gap between two
 in-order matches with an old block of its type: its control is kept and given the new
 content, and a container's children are diffed the same way) or `New`. An old block no
@@ -5651,7 +5659,11 @@ nothing at all, and a text parsing to the same blocks lays out nothing. The bloc
   `splitColumns` otherwise (a column under an even share keeps its width, the rest share
   what is left in proportion), its cells then wrapping; a cell narrower than its column is
   placed by the column's alignment. A cell keeps its control by its row and column, so an
-  edited cell is the only one measured again.
+  edited cell is the only one measured again. The grid is drawn from the column and row
+  edges its arrange works out, so an arrange that moves them marks the table
+  (`StateChange_Background`) even when its bounds stay, and its renderer rewrites the
+  slots of the lines that moved (`tests/markdownTableEdit.cpp`: an edited table draws
+  what the text built fresh draws).
 
 **Width and height: hosting a `MarkdownDocument`.** The document is laid out at the width
 its parent gives it, and its preferred height, worked out in the Y pass from that width,
@@ -5670,7 +5682,9 @@ height is its requested height alone (`sizedByRequest(Y)`): a ScrollControl meas
 content before laying it out, so the document's height there is one width late, which
 `--verify-layout` reports; a host that wants the content's height uses a
 MarkdownDocument. Its `onLinkClicked` forwards the document's, which forwards every
-block's: one `(url)` callback, gweni opening nothing.
+block's: one `(url)` callback, `info.control` the view (the document's, the document),
+gweni opening nothing. A document's blocks come from `setMarkdown` alone (its column's
+`setBlocks` is private there), which keeps the text, the paths and the selection in step.
 
 **The theme.** The surfaces `MarkdownCode`, `MarkdownCodeBlock`, `MarkdownQuoteBar`,
 `MarkdownRule`, `MarkdownTableHeader`, `MarkdownTableBorder` and `MarkdownImagePlaceholder`
@@ -5694,9 +5708,11 @@ Markdown text hands them to its document). After each change only the texts whos
 the selection changed are marked (`selectionChanged()` compares each text's range with the
 one it was last told). Ctrl+C copies `getSelectedText()`, what is shown as plain text: each
 text's selected part, a tab between two cells of a row (an empty cell inside the selection
-keeps its tab), a space after a list marker, a newline between any other two texts. Across
-`setMarkdown` each end of the selection stays on the control of the text it was in, at
-that text's new path, its byte clamped to the new text, so an edit of another block or one
+keeps its tab), a space between a list marker and its item's first text, a newline between
+any other two texts (so an empty item's marker is on a line of its own). Across
+`setMarkdown` each end of the selection, a collapsed caret's too, stays on the control of
+the text it was in, at that text's new path, its byte clamped to the new text and moved
+back to the start of its code point, so an edit of another block or one
 inserted above keeps the selection; it is cleared when the block an end is in goes
 (`tests/unit/markdownSelection.cpp`). The paths are `(block path, char)`, which a log
 view's row maps to its `(item, char)`.

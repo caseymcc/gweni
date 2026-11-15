@@ -29,7 +29,10 @@
  *  - a paragraph's edit that keeps its height lays out in one pass entering
  *    as many controls in a 6-block document as in a 300-block one, and one
  *    that makes it taller moves the blocks below by the growth;
- *  - setFont gives every text block, headings and markers the new font.
+ *  - setFont gives every text block, headings and markers the new font;
+ *  - 20 000 nested quotes build a tree a few times MarkdownMaxNesting deep,
+ *    the text in it, and an edit of it works;
+ *  - a document's setBlocks is not public: its blocks come from setMarkdown.
  */
 #include "headlessFixture.h"
 
@@ -38,6 +41,7 @@
 #include <doctest/doctest.h>
 
 #include <string>
+#include <type_traits>
 #include <vector>
 
 using namespace gweni;
@@ -447,4 +451,61 @@ TEST_CASE("Markdown document: setFont gives every text block the new font")
 
     CHECK(blockAs<MarkdownText>(item, 0)->getFont().size == doctest::Approx(22.0f));
     CHECK(item->getMarker()->getFont().size == doctest::Approx(22.0f));
+}
+
+namespace
+{
+
+//! The control tree's depth under control, and whether a text reads text
+int treeDepth(controls::Base *control, const std::string &text, bool &found)
+{
+    int deepest=0;
+
+    if(MarkdownText *shown=dynamic_cast<MarkdownText *>(control))
+        found=found || (shown->getText() == text);
+    for(controls::Base *child:control->getChildren())
+        deepest=std::max(deepest, treeDepth(child, text, found));
+    return deepest+1;
+}
+
+//! Whether setBlocks can be called on T from outside it
+template<typename T, typename=void>
+struct HasPublicSetBlocks: std::false_type {};
+template<typename T>
+struct HasPublicSetBlocks<T, std::void_t<decltype(std::declval<T &>().setBlocks(
+    std::declval<const std::vector<text::MarkdownBlock> &>()))>>: std::true_type {};
+
+}//namespace
+
+TEST_CASE("Markdown document: a deeply nested input builds a bounded tree")
+{
+    Scene scene;
+
+    // 20 000 quotes: the model is MarkdownMaxNesting deep, so the controls
+    // are a few times that, the text in the deepest
+    scene.show(std::string(20000, '>')+" deep\n");
+
+    bool found=false;
+    const int depth=treeDepth(scene.document, "deep", found);
+
+    CHECK(found);
+    CHECK(depth > text::MarkdownMaxNesting);
+    INFO("depth " << depth);
+    CHECK(depth < 4*text::MarkdownMaxNesting);
+    // a fixed ceiling, well under what the browser's stack takes (about 1000)
+    CHECK(depth < 200);
+
+    // and one character more is an edit of it
+    scene.show(std::string(20000, '>')+" deeper\n");
+    found=false;
+    treeDepth(scene.document, "deeper", found);
+    CHECK(found);
+}
+
+TEST_CASE("Markdown document: its blocks come from setMarkdown alone")
+{
+    // a column's setBlocks would skip the paths, the selection and the text
+    static_assert(HasPublicSetBlocks<MarkdownColumn>::value, "a column takes its blocks");
+    static_assert(!HasPublicSetBlocks<MarkdownDocument>::value, "a document takes setMarkdown alone");
+    CHECK(true);
 }

@@ -9,7 +9,7 @@
  *    order: a paragraph {i}, a list item's marker {i, k, 0} and its blocks
  *    {i, k, 1+j}, a code block's text {i}, a table's cell {i, row, column};
  *  - Ctrl+A selects everything and Ctrl+C copies it as shown: a newline
- *    between texts, a space after a marker, a tab between a row's cells (an
+ *    between texts, a space after a marker before its item's text, a tab between a row's cells (an
  *    empty one included), a code block's text with its own newlines;
  *  - a press in the first paragraph and a drag over a list, a code block
  *    and into a table select from the press to the mouse in reading order,
@@ -19,8 +19,11 @@
  *  - a double-click selects a word, Escape clears the selection;
  *  - the selection survives a setMarkdown that edits a block outside it,
  *    and one that inserts a block above it (the ends follow their texts to
- *    their new paths); a setMarkdown that removes the block an end is in
- *    clears it.
+ *    their new paths), a collapsed caret too, an end inside a code point of
+ *    an edited text moved back to its start; a setMarkdown that removes the
+ *    block an end is in clears it;
+ *  - an empty list item's marker copies on a line of its own, a marker
+ *    before its item's nested list's marker with a space.
  */
 #include "headlessFixture.h"
 
@@ -370,4 +373,43 @@ TEST_CASE("Markdown selection: kept across a setMarkdown of other blocks, cleare
     edited.replace(0, std::string("Intro paragraph here.\n\n").size(), "");
     scene.show("# New heading\n\n"+edited);
     CHECK(!scene.document->hasSelection());
+}
+
+TEST_CASE("Markdown selection: an empty list item's marker copies on its own line")
+{
+    Scene scene;
+
+    scene.show("- a\n- \n- c\n");
+    scene.document->selectAll();
+    CHECK(scene.document->getSelectedText() == "\xE2\x80\xA2 a\n\xE2\x80\xA2\n\xE2\x80\xA2 c");
+    // a marker before a nested list's marker is its item's text
+    scene.show("- - b\n");
+    scene.document->selectAll();
+    CHECK(scene.document->getSelectedText() == "\xE2\x80\xA2 \xE2\x97\xA6 b");
+}
+
+TEST_CASE("Markdown selection: a caret follows its text across setMarkdown, ends on code points")
+{
+    Scene scene;
+
+    scene.show("First.\n\nSecond.\n\nThird one.\n");
+
+    MarkdownText *third=scene.block<MarkdownText>(2);
+
+    // a collapsed caret in the third paragraph
+    scene.document->select(text::SelectionPosition({ 2 }, 3), text::SelectionPosition({ 2 }, 3));
+    REQUIRE(!scene.document->hasSelection());
+
+    // a block inserted above: the caret is on the same text, at its new path
+    scene.show("Zero.\n\nFirst.\n\nSecond.\n\nThird one.\n");
+    REQUIRE(scene.document->getBlockControl(3) == third);
+    CHECK(scene.document->selectionModel().anchor() == text::SelectionPosition({ 3 }, 3));
+    CHECK(scene.document->selectionModel().focus() == text::SelectionPosition({ 3 }, 3));
+
+    // an end inside a code point of the edited text goes back to its start
+    scene.show("h\xC3\xA9llo world\n");
+    scene.document->select(text::SelectionPosition({ 0 }, 0), text::SelectionPosition({ 0 }, 5));
+    scene.show("\xC3\xA9\xC3\xA9\xC3\xA9 world\n");
+    CHECK(scene.document->selectionModel().focus() == text::SelectionPosition({ 0 }, 4));
+    CHECK(scene.document->getSelectedText() == "\xC3\xA9\xC3\xA9");
 }

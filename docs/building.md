@@ -165,7 +165,8 @@ target_link_libraries(app PRIVATE gweni)
   on `gweni`'s include path; `cmake --install` installs it with the headers.
 
 The dependencies come from vcpkg, through the app's own manifest:
-`rapidjson`, `glm`, `freetype`, `libpng`, `libjpeg-turbo`, `vulkan-headers`,
+`rapidjson`, `glm`, `freetype`, `libpng`, `libjpeg-turbo`, `md4c` (the
+CommonMark parser behind `MarkdownDocument`, always linked), `vulkan-headers`,
 `volk` and `glslang` with its `tools` feature (`glslangValidator` compiles the
 shaders to SPIR-V at build time; `cmake/Vulkan.cmake` takes it from
 `${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/tools/glslang/`). It needs
@@ -174,7 +175,7 @@ tests alone).
 
 ```json
 "dependencies": [
-    "rapidjson", "glm", "freetype", "libpng", "libjpeg-turbo",
+    "rapidjson", "glm", "freetype", "libpng", "libjpeg-turbo", "md4c",
     "vulkan-headers", "volk",
     { "name": "glslang", "features": [ "tools" ] }
 ]

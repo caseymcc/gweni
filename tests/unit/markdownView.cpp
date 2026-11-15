@@ -10,7 +10,8 @@
  *    pass on the frame the markdown is set and on a resize;
  *  - the wheel scrolls the view, a vertical wheel over a scrolled code block
  *    included;
- *  - a press and a release on a link call the view's onLinkClicked (and the
+ *  - a press and a release on a link call the view's onLinkClicked, with
+ *    info.control the view (the document's, the document) (and the
  *    document's) once with its url;
  *  - the skin's Markdown metrics (block and tight spacing, list indent,
  *    heading sizes) are what the document lays out with, a change taking
@@ -161,10 +162,12 @@ TEST_CASE("Markdown view: a link's click calls onLinkClicked with its url")
     struct Listener: public event::Handler
     {
         std::vector<std::string> *urls=nullptr;
+        std::vector<gweni::controls::Base *> controls;
 
         void onLink(event::Info info)
         {
             urls->push_back(info.string);
+            controls.push_back(info.control);
         }
     } viewListener, documentListener;
 
@@ -203,6 +206,9 @@ TEST_CASE("Markdown view: a link's click calls onLinkClicked with its url")
 
     CHECK(viewUrls == std::vector<std::string>{ "https://example.com/docs" });
     CHECK(documentUrls == std::vector<std::string>{ "https://example.com/docs" });
+    // info.control is the control the callback is on, not the internal text
+    CHECK(viewListener.controls == std::vector<gweni::controls::Base *>{ scene.view });
+    CHECK(documentListener.controls == std::vector<gweni::controls::Base *>{ scene.view->getDocument() });
 }
 
 TEST_CASE("Markdown view: the skin's Markdown metrics, a change applied through the theme editor")

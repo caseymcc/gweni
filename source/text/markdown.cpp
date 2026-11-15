@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <unordered_map>
 #include <utility>
 
 namespace gweni
@@ -181,14 +182,23 @@ struct Builder
     //! block in the item or the item's end
     bool implicitParagraph=false;
     bool inTableHead=false;
+    //! The quotes and lists open as blocks
+    int nesting=0;
+    //! The quotes, lists and items open past MarkdownMaxNesting, which are
+    //! no blocks: what is in them goes into the deepest open container
+    int flattened=0;
+    //! The text md4c parses, so a link's text can be looked behind
+    const char *source=nullptr;
 
     int strong=0;
     int emphasis=0;
     int code=0;
     int strike=0;
     std::vector<gweni::String> links;
-    //! whether each open link is an autolink
-    std::vector<bool> autolinks;
+    //! What each open link is: an autolink is Bare or Angle once its first
+    //! text has shown which
+    enum class LinkKind { Plain, Autolink, Bare, Angle };
+    std::vector<LinkKind> autolinks;
     //! Images entered: the outermost one's span takes every text inside it
     int images=0;
 
@@ -218,7 +228,11 @@ struct Builder
             return nullptr;
         if(isContainer(open.back()->type))
         {
-            if(open.back()->type != MarkdownBlock::Type::ListItem)
+            // a flattened tight item's text lands in a quote too
+            bool paragraphHere=(open.back()->type == MarkdownBlock::Type::ListItem)
+                || ((flattened > 0) && (open.back()->type == MarkdownBlock::Type::Quote));
+
+            if(!paragraphHere)
                 return nullptr;
             push(MarkdownBlock::Type::Paragraph);
             implicitParagraph=true;
@@ -304,6 +318,24 @@ struct Builder
         {
         case MD_BLOCK_DOC:
             break;
+        case MD_BLOCK_QUOTE:
+        case MD_BLOCK_UL:
+        case MD_BLOCK_OL:
+        case MD_BLOCK_LI:
+            if(flattened > 0 || ((type != MD_BLOCK_LI) && (nesting >= MarkdownMaxNesting)))
+            {
+                ++flattened;
+                return 0;
+            }
+            if(type != MD_BLOCK_LI)
+                ++nesting;
+            break;
+        default:
+            break;
+        }
+
+        switch(type)
+        {
         case MD_BLOCK_QUOTE:
             push(MarkdownBlock::Type::Quote);
             break;
@@ -405,6 +437,16 @@ struct Builder
         case MD_BLOCK_UL:
         case MD_BLOCK_OL:
         case MD_BLOCK_LI:
+            closeImplicitParagraph();
+            if(flattened > 0)
+            {
+                --flattened;
+                break;
+            }
+            if(type != MD_BLOCK_LI)
+                --nesting;
+            open.pop_back();
+            break;
         case MD_BLOCK_HR:
         case MD_BLOCK_H:
         case MD_BLOCK_P:
@@ -458,7 +500,7 @@ struct Builder
                     url="http://"+url;
             }
             links.push_back(url);
-            autolinks.push_back(a->is_autolink != 0);
+            autolinks.push_back((a->is_autolink != 0)?LinkKind::Autolink:LinkKind::Plain);
             break;
         }
         case MD_SPAN_IMG:
@@ -508,7 +550,7 @@ struct Builder
             --strike;
             break;
         case MD_SPAN_A:
-            if(autolinks.back())
+            if(autolinks.back() == LinkKind::Bare)
                 trimAutolink();
             links.pop_back();
             autolinks.pop_back();
@@ -531,6 +573,11 @@ struct Builder
                 return 0;
             }
         }
+
+        // GFM trims only a bare URL's trailing punctuation, not a <...>
+        // autolink's: the angle one's text starts right after its '<'
+        if(!autolinks.empty() && (autolinks.back() == LinkKind::Autolink))
+            autolinks.back()=((text > source) && (text[-1] == '<'))?LinkKind::Angle:LinkKind::Bare;
 
         gweni::String *out=spanText();
 
@@ -682,7 +729,26 @@ std::vector<MarkdownBlock> parseMarkdown(const gweni::String &markdown)
     parser.leave_span=leaveSpanCallback;
     parser.text=textCallback;
 
-    md_parse(markdown.data(), MD_SIZE(markdown.size()), &parser, &builder);
+    // NUL is U+FFFD (CommonMark 2.3); md4c reports it in a paragraph but
+    // copies it raw, twice, into a code or HTML block
+    gweni::String clean;
+    const gweni::String *input=&markdown;
+
+    if(markdown.find('\0') != gweni::String::npos)
+    {
+        clean.reserve(markdown.size()+16);
+        for(char c:markdown)
+        {
+            if(c == '\0')
+                clean+="\xEF\xBF\xBD";
+            else
+                clean+=c;
+        }
+        input=&clean;
+    }
+
+    builder.source=input->data();
+    md_parse(input->data(), MD_SIZE(input->size()), &parser, &builder);
 
     for(MarkdownBlock &block:builder.root)
         block.updateHash();
@@ -776,19 +842,29 @@ std::vector<MarkdownBlockMatch> markdownDiff(const std::vector<MarkdownBlock> &o
         anchors.emplace_back(newEnd+k, oldEnd+k);
     }
 
-    // a block moved: the first old block left with its hash
-    for(size_t n=prefix; n < newEnd; ++n)
+    // a block moved: the first old block left with its hash, each hash's
+    // old blocks left in order, so the pass is linear
+    std::unordered_map<uint64_t, std::pair<std::vector<size_t>, size_t>> oldByHash;
+
+    for(size_t o=prefix; o < oldEnd; ++o)
+    {
+        if(!oldTaken[o])
+            oldByHash[old[o].hash].first.push_back(o);
+    }
+    for(size_t n=prefix; (n < newEnd) && !oldByHash.empty(); ++n)
     {
         if(oldOf[n] != none)
             continue;
-        for(size_t o=prefix; o < oldEnd; ++o)
-        {
-            if(!oldTaken[o] && (old[o].hash == now[n].hash))
-            {
-                keep(n, o);
-                break;
-            }
-        }
+
+        auto found=oldByHash.find(now[n].hash);
+
+        if(found == oldByHash.end())
+            continue;
+
+        std::pair<std::vector<size_t>, size_t> &left=found->second;
+
+        if(left.second < left.first.size())
+            keep(n, left.first[left.second++]);
     }
 
     // the rest, paired in order within each gap between two anchors

@@ -10,16 +10,18 @@
  *  - a paragraph's emphasis, strong, both, strikethrough and inline code as
  *    style bits, links, autolinks (<...>, a bare URL, www. given "http://",
  *    an e-mail address given "mailto:", trailing ?!.,:*_~ left out of an
- *    autolink as GFM says), a soft break as ' ', a hard break
+ *    bare autolink as GFM says, a <...> one's kept), a soft break as ' ', a hard break
  *    (two spaces or a '\') as '\n', and runs of one style merged;
  *  - entities: the common names and numeric ones decoded, U+FFFD for an
- *    invalid codepoint and NUL, an unknown name kept as written;
+ *    invalid codepoint and NUL (in a code or an HTML block too, once), an unknown name kept as written;
  *  - an image as a span of its flattened alt text and src (inside a link,
  *    with the link's url);
  *  - lists: bullet marker, ordered start and delimiter, tight and loose, a
  *    tight item's text an implicit Paragraph (with a block between two of
  *    them), nested to any depth, a new delimiter starting a new list;
- *  - block quotes, nested, holding other blocks;
+ *  - block quotes, nested, holding other blocks; quotes and lists nested
+ *    past MarkdownMaxNesting flattened into the deepest one kept (100 000
+ *    quotes, 100 lists, a tight item in a quote), the text kept in order;
  *  - rules; fenced code (language, the text without its last '\n') and
  *    indented code; GFM tables (the header row, each column's alignment on
  *    the table and on its cells, a short row filled with empty cells);
@@ -80,6 +82,9 @@ TEST_CASE("Markdown blocks: links and autolinks")
     CHECK(describeMarkdown("see https://example.com/docs. or https://x.org/a?! and [b](http://y.org/c.)\n") ==
         "Paragraph 'see ' 'https://example.com/docs'<https://example.com/docs> '. or ' "
         "'https://x.org/a'<https://x.org/a> '?! and ' 'b'<http://y.org/c.>\n");
+    // a <...> autolink keeps its trailing punctuation: only a bare URL's goes
+    CHECK(describeMarkdown("<https://x.com/q?> <https://example.com/a.>\n") ==
+        "Paragraph 'https://x.com/q?'<https://x.com/q?> ' ' 'https://example.com/a.'<https://example.com/a.>\n");
     // an entity in a url is decoded
     CHECK(describeMarkdown("[a](/q?x=1&amp;y=2)\n") == "Paragraph 'a'</q?x=1&y=2>\n");
 }
@@ -95,6 +100,12 @@ TEST_CASE("Markdown blocks: entities")
         "Paragraph '& <> \xC2\xA9 \xE2\x80\x94 A \xF0\x9F\x98\x80 \xEF\xBF\xBD \xEF\xBF\xBD &bogus;'\n");
     // a NUL in the text is U+FFFD too
     CHECK(describeMarkdown(std::string("a\0b\n", 4)) == "Paragraph 'a\xEF\xBF\xBD" "b'\n");
+    // and in a code or an HTML block, once
+    static const char codeAndHtml[]="```\na\0b\n```\n\n<div>c\0d</div>\n";
+
+    CHECK(describeMarkdown(std::string(codeAndHtml, sizeof(codeAndHtml)-1)) ==
+        "CodeBlock fenced \"a\xEF\xBF\xBD" "b\"\n"
+        "Html \"<div>c\xEF\xBF\xBD" "d</div>\"\n");
 }
 
 TEST_CASE("Markdown blocks: images")
@@ -164,6 +175,81 @@ TEST_CASE("Markdown blocks: block quotes, nested")
         "  Heading 1 'h'\n");
     // a lazy continuation line stays in the quote's paragraph
     CHECK(describeMarkdown("> a\nb\n") == "Quote\n  Paragraph 'a b'\n");
+}
+
+namespace
+{
+//! How deep the chain of each block's last quote, list or item child goes,
+//! and its last block
+int chainDepth(const MarkdownBlock &block, const MarkdownBlock *&deepest)
+{
+    int depth=1;
+
+    deepest=&block;
+    for(;;)
+    {
+        const MarkdownBlock *next=nullptr;
+
+        for(const MarkdownBlock &child:deepest->children)
+        {
+            if((child.type == MarkdownBlock::Type::Quote) || (child.type == MarkdownBlock::Type::List)
+                || (child.type == MarkdownBlock::Type::ListItem))
+                next=&child;
+        }
+        if(next == nullptr)
+            return depth;
+        deepest=next;
+        ++depth;
+    }
+}
+}
+
+TEST_CASE("Markdown blocks: quotes and lists nest MarkdownMaxNesting deep at most")
+{
+    using gweni::text::MarkdownMaxNesting;
+
+    // 100 000 quotes: the model stops at the cap, the text in the deepest
+    std::string quotes(100000, '>');
+
+    quotes+=" deep\n";
+
+    std::vector<MarkdownBlock> blocks=parseMarkdown(quotes);
+    const MarkdownBlock *deepest=nullptr;
+
+    REQUIRE(blocks.size() == 1);
+    CHECK(chainDepth(blocks[0], deepest) == MarkdownMaxNesting);
+    CHECK(deepest->type == MarkdownBlock::Type::Quote);
+    CHECK(test::describe(deepest->children) == "Paragraph 'deep'\n");
+
+    // the same with one character more diffs to that one block changed
+    std::vector<MarkdownBlock> changed=parseMarkdown(quotes+"x\n");
+
+    REQUIRE(gweni::text::markdownDiff(blocks, changed).size() == 1);
+
+    // a list nested 100 deep: past the cap each item's text is a paragraph
+    // of the deepest item kept, in order
+    std::string list;
+
+    for(int i=0; i < 100; ++i)
+        list+=std::string(size_t(2*i), ' ')+"- x"+std::to_string(i)+"\n";
+    blocks=parseMarkdown(list);
+    REQUIRE(blocks.size() == 1);
+    // each level a List and its ListItem, the cap counting the lists
+    CHECK(chainDepth(blocks[0], deepest) == 2*MarkdownMaxNesting);
+    CHECK(deepest->type == MarkdownBlock::Type::ListItem);
+
+    std::string expected;
+
+    for(int i=MarkdownMaxNesting-1; i < 100; ++i)
+        expected+="Paragraph 'x"+std::to_string(i)+"'\n";
+    CHECK(test::describe(deepest->children) == expected);
+
+    // a tight item past the cap in a quote: its text a paragraph of the
+    // deepest quote kept
+    blocks=parseMarkdown(std::string(40, '>')+" - a\n");
+    REQUIRE(blocks.size() == 1);
+    CHECK(chainDepth(blocks[0], deepest) == MarkdownMaxNesting);
+    CHECK(test::describe(deepest->children) == "Paragraph 'a'\n");
 }
 
 TEST_CASE("Markdown blocks: rules")

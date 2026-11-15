@@ -18543,7 +18543,7 @@ static bool runMarkdownScenario(Session &s, const std::string &shotDir, bool &pa
         fail("code_scroll", "the code block does not scroll sideways at 560 units");
     else
     {
-        const std::vector<uint8_t> before=settle("step10");
+        settle("step10");
         const gweni::Rect codeBounds=code->getCanvasBounds();
 
         moveMouse(s, codeBounds.x+codeBounds.w/2, codeBounds.y+codeBounds.h/3);
@@ -18571,7 +18571,6 @@ static bool runMarkdownScenario(Session &s, const std::string &shotDir, bool &pa
         if(demo->view()->getVerticalScrollOffset() <= viewOffset)
             fail("code_scroll", "a vertical wheel over the code did not scroll the view");
         settle("step14");
-        (void)before;
     }
 
     // "Wrap code"

@@ -22,6 +22,7 @@ GWENI_CONTROL_CONSTRUCTOR(MarkdownView)
 
 void MarkdownView::onDocumentLink(event::Info info)
 {
+    info.control=this;
     onLinkClicked.call(this, info);
 }
 

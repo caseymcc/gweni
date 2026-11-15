@@ -433,7 +433,10 @@ bool MarkdownText::copySelection()
 void MarkdownText::onLink(event::Info info)
 {
     if(MarkdownDocument *document=documentOf(this))
+    {
+        info.control=document;
         document->onLinkClicked.call(document, info);
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -696,6 +699,21 @@ std::vector<int> MarkdownTable::splitColumns(const std::vector<int> &natural, in
             ++given;
         }
     }
+    // a share raised to 1 is taken back from the widest
+    while(given > left)
+    {
+        size_t widest=count;
+
+        for(size_t i=0; i < count; ++i)
+        {
+            if(!fixed[i] && (widths[i] > 1) && ((widest == count) || (widths[i] > widths[widest])))
+                widest=i;
+        }
+        if(widest == count)
+            break;
+        --widths[widest];
+        --given;
+    }
     return widths;
 }
 
@@ -752,10 +770,16 @@ void MarkdownTable::arrange(skin::Base *skin, Dim dim)
 
         for(size_t column=0; column < columns; ++column)
             natural[column]=((column < m_natural.size())?m_natural[column]:0)+2*CellPaddingX;
+        const std::vector<int> oldEdges=m_columnEdges;
+
         m_columnWidths=splitColumns(natural, getWidth()-int(columns+1)*Border);
         m_columnEdges.assign(columns+1, 0);
         for(size_t column=0; column < columns; ++column)
             m_columnEdges[column+1]=m_columnEdges[column]+Border+m_columnWidths[column];
+        // the grid is drawn from the edges: lines moved inside the same
+        // bounds are the table's change alone
+        if(m_columnEdges != oldEdges)
+            addStateChange(StateChange_Background);
 
         for(const std::vector<MarkdownText *> &cells:m_cells)
         {
@@ -776,6 +800,8 @@ void MarkdownTable::arrange(skin::Base *skin, Dim dim)
     }
     else
     {
+        const std::vector<int> oldEdges=m_rowEdges;
+
         m_rowEdges.assign(m_cells.size()+1, 0);
         for(size_t row=0; row < m_cells.size(); ++row)
         {
@@ -786,6 +812,8 @@ void MarkdownTable::arrange(skin::Base *skin, Dim dim)
                 placeChild(cell, cell->getX(), m_rowEdges[row]+Border+CellPaddingY, cell->getWidth(),
                     cell->getPreferredSize().height);
         }
+        if(m_rowEdges != oldEdges)
+            addStateChange(StateChange_Background);
     }
 
     ParentClass::arrange(skin, dim);
@@ -944,10 +972,10 @@ void MarkdownDocument::setMarkdown(const String &markdown)
     if(markdown == m_markdown)
         return;
 
-    // the selection's ends by the texts that hold them
-    const bool selected=!m_selection.empty();
-    const Selectable *anchor=selected?selectableAt(m_selection.anchor().block):nullptr;
-    const Selectable *focus=selected?selectableAt(m_selection.focus().block):nullptr;
+    // the selection's ends (a caret's too) by the texts that hold them
+    const Selectable *anchor=selectableAt(m_selection.anchor().block);
+    const Selectable *focus=selectableAt(m_selection.focus().block);
+    const bool selected=(anchor != nullptr) || (focus != nullptr);
     const internal::MarkdownText *anchorText=anchor?anchor->text:nullptr;
     const internal::MarkdownText *focusText=focus?focus->text:nullptr;
     const size_t anchorOffset=m_selection.anchor().offset;
@@ -961,10 +989,19 @@ void MarkdownDocument::setMarkdown(const String &markdown)
     {
         anchor=selectableOf(anchorText);
         focus=selectableOf(focusText);
+        // clamped to the new text, back to the start of a code point
+        auto at=[](const Selectable *end, size_t offset)
+        {
+            const String &shown=end->text->getText();
+
+            offset=std::min(offset, shown.size());
+            while((offset > 0) && (offset < shown.size()) && ((static_cast<unsigned char>(shown[offset])&0xC0) == 0x80))
+                --offset;
+            return text::SelectionPosition(end->path, offset);
+        };
+
         if(anchor && focus)
-            m_selection.select(
-                text::SelectionPosition(anchor->path, std::min(anchorOffset, anchor->text->getText().size())),
-                text::SelectionPosition(focus->path, std::min(focusOffset, focus->text->getText().size())));
+            m_selection.select(at(anchor, anchorOffset), at(focus, focusOffset));
         else
             m_selection.clear();
     }
@@ -1181,8 +1218,10 @@ String MarkdownDocument::getSelectedText()
             if((previous->kind == Selectable::Kind::Cell) && (selectable.kind == Selectable::Kind::Cell)
                 && (previous->table == selectable.table) && (previous->row == selectable.row))
                 out+='\t';
-            else if(previous->kind == Selectable::Kind::Marker)
-                out+=' ';
+            else if((previous->kind == Selectable::Kind::Marker)
+                && (selectable.path.size() >= previous->path.size())
+                && std::equal(previous->path.begin(), previous->path.end()-1, selectable.path.begin()))
+                out+=' '; // the marker's item's own text (an empty item's next marker is not)
             else
                 out+='\n';
         }
