@@ -4,6 +4,7 @@
 
 #include <gweni/platforms/renderers/slotRenderer.h>
 
+#include <memory>
 #include <string>
 #include <vector>
 #include <glm/glm.hpp>
@@ -59,6 +60,29 @@ public:
     //! on and the scissor test off for the clear; the app's clear depth, depth
     //! mask and scissor test are as they were after it.
     void clearDepth() override;
+
+    //! Whether a frame gives the app's GL state back (off by default, so a frame
+    //! makes no GL call beyond its own). On, begin() saves what the frame and its
+    //! uploads change or depend on and sets gweni's own (the viewport at the
+    //! view rect, unit 0 active, no sampler objects on gweni's texture units,
+    //! the scissor, stencil and cull tests off, depth writes, colour writes,
+    //! GL_FUNC_ADD, the depth range 0..1, unpack alignment 4 and no row length
+    //! or skips, and on desktop GL GL_FILL and no GL_FRAMEBUFFER_SRGB), and end(),
+    //! after flush(), puts it all back: the program, the vertex array, the array
+    //! buffer, the active unit and units 0..6's 2D and 2D-array textures and
+    //! samplers, blend enable, function (separate) and equation, depth test,
+    //! function, mask and range, cull face, scissor test and box, stencil test,
+    //! colour mask, viewport, pixel pack and unpack state, and on desktop GL the
+    //! polygon mode and GL_FRAMEBUFFER_SRGB. GL calls gweni makes outside a frame
+    //! (a font or image loaded, readPixels) still change state. For an app that
+    //! draws its own GL scene around gweni (docs/architecture.md -> "gweni over
+    //! an app's scene").
+    void setPreserveAppState(bool preserve) { m_preserveAppState=preserve; }
+    bool preserveAppState() const { return m_preserveAppState; }
+
+    void begin() override;
+    void end() override;
+
     void readPixels(int width, int height, std::vector<uint8_t> &pixels) override;
     bool textureExists(TextureHandle handle) const override;
     bool textureChannelSizes(TextureHandle handle, int bits[4]) const override;
@@ -185,6 +209,13 @@ private:
     void drawRanges(const ChunkDraw &draw);
 
     void setTexture(unsigned int texture);
+
+    //! setPreserveAppState(): whether it is on, and the app's state begin() saved
+    struct AppState;
+    bool m_preserveAppState=false;
+    //! begin() saved m_appState, which end() gives back
+    bool m_appStateSaved=false;
+    std::unique_ptr<AppState> m_appState;
 
     //! Unit 0 is setTexture's and the text's atlas, 1 the clip boxes, the image
     //! pages (SlotRenderer::ImageClasses) from this one on

@@ -155,6 +155,184 @@ void OpenGLCore::clearDepth()
         setClearDepth(clearDepth);
 }
 
+//! The app's GL state a frame changes or depends on (setPreserveAppState)
+struct OpenGLCore::AppState
+{
+    //! units 0..UnitCount-1: setTexture's and the atlases', the clip boxes', the
+    //! image pages'
+    static constexpr int UnitCount=FirstImageUnit+(int)ImageClasses;
+
+    GLint program=0;
+    GLint vertexArray=0;
+    GLint arrayBuffer=0;
+    GLint activeTexture=GL_TEXTURE0;
+    GLint texture2D[UnitCount]={};
+    GLint texture2DArray[UnitCount]={};
+    GLint sampler[UnitCount]={};
+    GLboolean blend=GL_FALSE;
+    GLint blendSrcRgb=GL_ONE, blendDstRgb=GL_ZERO, blendSrcAlpha=GL_ONE, blendDstAlpha=GL_ZERO;
+    GLint blendEquationRgb=GL_FUNC_ADD, blendEquationAlpha=GL_FUNC_ADD;
+    GLboolean depthTest=GL_FALSE;
+    GLint depthFunc=GL_LESS;
+    GLboolean depthMask=GL_TRUE;
+    GLfloat depthRange[2]={0.0f, 1.0f};
+    GLboolean cullFace=GL_FALSE;
+    GLboolean scissorTest=GL_FALSE;
+    GLint scissorBox[4]={};
+    GLboolean stencilTest=GL_FALSE;
+    GLboolean colorMask[4]={GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE};
+    GLint viewport[4]={};
+    GLint packAlignment=4;
+    GLint unpackAlignment=4, unpackRowLength=0, unpackSkipRows=0, unpackSkipPixels=0;
+#ifndef GWENI_GL_ES
+    GLint polygonMode[2]={GL_FILL, GL_FILL};
+    GLboolean framebufferSrgb=GL_FALSE;
+#endif
+
+    void save()
+    {
+        glGetIntegerv(GL_CURRENT_PROGRAM, &program);
+        glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vertexArray);
+        glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &arrayBuffer);
+        glGetIntegerv(GL_ACTIVE_TEXTURE, &activeTexture);
+        for(int unit=0; unit<UnitCount; ++unit)
+        {
+            glActiveTexture(GL_TEXTURE0+(GLenum)unit);
+            glGetIntegerv(GL_TEXTURE_BINDING_2D, &texture2D[unit]);
+            glGetIntegerv(GL_TEXTURE_BINDING_2D_ARRAY, &texture2DArray[unit]);
+            glGetIntegerv(GL_SAMPLER_BINDING, &sampler[unit]);
+        }
+        blend=glIsEnabled(GL_BLEND);
+        glGetIntegerv(GL_BLEND_SRC_RGB, &blendSrcRgb);
+        glGetIntegerv(GL_BLEND_DST_RGB, &blendDstRgb);
+        glGetIntegerv(GL_BLEND_SRC_ALPHA, &blendSrcAlpha);
+        glGetIntegerv(GL_BLEND_DST_ALPHA, &blendDstAlpha);
+        glGetIntegerv(GL_BLEND_EQUATION_RGB, &blendEquationRgb);
+        glGetIntegerv(GL_BLEND_EQUATION_ALPHA, &blendEquationAlpha);
+        depthTest=glIsEnabled(GL_DEPTH_TEST);
+        glGetIntegerv(GL_DEPTH_FUNC, &depthFunc);
+        glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMask);
+        glGetFloatv(GL_DEPTH_RANGE, depthRange);
+        cullFace=glIsEnabled(GL_CULL_FACE);
+        scissorTest=glIsEnabled(GL_SCISSOR_TEST);
+        glGetIntegerv(GL_SCISSOR_BOX, scissorBox);
+        stencilTest=glIsEnabled(GL_STENCIL_TEST);
+        glGetBooleanv(GL_COLOR_WRITEMASK, colorMask);
+        glGetIntegerv(GL_VIEWPORT, viewport);
+        glGetIntegerv(GL_PACK_ALIGNMENT, &packAlignment);
+        glGetIntegerv(GL_UNPACK_ALIGNMENT, &unpackAlignment);
+        glGetIntegerv(GL_UNPACK_ROW_LENGTH, &unpackRowLength);
+        glGetIntegerv(GL_UNPACK_SKIP_ROWS, &unpackSkipRows);
+        glGetIntegerv(GL_UNPACK_SKIP_PIXELS, &unpackSkipPixels);
+#ifndef GWENI_GL_ES
+        glGetIntegerv(GL_POLYGON_MODE, polygonMode);
+        framebufferSrgb=glIsEnabled(GL_FRAMEBUFFER_SRGB);
+#endif
+    }
+
+    //! What the frame relies on and does not set itself
+    static void setGweniState(const Rect &view)
+    {
+        for(int unit=0; unit<UnitCount; ++unit)
+            glBindSampler((GLuint)unit, 0);
+        glActiveTexture(GL_TEXTURE0);
+        glViewport(view.x, view.y, view.w, view.h);
+        glDisable(GL_SCISSOR_TEST);
+        glDisable(GL_STENCIL_TEST);
+        glDisable(GL_CULL_FACE);
+        glDepthMask(GL_TRUE);
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+        glBlendEquation(GL_FUNC_ADD);
+        setDepthRange(0.0f, 1.0f);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+        glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+        glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+#ifndef GWENI_GL_ES
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        glDisable(GL_FRAMEBUFFER_SRGB);
+#endif
+    }
+
+    void restore() const
+    {
+        glUseProgram((GLuint)program);
+        glBindVertexArray((GLuint)vertexArray);
+        glBindBuffer(GL_ARRAY_BUFFER, (GLuint)arrayBuffer);
+        for(int unit=0; unit<UnitCount; ++unit)
+        {
+            glActiveTexture(GL_TEXTURE0+(GLenum)unit);
+            glBindTexture(GL_TEXTURE_2D, (GLuint)texture2D[unit]);
+            glBindTexture(GL_TEXTURE_2D_ARRAY, (GLuint)texture2DArray[unit]);
+            glBindSampler((GLuint)unit, (GLuint)sampler[unit]);
+        }
+        glActiveTexture((GLenum)activeTexture);
+        enable(GL_BLEND, blend);
+        glBlendFuncSeparate((GLenum)blendSrcRgb, (GLenum)blendDstRgb, (GLenum)blendSrcAlpha,
+            (GLenum)blendDstAlpha);
+        glBlendEquationSeparate((GLenum)blendEquationRgb, (GLenum)blendEquationAlpha);
+        enable(GL_DEPTH_TEST, depthTest);
+        glDepthFunc((GLenum)depthFunc);
+        glDepthMask(depthMask);
+        setDepthRange(depthRange[0], depthRange[1]);
+        enable(GL_CULL_FACE, cullFace);
+        enable(GL_SCISSOR_TEST, scissorTest);
+        glScissor(scissorBox[0], scissorBox[1], scissorBox[2], scissorBox[3]);
+        enable(GL_STENCIL_TEST, stencilTest);
+        glColorMask(colorMask[0], colorMask[1], colorMask[2], colorMask[3]);
+        glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+        glPixelStorei(GL_PACK_ALIGNMENT, packAlignment);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, unpackAlignment);
+        glPixelStorei(GL_UNPACK_ROW_LENGTH, unpackRowLength);
+        glPixelStorei(GL_UNPACK_SKIP_ROWS, unpackSkipRows);
+        glPixelStorei(GL_UNPACK_SKIP_PIXELS, unpackSkipPixels);
+#ifndef GWENI_GL_ES
+        glPolygonMode(GL_FRONT_AND_BACK, (GLenum)polygonMode[0]);
+        enable(GL_FRAMEBUFFER_SRGB, framebufferSrgb);
+#endif
+    }
+
+    static void enable(GLenum cap, GLboolean on)
+    {
+        if(on)
+            glEnable(cap);
+        else
+            glDisable(cap);
+    }
+
+    // glDepthRange on desktop GL (glDepthRangef is 4.1), glDepthRangef on GLES
+    static void setDepthRange(GLfloat nearValue, GLfloat farValue)
+    {
+#ifdef GWENI_GL_ES
+        glDepthRangef(nearValue, farValue);
+#else
+        glDepthRange(nearValue, farValue);
+#endif
+    }
+};
+
+void OpenGLCore::begin()
+{
+    if(m_preserveAppState)
+    {
+        if(!m_appState)
+            m_appState=std::make_unique<AppState>();
+        m_appState->save();
+        m_appStateSaved=true;
+        AppState::setGweniState(viewRect());
+    }
+    SlotRenderer::begin();
+}
+
+void OpenGLCore::end()
+{
+    SlotRenderer::end();
+    // a frame begun with it on gives the state back, whatever was set since
+    if(m_appState && m_appStateSaved)
+        m_appState->restore();
+    m_appStateSaved=false;
+}
+
 void OpenGLCore::readPixels(int width, int height, std::vector<uint8_t> &pixels)
 {
     const size_t rowBytes=static_cast<size_t>(width)*4;
