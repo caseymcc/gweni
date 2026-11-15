@@ -32,6 +32,7 @@
 #include <gweni/controls/comboBox.h>
 #include <gweni/controls/crossSplitter.h>
 #include <gweni/controls/dataTable.h>
+#include <gweni/controls/dateEdit.h>
 #include <gweni/controls/dialogs/dialog.h>
 #include <gweni/controls/dialogs/fileOpen.h>
 #include <gweni/controls/dialogs/fileSave.h>
@@ -110,6 +111,7 @@
 #include <gweni/controls/tabTitleBar.h>
 #include <gweni/controls/text.h>
 #include <gweni/controls/textBox.h>
+#include <gweni/controls/timeEdit.h>
 #include <gweni/controls/timeline.h>
 #include <gweni/controls/toast.h>
 #include <gweni/controls/toolTip.h>

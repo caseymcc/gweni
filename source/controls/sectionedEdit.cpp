@@ -160,7 +160,7 @@ bool SectionedEdit::setFormat(const String &pattern)
     const bool time=has(SectionKind::Hour24) || has(SectionKind::Hour12) || has(SectionKind::Minute)
         || has(SectionKind::AmPm);
 
-    if(date == time)
+    if((date == time) || !formatAllowed(date))
         return false;
     if(date && !(has(SectionKind::Year) && has(SectionKind::Month) && has(SectionKind::Day)))
         return false;

@@ -248,6 +248,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/crossSplitter.cpp
     include/gweni/controls/dataTable.h
     source/controls/dataTable.cpp
+    include/gweni/controls/dateEdit.h
+    source/controls/dateEdit.cpp
     include/gweni/controls/treeTable.h
     source/controls/treeTable.cpp
     include/gweni/controls/dockBase.h
@@ -378,6 +380,8 @@ set(GWENI_CONTROL_SOURCES
     include/gweni/controls/textBox.h
     source/controls/textBox.cpp
     source/controls/textBoxNumeric.cpp
+    include/gweni/controls/timeEdit.h
+    source/controls/timeEdit.cpp
     include/gweni/controls/timeline.h
     source/controls/timeline.cpp
     include/gweni/controls/treeControl.h

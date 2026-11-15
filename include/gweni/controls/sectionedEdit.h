@@ -206,6 +206,10 @@ protected:
     //! Whether the field takes \p value (in its range): a DateEdit's date
     //! filter. Everything by default.
     virtual bool acceptsValue(const Value &/*value*/) const { return true; }
+    //! Whether the field takes a date format (\p date) or a time format: a
+    //! DateEdit only a date's, a TimeEdit only a time's. Either by default.
+    //! Not asked by the format SectionedEdit's own constructor sets.
+    virtual bool formatAllowed(bool /*date*/) const { return true; }
 
     //! The value clamped to the range.
     Value clampValue(const Value &value) const;

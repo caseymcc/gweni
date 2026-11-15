@@ -1,0 +1,334 @@
+/*
+ *  Gweni
+ *  Copyright (c) 2010 Facepunch Studios
+ *  MIT License, see LICENSE
+ *
+ *  controls::DateEdit on a real Canvas with the real (un-init()'d) textured
+ *  skin on a StubRenderer, keyed through input::onKeyEvent and typed through
+ *  Canvas::inputCharacter.
+ *
+ *  Its text in ISO ("2026-11-01", the default), D/M/Y ("01/11/2026") and
+ *  M/D/Y ("11/1/2026") formats, and a time's format refused. Up and Down in
+ *  the day (31 to 1 and back in a 31-day month, 30 to 1 in a 30-day one, 29
+ *  to 1 in a leap February), the month (December to January in the same
+ *  year, the 31st a month on clamped to November 30 and to February 28 or
+ *  29) and the year sections (February 29 a year on is the 28th), the caret
+ *  kept in its section; PageUp and PageDown taking a year in the day and
+ *  month sections and ten in the year's. The lenient parse on Return
+ *  ("2026-11-1", "11/1/2026" for M/D/YYYY, "1/11/2026" for DD/MM/YYYY,
+ *  "20261101"), and text that is no date ("2026-02-30", "Nov 1", "") reverting
+ *  on Return, on the focus leaving and on Escape. setRange clamping a typed
+ *  and a stepped date. A weekend filter refusing a typed Saturday and a
+ *  stepped day passing over the weekend (Friday to Monday, and back);
+ *  isDateEnabled following the range and the filter. Empty allowed and not,
+ *  a step from empty showing setToday's date. onValueChanged once per real
+ *  change by the user, never from setDate, setRange, setFormat or the filter.
+ */
+#include "headlessFixture.h"
+
+#include <gweni/controls/canvas.h>
+#include <gweni/controls/dateEdit.h>
+#include <gweni/inputHandler.h>
+#include <gweni/platforms/platform.h>
+#include <gweni/skins/textured/texturedSkin.h>
+
+#include <doctest/doctest.h>
+
+using namespace gweni;
+using controls::DateEdit;
+
+namespace
+{
+
+//! Counts onValueChanged.
+struct Changes: public event::Handler
+{
+    int count=0;
+
+    void changed(event::Info) { ++count; }
+};
+
+bool weekday(const Date &date)
+{
+    return (date.weekday() != 0) && (date.weekday() != 6);
+}
+
+struct Scene
+{
+    test::StubRenderer renderer;
+    skin::textured::TexturedSkin skin{&renderer};
+    controls::Canvas *canvas=nullptr;
+    DateEdit *edit=nullptr;
+    Changes events;
+
+    Scene()
+    {
+        platform::setTimeSource([]() { return 10.0; });
+        canvas=new controls::Canvas(&skin);
+        canvas->setSize(640, 480);
+        edit=canvas->newChild<DateEdit>();
+        edit->setPos(20, 20);
+        edit->onValueChanged.add(&events, &Changes::changed);
+        frame();
+    }
+
+    Scene(const Scene &)=delete;
+    Scene &operator=(const Scene &)=delete;
+
+    ~Scene()
+    {
+        HoveredControl=nullptr;
+        KeyboardFocus=nullptr;
+        MouseFocus=nullptr;
+        delete canvas;
+        platform::setTimeSource(nullptr);
+    }
+
+    void frame()
+    {
+        canvas->updateCanvas();
+        canvas->renderCanvas();
+    }
+
+    void key(int key)
+    {
+        input::onKeyEvent(canvas, key, true);
+        input::onKeyEvent(canvas, key, false);
+        frame();
+    }
+
+    void caretAt(int pos)
+    {
+        edit->focus();
+        edit->setCursorPos(pos);
+        edit->setCursorend(pos);
+    }
+
+    //! Types \p text over the whole field.
+    void type(const char *text)
+    {
+        edit->focus();
+        edit->onSelectAll(edit);
+        if(!*text)
+            edit->onKeyBackspace(true);
+        for(const char *c=text; *c; ++c)
+            canvas->inputCharacter(static_cast<UnicodeChar>(*c));
+    }
+
+    String enter(const char *text)
+    {
+        type(text);
+        key(keys::Return);
+        return edit->getText();
+    }
+
+    String step(int caret, int key)
+    {
+        caretAt(caret);
+        this->key(key);
+        return edit->getText();
+    }
+
+    String date() const
+    {
+        return edit->getDate()?edit->getDate()->toIso():String("none");
+    }
+};
+
+}//namespace
+
+TEST_CASE("DateEdit: each format's text")
+{
+    Scene scene;
+    DateEdit *edit=scene.edit;
+
+    CHECK(edit->getFormat() == "YYYY-MM-DD");
+    CHECK(edit->getText() == "1970-01-01");
+    edit->setDate(Date(2026, 11, 1));
+    CHECK(edit->getText() == "2026-11-01");
+    CHECK(edit->setFormat("DD/MM/YYYY"));
+    CHECK(edit->getText() == "01/11/2026");
+    CHECK(edit->setFormat("M/D/YYYY"));
+    CHECK(edit->getText() == "11/1/2026");
+    CHECK(edit->setFormat("D.M.YYYY"));
+    CHECK(edit->getText() == "1.11.2026");
+
+    // a time's format is refused, an invalid date ignored
+    CHECK_FALSE(edit->setFormat("HH:mm"));
+    CHECK(edit->getFormat() == "D.M.YYYY");
+    edit->setDate(Date(2026, 2, 30));
+    CHECK(scene.date() == "2026-11-01");
+    CHECK(scene.events.count == 0);
+}
+
+TEST_CASE("DateEdit: Up and Down in each section, wrapping, and the 31st in a 30-day month")
+{
+    Scene scene;
+    DateEdit *edit=scene.edit;
+
+    edit->setDate(Date(2026, 10, 31));
+    // the day: 31 to 1 in October, and back
+    CHECK(scene.step(9, keys::Up) == "2026-10-01");
+    CHECK(scene.step(9, keys::Down) == "2026-10-31");
+    CHECK(edit->getCursorPos() == 9);
+    // the month: the 31st into November is the 30th
+    CHECK(scene.step(6, keys::Up) == "2026-11-30");
+    CHECK(edit->getCursorPos() == 6);
+    // and the 30th wraps to the 1st in November
+    CHECK(scene.step(9, keys::Up) == "2026-11-01");
+    CHECK(scene.step(9, keys::Down) == "2026-11-30");
+    // December to January in the same year
+    edit->setDate(Date(2026, 12, 15));
+    CHECK(scene.step(6, keys::Up) == "2026-01-15");
+    CHECK(scene.step(6, keys::Down) == "2026-12-15");
+    // the year, a leap day a year on the 28th
+    CHECK(scene.step(2, keys::Up) == "2027-12-15");
+    edit->setDate(Date(2024, 2, 29));
+    CHECK(scene.step(9, keys::Up) == "2024-02-01");
+    CHECK(scene.step(9, keys::Down) == "2024-02-29");
+    CHECK(scene.step(2, keys::Up) == "2025-02-28");
+    edit->setDate(Date(2026, 1, 31));
+    CHECK(scene.step(6, keys::Up) == "2026-02-28");
+    CHECK(scene.events.count == 12);
+
+    // the sections follow the format: D/M/Y's day is first
+    edit->setFormat("DD/MM/YYYY");
+    edit->setDate(Date(2026, 4, 30));
+    CHECK(scene.step(1, keys::Up) == "01/04/2026");
+    CHECK(scene.step(4, keys::Up) == "01/05/2026");
+    CHECK(scene.step(8, keys::Down) == "01/05/2025");
+}
+
+TEST_CASE("DateEdit: PageUp and PageDown")
+{
+    Scene scene;
+    DateEdit *edit=scene.edit;
+
+    edit->setDate(Date(2026, 11, 15));
+    CHECK(scene.step(9, keys::PageUp) == "2027-11-15");
+    CHECK(scene.step(9, keys::PageDown) == "2026-11-15");
+    CHECK(scene.step(6, keys::PageUp) == "2027-11-15");
+    CHECK(scene.step(6, keys::PageDown) == "2026-11-15");
+    CHECK(scene.step(2, keys::PageUp) == "2036-11-15");
+    CHECK(scene.step(2, keys::PageDown) == "2026-11-15");
+    CHECK(scene.events.count == 6);
+}
+
+TEST_CASE("DateEdit: the lenient parse, and text that is no date reverting")
+{
+    Scene scene;
+    DateEdit *edit=scene.edit;
+
+    edit->setDate(Date(2026, 1, 1));
+    CHECK(scene.enter("2026-11-1") == "2026-11-01");
+    CHECK(scene.enter("20261102") == "2026-11-02");
+    CHECK(scene.enter("2026/11/3") == "2026-11-03");
+    edit->setFormat("M/D/YYYY");
+    CHECK(scene.enter("11/1/2026") == "11/1/2026");
+    CHECK(scene.date() == "2026-11-01");
+    edit->setFormat("DD/MM/YYYY");
+    CHECK(scene.enter("2/11/2026") == "02/11/2026");
+    CHECK(scene.date() == "2026-11-02");
+    CHECK(scene.events.count == 5);
+
+    // no date: reverted on Return, on the focus leaving, on Escape
+    CHECK(scene.enter("30/02/2026") == "02/11/2026");
+    CHECK(scene.enter("Nov 1") == "02/11/2026");
+    CHECK(scene.enter("") == "02/11/2026");
+    scene.type("31/04/2026");
+    edit->unfocus();
+    CHECK(edit->getText() == "02/11/2026");
+    scene.type("24/12/2026");
+    scene.key(keys::Escape);
+    CHECK(edit->getText() == "02/11/2026");
+    CHECK(scene.events.count == 5);
+    // a date typed and the focus leaving takes it
+    scene.type("24/12/2026");
+    edit->unfocus();
+    CHECK(scene.date() == "2026-12-24");
+    CHECK(scene.events.count == 6);
+}
+
+TEST_CASE("DateEdit: the range clamps a typed and a stepped date")
+{
+    Scene scene;
+    DateEdit *edit=scene.edit;
+
+    edit->setDate(Date(2026, 11, 15));
+    edit->setRange(Date(2026, 11, 5), Date(2026, 12, 18));
+    CHECK(edit->getMinDate()->toIso() == "2026-11-05");
+    CHECK(edit->getMaxDate()->toIso() == "2026-12-18");
+    CHECK(scene.enter("2027-01-01") == "2026-12-18");
+    CHECK(scene.enter("2026-01-01") == "2026-11-05");
+    CHECK(scene.step(2, keys::Up) == "2026-12-18");
+    CHECK(scene.step(6, keys::Down) == "2026-11-18");
+    CHECK(scene.events.count == 4);
+    CHECK(edit->isDateEnabled(Date(2026, 11, 5)));
+    CHECK_FALSE(edit->isDateEnabled(Date(2026, 11, 4)));
+    CHECK_FALSE(edit->isDateEnabled(Date(2026, 12, 19)));
+
+    // the setters clamp, with no event
+    edit->setDate(Date(2020, 1, 1));
+    CHECK(scene.date() == "2026-11-05");
+    edit->setRange(Date(2026, 11, 20), std::nullopt);
+    CHECK(scene.date() == "2026-11-20");
+    CHECK(scene.events.count == 4);
+}
+
+TEST_CASE("DateEdit: the filter refuses a typed date and is passed over by a step")
+{
+    Scene scene;
+    DateEdit *edit=scene.edit;
+
+    // 2026-11-13 is a Friday
+    edit->setDate(Date(2026, 11, 13));
+    edit->setDateFilter(weekday);
+    CHECK(edit->isDateEnabled(Date(2026, 11, 13)));
+    CHECK_FALSE(edit->isDateEnabled(Date(2026, 11, 14)));
+
+    // a Saturday typed reverts; a Monday is taken
+    CHECK(scene.enter("2026-11-14") == "2026-11-13");
+    CHECK(scene.events.count == 0);
+    CHECK(scene.enter("2026-11-16") == "2026-11-16");
+    CHECK(scene.events.count == 1);
+    // the day back from Monday is Friday, and on again Monday
+    CHECK(scene.step(9, keys::Down) == "2026-11-13");
+    CHECK(scene.step(9, keys::Up) == "2026-11-16");
+    CHECK(scene.events.count == 3);
+
+    // the setter does not ask it; no filter takes everything
+    edit->setDate(Date(2026, 11, 15));
+    CHECK(scene.date() == "2026-11-15");
+    edit->setDateFilter(nullptr);
+    CHECK(scene.enter("2026-11-14") == "2026-11-14");
+    CHECK(scene.events.count == 4);
+}
+
+TEST_CASE("DateEdit: empty allowed and not")
+{
+    Scene scene;
+    DateEdit *edit=scene.edit;
+
+    edit->setDate(Date(2026, 11, 15));
+    edit->setDate(std::nullopt);
+    CHECK(scene.date() == "2026-11-15");
+    CHECK(scene.enter("") == "2026-11-15");
+    CHECK(scene.events.count == 0);
+
+    edit->setAllowEmpty(true);
+    CHECK(edit->allowsEmpty());
+    CHECK(scene.enter("") == "");
+    CHECK(scene.date() == "none");
+    CHECK(scene.events.count == 1);
+    // a step from empty shows today
+    edit->setToday(Date(2026, 11, 15));
+    CHECK(edit->getToday().toIso() == "2026-11-15");
+    CHECK(scene.step(0, keys::Up) == "2026-11-15");
+    CHECK(scene.events.count == 2);
+    edit->setDate(std::nullopt);
+    CHECK(edit->getText() == "");
+    // not allowed any more: today
+    edit->setAllowEmpty(false);
+    CHECK(scene.date() == "2026-11-15");
+    CHECK(scene.events.count == 2);
+}
