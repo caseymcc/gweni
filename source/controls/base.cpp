@@ -1081,6 +1081,8 @@ void Base::setHidden(bool hidden)
     if(!m_ancestorHidden)
     {
         addStateChange(StateChange_Visibility);
+        if(!hidden)
+            showOpacityChange();
 
         for(auto &&child : m_children)
             child->setAncestorHidden(hidden);
@@ -1102,7 +1104,10 @@ void Base::setAncestorHidden(bool ancestorHidden)
     if(m_hidden)
         return;
     if(!ancestorHidden)
+    {
         m_hiddenWidthCurrent=false;
+        showOpacityChange();
+    }
 
     addStateChange(StateChange_Visibility);
 
@@ -1142,6 +1147,14 @@ void Base::clearOpacity()
         applyOpacity(1.0f, 1.0f);
 }
 
+void Base::showOpacityChange()
+{
+    if(!m_opacityPending)
+        return;
+    m_opacityPending=false;
+    addStateChange(StateChange_Background|StateChange_Text);
+}
+
 void Base::applyOpacity(float surface, float text)
 {
     if((m_surfaceOpacity == surface) && (m_textOpacity == text))
@@ -1150,8 +1163,13 @@ void Base::applyOpacity(float surface, float text)
     m_surfaceOpacity=surface;
     m_textOpacity=text;
     // what ThemeEditor::applyToCanvas marks: every slot and run is drawn again
-    // at the new levels, with nothing laid out
-    addStateChange(StateChange_Background|StateChange_Text);
+    // at the new levels, with nothing laid out. A hidden control is not drawn,
+    // so it is marked when it is shown (showOpacityChange), not now: a fade
+    // over a page holding hidden pages redraws only what shows.
+    if(visible())
+        addStateChange(StateChange_Background|StateChange_Text);
+    else
+        m_opacityPending=true;
 
     for(auto &&child : m_children)
     {

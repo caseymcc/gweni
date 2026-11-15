@@ -1248,8 +1248,12 @@ protected:
 
     //! Sets the effective opacity levels of this control and of each
     //! descendant without an own setting (the walk stops there), marking
-    //! StateChange_Background|StateChange_Text on each whose levels changed.
+    //! StateChange_Background|StateChange_Text on each whose levels changed
+    //! and that is visible() (one that is not is marked when it is shown).
     void applyOpacity(float surface, float text);
+    //! Marks the levels applyOpacity() changed while the control was hidden,
+    //! as it is shown.
+    void showOpacityChange();
 
     Base *m_toolTip=nullptr;
     gweni::String m_toolTipText;
@@ -1742,6 +1746,8 @@ protected:
     bool m_arrangeAll[2]={true, true};
     //! hasOwnOpacity(): m_surfaceOpacity and m_textOpacity are its own levels
     bool m_ownOpacity=false;
+    //! Its levels changed while it was not visible(): marked as it is shown.
+    bool m_opacityPending=false;
     //! \}
 
     //! While one is alive, the layout invalidations raised are placement, not

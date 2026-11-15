@@ -1521,7 +1521,16 @@ own levels.
 
 **What a change costs.** A change marks `StateChange_Background|StateChange_Text`
 (the pair `ThemeEditor::applyToCanvas` marks) on exactly the controls whose effective
-levels changed, and nothing else: no `invalidate()`, no layout pass, no z renumber.
+levels changed and that are `visible()`, and nothing else: no `invalidate()`, no layout
+pass, no z renumber. A hidden control (a TabControl's other pages, the shell's hidden
+pages, a closed list) gets its new levels cached all the same but is not marked, since
+it is not drawn: it keeps a flag (`m_opacityPending`, in `Base`'s padding) and is
+marked as it is shown (`showOpacityChange()`, from `setHidden()` and
+`setAncestorHidden()`). So a fade over the demo shell's host draws again what shows:
+its frame changes 565 controls and writes 1617 glyph slots, where marking the hidden
+pages too changed 6324 and wrote 20 940 (3.7 MB uploaded against 0.3 MB). The textured
+renderers draw a control in full on a show anyway, so the flag is for a skin whose
+show does not.
 The render drain draws them again: `Base::drainRenderQueue`'s `renderQueued` sets each
 control's levels on the renderer (`renderer::Base::setOpacity(surface, text)`) beside
 its offset and clip, only when they differ from the renderer's, so a UI with no level
@@ -1543,11 +1552,16 @@ text level, kept as `TextRun::color`'s alpha, and a plain run whose colour or le
 alone changed has its glyph colours rewritten (`colorTextRun`) instead of being laid
 out again, as a run with colour spans already was.
 
-**Level 0 draws nothing and writes no depth.** A style-1 fill at alpha 0 would still
-write depth (the fragment shader's discard spares it), so a slot drawn at a level of 0
-is written hidden (style 0, which the vertex shader collapses; `hideAtLevelZero`), and
-`showPrimitive()` keeps it hidden while its control's level is 0; a run at text level
-0 is in no draw list (`drawnRange`). A level-0 control still lays out, hit-tests and
+**Level 0 draws nothing and writes no depth.** A style-1 fill or a style-8 grid at
+alpha 0 would still write depth (the fragment shader's discard spares those two
+styles), so a slot drawn at a level of 0 is written hidden (style 0, which the vertex
+shader collapses; `hideAtLevelZero`), and `showPrimitive()` keeps it hidden while its
+control's level is 0. A level above 0 can round every alpha to 0 too (255 below
+1/510, a fainter colour sooner), so below 1 a fill or a grid whose every alpha the
+level made 0 is hidden as well (`SlotRenderer::clearAtLevel`, read in both places; at
+1 nothing is hidden, so the bytes are as before #686). `hideAtLevelZero` runs before
+`cullClippedQuad`, which reads the style. A run at text level 0 is in no draw list
+(`drawnRange`). A level-0 control still lays out, hit-tests and
 takes the focus: `hide()` removes a control.
 
 **Skin Controls that keep what they drew.** A level change marks
@@ -1558,7 +1572,10 @@ PlotHistogram, PlotLines, Chart, Timeline, NodeGraph's Link, RichText (Markdown'
 text too), MarkdownTable and NavigationRail. `controltest_opacity_each`
 (`--scenario opacity-round-trip`, every control in `--list`) finds one that does not:
 a demo set to 0.5 once settled must be the demo built at 0.5 (listing, pixels, the
-renderer mirror slot by owner), and set back to 1 its first frame, byte for byte.
+renderer mirror slot by owner, a hidden control's slots left out: they keep the
+levels they were drawn at until shown), set back to 1 its first frame, byte for byte,
+and set to 0.5 while hidden it must change and write nothing until shown, and then
+be the one set to 0.5 shown.
 OpacityDemo (ControlTest's `--list`) has a panel with sliders for both levels, a
 child at its own 1 and a fade (`--scenario opacity`); `gweni_bench --scene
 opacity-step` steps a 40-control panel's levels over N Labels, the same work at any N.

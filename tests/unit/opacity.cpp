@@ -24,6 +24,9 @@
  *                  exactly the controls whose effective levels changed, calls
  *                  no invalidate(), runs no layout pass and renders those
  *                  controls alone; the same levels again mark nothing.
+ *    hidden        a change marks no control that is not visible(), its levels
+ *                  cached all the same; the show marks the ones whose levels
+ *                  moved meanwhile, and they are drawn at the new levels.
  */
 #include "headlessFixture.h"
 
@@ -349,4 +352,56 @@ TEST_CASE("Opacity: a change marks the controls whose levels changed, lays nothi
     CHECK(controls::invalidateCalls() == invalidations);
     CHECK(scene.canvas->getLayoutStats().passes == 0);
     CHECK(controls::getChangeStats().controls == 2);
+}
+
+TEST_CASE("Opacity: a hidden control is marked when it is shown, not when its levels change")
+{
+    Scene scene;
+
+    scene.frame();
+    scene.frame();
+
+    const int both=controls::StateChange_Background|controls::StateChange_Text;
+
+    // the child hidden on its own, the sibling still shown: a hidden control
+    // is not drawn, so marking it would only redraw it for nobody
+    scene.child->hide();
+    scene.frame();
+    REQUIRE(scene.child->getStateChange() == controls::StateChange_Nothing);
+
+    scene.panel->setOpacity(0.25f);
+    CHECK(scene.panel->getStateChange() == both);
+    CHECK(scene.sibling->getStateChange() == both);
+    // hidden: the levels cached, nothing marked on it or under it
+    CHECK(scene.child->getStateChange() == controls::StateChange_Nothing);
+    checkEffective(scene.child, 0.25f, 0.25f);
+    scene.frame();
+    CHECK(controls::getChangeStats().controls == 2);
+
+    // shown: drawn at the new levels
+    scene.forget();
+    scene.child->show();
+    CHECK((scene.child->getStateChange()&both) == both);
+    scene.frame();
+    checkLevels(scene.drawn(scene.child), 0.25f, 0.25f);
+    checkLevels(scene.drawnText(scene.child), 0.25f, 0.25f);
+
+    // a level that changes while hidden and comes back marks it all the same
+    // (its slots were written at the old one); one that never changed
+    // marks no more than the show does
+    scene.frame();
+    scene.panel->hide();
+    scene.frame();
+    scene.panel->setOpacity(0.75f);
+    CHECK(scene.panel->getStateChange() == controls::StateChange_Nothing);
+    CHECK(scene.sibling->getStateChange() == controls::StateChange_Nothing);
+    scene.forget();
+    scene.panel->show();
+    CHECK((scene.sibling->getStateChange()&both) == both);
+    CHECK((scene.child->getStateChange()&both) == both);
+    // the override's levels never moved: the show marks its visibility alone
+    CHECK((scene.override_->getStateChange()&both) == 0);
+    scene.frame();
+    checkLevels(scene.drawn(scene.sibling), 0.75f, 0.75f);
+    checkLevels(scene.drawnText(scene.child), 0.75f, 0.75f);
 }

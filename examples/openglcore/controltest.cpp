@@ -1970,7 +1970,8 @@ static void printUsage(std::ostream &out)
          "                     hide-show whether a demo hidden and shown again, and\n"
          "                     one built hidden and shown, are the one built shown,\n"
          "                     opacity-round-trip whether a demo set to 0.5 is one\n"
-         "                     built at 0.5 and set back to 1 the one before,\n"
+         "                     built at 0.5 (and one set to it hidden and shown)\n"
+         "                     and set back to 1 the one before,\n"
          "                     demo-labels whether every demo-list label fits,\n"
          "                     plot-histogram whether a changed sample wrote its\n"
          "                     bar's slot alone, plot-lines whether it wrote the\n"
@@ -17956,9 +17957,10 @@ std::vector<gweni::Rect> cardBounds(gweni::FlowDemo *demo)
 
 static void collectMirrorByOwner(gweni::controls::Base *control, const std::string &path,
     const gweni::renderer::SlotRenderer::MirrorSnapshot &mirror,
-    std::map<std::string, std::vector<uint8_t>> &slots);
+    std::map<std::string, std::vector<uint8_t>> &slots, bool shownOnly=false);
 static bool mirrorsMatchByOwner(Session &s, const ResizeState &before,
-    const std::map<std::string, std::vector<uint8_t>> &beforeSlots, const ResizeState &after);
+    const std::map<std::string, std::vector<uint8_t>> &beforeSlots, const ResizeState &after,
+    bool shownOnly=false);
 
 //-----------------------------------------------------------------------------
 // --scenario image-grid: ImageGridDemo's Replace and Free buttons, the clock
@@ -21811,9 +21813,13 @@ static void toggleHost(Session &s, gweni::controls::Base *host, bool show,
 // can take its ids in another order than one built shown (a wrapped Label's
 // lines are made by its first layout, which waits for the show), so the
 // built-hidden state is compared with the reference by owner, not by id.
+// With `shownOnly` a control that is not visible() has every slot counted as
+// "hidden", whatever its bytes: an opacity change does not redraw a hidden
+// control (docs/architecture.md -> "Control opacity"), so its slots keep the
+// levels they were written at until it is shown.
 static void collectMirrorByOwner(gweni::controls::Base *control, const std::string &path,
     const gweni::renderer::SlotRenderer::MirrorSnapshot &mirror,
-    std::map<std::string, std::vector<uint8_t>> &slots)
+    std::map<std::string, std::vector<uint8_t>> &slots, bool shownOnly)
 {
     if(const gweni::skin::Control *skinControl=control->getSkinControl())
     {
@@ -21835,7 +21841,9 @@ static void collectMirrorByOwner(gweni::controls::Base *control, const std::stri
             // the rest of it is whatever was last written there, by this
             // owner or an earlier one of a reused id: only "hidden" counts.
             // A slot is a quad: four vertexes, each starting with its style.
-            if(!text && !bytes.empty() && bytes.size()%4 == 0)
+            if(shownOnly && !control->visible())
+                bytes.assign(1, 0);
+            else if(!text && !bytes.empty() && bytes.size()%4 == 0)
             {
                 const size_t vertexBytes=bytes.size()/4;
                 bool hidden=true;
@@ -21854,14 +21862,15 @@ static void collectMirrorByOwner(gweni::controls::Base *control, const std::stri
 
     size_t index=0;
     for(auto &&child : control->getActualChildren())
-        collectMirrorByOwner(child, childPath(path, child, index++), mirror, slots);
+        collectMirrorByOwner(child, childPath(path, child, index++), mirror, slots, shownOnly);
 }
 
 static bool mirrorsMatchByOwner(Session &s, const ResizeState &before,
-    const std::map<std::string, std::vector<uint8_t>> &beforeSlots, const ResizeState &after)
+    const std::map<std::string, std::vector<uint8_t>> &beforeSlots, const ResizeState &after,
+    bool shownOnly)
 {
     std::map<std::string, std::vector<uint8_t>> afterSlots;
-    collectMirrorByOwner(s.canvas, s.canvas->getTypeName(), after.mirror, afterSlots);
+    collectMirrorByOwner(s.canvas, s.canvas->getTypeName(), after.mirror, afterSlots, shownOnly);
     if(beforeSlots == afterSlots)
         return true;
 
@@ -22156,9 +22165,10 @@ static void setHostOpacity(Session &s, gweni::controls::Base *host, float level,
 }
 
 // A: the demo built at 1 and settled. B: its host set to 0.5. C: the host's
-// opacity cleared. D: on a fresh canvas, the demo built into a host at 0.5
-// already. C has to be A byte for byte (listing, renderer mirror id by id,
-// pixels), and B has to be D (listing, pixels, the mirror slot by owner).
+// opacity cleared. E: the host hidden, set to 0.5 and shown. D: on a fresh
+// canvas, the demo built into a host at 0.5 already. C has to be A byte for
+// byte (listing, renderer mirror id by id, pixels), and B has to be E and D
+// (listing, pixels, the mirror slot by owner).
 static bool runOpacityRoundTripScenario(Session &s, const std::string &controlName,
     const std::string &shotDir, bool &passed)
 {
@@ -22191,7 +22201,8 @@ static bool runOpacityRoundTripScenario(Session &s, const std::string &controlNa
     checkSteady(s, checks, "half_settles");
     if(!shootState(s, halfShot, halfState)) return false;
     std::map<std::string, std::vector<uint8_t>> halfSlots;
-    collectMirrorByOwner(s.canvas, s.canvas->getTypeName(), halfState.mirror, halfSlots);
+    // slot by owner, the hidden controls' left out (collectMirrorByOwner)
+    collectMirrorByOwner(s.canvas, s.canvas->getTypeName(), halfState.mirror, halfSlots, true);
 
     // C
     setHostOpacity(s, host, -1.0f, checks, "full");
@@ -22201,6 +22212,42 @@ static bool runOpacityRoundTripScenario(Session &s, const std::string &controlNa
     checks.check("ids_kept", livePrimitiveIds() == primitiveIds && liveTextIds() == textIds,
         "live primitive ids "+std::to_string(primitiveIds)+" -> "+std::to_string(livePrimitiveIds())
         +", text ids "+std::to_string(textIds)+" -> "+std::to_string(liveTextIds()));
+
+    // E: the host hidden, set to 0.5 and shown again: a level change marks
+    // nothing hidden (the frame changes and writes nothing), and the show
+    // draws it at the new levels, which must be B's
+    const std::string shownShot=shotDir+"/opacity-05-shown-half.png";
+    ResizeState shownState;
+
+    // a hidden control loses the keyboard focus: given back once shown, as
+    // hide-show does
+    const std::string focusPath=(gweni::KeyboardFocus && isUnder(gweni::KeyboardFocus, host))
+        ? pathOf(s.canvas, s.canvas->getTypeName(), gweni::KeyboardFocus) : std::string();
+
+    host->hide();
+    renderFrames(s, s.frames);
+    host->setOpacity(0.5f);
+    gweni::controls::resetChangeStats();
+    renderFrames(s, 1);
+    {
+        const size_t changed=gweni::controls::getChangeStats().controls;
+        const size_t prims=s.renderer->getFrameStats().primitiveSlotsWritten;
+        const size_t texts=s.renderer->getFrameStats().textSlotsWritten;
+
+        checks.check("hidden_set_quiet", (changed == 0) && (prims == 0) && (texts == 0),
+            "the level set on the hidden host changed "+std::to_string(changed)+" controls and wrote "
+            +std::to_string(prims)+" primitive and "+std::to_string(texts)+" glyph slots");
+    }
+    host->show();
+    renderFrames(s, s.frames);
+    giveFocusBack(s, focusPath);
+    checkSteady(s, checks, "shown_half_settles");
+    if(!shootState(s, shownShot, shownState)) return false;
+    bool shownHalf=mirrorsMatchByOwner(s, halfState, halfSlots, shownState, true);
+    shownHalf=listingsMatch(halfState, shownState) && shownHalf;
+    shownHalf=pixelsMatch(halfState, shownState) && shownHalf;
+    checks.check("shown_half", shownHalf,
+        "the demo set to 0.5 while hidden and shown differs from the one set to 0.5 shown (above)");
     dropControl(s, host);
 
     // D
@@ -22213,7 +22260,7 @@ static bool runOpacityRoundTripScenario(Session &s, const std::string &controlNa
     renderFrames(s, s.frames);
     checkSteady(s, checks, "built_half_settles");
     if(!shootState(s, builtShot, builtState)) return false;
-    bool builtHalf=mirrorsMatchByOwner(s, halfState, halfSlots, builtState);
+    bool builtHalf=mirrorsMatchByOwner(s, halfState, halfSlots, builtState, true);
     dropControl(s, host);
 
     // Every comparison runs, so a failing run names all that differs.
