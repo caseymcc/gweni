@@ -220,7 +220,8 @@ public:
     //! Whether a column with a comparator is the sort column.
     bool isSorted() const;
     //! The parent's children in the order shown (sorted, or the app's). A
-    //! collapsed group is sorted by this call if it was stale.
+    //! collapsed group is sorted by this call if it was stale. The reference
+    //! lasts until the next model edit or sort change.
     const std::vector<NodeId> &getShownChildren(NodeId parent);
     size_t getNodeCount() const { return m_nodes.size(); }
     //! Null for an unknown id. The pointer lasts until the next model edit.

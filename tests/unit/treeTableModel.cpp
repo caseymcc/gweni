@@ -32,7 +32,11 @@
  *  answer whose placeholder is the top row shows its first child there;
  *  expandSubtree keeps the first shown node; a sort and then an insert above
  *  the viewport keep the stripes on screen; an edit leaves a pending
- *  scrollToItem alone; a parent whose last child goes is a collapsed leaf.
+ *  scrollToItem alone; a parent whose last child goes is a collapsed leaf;
+ *  a sorted move that changes its old and new parents' keys (folders first,
+ *  a child-count key) leaves every group sorted, and seeded random edits
+ *  while sorted match a sorted rebuild after each one, ties in the app's
+ *  order.
  */
 #include "headlessFixture.h"
 
@@ -1765,5 +1769,265 @@ TEST_CASE("TreeTable model: a parent whose last child goes is a collapsed leaf")
         tree->onKeyLeft(true);
         CHECK(events.collapsed == std::vector<Id>{1});
         scene.frame();
+    }
+}
+
+namespace
+{
+std::vector<Id> shownIds(const Tree *tree)
+{
+    std::vector<Id> result;
+
+    for(const auto &node : tree->getVisibleNodes())
+        result.push_back(node.id);
+    return result;
+}
+
+//! An independent sorted preorder of the app's hierarchy: each group in the
+//! app's order, stably sorted by the table's sort column, direction and
+//! folders-first, column 0 by name and column 1 by a key that follows a
+//! folder's child count (TreeTableDemo's Size).
+struct SortedRebuild
+{
+    Tree *tree;
+    const std::map<Id, String> *names;
+    const std::map<Id, double> *bytes;
+
+    double key(Id id) const
+    {
+        const Tree::Node *node=tree->getNode(id);
+
+        return node->hasChildren?static_cast<double>(node->children.size()):bytes->at(id);
+    }
+
+    bool less(int column, Id a, Id b) const
+    {
+        return column == 0?names->at(a) < names->at(b):key(a) < key(b);
+    }
+
+    void append(std::vector<Id> &into, std::vector<Id> group) const
+    {
+        if(tree->isSorted())
+        {
+            const int column=tree->getSortColumn();
+            const bool descending=tree->getSortDirection() == controls::SortDirection::Descending;
+            const bool folders=tree->getFoldersFirst();
+
+            std::stable_sort(group.begin(), group.end(), [&](Id a, Id b)
+                {
+                    const bool fa=tree->getNode(a)->hasChildren;
+                    const bool fb=tree->getNode(b)->hasChildren;
+
+                    if(folders && fa != fb)
+                        return fa;
+                    return descending?less(column, b, a):less(column, a, b);
+                });
+        }
+        for(Id id : group)
+        {
+            into.push_back(id);
+            if(tree->getNode(id)->expanded)
+                append(into, tree->getNode(id)->children);
+        }
+    }
+};
+}//namespace
+
+// Folders first by name: one move turns the folder "c" into a leaf and the
+// leaf "m" into a folder, two keys of one group changing in one edit.
+TEST_CASE("TreeTable model: a sorted move between siblings whose keys both change")
+{
+    Scene scene;
+    Tree *tree=scene.tree;
+
+    scene.names={{1, "c"}, {2, "d"}, {3, "e"}, {4, "m"}, {5, "z"}, {10, "x"}};
+    for(Id id=1; id <= 5; ++id)
+        REQUIRE(tree->addNode(Root, id) == id);
+    REQUIRE(tree->addNode(1, 10) == 10);
+    tree->setSortComparator(0, [&scene](Id a, Id b) { return scene.names.at(a) < scene.names.at(b); });
+    tree->setFoldersFirst(true);
+    tree->setSortColumn(0, controls::SortDirection::Ascending);
+    scene.settle();
+    REQUIRE(shownIds(tree) == std::vector<Id>{1, 2, 3, 4, 5});
+
+    REQUIRE(tree->moveNode(10, 4, 0));
+    scene.frame();
+    // "m" (4) is the one folder now, "c" (1) the first leaf by name
+    CHECK(tree->getShownChildren(Root) == std::vector<Id>{4, 1, 2, 3, 5});
+    CHECK(shownIds(tree) == std::vector<Id>{4, 1, 2, 3, 5});
+    // the same as a sort from scratch
+    tree->setSortColumn(-1, controls::SortDirection::None);
+    tree->setSortColumn(0, controls::SortDirection::Ascending);
+    scene.frame();
+    CHECK(shownIds(tree) == std::vector<Id>{4, 1, 2, 3, 5});
+}
+
+// A key following the child count: a child moved up into the group holding
+// its old parent, whose key the move lowers.
+TEST_CASE("TreeTable model: a sorted move up into the group holding its old parent")
+{
+    Scene scene;
+    Tree *tree=scene.tree;
+    const std::map<Id, double> bytes{{1, 5.5}, {3, 7}, {10, 5.2}, {11, 1}, {12, 1}, {13, 1}, {14, 1}, {15, 1}};
+
+    // the roots: 1 (a leaf of 5.5), 2 (a folder of 6), 3 (a leaf of 7)
+    for(Id id=1; id <= 3; ++id)
+        REQUIRE(tree->addNode(Root, id) == id);
+    for(Id id=10; id <= 15; ++id)
+        REQUIRE(tree->addNode(2, id) == id);
+
+    const auto key=[tree, &bytes](Id id)
+        {
+            const Tree::Node *node=tree->getNode(id);
+
+            return node->hasChildren?static_cast<double>(node->children.size()):bytes.at(id);
+        };
+
+    tree->setSortComparator(0, [key](Id a, Id b) { return key(a) < key(b); });
+    tree->setSortColumn(0, controls::SortDirection::Ascending);
+    scene.settle();
+    REQUIRE(shownIds(tree) == std::vector<Id>{1, 2, 3});
+
+    // 10 (5.2) up to the roots: 2 becomes 5
+    REQUIRE(tree->moveNode(10, Root, 0));
+    scene.frame();
+    CHECK(tree->getShownChildren(Root) == std::vector<Id>{2, 10, 1, 3});
+    CHECK(shownIds(tree) == std::vector<Id>{2, 10, 1, 3});
+}
+
+// Seeded random edits while sorted (inserts, batches, removes, moves,
+// renames, expand toggles, sort changes; by name and by a child-count key,
+// folders first or not, either direction), each compared with a sorted
+// rebuild, ties in the app's order included.
+TEST_CASE("TreeTable model: sorted random edits match a sorted rebuild")
+{
+    for(unsigned seed=1; seed <= 300; ++seed)
+    {
+        CAPTURE(seed);
+        Scene scene;
+        Tree *tree=scene.tree;
+        std::mt19937 rng(seed);
+        std::map<Id, double> bytes;
+        std::vector<Id> roots; // the app's order of the roots
+        Id next=1;
+        const auto existing=[&]()
+            {
+                std::vector<Id> ids;
+
+                for(const auto &entry : bytes)
+                    if(tree->getNode(entry.first))
+                        ids.push_back(entry.first);
+                return ids;
+            };
+        const auto add=[&](Id parent, size_t at, size_t count)
+            {
+                std::vector<Id> ids;
+
+                for(size_t i=0; i < count; ++i)
+                {
+                    ids.push_back(next);
+                    scene.names[next]="n"+std::to_string(rng()%12);
+                    bytes[next]=(rng()%12)*0.5;
+                    ++next;
+                }
+                REQUIRE(tree->insertNodes(parent, at, ids));
+                if(parent == Root)
+                    roots.insert(roots.begin()+std::min(at, roots.size()), ids.begin(), ids.end());
+            };
+
+        for(int i=0; i < 12; ++i)
+            add(Root, static_cast<size_t>(i), 1);
+        for(int i=0; i < 30; ++i)
+        {
+            const auto ids=existing();
+
+            add(ids[rng()%ids.size()], rng()%4, 1+rng()%2);
+        }
+        for(Id id : existing())
+            if(rng()%2)
+                tree->setExpanded(id, true);
+
+        const SortedRebuild rebuild{tree, &scene.names, &bytes};
+        const auto direction=[&]()
+            {
+                return rng()%2?controls::SortDirection::Ascending:controls::SortDirection::Descending;
+            };
+
+        tree->setSortComparator(0, [&scene](Id a, Id b) { return scene.names.at(a) < scene.names.at(b); });
+        tree->setSortComparator(1, [&rebuild](Id a, Id b) { return rebuild.key(a) < rebuild.key(b); });
+        tree->setFoldersFirst(rng()%2 != 0);
+        tree->setSortColumn(static_cast<int>(rng()%2), direction());
+        scene.settle();
+
+        for(int step=0; step < 120; ++step)
+        {
+            const auto ids=existing();
+            const unsigned op=rng()%10;
+            std::string what="frame";
+
+            if(op <= 1)
+            {
+                const Id parent=rng()%5 == 0?Root:ids[rng()%ids.size()];
+                add(parent, rng()%6, 1+rng()%3);
+                what="insert under "+std::to_string(parent);
+            }
+            else if(op == 2 && ids.size() > 10)
+            {
+                const Id id=ids[rng()%ids.size()];
+                const auto root=std::find(roots.begin(), roots.end(), id);
+
+                if(root != roots.end())
+                    roots.erase(root);
+                REQUIRE(tree->removeNode(id));
+                what="remove "+std::to_string(id);
+            }
+            else if(op <= 4)
+            {
+                const Id id=ids[rng()%ids.size()];
+                const Id parent=rng()%5 == 0?Root:ids[rng()%ids.size()];
+
+                const size_t at=rng()%6;
+                const auto root=std::find(roots.begin(), roots.end(), id);
+
+                if(tree->moveNode(id, parent, at))
+                {
+                    if(root != roots.end())
+                        roots.erase(root);
+                    if(parent == Root)
+                        roots.insert(roots.begin()+std::min(at, roots.size()), id);
+                }
+                what="move "+std::to_string(id)+" to "+std::to_string(parent);
+            }
+            else if(op <= 6)
+            {
+                const Id id=ids[rng()%ids.size()];
+
+                scene.names[id]="n"+std::to_string(rng()%12);
+                bytes[id]=(rng()%12)*0.5;
+                tree->nodeChanged(id);
+                what="rename "+std::to_string(id);
+            }
+            else if(op == 7)
+            {
+                const Id id=ids[rng()%ids.size()];
+
+                tree->setExpanded(id, !tree->getNode(id)->expanded);
+                what="toggle "+std::to_string(id);
+            }
+            else if(op == 8 && rng()%4 == 0)
+            {
+                tree->setSortColumn(static_cast<int>(rng()%2), direction());
+                what="sort";
+            }
+            if(step%3 == 0)
+                scene.frame();
+
+            std::vector<Id> expected;
+
+            rebuild.append(expected, roots);
+            CAPTURE(step);
+            CAPTURE(what);
+            REQUIRE(shownIds(tree) == expected);
+        }
     }
 }

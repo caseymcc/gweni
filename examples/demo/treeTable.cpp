@@ -300,6 +300,10 @@ void TreeTableDemo::addFile()
     // file would otherwise be its children, and it would never ask
     if(parent != controls::TreeTable::Root)
         m_table->setExpanded(parent, true);
+    // and one still loading gets its answer now, so the file goes in among
+    // its files rather than in their place
+    if(parent == LazyFolder)
+        answerPending();
 
     const size_t id=m_nextAdded++;
 

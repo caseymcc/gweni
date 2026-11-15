@@ -696,6 +696,11 @@ bool TreeTable::moveNode(NodeId id, NodeId newParent, size_t index)
 
     const bool emptied=collapseIfEmpty(oldParent);
 
+    // sorted: the detach may have changed the old parent's key (a leaf now, a
+    // child count dropped), so it is placed again before anything is searched
+    // for among its siblings, the moved node among them if it goes there
+    keepSorted(oldParent, false);
+
     // A move under a node still loading is its answer, as an insert is: the
     // moved subtree takes the placeholder's place (only after the detach,
     // which may have shifted it).
@@ -752,9 +757,11 @@ bool TreeTable::moveNode(NodeId id, NodeId newParent, size_t index)
     // in the moved subtree, follow its node at its new position as well.
     restoreAnchor(anchor);
     syncVisibleSelection();
-    refreshNode(oldParent, false);
+    // the new parent's key changed with the insert: placed among siblings
+    // whose keys are all current (the old parent's was placed above)
     if(oldParent != newParent)
         refreshNode(newParent, false);
+    refreshNode(oldParent, false);
     if(emptied)
         expansionEvent(oldParent, false);
     return true;
@@ -1044,8 +1051,9 @@ void TreeTable::resortGroup(NodeId parent)
 }
 
 // A new generation makes every group stale; the shown ones are sorted as
-// the projection is built again, which binds only the rows whose node
-// changed. The first shown node goes back to the top and the selection,
+// the projection is built again, which binds the pooled rows from the first
+// item whose node changed on (those above it keep their binding). The
+// first shown node goes back to the top and the selection,
 // shown or not, stays on its node.
 void TreeTable::applySort()
 {
