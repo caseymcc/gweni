@@ -554,6 +554,19 @@ public:
         //! A scroll bar's thickness across it, and the side of each of its
         //! square arrow buttons.
         int ScrollBarThickness=15;
+        //! A MarkdownDocument's: the space between two of its blocks (and a
+        //! loose list's items), between a tight list's items, how far a list
+        //! item's blocks are in (its marker in that room), and the font size
+        //! of each heading level for an 11-unit body font (scaled with it).
+        int MarkdownBlockSpacing=10;
+        int MarkdownTightSpacing=2;
+        int MarkdownListIndent=22;
+        int MarkdownHeading1=24;
+        int MarkdownHeading2=20;
+        int MarkdownHeading3=17;
+        int MarkdownHeading4=15;
+        int MarkdownHeading5=13;
+        int MarkdownHeading6=12;
     } Metrics;
 
 

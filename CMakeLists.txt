@@ -278,6 +278,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/logView.cpp
     include/gweni/controls/markdownDocument.h
     source/controls/markdownDocument.cpp
+    include/gweni/controls/markdownView.h
+    source/controls/markdownView.cpp
     include/gweni/controls/menu.h
     source/controls/menu.cpp
     include/gweni/controls/menuItem.h

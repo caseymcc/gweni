@@ -872,6 +872,15 @@ std::unordered_map<std::string, TexturedSkin::MetricEntry> TexturedSkin::metricR
 {
     return {
         {"ScrollBarThickness", {&Metrics.ScrollBarThickness, 6, 64}},
+        {"MarkdownBlockSpacing", {&Metrics.MarkdownBlockSpacing, 0, 64}},
+        {"MarkdownTightSpacing", {&Metrics.MarkdownTightSpacing, 0, 64}},
+        {"MarkdownListIndent", {&Metrics.MarkdownListIndent, 0, 128}},
+        {"MarkdownHeading1", {&Metrics.MarkdownHeading1, 6, 96}},
+        {"MarkdownHeading2", {&Metrics.MarkdownHeading2, 6, 96}},
+        {"MarkdownHeading3", {&Metrics.MarkdownHeading3, 6, 96}},
+        {"MarkdownHeading4", {&Metrics.MarkdownHeading4, 6, 96}},
+        {"MarkdownHeading5", {&Metrics.MarkdownHeading5, 6, 96}},
+        {"MarkdownHeading6", {&Metrics.MarkdownHeading6, 6, 96}},
     };
 }
 

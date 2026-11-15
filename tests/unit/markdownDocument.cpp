@@ -10,11 +10,12 @@
  *    too), a list a MarkdownList of MarkdownListItems whose markers are the
  *    numbers from the list's start with its delimiter, or bullets by depth;
  *  - the layout at the width it is given: every block that wide less its
- *    padding, stacked with BlockSpacing between them (TightSpacing between a
- *    tight list's items), a quote's blocks BarWidth+BarGap in, a list item's
- *    ListIndent in with its marker right-aligned MarkerGap before them on
- *    their first line, its preferred height the blocks' and spacing, and a
- *    paragraph that wraps at a narrower width making it taller;
+ *    padding, stacked with the skin's MarkdownBlockSpacing between them
+ *    (MarkdownTightSpacing between a tight list's items), a quote's blocks
+ *    BarWidth+BarGap in, a list item's MarkdownListIndent in with its marker
+ *    right-aligned MarkerGap before them on their first line, its preferred
+ *    height the blocks' and spacing, and a paragraph that wraps at a
+ *    narrower width making it taller;
  *  - setMarkdown keeps the controls of matched blocks: an edited paragraph
  *    keeps its control (new spans), the others theirs, at the start, middle
  *    and end; an inserted block is a new control, the others kept; a deleted
@@ -214,9 +215,9 @@ TEST_CASE("Markdown document: lays out at the width it is given")
         CHECK(block->getWidth() == 400);
         CHECK(block->getY() == y);
         CHECK(block->getHeight() == block->getPreferredSize().height);
-        y+=block->getHeight()+MarkdownDocument::BlockSpacing;
+        y+=block->getHeight()+scene.skin.Metrics.MarkdownBlockSpacing;
     }
-    CHECK(doc->getPreferredSize().height == y-MarkdownDocument::BlockSpacing);
+    CHECK(doc->getPreferredSize().height == y-scene.skin.Metrics.MarkdownBlockSpacing);
     CHECK(doc->getHeight() == doc->getPreferredSize().height);
 
     MarkdownQuote *quote=blockAs<MarkdownQuote>(doc, 1);
@@ -229,14 +230,14 @@ TEST_CASE("Markdown document: lays out at the width it is given")
     MarkdownListItem *first=blockAs<MarkdownListItem>(list, 0);
     MarkdownListItem *second=blockAs<MarkdownListItem>(list, 1);
 
-    CHECK(second->getY() == first->getHeight()+MarkdownDocument::TightSpacing);
-    CHECK(first->getBlockControl(0)->getX() == MarkdownDocument::ListIndent);
-    CHECK(first->getBlockControl(0)->getWidth() == 400-MarkdownDocument::ListIndent);
+    CHECK(second->getY() == first->getHeight()+scene.skin.Metrics.MarkdownTightSpacing);
+    CHECK(first->getBlockControl(0)->getX() == scene.skin.Metrics.MarkdownListIndent);
+    CHECK(first->getBlockControl(0)->getWidth() == 400-scene.skin.Metrics.MarkdownListIndent);
 
     MarkdownText *marker=first->getMarker();
 
     CHECK(marker->getWidth() > 0);
-    CHECK(marker->getX()+marker->getWidth() == MarkdownDocument::ListIndent-MarkdownListItem::MarkerGap);
+    CHECK(marker->getX()+marker->getWidth() == scene.skin.Metrics.MarkdownListIndent-MarkdownListItem::MarkerGap);
     CHECK(marker->getY() == first->getBlockControl(0)->getY());
 
     // a long paragraph wraps at a narrower width: taller

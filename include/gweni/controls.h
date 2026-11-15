@@ -59,6 +59,7 @@
 #include <gweni/controls/listBox.h>
 #include <gweni/controls/logView.h>
 #include <gweni/controls/markdownDocument.h>
+#include <gweni/controls/markdownView.h>
 #include <gweni/controls/menu.h>
 #include <gweni/controls/menuItem.h>
 #include <gweni/controls/menuStrip.h>

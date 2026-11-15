@@ -2641,6 +2641,9 @@ void RichText::update(renderer::Base *renderer, controls::Base *baseControl)
         int zIndex;
     };
     std::vector<Want> wants;
+    // a Markdown block's inline code is the theme's MarkdownCode
+    const tokyonight::Surface &codeSurface=dynamic_cast<const controls::internal::MarkdownText *>(rich)?
+        tokyonight::MarkdownCode:tokyonight::RichTextCode;
 
     for(const text::RichPiece &piece:pieces)
     {
@@ -2653,7 +2656,7 @@ void RichText::update(renderer::Base *renderer, controls::Base *baseControl)
             box.x+=origin.x;
             box.y+=origin.y;
             wants.push_back({ false, box, (style&controls::RichSpan::Placeholder)?
-                tokyonight::MarkdownImagePlaceholder:tokyonight::RichTextCode, gweni::Color(), z });
+                tokyonight::MarkdownImagePlaceholder:codeSurface, gweni::Color(), z });
         }
     }
     for(const text::RichPiece &piece:pieces)

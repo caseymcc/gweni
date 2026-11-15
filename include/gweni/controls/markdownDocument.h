@@ -47,7 +47,8 @@ public:
 };
 
 //! Blocks stacked top to bottom, each as wide as the column less its padding
-//! and as high as it asks to be at that width, getSpacing() between two: the
+//! and as high as it asks to be at that width, getSpacing() between two (the
+//! skin's MarkdownBlockSpacing or MarkdownTightSpacing metric): the
 //! document, a quote and a list item hold their blocks in one, a list its
 //! items. The blocks are owner-placed (Placement::Owner): their widths in the
 //! X arrange, their y and heights in the Y arrange, so a block whose height
@@ -76,9 +77,18 @@ public:
     //! The control showing block index (null past the last)
     Base *getBlockControl(size_t index) const;
 
-    //! Units between two blocks
-    void setSpacing(int spacing);
-    int getSpacing() const { return m_spacing; }
+    //! The space between two blocks: the skin's MarkdownBlockSpacing (Block,
+    //! the default) or MarkdownTightSpacing (Tight, a tight list's items and
+    //! the blocks in them), read as the column lays out
+    enum class Spacing
+    {
+        Block,
+        Tight
+    };
+    void setSpacing(Spacing spacing);
+    Spacing getSpacingKind() const { return m_spacing; }
+    //! The spacing in units, from the column's skin
+    int getSpacing();
 
     //! The document the column is in (itself for the document)
     MarkdownDocument *getDocument() const { return m_document; }
@@ -104,7 +114,7 @@ protected:
 
     std::vector<text::MarkdownBlock> m_blocks;
     std::vector<Base *> m_blockControls;
-    int m_spacing=8;
+    Spacing m_spacing=Spacing::Block;
     MarkdownDocument *m_document=nullptr;
 };
 
@@ -127,11 +137,23 @@ public:
     //! A table's header cell: its text bold (set before setBlock)
     void setHeader(bool header) { m_header=header; }
     bool isHeader() const { return m_header; }
+    //! The heading level it shows (0 for none)
+    int getHeadingLevel() const { return m_headingLevel; }
+
+    //! A theme change: the font again, a heading's size being a metric
+    void updateColors() override;
 
 protected:
     void onLink(event::Info info);
+    //! Its font from the document, its heading level and whether it is a
+    //! header cell
+    void applyFont();
 
     bool m_header=false;
+    int m_headingLevel=0;
+    //! shows a block given by setBlock (not a marker or a code block's text,
+    //! whose owners set their fonts)
+    bool m_fromBlock=false;
 };
 
 //! The ScrollControl a code block scrolls sideways in: horizontal only, and a
@@ -314,8 +336,8 @@ protected:
     bool m_tight=true;
 };
 
-//! A list item: its blocks in a column the document's list indent in from its
-//! left, its marker (a MarkdownText) right-aligned in that indent,
+//! A list item: its blocks in a column the skin's MarkdownListIndent in from
+//! its left, its marker (a MarkdownText) right-aligned in that indent,
 //! MarkerGap units before the blocks, on their first line.
 class GWENI_EXPORT MarkdownListItem: public MarkdownColumn, public MarkdownBlockControl
 {
@@ -333,6 +355,9 @@ public:
     //! Shows text as the marker (nothing done when it is already shown)
     void setMarker(const gweni::String &text);
     MarkdownText *getMarker() const { return m_marker; }
+
+    //! A theme change: the indent again, a metric
+    void updateColors() override;
 
     void calculateSize(skin::Base *skin, Dim dim) override;
     void arrange(skin::Base *skin, Dim dim) override;
@@ -363,7 +388,8 @@ protected:
 //! built and only removed ones deleted. The same text again does nothing.
 //!
 //! The blocks: a paragraph or a heading is a RichText (internal::MarkdownText,
-//! a heading at headingSize(level) and bold), a rule an internal::MarkdownRule,
+//! a heading at headingSize(level) and bold, its inline code on the
+//! MarkdownCode surface), a rule an internal::MarkdownRule,
 //! a quote an internal::MarkdownQuote, a list an internal::MarkdownList of
 //! internal::MarkdownListItem, a code block an internal::MarkdownCodeBlock, a
 //! table an internal::MarkdownTable, and raw HTML a MarkdownText of the HTML
@@ -388,8 +414,9 @@ public:
     //! The font of a heading of level 1..6: the body font, bold, at
     //! headingSize(level)
     gweni::Font headingFont(int level);
-    //! A heading's size in units: 24, 20, 17, 15, 13, 12 for levels 1..6 at
-    //! the default font's 11 (each scaled by the body font's size / 11)
+    //! A heading's size in units: the skin's MarkdownHeading1..6 metric (24,
+    //! 20, 17, 15, 13, 12 by default), each for an 11-unit body font and
+    //! scaled by the body font's size / 11
     float headingSize(int level);
     //! The font of code: the skin's mono face at the body font's size
     gweni::Font codeFont();
@@ -402,13 +429,6 @@ public:
     //! every code block again
     void setCodeHighlighter(MarkdownHighlighter highlighter);
     const MarkdownHighlighter &getCodeHighlighter() const { return m_highlighter; }
-
-    //! Units between two blocks of the document, a quote or a loose list's
-    //! item, and between two items of a tight list
-    static constexpr int BlockSpacing=10;
-    static constexpr int TightSpacing=2;
-    //! Units a list item's blocks are in from its left (its marker in them)
-    static constexpr int ListIndent=22;
 
     //! Called with a link's url in info.string when one of the document's
     //! links is clicked (RichText::onLinkClicked); gweni opens nothing

@@ -416,6 +416,9 @@ inline Surface RichTextCode   { BgHighlight,           BgHighlight,           Bg
 // A RichText's selection, one rect per line behind its glyphs (over a code
 // background), as TextSelection.
 inline Surface RichTextSelection{ Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), 0.0f, 0.0f };
+// A Markdown block's inline code (a MarkdownText's Code spans, in place of
+// RichTextCode), as a RichText's.
+inline Surface MarkdownCode    { BgHighlight,           BgHighlight,           BgHighlight, 3.0f,     0.0f };
 // A MarkdownDocument's horizontal rule: flat, so only top is read, the
 // line's colour (as a Separator's).
 inline Surface MarkdownRule    { Line,                  Line,                  Line,  0.0f,     0.0f };
@@ -609,7 +612,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"TimelineAxis",&TimelineAxis},{"TimelineBar",&TimelineBar},{"TimelineBarHover",&TimelineBarHover},
         {"StatsOverlay",&StatsOverlay},
         {"RichTextCode",&RichTextCode},{"RichTextSelection",&RichTextSelection},
-        {"MarkdownRule",&MarkdownRule},{"MarkdownQuoteBar",&MarkdownQuoteBar},
+        {"MarkdownCode",&MarkdownCode},{"MarkdownRule",&MarkdownRule},{"MarkdownQuoteBar",&MarkdownQuoteBar},
         {"MarkdownCodeBlock",&MarkdownCodeBlock},{"MarkdownTableHeader",&MarkdownTableHeader},
         {"MarkdownTableBorder",&MarkdownTableBorder},{"MarkdownImagePlaceholder",&MarkdownImagePlaceholder},
         {"DropIndicator",&DropIndicator},{"DragSource",&DragSource},

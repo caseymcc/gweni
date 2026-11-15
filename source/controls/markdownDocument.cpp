@@ -74,14 +74,22 @@ Base *MarkdownColumn::getBlockControl(size_t index) const
     return (index < m_blockControls.size())?m_blockControls[index]:nullptr;
 }
 
-void MarkdownColumn::setSpacing(int spacing)
+void MarkdownColumn::setSpacing(Spacing spacing)
 {
-    spacing=std::max(spacing, 0);
     if(spacing == m_spacing)
         return;
 
     m_spacing=spacing;
     invalidate();
+}
+
+int MarkdownColumn::getSpacing()
+{
+    skin::Base *skin=getSkin();
+
+    if(!skin)
+        return 0;
+    return (m_spacing == Spacing::Tight)?skin->Metrics.MarkdownTightSpacing:skin->Metrics.MarkdownBlockSpacing;
 }
 
 Base *MarkdownColumn::buildBlock(const text::MarkdownBlock &block)
@@ -233,6 +241,7 @@ void MarkdownColumn::calculateSize(skin::Base *skin, Dim dim)
 
     ParentClass::calculateSize(skin, dim);
 
+    const int spacing=getSpacing();
     int height=0;
     bool first=true;
 
@@ -241,7 +250,7 @@ void MarkdownColumn::calculateSize(skin::Base *skin, Dim dim)
         if(block->hidden())
             continue;
         if(!first)
-            height+=m_spacing;
+            height+=spacing;
         height+=block->getPreferredSize().height;
         first=false;
     }
@@ -264,6 +273,7 @@ void MarkdownColumn::arrange(skin::Base *skin, Dim dim)
     }
     else
     {
+        const int spacing=getSpacing();
         int y=padding.top;
 
         for(Base *block:m_blockControls)
@@ -274,7 +284,7 @@ void MarkdownColumn::arrange(skin::Base *skin, Dim dim)
             const int height=block->getPreferredSize().height;
 
             placeChild(block, block->getX(), y, block->getWidth(), height);
-            y+=height+m_spacing;
+            y+=height+spacing;
         }
     }
 
@@ -316,16 +326,9 @@ void MarkdownText::setBlock(const text::MarkdownBlock &block)
 {
     using Type=text::MarkdownBlock::Type;
 
-    MarkdownDocument *document=documentOf(this);
-
-    if(document)
-    {
-        Font font=(block.type == Type::Heading)?document->headingFont(block.level):document->getFont();
-
-        if(m_header)
-            font.bold=true;
-        setFont(font);
-    }
+    m_fromBlock=true;
+    m_headingLevel=(block.type == Type::Heading)?block.level:0;
+    applyFont();
 
     switch(block.type)
     {
@@ -336,6 +339,28 @@ void MarkdownText::setBlock(const text::MarkdownBlock &block)
         setSpans(richSpans(block.spans));
         break;
     }
+}
+
+void MarkdownText::applyFont()
+{
+    MarkdownDocument *document=documentOf(this);
+
+    if(!document)
+        return;
+
+    Font font=(m_headingLevel > 0)?document->headingFont(m_headingLevel):document->getFont();
+
+    if(m_header)
+        font.bold=true;
+    setFont(font);
+}
+
+void MarkdownText::updateColors()
+{
+    ParentClass::updateColors();
+    // a code block's text and a marker take their fonts from their owners
+    if(m_fromBlock)
+        applyFont();
 }
 
 void MarkdownText::onLink(event::Info info)
@@ -719,7 +744,6 @@ void MarkdownRule::calculateSize(skin::Base *skin, Dim dim)
 GWENI_CONTROL_CONSTRUCTOR(MarkdownQuote)
 {
     setPadding(Padding(BarWidth+BarGap, 0, 0, 0));
-    setSpacing(MarkdownDocument::BlockSpacing);
 }
 
 void MarkdownQuote::setBlock(const text::MarkdownBlock &block)
@@ -755,7 +779,7 @@ void MarkdownList::setBlock(const text::MarkdownBlock &block)
     m_start=block.start;
     m_marker=block.marker;
     m_tight=block.tight;
-    setSpacing(m_tight?MarkdownDocument::TightSpacing:MarkdownDocument::BlockSpacing);
+    setSpacing(m_tight?Spacing::Tight:Spacing::Block);
     setBlocks(block.children);
 }
 
@@ -775,7 +799,7 @@ void MarkdownList::blocksChanged()
     {
         if(MarkdownListItem *item=dynamic_cast<MarkdownListItem *>(m_blockControls[i]))
         {
-            item->setSpacing(getSpacing());
+            item->setSpacing(getSpacingKind());
             item->setMarker(markerText(i));
         }
     }
@@ -786,14 +810,21 @@ void MarkdownList::blocksChanged()
 
 GWENI_CONTROL_CONSTRUCTOR(MarkdownListItem)
 {
-    setPadding(Padding(MarkdownDocument::ListIndent, 0, 0, 0));
     m_marker=newChild<MarkdownText>();
     m_marker->setPlacement(Placement::Owner);
 }
 
 void MarkdownListItem::setBlock(const text::MarkdownBlock &block)
 {
+    updateColors();
     setBlocks(block.children);
+}
+
+void MarkdownListItem::updateColors()
+{
+    ParentClass::updateColors();
+    if(skin::Base *skin=getSkin())
+        setPadding(Padding(skin->Metrics.MarkdownListIndent, 0, 0, 0));
 }
 
 void MarkdownListItem::setMarker(const String &text)
@@ -839,7 +870,6 @@ GWENI_CONTROL_CONSTRUCTOR(MarkdownDocument)
 {
     setDocument(this);
     setDock(DockPosition::Top);
-    setSpacing(BlockSpacing);
 }
 
 void MarkdownDocument::setMarkdown(const String &markdown)
@@ -940,10 +970,13 @@ Font MarkdownDocument::getFont()
 
 float MarkdownDocument::headingSize(int level)
 {
-    static const float sizes[]={ 24.0f, 20.0f, 17.0f, 15.0f, 13.0f, 12.0f };
+    const decltype(skin::Base::Metrics) defaults{};
+    const auto &metrics=getSkin()?getSkin()->Metrics:defaults;
+    const int sizes[]={ metrics.MarkdownHeading1, metrics.MarkdownHeading2, metrics.MarkdownHeading3,
+        metrics.MarkdownHeading4, metrics.MarkdownHeading5, metrics.MarkdownHeading6 };
 
     level=std::min(std::max(level, 1), 6);
-    return sizes[level-1]*getFont().size/11.0f;
+    return float(sizes[level-1])*getFont().size/11.0f;
 }
 
 Font MarkdownDocument::headingFont(int level)
