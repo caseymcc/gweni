@@ -78,7 +78,9 @@
  *  cell still showing the date pressed first is a click as any other; the
  *  decade's first year zooms in to a January showing the same date, and is
  *  zoomed one level only. A held cell a key rebinds (PageDown, Space zooming
- *  in) chooses nothing on its release.
+ *  in) chooses nothing on its release, nor does the decade's first year held
+ *  while Space zooms into it, whose cell then shows the same date in the
+ *  year view.
  */
 #include "headlessFixture.h"
 
@@ -1476,5 +1478,27 @@ TEST_CASE("Calendar: a held cell given another date by a key chooses nothing on 
     scene.frame();
     CHECK(calendar->getDisplayedMonth() == 1);
     CHECK(calendar->getSelectedDate().value_or(Date()).toIso() == "2026-12-16");
+    CHECK(events.selections == 1);
+
+    // the decade view: its first year (2019) held, Space zooms into it, and
+    // the year view's first cell under the mouse shows the same date (Jan 1
+    // 2019) in another view, so the release zooms no further
+    scene.click(calendar->getTitle());
+    scene.click(calendar->getTitle());
+    REQUIRE(calendar->getView() == Calendar::View::Decade);
+    CalendarCell *first=calendar->getCell(0);
+    REQUIRE(first->getDate().toIso() == "2019-01-01");
+    scene.hover(first);
+    scene.clock+=1.0f;
+    input::onMouseClicked(scene.canvas, 0, true);
+    scene.frame();
+    scene.key(keys::Space);
+    REQUIRE(calendar->getView() == Calendar::View::Year);
+    REQUIRE(calendar->getDisplayedYear() == 2019);
+    REQUIRE(first->getDate().toIso() == "2019-01-01");
+    input::onMouseClicked(scene.canvas, 0, false);
+    scene.frame();
+    CHECK(calendar->getView() == Calendar::View::Year);
+    CHECK(calendar->getDisplayedYear() == 2019);
     CHECK(events.selections == 1);
 }

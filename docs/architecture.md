@@ -4538,8 +4538,9 @@ two programs and the draws. What follows describes both together:
     (`getDisplayedMonth/Year`) are the cursor's in every view (`cursorMoved`), and a
     zoomed-out view fits the cursor from them, so `setView()` shows them whatever set
     them last, a zoomed-out view's keys or `setDisplayedMonth`, in either order; a
-    press moves the cursor to its cell, and one let go elsewhere puts it back
-    (`fitCursorBack`). Zooming out and back in gives the month's frame back,
+    press moves the cursor to its cell, and one let go elsewhere fits a cursor it
+    moved out of the month (year) shown back into it (`fitCursorBack`). Zooming
+    out and back in gives the month's frame back,
     byte for byte.
   `tests/unit/calendar.cpp` pins the grid for every first weekday, the month change,
   the limits and the filter, every key, both selections and the views headless;
