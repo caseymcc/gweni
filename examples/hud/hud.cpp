@@ -40,7 +40,7 @@
  *  drew, for its test (tests/hudExample.mjs):
  *
  *    HudExample: clear=r,g,b panel_color=r,g,b,a probe_scene=x,y
- *        probe_button=x,y probe_panel=x,y
+ *        probe_button=x,y probe_panel=x,y probe_faster=x,y probe_tag=x,y
  *
  *  (device px of the PNG, top row 0). Exit status: 0, 1 a failure, 2 written
  *  from incomplete resources.
