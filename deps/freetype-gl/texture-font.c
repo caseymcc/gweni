@@ -596,16 +596,22 @@ texture_font_load_glyph_from( texture_font_t * self,
         size_t n;
         /* a chain font's glyph that found no room on the shared atlas */
         const size_t failed = self->atlas->failed_regions;
+        int pending = 0;
 
         for( n = 0; !found && self->fallback
              && (chained = self->fallback( self->fallback_data, n, utf8_to_utf32( codepoint ) )); ++n )
         {
-            if( chained != self )
+            if( chained == TEXTURE_FONT_FALLBACK_PENDING )
+                pending = 1;
+            else if( chained != self )
                 found = texture_font_get_glyph_present( chained, codepoint, phase );
         }
         if( found )
             vector_push_back( self->fallback_glyphs, &found );
-        if( found || present_only || self->atlas->failed_regions != failed )
+        /* a chain font that is not there yet may have it: nothing is kept */
+        if( !found && pending && !present_only )
+            self->fallback_pending = 1;
+        if( found || present_only || pending || self->atlas->failed_regions != failed )
         {
             FT_Done_Face( face );
             FT_Done_FreeType( library );
@@ -976,8 +982,15 @@ texture_font_get_glyph( texture_font_t * self,
 
     /* Glyph has not been already loaded */
     failed = self->atlas->failed_regions;
+    self->fallback_pending = 0;
     if( texture_font_load_glyph( self, codepoint ) )
         return texture_font_find_glyph( self, codepoint );
+    if( self->fallback_pending )
+    {
+        /* gweni: drawn as the missing glyph until its chain font is there */
+        self->fallback_pending = 0;
+        return self->notdef;
+    }
     if( codepoint && self->atlas->failed_regions != failed )
         return texture_font_set_unfit( self, codepoint );
 
@@ -1006,8 +1019,14 @@ texture_font_get_glyph_phase( texture_font_t * self,
         return NULL;
 
     failed = self->atlas->failed_regions;
+    self->fallback_pending = 0;
     if( texture_font_load_glyph_phase( self, codepoint, phase ) )
         return texture_font_find_glyph_phase( self, codepoint, phase );
+    if( self->fallback_pending )
+    {
+        self->fallback_pending = 0;
+        return self->notdef;
+    }
     if( self->atlas->failed_regions != failed )
         return texture_font_set_unfit( self, codepoint );
 

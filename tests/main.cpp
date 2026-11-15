@@ -205,8 +205,8 @@ REGISTER_LISTENER("gweni_draw_state", 1, DrawStateListener);
 //! Loads OpenSans into the shared renderer and runs every case, then frees it.
 int runCases(doctest::Context &context, renderer::SlotRenderer *renderer)
 {
-#ifndef __EMSCRIPTEN__
-    // Read the configured chain files before any test lays out text. Use a
+    // Read the configured chain files before any test lays out text (on the
+    // web pre.js has fetched the lazy ones: the page is PRELOAD_LAZY). Use a
     // temporary chain name so tests of an unconfigured shared renderer keep
     // their original chain, while the blobs remain held for the session.
     std::ifstream config("resources/DefaultSkin.json");
@@ -235,7 +235,6 @@ int runCases(doctest::Context &context, renderer::SlotRenderer *renderer)
     if(!renderer->preloadGlyphFallbacks())
         return EXIT_FAILURE;
     renderer->setGlyphFallback("__capture_preload", {});
-#endif
     test::g_openSans.facename="OpenSans.ttf";
     test::g_openSans.size=11;
     test::setOpenSansFamily(*renderer);

@@ -378,6 +378,10 @@ typedef struct texture_font_t
      * A glyph found this way stays its own font's (glyph->font), and this font
      * keeps a pointer to it in fallback_glyphs, so the next lookup of the
      * codepoint opens no face. NULL (the calloc default) is no chain.
+     * The callback may return TEXTURE_FONT_FALLBACK_PENDING for a chain font
+     * that is not there yet (a face being fetched): if no other chain font has
+     * the codepoint, the lookup gives this font's notdef and keeps nothing, so
+     * the codepoint is asked for again next time.
      */
     struct texture_font_t * (*fallback)( void * data, size_t index, uint32_t codepoint );
 
@@ -445,7 +449,20 @@ typedef struct texture_font_t
      */
     void * atlas_full_data;
 
+    /**
+     * gweni: set by a load whose chain had a font pending
+     * (TEXTURE_FONT_FALLBACK_PENDING) and no glyph, read and cleared by the
+     * lookup that made it.
+     */
+    int fallback_pending;
+
 } texture_font_t;
+
+/**
+ * gweni: what texture_font_t::fallback returns for a chain font that is not
+ * there yet.
+ */
+#define TEXTURE_FONT_FALLBACK_PENDING ((struct texture_font_t *) 1)
 
 /**
  * gweni: the codepoint of a font's notdef glyph: no Unicode scalar value, so

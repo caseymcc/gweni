@@ -110,6 +110,29 @@
 //               ControlTest's gweni_web_post (Canvas::post of a redraw(), as a
 //               page's own callback would post) draws exactly one, the next
 //               30 ticks none
+//    cjk        ControlTest.html?control=UnicodeTextDemo, its lazy CJK face's
+//               request held: the first frame asks for resources-lazy/ once
+//               (SlotRenderer::lazyFacePending, the CJK line drawn) and, while
+//               it is held, the window draws its CJK as missing glyphs: its
+//               listing is that of a capture whose face is an empty file (the
+//               glyphs all missing) and the CJK labels' pixels are that
+//               capture's; released, the face arrives (gweni_web_glyph_fallback:
+//               fetched once, arrived once), textLayoutSerial() is raised once,
+//               and the listing and the CJK labels' pixels are those of a
+//               capture that has the face, with no second request
+//    nocjk      ButtonDemo (idle) and the OpenGLCore demo shell (opengl), which
+//               builds the hidden UnicodeTextDemo page and measures its CJK
+//               labels: neither asks for anything under resources-lazy/
+//    cjkfail    UnicodeTextDemo with the face's request failing (aborted): one
+//               request, one stderr line saying it could not be fetched, the
+//               window's listing that of the missing-face capture, and no
+//               second request after CJK typed into the demo's TextBox misses
+//               the face again
+//    cjkshell   the OpenGLCore demo shell: nothing under resources-lazy/ is
+//               asked for until its URL-changed handler (a pushState and a
+//               popstate, as back and forward show a page) shows the
+//               UnicodeTextDemo page built hidden at start-up, which then asks
+//               for the face once, and it arrives
 //  It also fails on any console error or uncaught exception in any page, and
 //  unless every page made a WebGL 2 context on ANGLE's SwiftShader with at
 //  least 24 depth bits (run.mjs' conditions). The page's container is the
@@ -229,17 +252,22 @@ class Session
         this.base = base;
         this.out = out;
         this.errors = [];
+        this.lazyRequests = {};
     }
 
     // A page of the build dir at a viewport (CSS px) and devicePixelRatio,
     // once it has drawn and settled (or, \a untilExit, once its run has
     // ended); null after a failure of the check.
-    async open(check, path, viewport, deviceScaleFactor = 1, untilExit = false, permissions = [])
+    async open(check, path, viewport, deviceScaleFactor = 1, untilExit = false, permissions = [], setup = null)
     {
         const context = await this.browser.newContext({ viewport, deviceScaleFactor });
         if(permissions.length)
             await context.grantPermissions(permissions, { origin: this.base });
+        if(setup)
+            await setup(context);
         const page = await context.newPage();
+        this.lazyRequests[check] = 0;
+        page.on('request', request => { if(request.url().includes('/resources-lazy/')) ++this.lazyRequests[check]; });
         page.on('console', msg => { if(msg.type() === 'error') this.errors.push(`${check}: console error: ${msg.text()}`); });
         page.on('pageerror', err => this.errors.push(`${check}: uncaught exception: ${err.stack || err.message}`));
         await page.goto(`${this.base}/${path}`, { waitUntil: 'commit' });
@@ -343,6 +371,10 @@ async function checkIdle(s)
         fail('idle', `${afterFrames} frame(s) were drawn over the 30 ticks after the post's`);
     else
         pass('idle', 'no frame over 30 idle ticks, one for a post, then none');
+    if(s.lazyRequests.idle !== 0)
+        fail('nocjk', `ButtonDemo asked for resources-lazy/ ${s.lazyRequests.idle} time(s)`);
+    else
+        pass('nocjk', 'ButtonDemo asked for nothing under resources-lazy/');
     await context.close();
 }
 
@@ -587,6 +619,10 @@ async function checkOpenGLCore(s)
         fail('opengl', 'a click on the demo list changed nothing');
     else
         pass('opengl', 'backing store 1024x768, a click on the demo list changes the canvas');
+    if(s.lazyRequests.opengl !== 0)
+        fail('nocjk', `the OpenGLCore demo shell asked for resources-lazy/ ${s.lazyRequests.opengl} time(s)`);
+    else
+        pass('nocjk', 'the OpenGLCore demo shell (its UnicodeTextDemo page hidden) asked for nothing under resources-lazy/');
     await context.close();
 }
 
@@ -968,6 +1004,203 @@ async function checkImage(s)
     await context.close();
 }
 
+const glyphFallback = page => page.evaluate(() => Module.ccall('gweni_web_glyph_fallback', 'string', [], []));
+const fallbackField = (state, key) => Number((new RegExp(`${key}=(\\d+)`).exec(state) || [])[1]);
+
+// A control's rect (a parseListing entry) of a decoded PNG, its rows' RGB
+// bytes, to compare two images by
+function regionOf(image, control)
+{
+    const rect = cssRect(control);
+    const rows = [];
+    for(let y = rect.y; y < rect.y + rect.height; ++y)
+        for(let x = rect.x; x < rect.x + rect.width; ++x)
+            rows.push(...pixelAt(image, x, y));
+    return Buffer.from(rows);
+}
+
+// UnicodeTextDemo's CJK line and its mono table (the 6th and 7th Labels)
+function cjkLabels(listing)
+{
+    const labels = parseListing(listing).filter(c => c.type === 'Label' && c.depth === 2);
+    return labels.length >= 7 ? [labels[5], labels[6]] : null;
+}
+
+async function checkCjk(s, controlPage)
+{
+    const check = 'cjk';
+    const size = { width: 865, height: 545 };
+    let requests = 0, release;
+    const released = new Promise(resolvePromise => { release = resolvePromise; });
+    const opened = await s.open(check, 'ControlTest.html?control=UnicodeTextDemo', { width: size.width, height: size.height + outputPanel },
+        1, false, [], context => context.route('**/resources-lazy/**', async route =>
+        {
+            ++requests;
+            await released;
+            await route.continue();
+        }));
+    if(!opened)
+        return;
+    const { page, context } = opened;
+    try
+    {
+        // the captures to hold the window to: with the face, and with it an empty
+        // file, so every CJK glyph is missing (the capture is degraded: exit 2)
+        const empty = mkdtempSync(join(tmpdir(), 'gweni-web-cjk-'));
+        writeFileSync(join(empty, 'DroidSansFallbackFull.ttf'), '');
+        const capture = async (mounts, expected) =>
+        {
+            const out = mkdtempSync(join(tmpdir(), 'gweni-web-cjk-'));
+            const status = await runPage({ page: controlPage, args: ['--headless', '--control', 'UnicodeTextDemo',
+                '--size', `${size.width}x${size.height}`, '--dump-bounds', '/out/bounds.txt', '--shot', '/out/shot.png'],
+                out, mounts, timeout: 300, swiftShader: true, webgl2: true, quiet: true });
+            if(status !== expected)
+                return null;
+            return { listing: readFileSync(join(out, 'bounds.txt'), 'utf8'), image: decodePng(readFileSync(join(out, 'shot.png'))) };
+        };
+        const missing = await capture([{ dir: empty, path: '/resources-lazy' }], 2);
+        const full = await capture([], 0);
+        if(!missing || !full)
+            return fail(check, `a capture ${missing ? 'with' : 'without'} the face did not run as expected`);
+
+        await page.waitForFunction(() => /fetches=1/.test(Module.ccall('gweni_web_glyph_fallback', 'string', [], [])),
+            null, { timeout: 60000, polling: 16 }).catch(() => {});
+        await framesOverTicks(page, 10);
+        const pendingState = await glyphFallback(page);
+        const pendingListing = await listingOf(page);
+        const pendingImage = decodePng(await s.shot(page, { x: 0, y: 0, ...size }, 'cjk-pending'));
+        const pendingRequests = requests;
+
+        release();
+        await page.waitForFunction(() => /arrived=1/.test(Module.ccall('gweni_web_glyph_fallback', 'string', [], [])),
+            null, { timeout: 120000, polling: 16 }).catch(() => {});
+        await s.frames(page);
+        await framesOverTicks(page, 10);
+        const arrivedState = await glyphFallback(page);
+        const arrivedListing = await listingOf(page);
+        const arrivedImage = decodePng(await s.shot(page, { x: 0, y: 0, ...size }, 'cjk-arrived'));
+
+        const pendingLabels = cjkLabels(pendingListing), arrivedLabels = cjkLabels(arrivedListing);
+        if(pendingRequests !== 1 || fallbackField(pendingState, 'fetches') !== 1 || fallbackField(pendingState, 'arrived') !== 0)
+            return fail(check, `held: ${pendingRequests} request(s), ${pendingState}; expected one fetch, none arrived`);
+        if(firstDifference(pendingListing, missing.listing))
+            return fail(check, `held, the listing is not the missing-face capture's: ${firstDifference(pendingListing, missing.listing)}`);
+        if(!pendingLabels || !pendingLabels.every(label => regionOf(pendingImage, label).equals(regionOf(missing.image, label))))
+            return fail(check, 'held, the CJK labels do not draw as the missing-face capture draws them');
+        if(requests !== 1 || fallbackField(arrivedState, 'fetches') !== 1 || fallbackField(arrivedState, 'arrived') !== 1
+            || fallbackField(arrivedState, 'failed') !== 0)
+            return fail(check, `arrived: ${requests} request(s), ${arrivedState}; expected one fetch, arrived once`);
+        if(fallbackField(arrivedState, 'serial') !== fallbackField(pendingState, 'serial') + 1)
+            return fail(check, `the text layout serial went from ${fallbackField(pendingState, 'serial')} to ${fallbackField(arrivedState, 'serial')}, not up by one`);
+        if(firstDifference(arrivedListing, full.listing))
+            return fail(check, `arrived, the listing is not the capture's with the face: ${firstDifference(arrivedListing, full.listing)}`);
+        if(!arrivedLabels || !arrivedLabels.every(label => regionOf(arrivedImage, label).equals(regionOf(full.image, label))))
+            return fail(check, 'arrived, the CJK labels do not draw as the capture with the face draws them');
+        if(regionOf(pendingImage, pendingLabels[0]).equals(regionOf(arrivedImage, pendingLabels[0])))
+            return fail(check, 'the CJK line drew the same before and after the face arrived');
+        pass(check, `one request; missing glyphs while held (the missing-face capture's listing and pixels), then the face's after one relayout (${pendingState} -> ${arrivedState})`);
+    }
+    finally
+    {
+        release();
+        await context.close();
+    }
+}
+
+async function checkCjkFail(s, controlPage)
+{
+    const check = 'cjkfail';
+    const size = { width: 865, height: 545 };
+    const opened = await s.open(check, 'ControlTest.html?control=UnicodeTextDemo', { width: size.width, height: size.height + outputPanel },
+        1, false, [], context => context.route('**/resources-lazy/**', route => route.abort('failed')));
+    if(!opened)
+        return;
+    const { page, context } = opened;
+    await page.waitForFunction(() => /failed=1/.test(Module.ccall('gweni_web_glyph_fallback', 'string', [], [])),
+        null, { timeout: 60000, polling: 16 }).catch(() => {});
+    await s.frames(page);
+    const listing = await listingOf(page);
+    // CJK typed into the demo's TextBox: a new run that misses the face again
+    // asks for nothing (the key events as typing's "é" is sent)
+    const box = parseListing(listing).find(c => c.type === 'TextBox' && c.visible);
+    const cdp = await context.newCDPSession(page);
+    if(box)
+    {
+        const at = centre(cssRect(box));
+        await page.mouse.click(at.x, at.y);
+        await s.frames(page);
+        await page.keyboard.press('End');
+        for(const key of ['\u65E5', '\u672C'])
+            for(const type of ['keyDown', 'keyUp'])
+                await cdp.send('Input.dispatchKeyEvent', { type, key, ...(type === 'keyDown' ? { text: key, unmodifiedText: key } : {}) });
+        await s.frames(page);
+        await framesOverTicks(page, 10);
+    }
+    const typed = box ? await focusedText(page) : '';
+    const state = await glyphFallback(page);
+    const lines = (await page.evaluate(() => gweniRun.output))
+        .filter(line => line.stream === 'stderr' && line.text.includes('could not be fetched'));
+    // the browser reports the aborted request as a console error: that one is this check's
+    s.errors = s.errors.filter(error => !(error.startsWith(`${check}: console error:`) && error.includes('Failed to load resource')));
+    const empty = mkdtempSync(join(tmpdir(), 'gweni-web-cjk-'));
+    writeFileSync(join(empty, 'DroidSansFallbackFull.ttf'), '');
+    const out = mkdtempSync(join(tmpdir(), 'gweni-web-cjk-'));
+    const status = await runPage({ page: controlPage, args: ['--headless', '--control', 'UnicodeTextDemo',
+        '--size', `${size.width}x${size.height}`, '--dump-bounds', '/out/bounds.txt'],
+        out, mounts: [{ dir: empty, path: '/resources-lazy' }], timeout: 300, swiftShader: true, webgl2: true, quiet: true });
+    const missing = status === 2 ? readFileSync(join(out, 'bounds.txt'), 'utf8') : null;
+    if(s.lazyRequests[check] !== 1 || fallbackField(state, 'fetches') !== 1 || fallbackField(state, 'failed') !== 1)
+        fail(check, `${s.lazyRequests[check]} request(s), ${state}; expected one fetch, failed once`);
+    else if(!typed.endsWith('\u65E5\u672C'))
+        fail(check, `the TextBox holds ${JSON.stringify(typed)}, not the typed CJK at its end`);
+    else if(lines.length !== 1)
+        fail(check, `${lines.length} stderr line(s) said the face could not be fetched, not 1`);
+    else if(!missing || firstDifference(listing, missing))
+        fail(check, `the listing is not the missing-face capture's: ${missing ? firstDifference(listing, missing) : 'the capture failed'}`);
+    else
+        pass(check, `one request, one line ("${lines[0].text}"), missing glyphs, nothing asked for again`);
+    await context.close();
+}
+
+async function checkCjkShell(s)
+{
+    const check = 'cjkshell';
+    const opened = await s.open(check, 'OpenGLCore.html', { width: 1024, height: 768 + outputPanel });
+    if(!opened)
+        return;
+    const { page, context } = opened;
+    await framesOverTicks(page, 10);
+    const before = s.lazyRequests[check];
+    // the page built hidden at start-up shown as back and forward show one
+    // (the shell's URL-changed handler; its list entry is scrolled out of view)
+    const shown = await page.evaluate(() =>
+    {
+        history.pushState(null, '', '?demo=UnicodeTextDemo');
+        window.dispatchEvent(new PopStateEvent('popstate'));
+        return Module.ccall('gweni_web_navigation', 'string', [], []);
+    });
+    await s.frames(page);
+    const navigation = await page.evaluate(() => Module.ccall('gweni_web_navigation', 'string', [], []));
+    if(!navigation.startsWith('demo=UnicodeTextDemo '))
+    {
+        await context.close();
+        return fail(check, `the shell did not show UnicodeTextDemo: "${navigation}" (right after: "${shown}")`);
+    }
+    const arrived = await page.waitForFunction(() =>
+        performance.getEntriesByType('resource').some(e => e.name.includes('/resources-lazy/') && e.responseEnd > 0),
+        null, { timeout: 120000, polling: 50 }).then(() => true, () => false);
+    await s.frames(page);
+    await framesOverTicks(page, 10);
+    const requests = s.lazyRequests[check];
+    if(before !== 0)
+        fail(check, `the shell asked for resources-lazy/ ${before} time(s) before the Unicode page was shown`);
+    else if(!arrived || requests !== 1)
+        fail(check, `the shown Unicode page made ${requests} request(s) under resources-lazy/${arrived ? '' : ', none answered'}`);
+    else
+        pass(check, 'nothing asked for until the Unicode page, built hidden, was shown; then the face, once');
+    await context.close();
+}
+
 async function main()
 {
     const argv = process.argv.slice(2);
@@ -1016,6 +1249,9 @@ async function main()
         await checkStatsButton(s);
         await checkDepthButton(s);
         await checkImage(s);
+        await checkCjk(s, controlPage);
+        await checkCjkFail(s, controlPage);
+        await checkCjkShell(s);
     }
     finally
     {

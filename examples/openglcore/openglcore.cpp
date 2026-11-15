@@ -727,10 +727,10 @@ int main(int argc, char *argv[])
     if(!skin->init("DefaultSkin.json"))
         degraded=true;
 
-#ifndef __EMSCRIPTEN__
+    // every chain face before the first layout, so a capture never draws a
+    // lazy face's glyphs as missing (on the web pre.js has fetched them)
     if(capturing && !renderer->preloadGlyphFallbacks())
         degraded=true;
-#endif
 
     if(gweni::capture::loadDefaultFont(*renderer, skin->getDefaultFont()) != gweni::Font::Status::Loaded)
         degraded=true;

@@ -9,7 +9,8 @@
  *  backend. Capture preloading retains bytes without creating an atlas. An SDF
  *  atlas filled with CJK reports it once on stderr and draws every glyph that
  *  did not fit as the face's missing glyph, rasterising none of them again.
- *  Browser coverage follows with task #605's separate lazy package.
+ *  The web's fetch of the face is held to its contract by tests/web/
+ *  interactive.mjs (its cjk, cjkfail, cjkshell and nocjk checks).
  */
 #include <doctest/doctest.h>
 #include "gpuRenderer.h"

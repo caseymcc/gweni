@@ -48,7 +48,13 @@
 //    files()   the paths of every file under /out (created before main), where
 //              a run writes what the runner copies back
 //  Before main it also writes window.gweniMounts, the files the runner copies
-//  in (run.mjs --mount), e.g. a resources/ copy missing one file.
+//  in (run.mjs --mount), e.g. a resources/ copy missing one file, and, for a
+//  capture (--headless in argv) or a page made with PRELOAD_LAZY
+//  (Module.gweniPreloadLazy, gweni_unittests), fetches the lazy package's faces
+//  (Module.gweniLazyFiles, page.cmake) into /resources-lazy, so a capture draws
+//  them as natively instead of fetching on its first miss (a face the runner
+//  mounted there is left as it is); one that cannot be fetched is a stderr
+//  line, and the capture reports it as degraded.
 //    readFile(path)  that file's bytes, base64
 //  Stdout and stderr also go to the page's #output panel and to the console
 //  (console.log and console.warn: never console.error, which the runner takes
@@ -127,6 +133,42 @@ Module['preRun'] = (Module['preRun'] || []).concat([function()
         FS.mkdirTree(file.path.slice(0, file.path.lastIndexOf('/')) || '/');
         FS.writeFile(file.path, bytes);
     });
+
+    var capture = Module['gweniPreloadLazy'] === true ||
+        (Module['arguments'] || []).indexOf('--headless') >= 0;
+    if(capture && typeof location !== 'undefined')
+    {
+        (Module['gweniLazyFiles'] || []).forEach(function(name)
+        {
+            // one the runner mounted (run.mjs --mount) is that run's
+            try
+            {
+                FS.stat('/resources-lazy/' + name);
+                return;
+            }
+            catch(e)
+            {
+            }
+            var dependency = 'gweni-lazy:' + name;
+            addRunDependency(dependency);
+            fetch('resources-lazy/' + name).then(function(response)
+            {
+                if(!response.ok)
+                    throw new Error('HTTP ' + response.status);
+                return response.arrayBuffer();
+            }).then(function(buffer)
+            {
+                FS.mkdirTree('/resources-lazy');
+                FS.writeFile('/resources-lazy/' + name, new Uint8Array(buffer));
+            }).catch(function(error)
+            {
+                gweniOutput('stderr', 'pre.js: resources-lazy/' + name + ' could not be preloaded: ' + error);
+            }).then(function()
+            {
+                removeRunDependency(dependency);
+            });
+        });
+    }
 }]);
 
 Module['gweniWebGLContext'] = function(gl)

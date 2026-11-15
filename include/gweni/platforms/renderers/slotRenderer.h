@@ -627,6 +627,24 @@ public:
     //! that font's missing glyph; the first of each atlas is reported once on
     //! stderr (fontAtlasFull)
     size_t glyphsOverAtlas() const { return m_glyphsOverAtlas; }
+    //! A lazy chain face (setGlyphFallbackSource) on the web: its file is not in
+    //! the page's file system until a text run laid out with a codepoint of its
+    //! ranges missing is shown at a flush() (not a measure, nor a hidden run: a
+    //! hidden page's labels), which fetches it beside the page
+    //! (resources-lazy/<file>), once per session; until it arrives such a glyph
+    //! draws as its font's missing glyph and is kept nowhere. Its arrival
+    //! loads again the fonts whose chain names it on every renderer, raising
+    //! textLayoutSerial() once; a failure is one log line, and the face is
+    //! skipped from then on. A capture has the file already (pre.js puts it
+    //! there before main), so nothing is fetched. These count, process-wide,
+    //! the fetches started, those that arrived and those that failed; natively
+    //! all three stay 0, the file being read on the first miss.
+    static size_t lazyFaceFetches();
+    static size_t lazyFaceArrivals();
+    static size_t lazyFaceFailures();
+    //! The web's fetch of path ended: loads again the fonts whose chain has a
+    //! face drawn from it, or skips that face from then on
+    void lazyFaceArrived(const gweni::String &path, bool ok);
 
     //! The freetype-gl font a font's text is drawn from (resolved at its draw px),
     //! nullptr if it is not loaded: a test hook, to look its glyphs up.
@@ -1025,6 +1043,12 @@ protected:
     //! texture_font_t::atlas_full: a codepoint's glyph did not fit font's atlas;
     //! counts it and reports the atlas's first one with one log line
     static void fontAtlasFull(void *data, ftgl::texture_font_t *font, uint32_t codepoint, size_t count);
+    //! Whether the lazy chain face's file is still to come (being fetched, or
+    //! not asked for yet) on the web, noting the miss for the run being laid
+    //! out; false natively, once it is there, and after it failed
+    bool lazyFacePending(const gweni::String &face);
+    //! flush()'s: fetches the faces missed by a waiting run that is shown
+    void fetchShownLazyFaces();
     //! A chain face's file in memory, read once per renderer session; nullptr
     //! (logged the first time) if it cannot be read
     std::shared_ptr<const std::vector<unsigned char>> glyphFallbackBlob(const gweni::String &face);
@@ -1793,6 +1817,12 @@ private:
     size_t m_glyphFallbackFilesRead=0;
     size_t m_glyphFallbackFontsOpened=0;
     size_t m_glyphsOverAtlas=0;
+    //! A lazy face's miss in the run being laid out (lazyFacePending), the
+    //! text ids laid out with one, and the faces missed not fetched yet: all
+    //! empty natively
+    bool m_layoutMissedLazy=false;
+    std::unordered_set<size_t> m_lazyPendingRuns;
+    std::unordered_set<gweni::String> m_lazyFacesMissed;
 
     //! The slots one draw covers (indexChunkSlots())
     size_t m_chunkSlots=kSlotsPerChunk;

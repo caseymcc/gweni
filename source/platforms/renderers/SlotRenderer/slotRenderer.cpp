@@ -46,10 +46,73 @@
 #include <imglib/imageIo.h>
 #include <imglib/simpleImage.h>
 
+#if defined(__EMSCRIPTEN__)
+#   include <emscripten.h>
+#endif
+
 namespace gweni
 {
 namespace renderer
 {
+
+// A lazy chain face's file on the web (SlotRenderer::lazyFacePending): fetched
+// once per session, process-wide, and told to every renderer when it ends
+namespace
+{
+struct LazyFetch
+{
+    enum State { Pending, Arrived, Failed };
+    String path;
+    State state=Pending;
+};
+
+size_t g_lazyFetches=0;
+size_t g_lazyArrivals=0;
+size_t g_lazyFailures=0;
+
+#if defined(__EMSCRIPTEN__)
+std::vector<LazyFetch> &lazyFetches()
+{
+    static std::vector<LazyFetch> fetches;
+    return fetches;
+}
+
+std::vector<SlotRenderer *> &liveRenderers()
+{
+    static std::vector<SlotRenderer *> renderers;
+    return renderers;
+}
+#endif
+}
+
+size_t SlotRenderer::lazyFaceFetches() { return g_lazyFetches; }
+size_t SlotRenderer::lazyFaceArrivals() { return g_lazyArrivals; }
+size_t SlotRenderer::lazyFaceFailures() { return g_lazyFailures; }
+
+#if defined(__EMSCRIPTEN__)
+EM_JS_DEPS(gweni_lazy_face, "$FS,$stringToNewUTF8,$UTF8ToString");
+
+// Fetches url (relative to the page) into path in the page's file system, then
+// calls gweni_lazy_face_arrived(id, ok, why), why a malloc'd reason or null
+EM_JS(void, gweni_js_fetch_lazy_face, (const char *url, const char *path, int id), {
+    var where = UTF8ToString(url);
+    var file = UTF8ToString(path);
+    fetch(where).then(function(response)
+    {
+        if(!response.ok)
+            throw new Error('HTTP ' + response.status);
+        return response.arrayBuffer();
+    }).then(function(buffer)
+    {
+        FS.mkdirTree(file.slice(0, file.lastIndexOf('/')) || '/');
+        FS.writeFile(file, new Uint8Array(buffer));
+        Module['_gweni_lazy_face_arrived'](id, 1, 0);
+    }).catch(function(error)
+    {
+        Module['_gweni_lazy_face_arrived'](id, 0, stringToNewUTF8(String(error)));
+    });
+});
+#endif
 
 static constexpr size_t minPrimitiveSize=512;
 static constexpr size_t minVertexSize=minPrimitiveSize*4;
@@ -125,7 +188,10 @@ ftgl::texture_glyph_t *FontData::glyph(const char *codepoint)
 
     ftgl::texture_glyph_t *loaded=ftgl::texture_font_get_glyph(textureFont, codepoint);
 
-    if(loaded != nullptr)
+    // a codepoint whose lazy chain face is still to come draws as the font's
+    // notdef, which no lookup finds for it, and is asked for again
+    if((loaded != nullptr) &&
+        ((loaded != textureFont->notdef) || (ftgl::texture_font_find_glyph(textureFont, codepoint) == loaded)))
         otherGlyphs.emplace(key, loaded);
     return loaded;
 }
@@ -487,6 +553,14 @@ ftgl::texture_font_t *SlotRenderer::glyphChainFont(void *data, size_t index, uin
                 [codepoint](const auto &range) { return codepoint >= range.first && codepoint <= range.second; }))
             continue;
 
+        if((link.font == nullptr) && chain.renderer->lazyFacePending(link.face))
+        {
+            if(n == index)
+                return reinterpret_cast<ftgl::texture_font_t *>(1); // TEXTURE_FONT_FALLBACK_PENDING
+            ++n;
+            continue;
+        }
+
         if(link.font == nullptr)
         {
             link.blob=chain.renderer->glyphFallbackBlob(link.face);
@@ -551,6 +625,108 @@ void SlotRenderer::fontAtlasFull(void *data, ftgl::texture_font_t *font, uint32_
     }
     gweni::log::write(log::Level::Error, "Font atlas full: glyphs that do not fit draw as the missing glyph, from U+%04X",
         static_cast<unsigned>(codepoint));
+}
+
+bool SlotRenderer::lazyFacePending(const String &face)
+{
+#if defined(__EMSCRIPTEN__)
+    const auto source=m_glyphSources.find(face);
+
+    if(source == m_glyphSources.end())
+        return false;
+
+    const String path=getResourcePaths().getPath(ResourcePaths::Type::LazyFont, source->second.file);
+    const auto held=m_glyphFallbackBlobs.find(path);
+
+    if(((held != m_glyphFallbackBlobs.end()) && held->second) || (m_failedGlyphFallbackFiles.count(path) > 0))
+        return false;
+
+    const auto &fetches=lazyFetches();
+    const auto fetch=std::find_if(fetches.begin(), fetches.end(),
+        [&path](const LazyFetch &each) { return each.path == path; });
+
+    if(fetch == fetches.end())
+    {
+        // there already: a capture's (pre.js), or written by the app
+        if(std::ifstream(path, std::ios::binary).good())
+            return false;
+    }
+    else if(fetch->state == LazyFetch::Failed)
+    {
+        m_failedGlyphFallbackFiles.insert(path);
+        return false;
+    }
+    else if(fetch->state == LazyFetch::Arrived)
+        return false;
+
+    m_layoutMissedLazy=true;
+    m_lazyFacesMissed.insert(face);
+    return true;
+#else
+    (void)face;
+    return false;
+#endif
+}
+
+void SlotRenderer::fetchShownLazyFaces()
+{
+#if defined(__EMSCRIPTEN__)
+    const bool shown=std::any_of(m_lazyPendingRuns.begin(), m_lazyPendingRuns.end(),
+        [this](size_t textId) { return (textId < m_textRuns.size()) && !m_textRuns[textId].hidden; });
+
+    if(!shown)
+        return;
+    for(const String &face:m_lazyFacesMissed)
+    {
+        const auto source=m_glyphSources.find(face);
+
+        if(source == m_glyphSources.end())
+            continue;
+
+        const String path=getResourcePaths().getPath(ResourcePaths::Type::LazyFont, source->second.file);
+        auto &fetches=lazyFetches();
+
+        if(std::any_of(fetches.begin(), fetches.end(), [&path](const LazyFetch &each) { return each.path == path; }))
+            continue;
+
+        // beside the page: the path is under the executable's dir, "/"
+        const String url=(!path.empty() && (path[0] == '/'))?path.substr(1):path;
+
+        fetches.push_back(LazyFetch{ path, LazyFetch::Pending });
+        ++g_lazyFetches;
+        gweni_js_fetch_lazy_face(url.c_str(), path.c_str(), static_cast<int>(fetches.size()-1));
+    }
+    m_lazyFacesMissed.clear();
+#endif
+}
+
+void SlotRenderer::lazyFaceArrived(const String &path, bool ok)
+{
+    std::unordered_set<String> faces;
+
+    for(const auto &[face, source]:m_glyphSources)
+    {
+        if(getResourcePaths().getPath(ResourcePaths::Type::LazyFont, source.file) == path)
+            faces.insert(face);
+    }
+    if(faces.empty())
+        return;
+    // the runs that waited are laid out again (or keep the missing glyph)
+    m_lazyPendingRuns.clear();
+    if(!ok)
+    {
+        // what drew as the notdef draws as the font's own missing glyph: the same
+        m_failedGlyphFallbackFiles.insert(path);
+        return;
+    }
+    // the glyphs that missed were kept nowhere, but the runs and measures that
+    // drew them as the notdef are laid out again
+    reloadFonts([&](const FontData &fontData)
+    {
+        const auto chain=glyphFallback(fontData.faceName);
+        return std::any_of(chain.begin(), chain.end(),
+            [&faces](const String &face) { return faces.count(face) > 0; });
+    });
 }
 
 std::shared_ptr<const std::vector<unsigned char>> SlotRenderer::glyphFallbackBlob(const String &face)
@@ -1357,6 +1533,9 @@ SlotRenderer::SlotRenderer(ResourcePaths &paths, const Rect &viewRect)
     m_vertexes.reserve(minVertexSize);
 
     m_clippingBoxes.reserve(minClippingSize);
+#if defined(__EMSCRIPTEN__)
+    liveRenderers().push_back(this);
+#endif
 
     m_uploadStats=(getenv("GWENI_UPLOAD_STATS") != nullptr);
 
@@ -1455,6 +1634,10 @@ bool SlotRenderer::textDebugMatches(const gweni::String &text) const
 
 SlotRenderer::~SlotRenderer()
 {
+#if defined(__EMSCRIPTEN__)
+    auto &renderers=liveRenderers();
+    renderers.erase(std::remove(renderers.begin(), renderers.end(), this), renderers.end());
+#endif
     // the backend's destructor released every texture (releaseResources); what is
     // left is CPU-side
     m_lastFont=nullptr;
@@ -2903,6 +3086,10 @@ void SlotRenderer::flush()
     // no run is laid out in them, so nothing this flush draws uses them
     if(m_idleFonts > 0)
         eraseIdleFonts();
+    // a run drawn with glyphs a lazy face is still to give, and shown: fetch it
+    // (a hidden page's measured or laid out text fetches nothing)
+    if(!m_lazyPendingRuns.empty())
+        fetchShownLazyFaces();
     ++m_flushes;
 
     m_frameStats.uploadCalls=0;
@@ -4500,6 +4687,8 @@ void SlotRenderer::releaseTextPrimitive(size_t primitiveId)
         noteRunChanged(primitiveId);
         if(run.hasSpans)
             m_textRunSpans.erase(primitiveId);
+        if(!m_lazyPendingRuns.empty())
+            m_lazyPendingRuns.erase(primitiveId);
         run=TextRun();
     }
 
@@ -4587,7 +4776,6 @@ void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::
 {
     // drawn at the effective size, in device pixels from the translated origin
     const float px=textPx(font);
-
     if(!ensureFont(font, px))
         return;
 
@@ -4724,6 +4912,22 @@ void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::
             noteRunChanged(textId);
         return;
     }
+
+    // a glyph whose lazy chain face is still to come (lazyFacePending) leaves the
+    // run waiting for the face, which flush() fetches once a waiting run shows
+    m_layoutMissedLazy=false;
+    struct LazyMisses
+    {
+        SlotRenderer &renderer;
+        size_t textId;
+        ~LazyMisses()
+        {
+            if(renderer.m_layoutMissedLazy)
+                renderer.m_lazyPendingRuns.insert(textId);
+            else if(!renderer.m_lazyPendingRuns.empty())
+                renderer.m_lazyPendingRuns.erase(textId);
+        }
+    } lazyMisses{*this, textId};
 
     ftgl::text_buffer_t *textBuffer=nullptr;
     std::vector<ftgl::glyph_vertex_t> sdfVertexes;
@@ -5443,3 +5647,37 @@ FontMetrics SlotRenderer::fontMetrics(const gweni::Font &font)
 
 } // namespace renderer
 } // namespace gweni
+
+#if defined(__EMSCRIPTEN__)
+//! gweni_js_fetch_lazy_face's end: the file is in the page's file system (ok), or
+//! why it is not, logged once (the fetch is never made again)
+extern "C" EMSCRIPTEN_KEEPALIVE void gweni_lazy_face_arrived(int id, int ok, char *why)
+{
+    using namespace gweni::renderer;
+    auto &fetches=lazyFetches();
+
+    if((id < 0) || (static_cast<size_t>(id) >= fetches.size()))
+    {
+        free(why);
+        return;
+    }
+
+    LazyFetch &fetch=fetches[static_cast<size_t>(id)];
+    const gweni::String path=fetch.path;
+
+    fetch.state=ok?LazyFetch::Arrived:LazyFetch::Failed;
+    if(ok)
+        ++g_lazyArrivals;
+    else
+    {
+        ++g_lazyFailures;
+        gweni::log::write(gweni::log::Level::Error, "Glyph fallback font could not be fetched: %s (%s)",
+            path.c_str(), why?why:"unknown");
+    }
+    free(why);
+    // a copy: a reload makes no renderer, but be safe from one going meanwhile
+    const std::vector<SlotRenderer *> renderers=liveRenderers();
+    for(SlotRenderer *renderer:renderers)
+        renderer->lazyFaceArrived(path, ok != 0);
+}
+#endif

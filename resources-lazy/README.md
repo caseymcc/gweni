@@ -38,4 +38,12 @@ beside their executable. The default and mono glyph fallback chains declare
 the face's ranges and file there. A first miss within those ranges reads its
 bytes once per renderer; captures read all chain bytes before laying out text.
 Ordinary `--resources` overrides leave this separate directory beside the
-executable. The web's separate lazy package follows in task #605's web step.
+executable.
+
+On the web the directory is the lazy package: copied beside each page, never
+in its preloaded `.data`. A page fetches the face (`resources-lazy/<file>`,
+relative to the page) only once a text run that misses a codepoint of its
+ranges is shown, and only once per session. Until the face arrives those
+glyphs draw as missing glyphs; its arrival lays the text out again. A failed
+fetch is one stderr line and is not retried. A capture (`--headless`) and
+`gweni_unittests.html` fetch it in `pre.js` before `main`.

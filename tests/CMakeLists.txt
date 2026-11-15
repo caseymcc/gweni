@@ -1135,25 +1135,25 @@ if(TARGET gweni_capture)
         gweni_capture
         doctest::doctest)
 
-    if(NOT EMSCRIPTEN)
-        get_property(test_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
-        set(test_lazy_dir ${CMAKE_CURRENT_BINARY_DIR}/resources-lazy)
-        if(test_multi_config)
-            set(test_lazy_dir ${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/resources-lazy)
-        endif()
-        add_custom_target(gweni_test_lazy_resources
-            COMMAND ${CMAKE_COMMAND}
-                -DSRC=${GWENI_LAZY_RESOURCE_DIR}
-                -DDST=${test_lazy_dir}
-                -P ${GWENI_SOURCE_DIR}/cmake/mirrorDirectory.cmake
-            VERBATIM)
-        add_dependencies(gweni_unittests gweni_test_lazy_resources)
+    # beside the binary natively (LazyFont paths) and beside the page on
+    # the web, where pre.js fetches it before main (PRELOAD_LAZY)
+    get_property(test_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+    set(test_lazy_dir ${CMAKE_CURRENT_BINARY_DIR}/resources-lazy)
+    if(test_multi_config)
+        set(test_lazy_dir ${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/resources-lazy)
     endif()
+    add_custom_target(gweni_test_lazy_resources
+        COMMAND ${CMAKE_COMMAND}
+            -DSRC=${GWENI_LAZY_RESOURCE_DIR}
+            -DDST=${test_lazy_dir}
+            -P ${GWENI_SOURCE_DIR}/cmake/mirrorDirectory.cmake
+        VERBATIM)
+    add_dependencies(gweni_unittests gweni_test_lazy_resources)
     if(EMSCRIPTEN)
         # a page (gweni_unittests.html), run in the browser as web_unittests
         # below, with resources/ preloaded where main.cpp's CurrentPath
         # ("resources") finds it (the working directory is "/")
-        gweni_web_page(gweni_unittests)
+        gweni_web_page(gweni_unittests PRELOAD_LAZY)
         # Emscripten's isatty() says yes in the page too, and the runner passes
         # the output on to a log, not a terminal
         target_compile_definitions(gweni_unittests PRIVATE DOCTEST_CONFIG_COLORS_NONE)

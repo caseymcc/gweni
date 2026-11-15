@@ -21295,6 +21295,22 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_post()
     return "posted";
 }
 
+//! The lazy chain faces' fetches (SlotRenderer::lazyFacePending), process-wide,
+//! and the window renderer's textLayoutSerial(), which an arrival raises once:
+//! "fetches=<n> arrived=<n> failed=<n> serial=<s>".
+extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_glyph_fallback()
+{
+    static std::string state;
+    const gweni::renderer::Base *renderer=
+        (g_canvas && g_canvas->getSkin())?g_canvas->getSkin()->getRenderer():nullptr;
+
+    state="fetches="+std::to_string(gweni::renderer::SlotRenderer::lazyFaceFetches())
+        +" arrived="+std::to_string(gweni::renderer::SlotRenderer::lazyFaceArrivals())
+        +" failed="+std::to_string(gweni::renderer::SlotRenderer::lazyFaceFailures())
+        +" serial="+(renderer?std::to_string(renderer->textLayoutSerial()):std::string("-"));
+    return state.c_str();
+}
+
 //! The keyboard-focused control's text (a Label's, which every TextBox is, or
 //! a CodeEditor's caret line), or an empty string if it has none.
 extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_focused_text()
@@ -22111,10 +22127,10 @@ int main(int argc, char *argv[])
     bool degraded=!resourcesFound;
     if(!skin->init("DefaultSkin.json"))
         degraded=true;
-#ifndef __EMSCRIPTEN__
+    // every chain face before the first layout, so a capture never draws a
+    // lazy face's glyphs as missing (on the web pre.js has fetched them)
     if(capturing && !renderer->preloadGlyphFallbacks())
         degraded=true;
-#endif
 
     if(gweni::capture::loadDefaultFont(*renderer, skin->getDefaultFont()) != gweni::Font::Status::Loaded)
         degraded=true;
