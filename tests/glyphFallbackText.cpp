@@ -17,8 +17,8 @@
  *  - measureText is the text_buffer_t measure of the drawn run (coverage), a
  *    fallback glyph adds its own face's advance, the ink stays inside the
  *    measure, and measureCarets is measureText of each prefix;
- *  - one read of a face's file serves every font of it, kept while a font holds
- *    it and read again once none does;
+ *  - one read of a face's file serves every font of it, at any size, for the
+ *    renderer's life: a font made again once none holds it reads nothing;
  *  - a chain set after a font is loaded loads that font again, so its runs draw
  *    the chain's glyph once laid out again, as a renderer with the chain from
  *    the start draws them.
