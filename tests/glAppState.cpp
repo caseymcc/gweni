@@ -14,7 +14,7 @@
  *  and a reverse-subtract equation, the depth test off with GL_GREATER, no
  *  depth writes and a 0.2..0.8 depth range, cull face, scissor and stencil on,
  *  a scissor box, a colour mask, a viewport, pack and unpack alignment, row
- *  length and skips, a pixel unpack buffer, and on desktop GL a line polygon
+ *  length, image height and skips (rows, pixels, images), a pixel unpack buffer, and on desktop GL a line polygon
  *  mode, GL_FRAMEBUFFER_SRGB and primitive restart at index 7.
  *
  *    state    a frame that lays out new text (its glyphs uploaded to the atlas)
@@ -26,11 +26,18 @@
  *             (its atlas texture made where it is first measured, outside a
  *             frame) leaves every one of those values as it was, and makes no
  *             GL error under the app's pixel unpack buffer.
+ *    images   with preserve on, outside a frame: an image page regrown (8 to
+ *             16 layers) under the app's scissor test still holds the images
+ *             loaded before (its blit is not clipped), and an image loaded
+ *             under the app's GL_UNPACK_SKIP_IMAGES draws its own texels, not
+ *             what lies past the renderer's copy of it; the app's scissor and
+ *             skip are kept.
  */
 #include <doctest/doctest.h>
 
 #include "glRenderer.h"
 
+#include <gweni/platforms/commonPlatform.h>
 #include <gweni/platforms/renderers/glApi.h>
 
 #include <gweni/controls/button.h>
@@ -110,6 +117,8 @@ std::map<std::string, std::vector<GLint>> snapshot()
     integers("unpackRowLength", GL_UNPACK_ROW_LENGTH, 1);
     integers("unpackSkipRows", GL_UNPACK_SKIP_ROWS, 1);
     integers("unpackSkipPixels", GL_UNPACK_SKIP_PIXELS, 1);
+    integers("unpackSkipImages", GL_UNPACK_SKIP_IMAGES, 1);
+    integers("unpackImageHeight", GL_UNPACK_IMAGE_HEIGHT, 1);
     integers("pixelUnpackBuffer", GL_PIXEL_UNPACK_BUFFER_BINDING, 1);
 #ifndef GWENI_GL_ES
     integers("polygonMode", GL_POLYGON_MODE, 2);
@@ -205,6 +214,8 @@ struct AppState
         glPixelStorei(GL_UNPACK_ROW_LENGTH, 7);
         glPixelStorei(GL_UNPACK_SKIP_ROWS, 1);
         glPixelStorei(GL_UNPACK_SKIP_PIXELS, 2);
+        glPixelStorei(GL_UNPACK_SKIP_IMAGES, 1);
+        glPixelStorei(GL_UNPACK_IMAGE_HEIGHT, 3);
 #ifndef GWENI_GL_ES
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
         glEnable(GL_FRAMEBUFFER_SRGB);
@@ -264,6 +275,8 @@ struct AppState
         glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
         glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
         glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+        glPixelStorei(GL_UNPACK_SKIP_IMAGES, 0);
+        glPixelStorei(GL_UNPACK_IMAGE_HEIGHT, 0);
 #ifndef GWENI_GL_ES
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         glDisable(GL_FRAMEBUFFER_SRGB);
@@ -343,6 +356,42 @@ std::string differences(const std::map<std::string, std::vector<GLint>> &a,
             names+=entry.first+" ";
     }
     return names;
+}
+
+//! A width x height RGBA8 image of one colour.
+std::vector<uint8_t> solid(const Color &color, int width, int height)
+{
+    std::vector<uint8_t> pixels;
+
+    for(int i=0; i<width*height; ++i)
+        pixels.insert(pixels.end(), { color.r, color.g, color.b, color.a });
+    return pixels;
+}
+
+//! The colour at the centre of rect after one frame drawing texture there.
+Color drawn(gweni::renderer::OpenGLCore &renderer, const gweni::Texture &texture, size_t id, const gweni::Rect &rect)
+{
+    gweni::test::clearView(Color(0, 0, 255, 255));
+    renderer.begin();
+    renderer.setDrawColor(Color(255, 255, 255, 255));
+    renderer.drawTexturedRect(texture, id, rect, 1);
+    renderer.end();
+
+    std::vector<uint8_t> pixels;
+
+    gweni::test::readView(pixels);
+
+    const int x=rect.x+rect.w/2;
+    const int y=rect.y+rect.h/2;
+    const uint8_t *p=&pixels[((size_t)y*gweni::test::viewSize().x+x)*4];
+
+    return Color(p[0], p[1], p[2], p[3]);
+}
+
+//! r,g,b,a, for a failed check's message
+std::string rgba(const Color &c)
+{
+    return std::to_string(c.r)+","+std::to_string(c.g)+","+std::to_string(c.b)+","+std::to_string(c.a);
 }
 
 }//namespace
@@ -425,6 +474,76 @@ TEST_CASE("App state: with setPreserveAppState a frame over the app's state draw
         if(pixels[i] != reference[i])
             ++differing;
     CHECK(differing == 0);
+}
+
+TEST_CASE("App state: with setPreserveAppState an image page regrown under the app's scissor keeps its images")
+{
+    gweni::platform::CurrentPath paths("resources");
+    gweni::renderer::OpenGLCore renderer(paths, gweni::Rect(gweni::Point(0, 0), gweni::test::viewSize()));
+    const Color red(200, 40, 30, 255);
+    const std::vector<uint8_t> pixels=solid(red, 16, 16);
+    std::vector<gweni::Texture> textures(9);
+    size_t id=0;
+
+    renderer.init();
+    renderer.setPreserveAppState(true);
+    renderer.generatePrimitive(id);
+    for(size_t i=0; i < 8; ++i)
+        REQUIRE((renderer.loadTexturePixels(textures[i], 16, 16, 16*4, pixels.data()) == gweni::Texture::Status::Loaded));
+    const size_t layers=renderer.imagePageLayers(0);
+    const Color before=drawn(renderer, textures[0], id, gweni::Rect(8, 8, 32, 32));
+    REQUIRE_MESSAGE((before == red), rgba(before));
+
+    // the app's scissor, round a load that regrows the page outside a frame
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(0, 0, 2, 2);
+    REQUIRE((renderer.loadTexturePixels(textures[8], 16, 16, 16*4, pixels.data()) == gweni::Texture::Status::Loaded));
+    CHECK(glIsEnabled(GL_SCISSOR_TEST));
+    glDisable(GL_SCISSOR_TEST);
+    REQUIRE(renderer.imagePageLayers(0) > layers);
+    const Color first=drawn(renderer, textures[0], id, gweni::Rect(8, 8, 32, 32));
+    CHECK_MESSAGE((first == red), rgba(first));
+    const Color added=drawn(renderer, textures[8], id, gweni::Rect(8, 8, 32, 32));
+    CHECK_MESSAGE((added == red), rgba(added));
+    CHECK(glGetError() == GL_NO_ERROR);
+
+    renderer.releasePrimitive(id);
+    for(gweni::Texture &texture:textures)
+        renderer.freeTexture(texture);
+    renderer.begin();
+    renderer.end();
+}
+
+TEST_CASE("App state: with setPreserveAppState an image loaded under the app's GL_UNPACK_SKIP_IMAGES draws its texels")
+{
+    gweni::platform::CurrentPath paths("resources");
+    gweni::renderer::OpenGLCore renderer(paths, gweni::Rect(gweni::Point(0, 0), gweni::test::viewSize()));
+    const Color red(200, 40, 30, 255);
+    const std::vector<uint8_t> pixels=solid(red, 16, 16);
+    gweni::Texture texture;
+    size_t id=0;
+    GLint skip=0;
+
+    renderer.init();
+    renderer.setPreserveAppState(true);
+    renderer.generatePrimitive(id);
+    // the app's: without gweni's own, the layer's upload reads past the end of
+    // the renderer's copy of the image
+    glPixelStorei(GL_UNPACK_SKIP_IMAGES, 1);
+    glPixelStorei(GL_UNPACK_IMAGE_HEIGHT, 0);
+    REQUIRE((renderer.loadTexturePixels(texture, 16, 16, 16*4, pixels.data()) == gweni::Texture::Status::Loaded));
+    glGetIntegerv(GL_UNPACK_SKIP_IMAGES, &skip);
+    CHECK(skip == 1);
+    glPixelStorei(GL_UNPACK_SKIP_IMAGES, 0);
+    glPixelStorei(GL_UNPACK_IMAGE_HEIGHT, 0);
+    const Color loaded=drawn(renderer, texture, id, gweni::Rect(8, 8, 32, 32));
+    CHECK_MESSAGE((loaded == red), rgba(loaded));
+    CHECK(glGetError() == GL_NO_ERROR);
+
+    renderer.releasePrimitive(id);
+    renderer.freeTexture(texture);
+    renderer.begin();
+    renderer.end();
 }
 
 TEST_SUITE_END();

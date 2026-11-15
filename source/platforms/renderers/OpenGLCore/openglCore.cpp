@@ -184,6 +184,8 @@ struct OpenGLCore::AppState
     GLint viewport[4]={};
     GLint packAlignment=4;
     GLint unpackAlignment=4, unpackRowLength=0, unpackSkipRows=0, unpackSkipPixels=0;
+    //! glTexSubImage3D's (an image layer's upload) would skip whole images
+    GLint unpackSkipImages=0, unpackImageHeight=0;
     //! the uploads would read from a pixel buffer the app left bound
     GLint pixelUnpackBuffer=0;
 #ifndef GWENI_GL_ES
@@ -229,6 +231,8 @@ struct OpenGLCore::AppState
         glGetIntegerv(GL_UNPACK_ROW_LENGTH, &unpackRowLength);
         glGetIntegerv(GL_UNPACK_SKIP_ROWS, &unpackSkipRows);
         glGetIntegerv(GL_UNPACK_SKIP_PIXELS, &unpackSkipPixels);
+        glGetIntegerv(GL_UNPACK_SKIP_IMAGES, &unpackSkipImages);
+        glGetIntegerv(GL_UNPACK_IMAGE_HEIGHT, &unpackImageHeight);
         glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &pixelUnpackBuffer);
 #ifndef GWENI_GL_ES
         glGetIntegerv(GL_POLYGON_MODE, polygonMode);
@@ -255,6 +259,8 @@ struct OpenGLCore::AppState
         glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
         glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
         glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+        glPixelStorei(GL_UNPACK_SKIP_IMAGES, 0);
+        glPixelStorei(GL_UNPACK_IMAGE_HEIGHT, 0);
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 #ifndef GWENI_GL_ES
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
@@ -295,6 +301,8 @@ struct OpenGLCore::AppState
         glPixelStorei(GL_UNPACK_ROW_LENGTH, unpackRowLength);
         glPixelStorei(GL_UNPACK_SKIP_ROWS, unpackSkipRows);
         glPixelStorei(GL_UNPACK_SKIP_PIXELS, unpackSkipPixels);
+        glPixelStorei(GL_UNPACK_SKIP_IMAGES, unpackSkipImages);
+        glPixelStorei(GL_UNPACK_IMAGE_HEIGHT, unpackImageHeight);
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, (GLuint)pixelUnpackBuffer);
 #ifndef GWENI_GL_ES
         glPolygonMode(GL_FRONT_AND_BACK, (GLenum)polygonMode[0]);
@@ -324,9 +332,10 @@ struct OpenGLCore::AppState
 
 //! setPreserveAppState() outside a frame: a font's atlas made in the update
 //! phase (its first measure), an image page made or written as it loads. The
-//! hook runs on unit 0 with no pixel buffer and gweni's unpack state, and the
-//! app's active unit, unit 0's 2D and 2D-array bindings, the pixel buffer and
-//! the unpack state are put back after it. Off, or inside a frame (begin()
+//! hook runs on unit 0 with no pixel buffer, gweni's unpack state and the
+//! scissor test off (it would clip an image page's regrow blit), and the app's
+//! active unit, unit 0's 2D and 2D-array bindings, the pixel buffer, the unpack
+//! state and the scissor test are put back after it. Off, or inside a frame (begin()
 //! has saved the app's state already), it does nothing.
 class OpenGLCore::OutsideFrame
 {
@@ -345,11 +354,18 @@ public:
         glGetIntegerv(GL_UNPACK_ROW_LENGTH, &m_unpack[1]);
         glGetIntegerv(GL_UNPACK_SKIP_ROWS, &m_unpack[2]);
         glGetIntegerv(GL_UNPACK_SKIP_PIXELS, &m_unpack[3]);
+        glGetIntegerv(GL_UNPACK_SKIP_IMAGES, &m_unpack[4]);
+        glGetIntegerv(GL_UNPACK_IMAGE_HEIGHT, &m_unpack[5]);
+        m_scissorTest=glIsEnabled(GL_SCISSOR_TEST);
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
         glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
         glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
         glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+        glPixelStorei(GL_UNPACK_SKIP_IMAGES, 0);
+        glPixelStorei(GL_UNPACK_IMAGE_HEIGHT, 0);
+        if(m_scissorTest)
+            glDisable(GL_SCISSOR_TEST);
     }
 
     OutsideFrame(const OutsideFrame &)=delete;
@@ -367,6 +383,10 @@ public:
         glPixelStorei(GL_UNPACK_ROW_LENGTH, m_unpack[1]);
         glPixelStorei(GL_UNPACK_SKIP_ROWS, m_unpack[2]);
         glPixelStorei(GL_UNPACK_SKIP_PIXELS, m_unpack[3]);
+        glPixelStorei(GL_UNPACK_SKIP_IMAGES, m_unpack[4]);
+        glPixelStorei(GL_UNPACK_IMAGE_HEIGHT, m_unpack[5]);
+        if(m_scissorTest)
+            glEnable(GL_SCISSOR_TEST);
         glActiveTexture((GLenum)m_activeTexture);
     }
 
@@ -376,7 +396,8 @@ private:
     GLint m_texture2D=0;
     GLint m_texture2DArray=0;
     GLint m_pixelUnpackBuffer=0;
-    GLint m_unpack[4]={ 4, 0, 0, 0 };
+    GLint m_unpack[6]={ 4, 0, 0, 0, 0, 0 };
+    GLboolean m_scissorTest=GL_FALSE;
 };
 
 void OpenGLCore::begin()

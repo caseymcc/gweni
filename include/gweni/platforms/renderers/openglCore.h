@@ -66,8 +66,8 @@ public:
     //! uploads change or depend on and sets gweni's own (the viewport at the
     //! view rect, unit 0 active, no sampler objects on gweni's texture units,
     //! the scissor, stencil and cull tests off, depth writes, colour writes,
-    //! GL_FUNC_ADD, the depth range 0..1, unpack alignment 4 and no row length
-    //! or skips, no pixel unpack buffer, and on desktop GL GL_FILL, no
+    //! GL_FUNC_ADD, the depth range 0..1, unpack alignment 4 and no row length,
+    //! image height or skips (rows, pixels, images), no pixel unpack buffer, and on desktop GL GL_FILL, no
     //! GL_FRAMEBUFFER_SRGB and no GL_PRIMITIVE_RESTART), and end(), after
     //! flush(), puts it all back: the program, the vertex array, the array
     //! buffer, the active unit and units 0..6's 2D and 2D-array textures and
@@ -77,11 +77,14 @@ public:
     //! buffer, and on desktop GL the polygon mode, GL_FRAMEBUFFER_SRGB and
     //! GL_PRIMITIVE_RESTART. Outside a frame, a font's atlas made where it is
     //! first measured (the update phase's layout, a measureText) and an image
-    //! page made or written as it loads run on unit 0 with no pixel buffer and
-    //! gweni's unpack state, and the app's active unit, unit 0's 2D and
-    //! 2D-array bindings, pixel buffer and unpack state are put back after;
+    //! page made or written as it loads run on unit 0 with no pixel buffer,
+    //! gweni's unpack state and the scissor test off (it would clip a page's
+    //! regrow blit), and the app's active unit, unit 0's 2D and 2D-array
+    //! bindings, pixel buffer, unpack state and scissor test are put back after;
     //! readPixels() still sets the pack alignment, and a font or image freed
-    //! deletes its texture. For an app that draws its own GL scene around gweni
+    //! deletes its texture. setViewRect() (glViewport) and setIndexChunkSlots()
+    //! (which binds vertex array 0) are the app's own calls and save nothing.
+    //! For an app that draws its own GL scene around gweni
     //! (docs/architecture.md -> "gweni over an app's scene").
     void setPreserveAppState(bool preserve) { m_preserveAppState=preserve; }
     bool preserveAppState() const { return m_preserveAppState; }

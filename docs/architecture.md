@@ -1452,18 +1452,22 @@ gweni draws) (the sorted pass sets nothing more than the opaque one: it draws th
 the same programs, blend and depth state). gweni's own state for the frame is the
 viewport at the view rect, unit 0 active, no sampler objects on its units, the scissor,
 stencil and cull tests off, depth and colour writes on, `GL_FUNC_ADD`, the depth range
-0..1, unpack alignment 4 with no row length or skips, no pixel unpack buffer, and on
-desktop GL `GL_FILL`, no `GL_FRAMEBUFFER_SRGB` and no primitive restart. It all stays
+0..1, unpack alignment 4 with no row length, image height or skips (rows, pixels and
+images: an image layer's `glTexSubImage3D` reads the last two), no pixel unpack buffer,
+and on desktop GL `GL_FILL`, no `GL_FRAMEBUFFER_SRGB` and no primitive restart. It all stays
 inside the GL 3.3 / GLES 3.0 subset. Outside a frame, the GL calls a font's first
 measure makes (its atlas texture, in the update phase's layout or a `measureText`) and
-an image's load (its page made or written) run on unit 0 with no pixel buffer and
-gweni's unpack state, and the app's active unit, unit 0's 2D and 2D-array bindings, its
-pixel buffer and unpack state are put back after them (`OpenGLCore::OutsideFrame`), so
+an image's load (its page made or written) run on unit 0 with no pixel buffer, gweni's
+unpack state and the scissor test off (it would clip the blit that copies a regrown
+image page's old layers), and the app's active unit, unit 0's 2D and 2D-array bindings,
+its pixel buffer, unpack state and scissor test are put back after them (`OpenGLCore::OutsideFrame`), so
 an app's binding is never replaced by an atlas, saved as the app's and later deleted;
 `readPixels` still sets the pack alignment, and a font or image freed deletes its
-texture. `tests/glAppState.cpp` (`gl_only`) sets a non-default value of each, draws a
-frame and compares every one through `glGet*`, and does the same round an update phase
-whose layout loads a font.
+texture. `setViewRect()` (`glViewport`) and `setIndexChunkSlots()` (which binds vertex
+array 0) are the app's own calls and save nothing. `tests/glAppState.cpp` (`gl_only`)
+sets a non-default value of each, draws a frame and compares every one through `glGet*`,
+does the same round an update phase whose layout loads a font, and loads images under
+the app's scissor (a page regrown) and `GL_UNPACK_SKIP_IMAGES`.
 
 **HudExample** (`examples/hud/`, with `GWENI_BUILD_EXAMPLES` and the GL renderer, not
 in the web tree): a spinning, depth-tested cube with its own shader (GLSL 3.30 core, or
