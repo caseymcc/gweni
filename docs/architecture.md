@@ -1280,19 +1280,28 @@ two passes when a translucent slot can show (`SlotRenderer`, #685):
    `z+1`): the **translucent slots**; the **opaque slots in front of one** whose
    footprint overlaps its own (or at its z with a higher id, which slot order drew
    after it), so an opaque Button's anti-aliased corners on a translucent panel
-   blend over the panel and not over what is behind it; and the **text runs behind
-   one** that overlap it, so they show through it. Consecutive slots are a *slot
+   blend over the panel and not over what is behind it, and then, the set closed
+   under the same rule, the opaque slots in front of one of those that overlap it
+   (else the opaque pass would draw them first and their edges would blend over
+   what is behind the slot they are in front of: a NodeGraph node's title-bar
+   corners and pin rims, outside the marquee that sorts its frame); and the **text
+   runs behind a translucent one** that overlap it, so they show through it. Consecutive slots are a *slot
    group*, a draw per chunk they cross in order, its ranges in that order (a
    multi-draw draws its ranges in order; a run of consecutive ids is one range);
    consecutive runs a *text group*, a draw per atlas and chunk of its runs. Then the
    text pass draws every other run, as before.
 
-**Translucent** (`slotTranslucent()`): the alphas of the colours the slot's style
-draws (a rounded rect's gradient and, with a border, its border; a bilinear fill's
-edges; a checker's cells; a grid's lines; an image's tint) neither all 255 nor all 0,
-or an image (style 2) whose layer holds an image with a texel neither transparent nor
-opaque, flagged when it is loaded (`finishTextureLoad`; a transparent texel is
-discarded, so it does not count). All 255 or all 0 draw in the opaque pass. A bit
+**Translucent** (`slotTranslucent()`): the alphas the slot's style outputs (a
+rounded rect's and a bilinear fill's gradient, whose alpha `roundedRect()` draws over
+the border too, the border colour's own alpha unused; a grid's lines; an image's tint;
+never a checker, drawn opaque) neither all 255 nor all 0, or an image (style 2) whose
+layer holds an image with a texel neither transparent nor opaque, flagged when it is
+loaded (`finishTextureLoad`; a transparent texel is discarded, so it does not count;
+a layer loaded again with other texels reclassifies its slots, in the index too, though
+their bytes stay). All 255 or all 0 draw in the opaque pass. An icon image with
+anti-aliased (partly transparent) edge texels counts, and so does a disabled tint of
+0x7f: ShowcaseButtonsDemo, NavigationRailDemo, SegmentedButtonsDemo, SplitButtonDemo,
+TabControlDemo and ImageGridDemo build the index for them, their pixels unchanged. A bit
 per slot (`m_translucentSlots`, with a list of them) is kept from the dirty slots with
 the visibility bits (`updateSlotVisibility`), so it costs O(slots changed), and is
 allocated only when the first translucent slot shows.
@@ -1305,14 +1314,20 @@ translucent slot can show (so a UI that never has one allocates none of it) and 
 kept from the slots whose vertexes or clip box changed and the runs noted changed
 (`noteRunChanged`: `renderText`, a show, a hide, a release, a new font; an inline
 check that costs nothing while the index is not built), each moved from its old
-cells to its new ones; a new view size builds it again. The **sorted set and its
-schedule** are built again only when stale: a translucent slot dirty, a slot or run
-that changed reaching a cell that holds a translucent one, a run in the set changed,
-a new chunk size or switch. The build queries, for each translucent slot, the cells
-its footprint covers, so it costs what the translucent slots overlap, not the tree:
-a dragged translucent Window over 10 000 Labels visits the same 269 index items a
-frame as over 1 000 (`gweni_bench --scene translucent-drag`), the NodeGraph marquee
-36. The chunks whose slots enter or leave the set build their ranges again and never
+cells to its new ones; a new view size builds it again. Each cell also counts the
+sorted set's slots in it. The **sorted set and its schedule** are built again only
+when stale: a translucent slot dirty, a sorted slot moved or given another z, a slot
+that changed reaching a cell that holds a translucent or a sorted one, a run that
+changed reaching one holding a translucent one, a run in the set laid out in other
+glyph slots or another font (one relaid in its slots leaves it), a new chunk size or
+switch. The build queries the cells each slot of the set covers, so it costs what the
+set overlaps, not the tree; a slot whose footprint is inside that of the slot whose
+query added it (a control's parts on a translucent panel) is not queried, since what
+is in front of it and overlaps it was found already. A dragged translucent Window
+over 10 000 Labels visits the same 269 index items a frame as over 1 000
+(`gweni_bench --scene translucent-drag`), the NodeGraph marquee 173, the stats
+overlay's refresh about 465. A sorted text group's runs are drawn by font in the order
+the fonts were loaded (`FontData::serial`), the same in every build. The chunks whose slots enter or leave the set build their ranges again and never
 merge a gap across a sorted slot; the fonts whose runs do, their draw lists. With no
 translucent slot it is exactly the old order and draws, and the samples are the same
 bytes (ChartLinesDemo's and ChartAreasDemo's translucent areas and spans included).

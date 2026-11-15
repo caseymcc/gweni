@@ -667,6 +667,7 @@ Font::Status SlotRenderer::loadFont(const Font &requested, float px)
     const bool fallback=fontData.fallback;
 
     fontData.owners=1;
+    fontData.serial=++m_fontSerial;
     m_lastFont=&(*m_fonts.insert(std::make_pair(key, std::move(fontData))).first);
     return fallback?Font::Status::LoadedFallback:Font::Status::Loaded;
 }
@@ -1587,23 +1588,18 @@ bool SlotRenderer::slotTranslucent(const Vertex *vertexes) const
                 return true;
             break;
         }
-        case 4: // rounded rect: its gradient, and its border with one
+        // roundedRect() draws the fill's alpha over the whole shape, the border
+        // in the fill's alpha too (its colour's own alpha is not drawn)
+        case 4: // rounded rect: its gradient
             alpha(vertex.ty);
             alpha(vertex.cy);
-            if(vertex.border != 0)
-                alpha(vertex.by);
             break;
         case 6: // bilinear: its top and bottom edges
             alpha(vertex.ty);
             alpha(vertex.dy);
-            if(vertex.border != 0)
-                alpha(vertex.by);
             break;
-        case 7: // checker: opaque over its cells, whatever the fill's alpha
-            alpha(vertex.cy);
-            alpha(vertex.dy);
-            if(vertex.border != 0)
-                alpha(vertex.by);
+        case 7: // checker: drawn opaque, whatever its colours' alphas
+            alpha(0xff);
             break;
         case 8: // grid: its minor and major lines
             alpha(vertex.cy);
@@ -1824,8 +1820,12 @@ SlotRenderer::OverlapRect SlotRenderer::runFootprint(size_t textId) const
 }
 
 bool SlotRenderer::moveOverlapItem(uint32_t key, const OverlapRect &before, bool wasTranslucent,
-    const OverlapRect &after, bool translucent)
+    const OverlapRect &after, bool translucent, bool sorted)
 {
+    // a run moved matters only where a translucent slot is, which it shows
+    // through; a slot also where a sorted one is, which the set's closure
+    // reaches it from
+    const bool slot=(key&OverlapIndex::kRunBit) == 0;
     OverlapIndex &index=m_overlap;
     bool touched=false;
     // the cells a rect reaches, [c0, c1) x [r0, r1)
@@ -1858,7 +1858,9 @@ bool SlotRenderer::moveOverlapItem(uint32_t key, const OverlapRect &before, bool
                 }
                 if(wasTranslucent)
                     --cell.translucent;
-                touched=touched || (cell.translucent > 0);
+                if(sorted)
+                    --cell.sorted;
+                touched=touched || (cell.translucent > 0) || (slot && (cell.sorted > 0));
             }
         }
     }
@@ -1871,14 +1873,35 @@ bool SlotRenderer::moveOverlapItem(uint32_t key, const OverlapRect &before, bool
             {
                 OverlapIndex::Cell &cell=index.cells[size_t(r)*index.cols+c];
 
-                touched=touched || (cell.translucent > 0);
+                touched=touched || (cell.translucent > 0) || (slot && (cell.sorted > 0));
                 cell.items.push_back(key);
                 if(translucent)
                     ++cell.translucent;
+                if(sorted)
+                    ++cell.sorted;
             }
         }
     }
     return touched;
+}
+
+void SlotRenderer::countSortedCells(const OverlapRect &rect, int delta)
+{
+    OverlapIndex &index=m_overlap;
+
+    if(rect.empty())
+        return;
+
+    const int c0=rect.x0 >> OverlapIndex::kCellLog2;
+    const int r0=rect.y0 >> OverlapIndex::kCellLog2;
+    const int c1=std::min(((rect.x1-1) >> OverlapIndex::kCellLog2)+1, index.cols);
+    const int r1=std::min(((rect.y1-1) >> OverlapIndex::kCellLog2)+1, index.rows);
+
+    for(int r=r0; r<r1; ++r)
+    {
+        for(int c=c0; c<c1; ++c)
+            index.cells[size_t(r)*index.cols+c].sorted+=delta;
+    }
 }
 
 void SlotRenderer::updateOverlapSlot(size_t slot)
@@ -1901,7 +1924,11 @@ void SlotRenderer::updateOverlapSlot(size_t slot)
     // a new colour alone changes nothing the set is made from
     if((memcmp(&before, &after, sizeof(OverlapRect)) == 0) && (wasTranslucent == translucent) && (index.slotZ[slot] == z))
         return;
-    if(moveOverlapItem((uint32_t)slot, before, wasTranslucent, after, translucent))
+
+    const bool sorted=slotSorted(slot);
+
+    // a sorted slot moved or given another z is drawn in another place in the order
+    if(moveOverlapItem((uint32_t)slot, before, wasTranslucent, after, translucent, sorted) || sorted)
         m_sortedScheduleStale=true;
     before=after;
     index.slotTranslucent[slot]=translucent?1:0;
@@ -1922,9 +1949,19 @@ void SlotRenderer::updateOverlapRun(size_t textId)
     const uint16_t z=(textId < m_textRuns.size())?(uint16_t)runZ(m_textRuns[textId].zIndex):0;
     OverlapRect &before=index.runRects[textId];
 
-    // a run in the set may have new glyph slots, which its group's draws list
+    // a run in the set laid out in other glyph slots or another font: its
+    // group's draws list them
     if((textId < index.sortedRunFlags.size()) && index.sortedRunFlags[textId])
-        m_sortedScheduleStale=true;
+    {
+        const TextRun &run=m_textRuns[textId];
+        const std::vector<OverlapIndex::RunDrawn> &drawn=index.sortedRunDrawn;
+        const auto it=std::lower_bound(drawn.begin(), drawn.end(), textId,
+            [](const OverlapIndex::RunDrawn &entry, size_t id) { return entry.textId < id; });
+
+        if((it == drawn.end()) || (it->textId != textId) || (it->font != run.fontData)
+            || (it->range != drawnRange(run)))
+            m_sortedScheduleStale=true;
+    }
     if((memcmp(&before, &after, sizeof(OverlapRect)) == 0) && (index.runZ[textId] == z))
         return;
     if(moveOverlapItem((uint32_t)textId|OverlapIndex::kRunBit, before, false, after, false))
@@ -1990,6 +2027,7 @@ void SlotRenderer::buildOverlapIndex()
 
     reserveDraws(m_sortedDraws);
     reserveDraws(m_sortedTextDraws);
+    index.sortedRunDrawn.reserve(kReservedSortedDraws);
     m_sortedAtlases.reserve(kReservedSortedDraws);
     m_sortedGroups.reserve(kReservedSortedDraws);
 }
@@ -2009,8 +2047,10 @@ void SlotRenderer::buildSortedSchedule()
     // its flag set as it is found.
     std::vector<size_t> &slots=m_overlapSlotsScratch;
     std::vector<size_t> &runs=m_overlapRunsScratch;
+    std::vector<size_t> &adders=m_overlapAdderScratch;
 
     slots.clear();
+    adders.clear();
     runs.clear();
     if(index.sortedSlotBits.size() < m_visibleSlots.size())
         index.sortedSlotBits.resize(m_visibleSlots.size(), 0);
@@ -2038,7 +2078,7 @@ void SlotRenderer::buildSortedSchedule()
             m_primitiveChunks.resize(chunk+1);
         return m_primitiveChunks[chunk];
     };
-    auto addSlot=[&](size_t slot)
+    auto addSlot=[&](size_t slot, size_t adder)
     {
         if(slotMark[slot] == 2)
             return;
@@ -2047,11 +2087,13 @@ void SlotRenderer::buildSortedSchedule()
             PrimitiveChunkSlots &chunk=chunkOf(slot);
 
             index.sortedSlotBits[slot/64]|=uint64_t(1)<<(slot%64);
+            countSortedCells(index.slotRects[slot], 1);
             ++chunk.sorted;
             chunk.stale=true;
         }
         slotMark[slot]=2;
         slots.push_back(slot);
+        adders.push_back(adder);
     };
     auto addRun=[&](size_t textId)
     {
@@ -2067,49 +2109,58 @@ void SlotRenderer::buildSortedSchedule()
 
     if(active)
     {
+        for(size_t slot:m_translucentList)
+            addSlot(slot, SIZE_MAX);
+        // Each slot of the set in turn, those the queries add included: an opaque
+        // slot in front of one already in it is drawn after it (by z in the sorted
+        // pass, where the opaque pass would draw it first and its edges would blend
+        // over what is behind), so the set is closed under "in front of and
+        // overlapping"; only a translucent slot takes the runs behind it. One whose
+        // footprint is inside that of the slot that added it (a control's parts on
+        // a translucent panel) finds nothing new: what is in front of it and
+        // overlaps it is in front of that slot and overlaps it, so is in already.
+        for(size_t k=0; k<slots.size(); ++k)
         {
-            for(size_t slot:m_translucentList)
+            const size_t slot=slots[k];
+            const OverlapRect &rect=index.slotRects[slot];
+            const int z=m_vertexes[slot*4].z;
+            const bool translucent=index.slotTranslucent[slot] != 0;
+
+            if(rect.empty() || ((adders[k] != SIZE_MAX) && rect.inside(index.slotRects[adders[k]])))
+                continue;
+
+            const int c0=rect.x0 >> OverlapIndex::kCellLog2;
+            const int r0=rect.y0 >> OverlapIndex::kCellLog2;
+            const int c1=std::min(((rect.x1-1) >> OverlapIndex::kCellLog2)+1, index.cols);
+            const int r1=std::min(((rect.y1-1) >> OverlapIndex::kCellLog2)+1, index.rows);
+
+            for(int r=r0; r<r1; ++r)
             {
-                const OverlapRect &rect=index.slotRects[slot];
-                const int z=m_vertexes[slot*4].z;
-
-                addSlot(slot);
-                if(rect.empty())
-                    continue;
-
-                const int c0=rect.x0 >> OverlapIndex::kCellLog2;
-                const int r0=rect.y0 >> OverlapIndex::kCellLog2;
-                const int c1=std::min(((rect.x1-1) >> OverlapIndex::kCellLog2)+1, index.cols);
-                const int r1=std::min(((rect.y1-1) >> OverlapIndex::kCellLog2)+1, index.rows);
-
-                for(int r=r0; r<r1; ++r)
+                for(int c=c0; c<c1; ++c)
                 {
-                    for(int c=c0; c<c1; ++c)
+                    for(uint32_t key:index.cells[size_t(r)*index.cols+c].items)
                     {
-                        for(uint32_t key:index.cells[size_t(r)*index.cols+c].items)
+                        ++m_frameStats.overlapVisited;
+                        if(key&OverlapIndex::kRunBit)
                         {
-                            ++m_frameStats.overlapVisited;
-                            if(key&OverlapIndex::kRunBit)
-                            {
-                                const size_t textId=key&~OverlapIndex::kRunBit;
+                            const size_t textId=key&~OverlapIndex::kRunBit;
 
-                                if((index.sortedRunFlags[textId] != 2) && (runZ(m_textRuns[textId].zIndex) < z)
-                                    && index.runRects[textId].overlaps(rect))
-                                    addRun(textId);
-                                continue;
-                            }
-
-                            const size_t other=key;
-
-                            if((slotMark[other] == 2) || index.slotTranslucent[other])
-                                continue;
-
-                            const int otherZ=m_vertexes[other*4].z;
-
-                            if(((otherZ > z) || ((otherZ == z) && (other > slot)))
-                                && index.slotRects[other].overlaps(rect))
-                                addSlot(other);
+                            if(translucent && (index.sortedRunFlags[textId] != 2)
+                                && (runZ(m_textRuns[textId].zIndex) < z) && index.runRects[textId].overlaps(rect))
+                                addRun(textId);
+                            continue;
                         }
+
+                        const size_t other=key;
+
+                        if((slotMark[other] == 2) || index.slotTranslucent[other])
+                            continue;
+
+                        const int otherZ=m_vertexes[other*4].z;
+
+                        if(((otherZ > z) || ((otherZ == z) && (other > slot)))
+                            && index.slotRects[other].overlaps(rect))
+                            addSlot(other, slot);
                     }
                 }
             }
@@ -2123,6 +2174,8 @@ void SlotRenderer::buildSortedSchedule()
             continue;
         slotMark[slot]=0;
         index.sortedSlotBits[slot/64]&=~(uint64_t(1)<<(slot%64));
+        if(slot < index.slotRects.size())
+            countSortedCells(index.slotRects[slot], -1);
 
         PrimitiveChunkSlots &chunk=chunkOf(slot);
 
@@ -2139,8 +2192,14 @@ void SlotRenderer::buildSortedSchedule()
         if(m_textRuns[textId].fontData)
             m_textRuns[textId].fontData->drawListStale=true;
     }
+    index.sortedRunDrawn.clear();
     for(size_t textId:runs)
+    {
         index.sortedRunFlags[textId]=1;
+        index.sortedRunDrawn.push_back({textId, m_textRuns[textId].fontData, drawnRange(m_textRuns[textId])});
+    }
+    std::sort(index.sortedRunDrawn.begin(), index.sortedRunDrawn.end(),
+        [](const OverlapIndex::RunDrawn &a, const OverlapIndex::RunDrawn &b) { return a.textId < b.textId; });
     index.sortedSlots.swap(slots);
     index.sortedRuns.swap(runs);
 
@@ -2210,10 +2269,16 @@ void SlotRenderer::buildSortedSchedule()
 
                 m_sortedGroupRuns.emplace_back(m_textRuns[textId].fontData, textId);
             }
-            // by font, the fonts in m_fonts' order as the text pass goes
+            // by font, in the order the fonts were loaded (FontData::serial), the
+            // same in every build, where their addresses need not be
             std::stable_sort(m_sortedGroupRuns.begin(), m_sortedGroupRuns.end(),
                 [](const std::pair<FontData *, size_t> &a, const std::pair<FontData *, size_t> &b)
-                { return a.first < b.first; });
+                {
+                    const uint64_t left=a.first?a.first->serial:0;
+                    const uint64_t right=b.first?b.first->serial:0;
+
+                    return left < right;
+                });
             group.first=m_sortedAtlases.size();
             for(size_t j=0; j<m_sortedGroupRuns.size();)
             {
@@ -2787,8 +2852,12 @@ void SlotRenderer::flush()
             m_imageTranslucencyChanged=false;
             for(size_t slot=0; slot<m_vertexes.size()/4; ++slot)
             {
-                if(m_vertexes[slot*4].style == 2)
-                    updateSlotVisibility(slot);
+                if(m_vertexes[slot*4].style != 2)
+                    continue;
+                updateSlotVisibility(slot);
+                // not dirty, so the index's pass below does not see it
+                if(m_overlap.built && !m_overlap.rebuild)
+                    updateOverlapSlot(slot);
             }
         }
     }

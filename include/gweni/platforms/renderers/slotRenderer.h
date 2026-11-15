@@ -214,6 +214,7 @@ struct FontData
         owners=other.owners;
         freed=other.freed;
         fallback=other.fallback;
+        serial=other.serial;
         asciiGlyphs=other.asciiGlyphs;
         other.asciiGlyphs.fill(nullptr);
         otherGlyphs=std::move(other.otherGlyphs);
@@ -291,6 +292,9 @@ struct FontData
     //! fallback font (SlotRenderer::setFallbackFont), loaded from memory into this
     //! manager's atlas; loadFont reports it as Font::Status::LoadedFallback.
     bool fallback=false;
+    //! The order it was loaded in (SlotRenderer::loadFont), a key that is the
+    //! same in every build, unlike its address or its place in the hash map
+    uint64_t serial=0;
     //! glyph()'s table of textureFont's glyphs, by utf8_to_utf32's codepoint as
     //! freetype-gl keys them: the ASCII ones in place, the rest in otherGlyphs
     std::array<ftgl::texture_glyph_t *, 128> asciiGlyphs{};
@@ -1019,6 +1023,7 @@ protected:
     void deleteTextureData(SlotTextureData *textureData);
 
     FontMap m_fonts; //!< keyed by resolveFont()
+    uint64_t m_fontSerial=0; //!< the last FontData::serial given
     uint64_t m_flushes=0; //!< flush() calls, for FontData::idleSince
     size_t m_idleFonts=0; //!< fonts with an idleSince, at most (eraseIdleFonts)
     //! Faces whose last load failed: ensureFont does not retry them
@@ -1349,6 +1354,9 @@ private:
         bool overlaps(const OverlapRect &other) const
         {
             return (x0 < other.x1) && (other.x0 < x1) && (y0 < other.y1) && (other.y0 < y1);
+        }        bool inside(const OverlapRect &other) const
+        {
+            return (other.x0 <= x0) && (x1 <= other.x1) && (other.y0 <= y0) && (y1 <= other.y1);
         }
     };
     //! The sorted pass's spatial index: a grid of kCellSide device px cells over
@@ -1368,6 +1376,9 @@ private:
         {
             std::vector<uint32_t> items;
             uint32_t translucent=0;
+            //! the slots of the sorted set indexed here, opaque ones included: a
+            //! slot in front of one is drawn after it (the set is closed so)
+            uint32_t sorted=0;
         };
 
         bool built=false;
@@ -1383,6 +1394,16 @@ private:
         std::vector<uint16_t> slotZ;
         std::vector<OverlapRect> runRects;
         std::vector<uint16_t> runZ;
+        //! each sorted run's font and drawn range (SlotRenderer::drawnRange) as
+        //! the schedule drew it, by text id, so a run laid out again in them
+        //! leaves it as it is; the set's runs alone, not a field per text id
+        struct RunDrawn
+        {
+            size_t textId=0;
+            const FontData *font=nullptr;
+            std::pair<size_t, size_t> range;
+        };
+        std::vector<RunDrawn> sortedRunDrawn;
         //! the runs noted changed since the last flush (noteRunChanged), each once
         std::vector<size_t> changedRuns;
         std::vector<uint8_t> runNoted;
@@ -1407,10 +1428,13 @@ private:
     //! view; empty for one that draws nothing
     OverlapRect runFootprint(size_t textId) const;
     //! Moves item \a key from \a before's cells to \a after's, the cells'
-    //! translucent counts with it; true if a cell either touched holds a
-    //! translucent slot (other than this one as it was or is)
+    //! translucent and sorted counts with it (\a sorted: the slot is in the
+    //! sorted set); true if a cell either touched holds a translucent slot, or
+    //! for a slot a sorted one (other than this one as it was or is)
     bool moveOverlapItem(uint32_t key, const OverlapRect &before, bool wasTranslucent, const OverlapRect &after,
-        bool translucent);
+        bool translucent, bool sorted=false);
+    //! Adds \a delta to the sorted count of the cells \a rect reaches
+    void countSortedCells(const OverlapRect &rect, int delta);
     //! Indexes every slot and run that can show, from nothing
     void buildOverlapIndex();
     //! Brings the slot's footprint in the index up to date, the schedule marked
@@ -1481,6 +1505,8 @@ private:
     std::vector<std::pair<uint64_t, size_t>> m_sortedOrder;
     std::vector<std::pair<FontData *, size_t>> m_sortedGroupRuns;
     std::vector<size_t> m_overlapSlotsScratch;
+    //! for each of m_overlapSlotsScratch, the slot whose query added it (SIZE_MAX: a translucent one)
+    std::vector<size_t> m_overlapAdderScratch;
     std::vector<size_t> m_overlapRunsScratch;
     //! per slot: 1 in the last set, 2 found by this build, else 0
     std::vector<uint8_t> m_overlapSlotMark;

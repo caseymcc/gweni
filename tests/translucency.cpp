@@ -38,7 +38,27 @@
  *                      in the frame of the move (the overlap index kept up
  *                      to date from the slots and runs that changed);
  *    chunks            two translucent slots and an opaque one behind them in
- *                      different index chunks (setIndexChunkSlots(64)).
+ *                      different index chunks (setIndexChunkSlots(64));
+ *    image reloaded    an opaque image freed and a half-transparent one loaded
+ *                      into its layer (the slot's bytes unchanged, so it is not
+ *                      dirty), then a run moved under it, blends in that frame;
+ *    in front of the   opaque rounded rects in front of an opaque slot that is
+ *    sorted ones       in the sorted pass (it is in front of a translucent one),
+ *                      overlapping it but not the translucent slot, a chain of
+ *                      two, blend their corner arcs over it: the set is closed
+ *                      under "in front of and overlapping". Today's order draws
+ *                      this scene right (the ids are in z order), so this case
+ *                      holds the sorted pass to it rather than failing there;
+ *                      and one moved onto the sorted slot from a frame where it
+ *                      overlapped nothing, in no cell a translucent slot is in,
+ *                      blends in the frame of the move;
+ *    opaque output     a rounded rect with an opaque fill and a half-transparent
+ *                      border colour (whose alpha the shader does not draw) and a
+ *                      checker over a half-transparent fill (drawn opaque) are
+ *                      not translucent: the sorted pass holds only the one
+ *                      translucent rect beside them;
+ *    run redrawn       a run behind a panel drawn again in another colour (the
+ *                      same glyph slots and footprint) builds no new schedule.
  *
  *  The renderer is shared with the other cases, so each case releases its ids
  *  and puts the chunk size back when it ends.
@@ -435,4 +455,129 @@ TEST_CASE("Translucency: a panel moved over text and text moved under a panel bl
         drawScene(before);
         CHECK(badPixels(drawScene(after), reference) == 0);
     }
+}
+
+TEST_CASE("Translucency: an image reloaded half transparent in its layer, then a run moved under it")
+{
+    Ids ids;
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
+    const std::vector<size_t> prims=ids.primitives(2);
+    const size_t run=ids.text();
+    const int side=16;
+    std::vector<uint8_t> opaque(side*side*4), half(side*side*4);
+
+    for(size_t i=0; i<opaque.size(); i+=4)
+    {
+        opaque[i]=half[i]=250;
+        opaque[i+1]=half[i+1]=250;
+        opaque[i+2]=half[i+2]=30;
+        opaque[i+3]=255;
+        half[i+3]=128;
+    }
+
+    gweni::Texture image;
+
+    REQUIRE((renderer.loadTexturePixels(image, side, side, side*4, opaque.data()) == gweni::Texture::Status::Loaded));
+
+    const Item picture{5,
+        [&](SlotRenderer &renderer)
+        {
+            renderer.setDrawColor(Color(255, 255, 255, 255));
+            renderer.drawTexturedRect(image, prims[0], Rect(20, 20, 128, 128), 5, 0.0f, 0.0f, 1.0f, 1.0f);
+        },
+        [&](SlotRenderer &renderer) { renderer.hidePrimitive(prims[0]); }};
+    // a translucent slot away from the image, so the overlap index is built
+    const Item far=rect(prims[1], Rect(300, 20, 40, 40), Color(250, 20, 20, 128), 5);
+    const std::vector<Item> before{picture, far, text(run, Point(200, 200), "HHHH", ink, 1)};
+    const std::vector<Item> after{picture, far, text(run, Point(30, 30), "HHHH", ink, 1)};
+
+    drawScene(before);
+    drawScene(before);
+    // the same layer again, so the image's slot writes the same bytes
+    renderer.freeTexture(image);
+    image=gweni::Texture();
+    REQUIRE((renderer.loadTexturePixels(image, side, side, side*4, half.data()) == gweni::Texture::Status::Loaded));
+    drawScene(before);
+    CHECK(renderer.getFrameStats().primitiveSlotsWritten == 0);
+
+    const Frame moved=drawScene(after);
+    const Frame reference=drawReference(after);
+
+    CHECK(badPixels(moved, reference) == 0);
+
+    renderer.setTranslucentSort(false);
+    CHECK(badPixels(drawScene(after), reference) > 0);
+    renderer.setTranslucentSort(true);
+
+    renderer.hidePrimitive(prims[0]);
+    renderer.begin();
+    renderer.end();
+    renderer.freeTexture(image);
+}
+
+TEST_CASE("Translucency: opaque rounded rects in front of a sorted opaque slot blend their edges over it")
+{
+    Ids ids;
+    const std::vector<size_t> prims=ids.primitives(4);
+    const Color white(240, 240, 240, 255);
+
+    // T translucent, x 20..120; O1 opaque in front of it, x 80..260, so sorted;
+    // O2 in front of O1, overlapping it alone; O3 in front of O2, overlapping it
+    // alone: each taken after the one it is in front of
+    checkScene({rect(prims[0], Rect(20, 20, 100, 100), panel, 3),
+        rounded(prims[1], Rect(80, 40, 180, 60), 0.0f, Color(200, 60, 60, 255), 5),
+        rounded(prims[2], Rect(170, 50, 60, 80), 14.0f, white, 7),
+        rounded(prims[3], Rect(200, 110, 60, 40), 14.0f, Color(60, 200, 90, 255), 9)}, true);
+}
+
+TEST_CASE("Translucency: an opaque rounded rect moved onto a sorted opaque slot blends its edges over it")
+{
+    Ids ids;
+    const std::vector<size_t> prims=ids.primitives(3);
+    const Item back=rect(prims[0], Rect(20, 20, 100, 100), panel, 3);
+    const Item middle=rounded(prims[1], Rect(80, 40, 180, 60), 0.0f, Color(200, 60, 60, 255), 5);
+    const std::vector<Item> after{back, middle, rounded(prims[2], Rect(170, 50, 60, 40), 14.0f, Color(240, 240, 240, 255), 7)};
+    const Frame reference=drawReference(after);
+
+    drawScene({back, middle, rounded(prims[2], Rect(300, 160, 60, 40), 14.0f, Color(240, 240, 240, 255), 7)});
+    CHECK(badPixels(drawScene(after), reference) == 0);
+}
+
+TEST_CASE("Translucency: a slot that draws opaque whatever its colours' alphas is not sorted")
+{
+    Ids ids;
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
+    const std::vector<size_t> prims=ids.primitives(3);
+    const Color red(200, 60, 60, 255);
+    const Color half(250, 250, 250, 128);
+
+    // a translucent rect apart from both, so the index is built and the set made
+    renderer.begin();
+    renderer.setDrawColor(panel);
+    renderer.drawFilledRect(prims[0], Rect(300, 20, 40, 40), 3);
+    renderer.drawRoundedRect(prims[1], Rect(20, 20, 100, 60), 8.0f, 2.0f, red, red, half, 3);
+    renderer.drawCheckerRect(prims[2], Rect(20, 100, 100, 60), 3, half, Color(200, 200, 200, 255),
+        Color(90, 90, 90, 255), 0.0f, 0.0f, red);
+    renderer.end();
+    renderer.begin();
+    renderer.end();
+    CHECK(renderer.getFrameStats().sortedSlots == 1);
+}
+
+TEST_CASE("Translucency: a sorted run drawn again in its glyph slots builds no new schedule")
+{
+    Ids ids;
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
+    const std::vector<size_t> prims=ids.primitives(1);
+    const size_t run=ids.text();
+    const Item back=rect(prims[0], Rect(20, 110, 150, 80), panel, 5);
+
+    drawScene({back, text(run, Point(30, 130), "HHHH", ink, 2)});
+    drawScene({back, text(run, Point(30, 130), "HHHH", ink, 2)});
+    REQUIRE(renderer.getFrameStats().sortedRuns == 1);
+
+    const Frame frame=drawScene({back, text(run, Point(30, 130), "HHHH", Color(250, 120, 120, 255), 2)});
+
+    CHECK(renderer.getFrameStats().sortedScheduleBuilds == 0);
+    CHECK(badPixels(frame, drawReference({back, text(run, Point(30, 130), "HHHH", Color(250, 120, 120, 255), 2)})) == 0);
 }
