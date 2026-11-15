@@ -4485,8 +4485,10 @@ two programs and the draws. What follows describes both together:
     and the one the mouse left. A range is one strip along each row: a cell inside it
     joined to its left or right neighbour is square on that side through the edge mask
     (`renderer::SquareTopLeft` ...) and reaches the cell's edge there, the ends (drawn as
-    the selection) rounded on their outside, and a row's first and last column rounded
-    where the strip wraps. The text colours are `Colors.Calendar` (`CalendarDayText`,
+    the selection) rounded on their outside and drawing no border on the side they join
+    (`renderer::NoBorderLeft`/`NoBorderRight`, unless the cursor's ring is on them), so
+    the strip is one piece, and a row's first and last column rounded where the strip
+    wraps. The text colours are `Colors.Calendar` (`CalendarDayText`,
     `CalendarOtherMonthText`, `CalendarDisabledText`, `CalendarSelectedText`,
     `CalendarTodayText`, `CalendarWeekdayText`, `CalendarTitleText`; a range's ends are
     selected, so they take `CalendarSelectedText` on the selected fill); a hover keeps the

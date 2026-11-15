@@ -40,7 +40,8 @@
  *  swapped when earlier, and a third click starts a new range; each click
  *  fires onSelectionChanged once, setRange() nothing (swapping its ends too).
  *  The range's ends are selected (the selected fill and text colour), the
- *  days between them in range alone.
+ *  days between them in range alone; an end draws no border on the side it
+ *  joins the strip, unless the cursor's ring is on it.
  *  Space selects at the cursor, which the preview follows. The preview moved
  *  from one cell to the next marks those two cells alone (the leave keeps it
  *  for the enter to move), and moved onto a disabled date or off the grid it
@@ -1211,4 +1212,37 @@ TEST_CASE("Calendar: a range preview moved one cell marks the two cells alone")
     scene.hover(calendar->getWeekdayLabel(0));
     CHECK_FALSE(cellOf(calendar, Date(2026, 11, 25))->getLook().inRange);
     CHECK(cellOf(calendar, Date(2026, 11, 2))->getLook().rangeEnd);
+}
+
+TEST_CASE("Calendar: a range's ends draw no border on the side joined to the strip")
+{
+    Scene scene;
+    Calendar *calendar=scene.calendar(2026, 11);
+
+    calendar->setSelectionMode(Calendar::SelectionMode::Range);
+    calendar->setRange(Date(2026, 11, 9), Date(2026, 11, 13));
+    scene.frame();
+
+    auto edgesOf=[&](const Date &date) {
+        std::vector<size_t> primitives, texts;
+
+        cellOf(calendar, date)->getSkinControl()->appendIds(primitives, texts);
+        REQUIRE_FALSE(primitives.empty());
+        return scene.renderer.roundedEdges[primitives[0]];
+    };
+    const uint8_t squareLeft=renderer::SquareTopLeft|renderer::SquareBottomLeft;
+    const uint8_t squareRight=renderer::SquareTopRight|renderer::SquareBottomRight;
+
+    // the 9th (a Monday, the row's first column) joins the 10th on its right,
+    // the 13th the 12th on its left: square there, with no border
+    CHECK(edgesOf(Date(2026, 11, 9)) == uint8_t(squareRight|renderer::NoBorderRight));
+    CHECK(edgesOf(Date(2026, 11, 13)) == uint8_t(squareLeft|renderer::NoBorderLeft));
+    CHECK(edgesOf(Date(2026, 11, 11)) == uint8_t(squareLeft|squareRight));
+
+    // the cursor's ring on an end stays a whole ring
+    calendar->setCursor(Date(2026, 11, 9));
+    calendar->focus();
+    scene.frame();
+    REQUIRE(cellOf(calendar, Date(2026, 11, 9))->getLook().cursor);
+    CHECK(edgesOf(Date(2026, 11, 9)) == squareRight);
 }

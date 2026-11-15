@@ -1482,10 +1482,14 @@ void CalendarCell::update(renderer::Base *renderer, controls::Base *baseControl)
     gweni::Rect rect(bounds.x+(joinLeft?0:1), bounds.y+1, bounds.w-(joinLeft?0:1)-(joinRight?0:1), bounds.h-2);
     uint8_t edges=0;
 
+    // an end's border (the selection's) stops where it joins the strip, so
+    // the strip is one piece; the cursor's ring stays whole
+    const bool openJoins=ends && !look.cursor;
+
     if(joinLeft)
-        edges|=renderer::SquareTopLeft|renderer::SquareBottomLeft;
+        edges|=renderer::SquareTopLeft|renderer::SquareBottomLeft|(openJoins?renderer::NoBorderLeft:0);
     if(joinRight)
-        edges|=renderer::SquareTopRight|renderer::SquareBottomRight;
+        edges|=renderer::SquareTopRight|renderer::SquareBottomRight|(openJoins?renderer::NoBorderRight:0);
 
     if(edges)
         renderer->drawRoundedRect(m_primitives[0], rect, paint.radius, paint.borderWidth, paint.top, paint.bottom,
