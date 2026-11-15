@@ -163,10 +163,11 @@ struct GWENI_EXPORT MarkdownBlockMatch
 //! - a new block left over whose hash an old block left over has is Kept,
 //!   the old block moved (the first such old block in order, so a swap of
 //!   two blocks keeps both);
-//! - the rest are paired in order within each gap between two Kept blocks:
-//!   the i-th new block left in a gap with the i-th old block left in it when
-//!   they are of one type (Changed, a container's children diffed the same
-//!   way), else New.
+//! - the rest are paired in order within each gap between two in-order Kept
+//!   blocks (the start's, the subsequence's and the end's; a moved block
+//!   bounds no gap): the i-th new block left in a gap with the i-th old block
+//!   left in it when they are of one type (Changed, a container's children
+//!   diffed the same way), else New.
 //! An old block no entry names is gone. Each old block is named once at most.
 GWENI_EXPORT std::vector<MarkdownBlockMatch> markdownDiff(const std::vector<MarkdownBlock> &old,
     const std::vector<MarkdownBlock> &now);
