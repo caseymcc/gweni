@@ -43,6 +43,13 @@ set(GWENI_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(GWENI_HEADER_FOLDER "Headers")
 set(GWENI_SOURCE_FOLDER "Source")
 
+# The examples/tests use a separately staged CJK font. A library-only
+# consumer does not download example resources merely by adding gweni.
+if((GWENI_BUILD_EXAMPLES OR GWENI_BUILD_TESTS) AND
+        (GWENI_RENDER_OPENGL_CORE OR GWENI_RENDER_VULKAN))
+    include(${GWENI_SOURCE_DIR}/cmake/LazyFont.cmake)
+endif()
+
 # some build options
 set(CMAKE_FIND_FRAMEWORK LAST)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${GWENI_SOURCE_DIR}/cmake/Modules/")

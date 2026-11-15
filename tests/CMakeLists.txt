@@ -886,6 +886,27 @@ if(EMSCRIPTEN)
     set_tests_properties(mirror_directory PROPERTIES LABELS web)
 endif()
 
+# Resource tooling runs on the host even in a cross-compiled tree.
+add_test(NAME fetch_pinned_file
+    COMMAND ${CMAKE_COMMAND}
+        -DFETCH=${GWENI_SOURCE_DIR}/cmake/fetchPinnedFile.cmake
+        -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/fetch_pinned_file
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/fetchPinnedFile.cmake)
+set_tests_properties(fetch_pinned_file PROPERTIES TIMEOUT 30)
+if(GWENI_LAZY_RESOURCE_DIR)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_test(NAME font_ranges
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/fontRanges.py
+            ${GWENI_LAZY_RESOURCE_DIR}/${GWENI_CJK_FONT_NAME}.ttf)
+    set_tests_properties(font_ranges PROPERTIES TIMEOUT 30)
+endif()
+if(EMSCRIPTEN)
+    set_tests_properties(fetch_pinned_file PROPERTIES LABELS web)
+    if(TEST font_ranges)
+        set_tests_properties(font_ranges PROPERTIES LABELS web)
+    endif()
+endif()
+
 # Every public header compiles as the only include of a translation unit: one
 # generated header_check/gweni/<rel>.cpp holding #include <gweni/<rel>> per
 # header under include/gweni/, built in every tree as the OBJECT library
