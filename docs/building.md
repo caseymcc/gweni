@@ -219,7 +219,7 @@ without CJK never looks for it (`docs/architecture.md` -> "The lazy CJK face").
 spinning cube with its own shader and depth, a translucent panel with buttons and
 a label, a tag over the cube and the stats overlay (F10 or `--stats-overlay`). It
 is built with the examples and the GL renderer (not in the web tree), into
-`build_linux_x64_<type>/examples/hud/` with its own `resources/` copy:
+`build_linux_x64_<type>/examples/hud/` with its own `resources/` and `resources-lazy/` copies:
 
 ```bash
 ./build_linux_x64_debug/examples/hud/HudExample                 # the window: drag the bare canvas to orbit

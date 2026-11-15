@@ -11,7 +11,8 @@ target_link_libraries(HudExample
 )
 
 # It loads the resources/ next to it through capture::resourcePaths, as the
-# other examples do, from a mirror of its own (cmake/mirrorDirectory.cmake).
+# other examples do, from a mirror of its own (cmake/mirrorDirectory.cmake),
+# with the lazy CJK face's resources-lazy/ beside it.
 get_property(hud_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 if(hud_multi_config)
     set(hud_resource_dir ${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/resources)
@@ -22,6 +23,9 @@ endif()
 add_custom_target(gweni_hud_resources
     COMMAND ${CMAKE_COMMAND}
         -DSRC=${GWENI_SOURCE_DIR}/resources -DDST=${hud_resource_dir}
+        -P ${GWENI_SOURCE_DIR}/cmake/mirrorDirectory.cmake
+    COMMAND ${CMAKE_COMMAND}
+        -DSRC=${GWENI_LAZY_RESOURCE_DIR} -DDST=${hud_resource_dir}/../resources-lazy
         -P ${GWENI_SOURCE_DIR}/cmake/mirrorDirectory.cmake
     COMMENT "Mirroring resources/ next to HudExample"
     VERBATIM)
