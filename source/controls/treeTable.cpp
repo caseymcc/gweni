@@ -344,12 +344,18 @@ const TreeTable::Node *TreeTable::getNode(NodeId id) const
 
 TreeTable::NodeId TreeTable::addNode(NodeId parentId, NodeId appId, bool hasChildren)
 {
+    // The insert and the leaf turning a folder may each place nodes again:
+    // one anchor over both, so the second does not anchor on a top the
+    // first clamped at the list's end.
+    const Anchor anchor=hasChildren?captureAnchor():Anchor{};
     const NodeId id=insertNode(parentId, NoItem, appId);
 
     if(id != NoNode && hasChildren)
     {
         m_nodes[m_nodeIndex.at(id)].hasChildren=true;
         refreshNode(id, false);
+        restoreAnchor(anchor);
+        syncVisibleSelection();
     }
     return id;
 }
@@ -960,8 +966,16 @@ TreeTable::Anchor TreeTable::captureAnchor()
     Anchor anchor;
     const int offset=sourceScrollOffset();
 
-    anchor.node=nodeForItem(getVirtualBody()->firstVisibleItem());
+    const size_t top=getVirtualBody()->firstVisibleItem();
+
+    anchor.node=nodeForItem(top);
     anchor.into=offset%getRowHeight();
+    // a placeholder is no node: its loading node is the row above it
+    if(anchor.node == NoNode && top != NoItem && top > 0 && top < m_visible.size())
+    {
+        anchor.node=m_visible[top-1].id;
+        anchor.into+=getRowHeight();
+    }
     return anchor;
 }
 

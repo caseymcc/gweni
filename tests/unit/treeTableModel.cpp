@@ -2783,6 +2783,12 @@ TEST_CASE("TreeTable model: combined lazy sorted selected and scrolled edits mat
             const auto any=[&]() { return ids[p.rng()%ids.size()]; };
             const unsigned op=p.rng()%22;
             const Id topBefore=p.top();
+            // a "Loading…" placeholder on top is anchored to its loading
+            // node, the row above it
+            const size_t topItemBefore=tree->getVirtualBody()->firstVisibleItem();
+            const Id loadingBefore=topBefore == NoNode && topItemBefore != Tree::NoItem && topItemBefore > 0
+                ?tree->nodeForItem(topItemBefore-1):NoNode;
+            const Id anchorBefore=topBefore != NoNode?topBefore:loadingBefore;
             const int offsetBefore=tree->getVirtualBody()->getVerticalScrollOffset();
             bool anchorKept=true;
             p.selectionEvents=0;
@@ -2804,7 +2810,7 @@ TEST_CASE("TreeTable model: combined lazy sorted selected and scrolled edits mat
             {
                 const Id id=any();
                 p.what="remove "+std::to_string(id);
-                anchorKept=!(topBefore != NoNode && (p.inSubtree(topBefore, id)));
+                anchorKept=!(anchorBefore != NoNode && (p.inSubtree(anchorBefore, id)));
                 p.remove(id);
             }
             else if(op <= 5)
@@ -2827,6 +2833,9 @@ TEST_CASE("TreeTable model: combined lazy sorted selected and scrolled edits mat
                     changed.push_back(id);
                 }
                 p.what="rename x"+std::to_string(count);
+                // each call anchors on the top as the call before left it, and
+                // one that clamps leaves a new top for the next
+                anchorKept=count == 1;
                 for(Id id : changed)
                     tree->nodeChanged(id);
             }
@@ -2840,7 +2849,7 @@ TEST_CASE("TreeTable model: combined lazy sorted selected and scrolled edits mat
             {
                 const Id id=any();
                 p.what="collapse "+std::to_string(id);
-                anchorKept=!(topBefore != NoNode && topBefore != id && p.inSubtree(topBefore, id));
+                anchorKept=!(anchorBefore != NoNode && anchorBefore != id && p.inSubtree(anchorBefore, id));
                 p.collapse(id);
             }
             else if(op == 10 && !p.pending.empty())
@@ -2856,7 +2865,7 @@ TEST_CASE("TreeTable model: combined lazy sorted selected and scrolled edits mat
             {
                 const Id id=any();
                 p.what="reset "+std::to_string(id);
-                anchorKept=!(topBefore != NoNode && topBefore != id && p.inSubtree(topBefore, id));
+                anchorKept=!(anchorBefore != NoNode && anchorBefore != id && p.inSubtree(anchorBefore, id));
                 p.reset(id);
             }
             else if(op == 12)
@@ -2962,6 +2971,19 @@ TEST_CASE("TreeTable model: combined lazy sorted selected and scrolled edits mat
                 CAPTURE(itemAfter);
                 CHECK(p.top() == topBefore);
             }
+            // a placeholder still shown under its loading node stays on top
+            if(anchorKept && loadingBefore != NoNode && p.m.count(loadingBefore) && !clamped)
+            {
+                const size_t loadingAfter=p.itemOf(loadingBefore);
+                if(loadingAfter != Tree::NoItem && tree->nodeForItem(loadingAfter+1) == NoNode
+                    && loadingAfter+1 < tree->getVisibleNodes().size())
+                {
+                    CAPTURE(loadingBefore);
+                    CAPTURE(p.what);
+                    CAPTURE(offsetBefore);
+                    CHECK(body->firstVisibleItem() == loadingAfter+1);
+                }
+            }
         }
     }
 }
@@ -3062,5 +3084,102 @@ TEST_CASE("TreeTable model: a lazy answer that re-sorts its folder keeps the exp
         CHECK(tree->isExpanded(1));
         CHECK(requests.ids == std::vector<Id>{1});
         CHECK(requests.expanded == std::vector<Id>{1});
+    }
+}
+
+TEST_CASE("TreeTable model: a sort with a loading placeholder on top keeps its folder there")
+{
+    // 30 roots r00..r29, node 10 lazy, expanded and unanswered, scrolled so
+    // its placeholder is the top row 5 units in: a placeholder is no node, so
+    // the anchor is its loading node, the row above it.
+    Scene scene;
+    Tree *tree=scene.tree;
+    for(Id id=0; id < 30; ++id)
+    {
+        char name[8];
+        std::snprintf(name, sizeof(name), "r%02u", static_cast<unsigned>(id));
+        scene.names[id]=name;
+        REQUIRE(tree->addNode(Root, id, id == 10) == id);
+    }
+    tree->setSortComparator(0, [&scene](Id a, Id b) { return scene.names.at(a) < scene.names.at(b); });
+    tree->setExpanded(10, true);
+    scene.settle();
+    REQUIRE(tree->nodeForItem(11) == NoNode);
+    auto *body=tree->getVirtualBody();
+    body->setVerticalScrollOffset(11*20+5);
+    scene.settle();
+    REQUIRE(body->firstVisibleItem() == 11);
+
+    tree->setSortColumn(0, controls::SortDirection::Descending);
+    scene.frame();
+    // descending: r29..r00, so node 10 at item 19 and its placeholder at 20
+    REQUIRE(tree->itemForNode(10) == 19);
+    CHECK(body->firstVisibleItem() == 20);
+    CHECK(body->getVerticalScrollOffset() == 20*20+5);
+}
+
+TEST_CASE("TreeTable model: addNode with an expander under a sort keeps the first shown node")
+{
+    // addNode(parent, id, true) inserts a leaf and then makes it a folder.
+    // Sorted leaves first, then by more children, then by name: the expanded
+    // parent "a" below the top gains a child and moves above it, ahead of
+    // "q1" and "q2", so at the list's end the anchor clamps onto one of its
+    // children; then the new child, a folder now, moves from first to last
+    // among them, across that clamped top. One anchor over both steps keeps
+    // the view as near the first shown node as the end allows.
+    for(int fromEnd : {0, 3})
+    {
+        CAPTURE(fromEnd);
+        Scene scene;
+        Tree *tree=scene.tree;
+        for(Id id=0; id < 12; ++id)
+        {
+            scene.names[id]="r"+std::to_string(10+id);
+            REQUIRE(tree->addNode(Root, id) == id);
+        }
+        const Id parent=20;
+        const auto addFolder=[&](Id id, const char *name, Id children)
+            {
+                scene.names[id]=name;
+                REQUIRE(tree->addNode(Root, id) == id);
+                for(Id c=0; c < children; ++c)
+                {
+                    scene.names[id*100+c]="k"+std::to_string(c);
+                    REQUIRE(tree->addNode(id, id*100+c) == id*100+c);
+                }
+            };
+        addFolder(30, "q1", 9);
+        addFolder(31, "q2", 9);
+        addFolder(parent, "a", 8);
+        scene.names[100]="0";
+        tree->setExpanded(parent, true);
+        tree->setSortComparator(0, [tree, &scene](Id a, Id b)
+            {
+                const auto *x=tree->getNode(a);
+                const auto *y=tree->getNode(b);
+                if(x->hasChildren != y->hasChildren)
+                    return y->hasChildren;
+                if(x->children.size() != y->children.size())
+                    return x->children.size() > y->children.size();
+                return scene.names.at(a) < scene.names.at(b);
+            });
+        tree->setSortColumn(0, controls::SortDirection::Ascending);
+        scene.settle();
+        auto *body=tree->getVirtualBody();
+        body->setVerticalScrollOffset(body->getMaxVerticalScrollOffset()-fromEnd);
+        scene.settle();
+        const Id topBefore=scene.top();
+        const int into=body->getVerticalScrollOffset()%20;
+        REQUIRE(topBefore != NoNode);
+        REQUIRE(tree->itemForNode(topBefore) < tree->itemForNode(parent));
+        REQUIRE(tree->itemForNode(topBefore) >= tree->itemForNode(30));
+
+        REQUIRE(tree->addNode(parent, 100, true) == 100);
+        scene.frame();
+        REQUIRE(tree->itemForNode(parent) == 12);
+        REQUIRE(tree->itemForNode(100) == 21);
+        // as near the first shown node as the list's end allows
+        const int target=static_cast<int>(tree->itemForNode(topBefore))*20+into;
+        CHECK(body->getVerticalScrollOffset() == std::min(target, body->getMaxVerticalScrollOffset()));
     }
 }

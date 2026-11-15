@@ -4073,14 +4073,14 @@ two programs and the draws. What follows describes both together:
   again through `nodeChanged`, and `nodeChanged` binds a shown node's row alone (an
   off-screen or hidden node costs nothing). Indexes are in the app's order and clamp to
   the end. A parent whose last child is removed or moved away is a collapsed leaf
-  (`onCollapsed` if it was expanded), so Left and the expander see a leaf. **The anchor** is the first shown row's node and the offset into its row:
+  (`onCollapsed` if it was expanded), so Left and the expander see a leaf. **The anchor** is the first shown row's node and the offset into its row (a placeholder on top is its loading node, the row above it, and a row more):
   `VirtualList`'s shifts keep it for an edit above the viewport (the thumb alone moves),
   and a move whose subtree holds the anchor puts the offset back on its node at its new
   place, as `expandSubtree` does when the first shown row is inside the subtree it
   shows again. A range replaced with the top row inside it (a placeholder answered)
   shows its first new row at the top: `spliceVisible` inserts after the range, below the
   top, and then removes it. Putting the anchor back leaves a `scrollToItem()` not yet laid
-  out alone (the app asked for that view). The stripes are by item parity, so an odd run added or removed above the view
+  out alone (the app asked for that view), and one edit that places nodes again in two steps (`addNode` with an expander: the insert, then the leaf a folder) keeps one anchor over both, so the second never anchors on a top the first clamped at the list's end. The stripes are by item parity, so an odd run added or removed above the view
   would flip every row on screen: `m_stripePhase` is flipped with the first shown item's
   parity, so the rows on screen keep their stripes (`DataTable::syncSourceRows`). **The
   selection** stays on its node through every edit, also under a collapsed parent (shown
