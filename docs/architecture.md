@@ -1294,7 +1294,7 @@ two passes when a translucent slot can show (`SlotRenderer`, #685):
 **Translucent** (`slotTranslucent()`): the alphas the slot's style outputs (a
 rounded rect's and a bilinear fill's gradient, whose alpha `roundedRect()` draws over
 the border too, the border colour's own alpha unused; a grid's lines; an image's tint;
-never a checker, drawn opaque) neither all 255 nor all 0, or an image (style 2) whose
+a checker's composite alpha, 255 but at a control opacity below 1, "Control opacity") neither all 255 nor all 0, or an image (style 2) whose
 layer holds an image with a texel neither transparent nor opaque, flagged when it is
 loaded (`finishTextureLoad`; a transparent texel is discarded, so it does not count;
 a layer loaded again with other texels reclassifies its slots, in the index too, though
@@ -1493,6 +1493,75 @@ exits 1 (a Vulkan HUD example is later). `hud_example` (`tests/hudExample.mjs`, 
 (`--clear`), and holds the probes: the scene colour where no control is, the Spin
 button the same pixel over both scenes, the tag the Faster button's look over the
 cube, and the panel its colour blended over each scene's.
+
+## Control opacity
+
+Any control can be made see-through, with its text at a level of its own
+(`controls::Base::setOpacity(level)`, `setOpacity(surface, text)`, `clearOpacity()`,
+#686). It is **per-element alpha**: each fill, line and glyph of the subtree is
+drawn with its alpha times the level and blends on its own, through the sorted pass
+above, so a translucent panel's fill shows through its translucent button, and a
+child may be more opaque than its parent. Group opacity (the subtree drawn into a
+texture and faded as one) is not done: it could not give text its own level or let a
+child be more opaque.
+
+**Inheritance.** A control's effective levels (`effectiveSurfaceOpacity()`,
+`effectiveTextOpacity()`) are its own if it set them (`hasOwnOpacity()`,
+`ownSurfaceOpacity()`, `ownTextOpacity()`), else its nearest ancestor's on the
+`m_actualParent` chain that did, else 1: a descendant's own setting **replaces** the
+inherited levels, it does not multiply them. They are cached on each control (two
+floats in `Base`'s padding, so `sizeof(Base)` is what it was; an own setting is a flag,
+the effective levels then being the own ones) and kept by `Base::applyOpacity()`, a
+walk of the subtree modelled on `setAncestorHidden()` that stops at a descendant with
+its own setting. `addChild()` and `addChildOfLayout()` give an attached child its new
+parent's levels (unless it set its own), and `removeChild()` gives a detached one 1.
+Levels are clamped to [0, 1], NaN read as 1. The canvas's children (Popups, Menus, a
+ComboBox's list, the ToolTip box) are not the opener's children, so they keep their
+own levels.
+
+**What a change costs.** A change marks `StateChange_Background|StateChange_Text`
+(the pair `ThemeEditor::applyToCanvas` marks) on exactly the controls whose effective
+levels changed, and nothing else: no `invalidate()`, no layout pass, no z renumber.
+The render drain draws them again: `Base::drainRenderQueue`'s `renderQueued` sets each
+control's levels on the renderer (`renderer::Base::setOpacity(surface, text)`) beside
+its offset and clip, only when they differ from the renderer's, so a UI with no level
+set makes no such call there; `Canvas::renderCanvas` and `WindowCanvas` set 1 for the
+root, and the drain puts the root's levels back when it ends. `renderer::Base` stores
+them (`surfaceOpacity()`, `textOpacity()`) and its default draws ignore them;
+`StubRenderer` records the levels each write is made at (`tests/unit/opacity.cpp`).
+
+**In `SlotRenderer`.** Every draw packs its colours' alpha times a level, chosen by
+style, so no skin renderer changes for it (`SlotRenderer::atLevel`): glyphs (colour
+spans included), icons and arcs (style 5: ticks, chevrons, window glyphs, the
+spinner's arc) and images (style 2, its tint) take the **text** level; fills, rounded,
+bilinear and checker rects, borders, lines, grids and trapezoids (so selections and
+the caret) take the **surface** level. At 1 the bytes are those written before #686.
+A checker (style 7) keeps its fill's alpha over its cells and outputs the level as
+its alpha (packed in the cells' alphas, which its shader did not read), so
+`slotTranslucent()` reads it there. A glyph's alpha was always 1; it is now the run's
+text level, kept as `TextRun::color`'s alpha, and a plain run whose colour or level
+alone changed has its glyph colours rewritten (`colorTextRun`) instead of being laid
+out again, as a run with colour spans already was.
+
+**Level 0 draws nothing and writes no depth.** A style-1 fill at alpha 0 would still
+write depth (the fragment shader's discard spares it), so a slot drawn at a level of 0
+is written hidden (style 0, which the vertex shader collapses; `hideAtLevelZero`), and
+`showPrimitive()` keeps it hidden while its control's level is 0; a run at text level
+0 is in no draw list (`drawnRange`). A level-0 control still lays out, hit-tests and
+takes the focus: `hide()` removes a control.
+
+**Skin Controls that keep what they drew.** A level change marks
+`Background|Text`, which a Control that draws again only what its own look says
+changed would pass over. Those hold a `skin::textured::DrawnOpacity`, the levels they
+last drew at, and draw every slot again when the drain's levels are others:
+PlotHistogram, PlotLines, Chart, Timeline, NodeGraph's Link, RichText (Markdown's
+text too), MarkdownTable and NavigationRail. `controltest_opacity_each`
+(`--scenario opacity-round-trip`, every control in `--list`) finds one that does not:
+a demo set to 0.5 once settled must be the demo built at 0.5 (listing, pixels, the
+renderer mirror slot by owner), and set back to 1 its first frame, byte for byte.
+OpacityDemo (ControlTest's `--list`) has a panel with sliders for both levels, a
+child at its own 1 and a fade (`--scenario opacity`); `gweni_bench --scene
+opacity-step` steps a 40-control panel's levels over N Labels, the same work at any N.
 
 ## renderer::Vulkan (headless)
 
@@ -5661,9 +5730,9 @@ two programs and the draws. What follows describes both together:
   again for a new colour or new spans: `colorTextRun` writes each glyph's colour and
   marks for the upload only the glyph slots whose colour changed, with the arithmetic
   the markup's foreground colour is made with, so a glyph in the draw colour has the
-  plain call's bytes. The plain call on a run that never had spans rebuilds it for a
-  new colour, as it always did, so its counters and pixels are unchanged
-  (`docs_samples`, `backend_pixels` and `tools/bench.sh compare` with no flags).
+  plain call's bytes. Since #686 the plain call on a run that never had spans does
+  the same for a new colour or text level ("Control opacity"): the glyph bytes are
+  the rebuild's, so the pixels are unchanged.
   `tests/colorSpans.cpp` (GL and Vulkan) draws three spans in their colours, writes
   only the changed glyphs' slots for a span change with no atlas upload, and holds
   the plain call to its old bytes; `tests/unit/colorSpans.cpp` the default and
