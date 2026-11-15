@@ -466,8 +466,9 @@ TEST_CASE("CardReorder: a press that a part of the card takes for its own drag s
         scene.frame();
         scene.frame();
 
-        // a clock no other subcase's press is at, so the first press is a
-        // single click whatever ran before
+        // a clock 2 s past the select-all subcase's press at this point (the
+        // handler's test, now - last < 0.5, also holds for a last click at a
+        // later clock), so the first press is a single click; checked below
         scene.clock+=7.0f;
         const Point at=box->localPosToCanvas(Point(4, box->getHeight()/2));
         scene.press(at);
