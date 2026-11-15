@@ -164,6 +164,16 @@ public:
 
     const char *lcdTextUnavailable() const override;
 
+    //! The vkQueueWaitIdle calls this renderer has made on its queue since it was
+    //! constructed (a Vulkan-only count, not in FrameStats). clearTarget() makes
+    //! none, nor does a frame over a settled canvas; a new font atlas, an image
+    //! page or layer, a buffer or clip-box regrow, readPixels(), setTarget() of
+    //! other formats and the destructor each make one.
+    uint64_t queueWaitIdleCount() const { return m_queueWaitIdles; }
+    //! The command buffers (each with its fence) clearTarget() has made: as many
+    //! as were on the device at once, each reused once its fence has signalled.
+    size_t clearCommandBufferCount() const { return m_clears.size(); }
+
     //! Frames whose commands may be on the device at once: a frame waits for the
     //! one this many before it, and reuses its staging and command buffers.
     static constexpr size_t FramesInFlight=2;
@@ -288,6 +298,9 @@ private:
     //! Records into a command buffer of its own, submits it and waits for it.
     template<typename Record>
     void immediate(Record &&record);
+    //! vkQueueWaitIdle on the queue, counted (queueWaitIdleCount()); every
+    //! command buffer of a clear is done after it
+    void waitQueueIdle();
 
     //! The frame being recorded, begun (its fence waited, its buffers reset) if none is.
     Frame &frame();
@@ -328,6 +341,16 @@ private:
     VkCommandPool m_commandPool=VK_NULL_HANDLE;
     Frame m_frames[FramesInFlight];
     size_t m_frameIndex=0;
+    //! A clearTarget()'s commands, submitted with a fence of their own and reused
+    //! by a later clear once it has signalled: as many as were on the device at
+    //! once, destroyed with the renderer.
+    struct Clear
+    {
+        VkCommandBuffer commands=VK_NULL_HANDLE;
+        VkFence fence=VK_NULL_HANDLE;
+    };
+    std::vector<Clear> m_clears;
+    uint64_t m_queueWaitIdles=0;
     bool m_recording=false;
     bool m_rendering=false;
     //! the Textures this frame's uploads wrote, made sampled again in submit()

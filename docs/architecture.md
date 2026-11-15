@@ -1317,7 +1317,7 @@ How each GL feature maps:
 | `glBlendFuncSeparate(SRC1_COLOR, ONE_MINUS_SRC1_COLOR, ONE, ONE_MINUS_SRC1_ALPHA)` for an LCD atlas | a second text pipeline with those factors, made only with `dualSrcBlend` |
 | `glDeleteTextures` of a freed atlas or image | retired: destroyed once the newest frame that may sample it has signalled its fence, its handle naming nothing from then on |
 | `glBlendFuncSeparate(SRC_ALPHA, ONE_MINUS_SRC_ALPHA, ONE, ONE_MINUS_SRC_ALPHA)`, `GL_LESS` with depth writes | the pipeline's blend and depth state |
-| `glClear` | a dynamic rendering with `LOAD_OP_CLEAR`, submitted at once |
+| `glClear` | a dynamic rendering with `LOAD_OP_CLEAR`, submitted at once with a fence of its own and not waited for: its command buffer and fence are reused by a later clear once the fence has signalled (`clearCommandBufferCount()`); every `vkQueueWaitIdle` the renderer makes is counted in `renderer::Vulkan::queueWaitIdleCount()`, Vulkan-only (not in `FrameStats`), and a frame loop over a settled canvas makes none (`tests/vulkanClear.cpp`) |
 | `glReadPixels`, rows turned over | `vkCmdCopyImageToBuffer` into a host-visible buffer, rows turned over |
 | `glFlush` | the frame's two command buffers submitted with its fence |
 

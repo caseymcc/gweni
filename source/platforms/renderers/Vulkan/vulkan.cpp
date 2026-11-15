@@ -536,7 +536,7 @@ Vulkan::~Vulkan()
     }
 
     // the last frames' commands may still use what follows
-    vkQueueWaitIdle(m_device.queue);
+    waitQueueIdle();
     m_recording=false;
 
     // each font's atlas, then each image, through the hooks
@@ -567,6 +567,14 @@ Vulkan::~Vulkan()
             vkDestroyDescriptorPool(device(), pool, nullptr);
         frame.textPools.clear();
     }
+
+    // the queue is idle: every clear's commands are done
+    for(Clear &clear:m_clears)
+    {
+        vkFreeCommandBuffers(device(), m_commandPool, 1, &clear.commands);
+        vkDestroyFence(device(), clear.fence, nullptr);
+    }
+    m_clears.clear();
 
     destroyPipelines();
     vkDestroySampler(device(), m_imageSampler, nullptr);
@@ -763,8 +771,14 @@ void Vulkan::immediate(Record &&record)
     submit.commandBufferCount=1;
     submit.pCommandBuffers=&commands;
     check(vkQueueSubmit(m_device.queue, 1, &submit, VK_NULL_HANDLE), "vkQueueSubmit");
-    check(vkQueueWaitIdle(m_device.queue), "vkQueueWaitIdle");
+    waitQueueIdle();
     vkFreeCommandBuffers(device(), m_commandPool, 1, &commands);
+}
+
+void Vulkan::waitQueueIdle()
+{
+    ++m_queueWaitIdles;
+    check(vkQueueWaitIdle(m_device.queue), "vkQueueWaitIdle");
 }
 
 Vulkan::Texture *Vulkan::texture(TextureHandle handle)
@@ -1073,7 +1087,7 @@ void Vulkan::setTarget(VulkanTarget &target)
     if(m_commandPool != VK_NULL_HANDLE &&
         (target.colorFormat() != m_pipelineColorFormat || target.depthFormat() != m_pipelineDepthFormat))
     {
-        vkQueueWaitIdle(m_device.queue);
+        waitQueueIdle();
         destroyPipelines();
         createPipelines();
     }
@@ -1533,33 +1547,82 @@ void Vulkan::clearTarget(const gweni::Color &color)
     // after this sees it cleared, and so do this one's next frame's draws
     if(m_recording)
         submit();
+    if(m_commandPool == VK_NULL_HANDLE)
+        return;
 
-    immediate([&](VkCommandBuffer commands)
+    // Not waited for: the clear's commands and fence are reused by a later clear
+    // once that fence has signalled, and the queue's order puts them before
+    // whatever is submitted after them (a readPixels() waits for the queue).
+    Clear *clear=nullptr;
+
+    for(Clear &done:m_clears)
     {
-        targetBarrier(commands, TargetStages, TargetAccess);
+        if(vkGetFenceStatus(device(), done.fence) == VK_SUCCESS)
+        {
+            clear=&done;
+            break;
+        }
+    }
+    if(!clear)
+    {
+        Clear made;
+        VkCommandBufferAllocateInfo allocate{};
+        allocate.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocate.commandPool=m_commandPool;
+        allocate.level=VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocate.commandBufferCount=1;
+        if(!check(vkAllocateCommandBuffers(device(), &allocate, &made.commands), "vkAllocateCommandBuffers"))
+            return;
 
-        VkRenderingAttachmentInfo colorAttachment{};
-        colorAttachment.sType=VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        colorAttachment.imageView=m_target->colorView();
-        colorAttachment.imageLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        colorAttachment.loadOp=VK_ATTACHMENT_LOAD_OP_CLEAR;
-        colorAttachment.storeOp=VK_ATTACHMENT_STORE_OP_STORE;
-        colorAttachment.clearValue.color={ { color.r/255.0f, color.g/255.0f, color.b/255.0f, color.a/255.0f } };
-        VkRenderingAttachmentInfo depthAttachment=colorAttachment;
-        depthAttachment.imageView=m_target->depthView();
-        depthAttachment.imageLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-        depthAttachment.clearValue.depthStencil={ 1.0f, 0 };
+        VkFenceCreateInfo fenceInfo{};
+        fenceInfo.sType=VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        if(!check(vkCreateFence(device(), &fenceInfo, nullptr, &made.fence), "vkCreateFence"))
+        {
+            vkFreeCommandBuffers(device(), m_commandPool, 1, &made.commands);
+            return;
+        }
+        m_clears.push_back(made);
+        clear=&m_clears.back();
+    }
+    else
+        check(vkResetFences(device(), 1, &clear->fence), "vkResetFences");
 
-        VkRenderingInfo rendering{};
-        rendering.sType=VK_STRUCTURE_TYPE_RENDERING_INFO;
-        rendering.renderArea.extent={ (uint32_t)m_target->width(), (uint32_t)m_target->height() };
-        rendering.layerCount=1;
-        rendering.colorAttachmentCount=1;
-        rendering.pColorAttachments=&colorAttachment;
-        rendering.pDepthAttachment=&depthAttachment;
-        vkCmdBeginRendering(commands, &rendering);
-        vkCmdEndRendering(commands);
-    });
+    // the pool resets a command buffer as it is begun again
+    VkCommandBuffer commands=clear->commands;
+    VkCommandBufferBeginInfo begin{};
+    begin.sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    begin.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(commands, &begin);
+    targetBarrier(commands, TargetStages, TargetAccess);
+
+    VkRenderingAttachmentInfo colorAttachment{};
+    colorAttachment.sType=VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    colorAttachment.imageView=m_target->colorView();
+    colorAttachment.imageLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment.loadOp=VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.storeOp=VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.clearValue.color={ { color.r/255.0f, color.g/255.0f, color.b/255.0f, color.a/255.0f } };
+    VkRenderingAttachmentInfo depthAttachment=colorAttachment;
+    depthAttachment.imageView=m_target->depthView();
+    depthAttachment.imageLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depthAttachment.clearValue.depthStencil={ 1.0f, 0 };
+
+    VkRenderingInfo rendering{};
+    rendering.sType=VK_STRUCTURE_TYPE_RENDERING_INFO;
+    rendering.renderArea.extent={ (uint32_t)m_target->width(), (uint32_t)m_target->height() };
+    rendering.layerCount=1;
+    rendering.colorAttachmentCount=1;
+    rendering.pColorAttachments=&colorAttachment;
+    rendering.pDepthAttachment=&depthAttachment;
+    vkCmdBeginRendering(commands, &rendering);
+    vkCmdEndRendering(commands);
+    vkEndCommandBuffer(commands);
+
+    VkSubmitInfo info{};
+    info.sType=VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    info.commandBufferCount=1;
+    info.pCommandBuffers=&commands;
+    check(vkQueueSubmit(m_device.queue, 1, &info, clear->fence), "vkQueueSubmit");
 }
 
 void Vulkan::readPixels(int width, int height, std::vector<uint8_t> &pixels)
@@ -1655,7 +1718,7 @@ void Vulkan::allocateVertexBuffer(SlotPath path, size_t bytes)
     // recorded nothing from it yet (a path is allocated before its uploads and draws)
     if(buffer.buffer != VK_NULL_HANDLE)
     {
-        vkQueueWaitIdle(m_device.queue);
+        waitQueueIdle();
         destroyBuffer(buffer);
     }
     createBuffer(buffer, bytes, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT|VK_BUFFER_USAGE_TRANSFER_DST_BIT, false);
@@ -1688,7 +1751,7 @@ void Vulkan::allocateClipBoxes(SlotPath path, size_t rows)
 
     if(handle != 0)
     {
-        vkQueueWaitIdle(m_device.queue);
+        waitQueueIdle();
         destroyHandle(handle);
         handle=0;
     }
