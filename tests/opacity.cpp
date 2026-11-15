@@ -28,6 +28,12 @@
  *                   through the button, as the two drawn one a frame back to
  *                   front; and a checker at 0.5 (drawn opaque at 1) shows the
  *                   fill behind it, taken after it.
+ *    near 0         a fill and a grid at a level above 0 that rounds their
+ *                   every alpha to 0 (0.001; a 0x20 fill at 0.01), and such a
+ *                   fill shown again, leave the frame the fill behind gives:
+ *                   those two styles write depth at alpha 0, so they are hidden.
+ *    spans          a run of colour spans at a text level of 0.5 is half-way to
+ *                   the background, and a span's new colour at that level keeps it.
  *    level 1        with every level at 1 the slots' bytes are those of a
  *                   renderer that never had a level set.
  *
@@ -206,6 +212,30 @@ Item text(size_t id, const Point &pos, const gweni::String &string, const Color 
         {
             renderer.setDrawColor(color);
             renderer.renderText(id, font, pos, z, string);
+            renderer.showText(id);
+        },
+        [=](SlotRenderer &renderer) { renderer.hideText(id); }};
+}
+
+Item grid(size_t id, const Rect &r, const Color &minor, const Color &major, int z)
+{
+    return Item{z, 1.0f, 1.0f,
+        [=](SlotRenderer &renderer) { renderer.drawGrid(id, r, PointF(0.0f, 0.0f), 8.0f, 4, minor, major, z); },
+        [=](SlotRenderer &renderer) { renderer.hidePrimitive(id); }};
+}
+
+//! A run of three colour spans (red, green, blue words) with the draw colour
+//! between them
+Item spanText(size_t id, const Point &pos, const std::vector<gweni::renderer::ColorSpan> &spans, int z)
+{
+    Font font=gweni::test::openSans();
+
+    font.size=32.0f;
+    return Item{z, 1.0f, 1.0f,
+        [=](SlotRenderer &renderer)
+        {
+            renderer.setDrawColor(Color(250, 250, 250, 255));
+            renderer.renderText(id, font, pos, z, "HHH HHH HHH", spans);
             renderer.showText(id);
         },
         [=](SlotRenderer &renderer) { renderer.hideText(id); }};
@@ -511,6 +541,83 @@ TEST_CASE("Opacity: at level 0 nothing is drawn and nothing behind it is hidden"
         renderer.end();
         CHECK(notExact(readFrame(), reference) == 0);
     }
+}
+
+TEST_CASE("Opacity: a level that rounds every alpha to 0 draws nothing and hides nothing behind it")
+{
+    Ids ids;
+    const std::vector<size_t> prims=ids.primitives(4);
+    // taken first, in front, as in the level-0 case: a fill and a grid write
+    // depth at alpha 0, so a level above 0 that leaves them no alpha must hide them
+    const std::vector<Item> front{
+        fill(prims[0], Rect(20, 20, 100, 60), Color(240, 230, 40, 255), 6),
+        fill(prims[1], Rect(130, 20, 100, 60), Color(240, 230, 40, 0x20), 6),
+        grid(prims[2], Rect(20, 85, 210, 20), Color(240, 240, 240, 255), Color(255, 255, 255, 255), 6)};
+    const Item behind=fill(prims[3], Rect(10, 10, 300, 100), Color(200, 30, 30, 255), 1);
+
+    const Frame reference=drawScene({behind});
+
+    SUBCASE("at 0.001")
+    {
+        std::vector<Item> items;
+
+        for(const Item &item:front)
+            items.push_back(atLevels(item, 0.001f, 1.0f));
+        items.push_back(behind);
+        CHECK(notExact(drawScene(items), reference) == 0);
+    }
+    SUBCASE("a faint colour at 0.01")
+    {
+        // 0x20 at 0.01 is alpha 0; 0xff at 0.01 is 3, and draws
+        CHECK(notExact(drawScene({atLevels(front[1], 0.01f, 1.0f), behind}), reference) == 0);
+        CHECK(notExact(drawScene({atLevels(front[0], 0.01f, 1.0f), behind}), reference) > 0);
+    }
+    SUBCASE("a fill shown again at such a level stays hidden")
+    {
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
+
+        drawScene({atLevels(front[0], 0.001f, 1.0f), behind});
+        gweni::test::clearView(background);
+        renderer.begin();
+        renderer.hidePrimitive(prims[0]);
+        renderer.setOpacity(0.001f, 1.0f);
+        renderer.showPrimitive(1, prims[0]);
+        renderer.setOpacity(1.0f, 1.0f);
+        renderer.end();
+        CHECK(notExact(readFrame(), reference) == 0);
+    }
+}
+
+TEST_CASE("Opacity: the text level scales a run's colour spans")
+{
+    using gweni::renderer::ColorSpan;
+
+    Ids ids;
+    const size_t run=ids.text();
+    const std::vector<ColorSpan> spans{ColorSpan{0, 3, Color(250, 30, 30, 255)},
+        ColorSpan{4, 7, Color(30, 250, 30, 255)}, ColorSpan{8, 11, Color(250, 250, 30, 255)}};
+    std::vector<ColorSpan> other=spans;
+
+    other[1].color=Color(250, 30, 250, 255);
+
+    const Rect area(10, 20, 300, 60);
+    const Frame bg=drawScene({});
+    const Frame full=drawScene({spanText(run, Point(10, 20), spans, 2)});
+    const Frame half=drawScene({atLevels(spanText(run, Point(10, 20), spans, 2), 1.0f, 0.5f)});
+
+    // every glyph half-way to the background, its span's colour included
+    CHECK(offBy2(half, halfway(bg, full), area) == 0);
+    CHECK(notExact(half, full, area) > 0);
+
+    // a span's new colour at that level (the glyph colours alone rewritten)
+    // keeps the level
+    const Frame otherFull=drawScene({spanText(run, Point(10, 20), other, 2)});
+
+    drawScene({atLevels(spanText(run, Point(10, 20), spans, 2), 1.0f, 0.5f)});
+
+    const Frame otherHalf=drawScene({atLevels(spanText(run, Point(10, 20), other, 2), 1.0f, 0.5f)});
+
+    CHECK(offBy2(otherHalf, halfway(bg, otherFull), area) == 0);
 }
 
 TEST_CASE("Opacity: a translucent panel's fill shows through its translucent button")

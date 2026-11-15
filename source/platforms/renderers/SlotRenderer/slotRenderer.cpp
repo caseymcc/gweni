@@ -3516,12 +3516,44 @@ gweni::Color SlotRenderer::atLevel(gweni::Color color, float level)
     return color;
 }
 
+bool SlotRenderer::clearAtLevel(const Vertex *vertexes, int style, float level)
+{
+    if(level <= 0.0f)
+        return true;
+    if(level >= 1.0f)
+        return false;
+    // Below 1 a level can round every alpha of a slot to 0 well before the level
+    // is 0 (255 at under 1/510, a fainter colour sooner). The fragment shader
+    // discards such a pixel for every style but a fill (1) and a grid (8), which
+    // would still write depth over what lies behind them, so those two are hidden.
+    for(size_t i=0; i<4; ++i)
+    {
+        const Vertex &vertex=vertexes[i];
+
+        if(style == 1)
+        {
+            if((vertex.ty&0xff) != 0)
+                return false;
+        }
+        else if(style == 8)
+        {
+            if(((vertex.cy&0xff) != 0) || ((vertex.dy&0xff) != 0))
+                return false;
+        }
+        else
+            return false;
+    }
+    return true;
+}
+
 void SlotRenderer::hideAtLevelZero(size_t primitiveId, float level)
 {
-    if(level > 0.0f)
+    Vertex *vertexes=&m_vertexes[primitiveId*4];
+
+    if(!clearAtLevel(vertexes, vertexes[0].style, level))
         return;
     for(size_t i=0; i<4; ++i)
-        m_vertexes[primitiveId*4+i].style=0;
+        vertexes[i].style=0;
 }
 
 void SlotRenderer::drawFilledRect(size_t primitiveId, gweni::Rect rect, int zIndex)
@@ -3552,8 +3584,8 @@ void SlotRenderer::drawFilledRect(size_t primitiveId, gweni::Rect rect, int zInd
 //    setVertex(m_vertexes[vertexIndex++], rect.x, rect.y+rect.h);
 
     cullOutOfRangeQuad(primitiveId, rect);
-    cullClippedQuad(primitiveId);
     hideAtLevelZero(primitiveId, surfaceOpacity());
+    cullClippedQuad(primitiveId);
     markPrimitiveChanges(primitiveId, before);
 
 //    addVert(rect.x, rect.y);
@@ -3708,8 +3740,8 @@ void SlotRenderer::writeRoundedQuad(size_t primitiveId, gweni::Rect rect, int zI
     setRounded(vertexIndex++, x1, y1, +hw, +hh, color0Right, color3Right);
 
     cullOutOfRangeQuad(primitiveId, rect);
-    cullClippedQuad(primitiveId);
     hideAtLevelZero(primitiveId, level);
+    cullClippedQuad(primitiveId);
     markPrimitiveChanges(primitiveId, before);
 }
 
@@ -3757,8 +3789,8 @@ void SlotRenderer::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int 
     setIcon(vertexIndex++, x1, y1, +hw, +hh);
 
     cullOutOfRangeQuad(primitiveId, rect);
-    cullClippedQuad(primitiveId);
     hideAtLevelZero(primitiveId, textOpacity());
+    cullClippedQuad(primitiveId);
     markPrimitiveChanges(primitiveId, before);
 }
 
@@ -3832,8 +3864,8 @@ void SlotRenderer::drawArc(size_t primitiveId, gweni::Rect rect, float startTurn
     setArc(vertexIndex++, x1, y1, +hw, +hh);
 
     cullOutOfRangeQuad(primitiveId, rect);
-    cullClippedQuad(primitiveId);
     hideAtLevelZero(primitiveId, textOpacity());
+    cullClippedQuad(primitiveId);
     markPrimitiveChanges(primitiveId, before);
 }
 
@@ -3912,8 +3944,8 @@ void SlotRenderer::drawGrid(size_t primitiveId, gweni::Rect rect, gweni::PointF 
     setGrid(vertexIndex++, x1, y1, +hw, +hh);
 
     cullOutOfRangeQuad(primitiveId, rect);
-    cullClippedQuad(primitiveId);
     hideAtLevelZero(primitiveId, surfaceOpacity());
+    cullClippedQuad(primitiveId);
     markPrimitiveChanges(primitiveId, before);
 }
 
@@ -4011,8 +4043,8 @@ void SlotRenderer::drawTrapezoid(size_t primitiveId, float x0, float x1, float t
             m_vertexes[primitiveId*4+i].y=0;
         }
     }
-    cullClippedQuad(primitiveId);
     hideAtLevelZero(primitiveId, surfaceOpacity());
+    cullClippedQuad(primitiveId);
     markPrimitiveChanges(primitiveId, before);
 }
 
@@ -4136,8 +4168,8 @@ void SlotRenderer::drawLine(size_t primitiveId, gweni::PointF p0, gweni::PointF 
             m_vertexes[primitiveId*4+i].y=0;
         }
     }
-    cullClippedQuad(primitiveId);
     hideAtLevelZero(primitiveId, surfaceOpacity());
+    cullClippedQuad(primitiveId);
     markPrimitiveChanges(primitiveId, before);
 }
 
@@ -4290,8 +4322,8 @@ void SlotRenderer::drawTexturedRect(const gweni::Texture &texture, size_t primit
     setImageVertex(vertexIndex++, rect.x + rect.w, rect.y + rect.h, u2, v2);
 
     cullOutOfRangeQuad(primitiveId, rect);
-    cullClippedQuad(primitiveId);
     hideAtLevelZero(primitiveId, textOpacity());
+    cullClippedQuad(primitiveId);
     markPrimitiveChanges(primitiveId, before);
 
 //    addVert(rect.x, rect.y, u1, v1);
@@ -4311,14 +4343,15 @@ void SlotRenderer::showPrimitive(int style, size_t primitiveId)
 //
 //    box.state=style;
     
-    // at a level of 0 (its control's, as the drain set it) it draws nothing
-    if(((style == 2) || (style == 5))?(textOpacity() <= 0.0f):(surfaceOpacity() <= 0.0f))
-        style=0;
-
     size_t vertexIndex=primitiveId*4;
 
     if(m_vertexes.size() < vertexIndex+4)
         return;
+
+    // at a level that draws nothing of it (its control's, as the drain set it:
+    // clearAtLevel) it stays hidden
+    if(clearAtLevel(&m_vertexes[vertexIndex], style, ((style == 2) || (style == 5))?textOpacity():surfaceOpacity()))
+        style=0;
 
 //    std::cout<<"Show: "<<primitiveId<<"\n";
     for(size_t i=0; i<4; ++i)

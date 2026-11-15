@@ -1315,8 +1315,14 @@ private:
     static gweni::Color atLevel(gweni::Color color, float level);
     //! \a level as an 8-bit alpha, rounded.
     static uint8_t levelByte(float level);
-    //! At a \a level of 0 the slot just written is hidden (style 0, which the
-    //! vertex shader collapses), so it draws nothing and writes no depth.
+    //! Whether a slot of \a style holding \a vertexes (its four) draws nothing at
+    //! \a level: any style at 0, and below 1 a fill (style 1) or a grid (style 8)
+    //! whose every alpha the level made 0 (the other styles discard such a pixel,
+    //! those two would still write depth).
+    static bool clearAtLevel(const Vertex *vertexes, int style, float level);
+    //! The slot just written is hidden (style 0, which the vertex shader
+    //! collapses) when its \a level draws nothing of it (clearAtLevel), so it
+    //! writes no depth. Called before cullClippedQuad, which reads the style.
     void hideAtLevelZero(size_t primitiveId, float level);
     //! Writes primitiveId's slot as one of the SDF rounded-rect quads (styles 4, 6, 7),
     //! centred in rect. color0 and color3 are given per side (left, right), because
