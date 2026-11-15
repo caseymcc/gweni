@@ -20,6 +20,14 @@
  *    device's) and leave the target as it was. A second device made with
  *    createVulkanDevice loads volk for itself; volk is loaded for the suite's
  *    device again before the case ends, or every case after it would break.
+ *    A VulkanTarget made while volk is another device's is refused the same way
+ *    (create() false, one line, no image), before any Vulkan call.
+ *  - An instance made at apiVersion 1.2 or 1.0 (vk-bootstrap's default) on
+ *    lavapipe, a 1.3 driver: the loader gives volk no 1.3 entry point, and at 1.0
+ *    the instance's vkGetPhysicalDeviceFeatures2 dispatches through null, so
+ *    VulkanTarget::create() and Vulkan::init() each refuse it with one line,
+ *    "the device is not Vulkan 1.3", before querying the physical device; a
+ *    frame, a clear and a read-back on the refused renderer crash nothing.
  */
 #include <doctest/doctest.h>
 
@@ -47,6 +55,13 @@ using gweni::renderer::VulkanDevice;
 Vulkan *vulkanRenderer()
 {
     return dynamic_cast<Vulkan *>(&gweni::test::gpuRenderer());
+}
+
+//! Loads volk for \a device's instance and device, as an app does.
+void loadVolkFor(const VulkanDevice &device)
+{
+    volkLoadInstanceOnly(device.instance);
+    volkLoadDevice(device.device);
 }
 
 //! Records one command buffer, submits it and waits, on the suite's device.
@@ -303,8 +318,28 @@ TEST_CASE("Vulkan device check: init() refuses a device volk is not loaded for, 
     std::string error;
 
     options.applicationName="gweni_unittests second device";
-    REQUIRE_MESSAGE(gweni::renderer::createVulkanDevice(second, options, error), error);
+
+    const bool made=gweni::renderer::createVulkanDevice(second, options, error);
+
+    if(!made)
+        loadVolkFor(*suite);
+    REQUIRE_MESSAGE(made, error);
     CHECK(volkGetLoadedDevice() == second.device);
+
+    // a target made on the suite's device now is refused, before any Vulkan call
+    {
+        gweni::renderer::VulkanTarget target(*suite);
+        StderrCapture capture;
+        const bool created=target.create(16, 16);
+        const std::string printed=capture.stop();
+
+        INFO("printed: ", printed);
+        CHECK_FALSE(created);
+        CHECK(target.colorImage() == VK_NULL_HANDLE);
+        CHECK(lineCount(printed) == 1);
+        CHECK(printed.find("gweni: VulkanTarget: cannot use the device: volk is not loaded for this VkInstance")
+            != std::string::npos);
+    }
 
     // volk is another instance's
     const Attempt instance=attemptOn(*suite);
@@ -325,11 +360,9 @@ TEST_CASE("Vulkan device check: init() refuses a device volk is not loaded for, 
     CHECK(device.printed.find("volk is not loaded for this VkDevice") != std::string::npos);
 
     // the second device goes with volk loaded for it, then volk is the suite's again
-    volkLoadInstanceOnly(second.instance);
-    volkLoadDevice(second.device);
+    loadVolkFor(second);
     gweni::renderer::destroyVulkanDevice(second);
-    volkLoadInstanceOnly(suite->instance);
-    volkLoadDevice(suite->device);
+    loadVolkFor(*suite);
     CHECK(volkGetLoadedDevice() == suite->device);
 
     // neither drew, cleared or read anything: the target is as the suite left it
@@ -358,6 +391,102 @@ TEST_CASE("Vulkan device check: init() refuses a device volk is not loaded for, 
     CHECK(printed.empty());
     CHECK_FALSE(accepted->deviceError());
     accepted.reset();
+}
+
+TEST_CASE("Vulkan device check: an instance below 1.3 on a 1.3 driver is refused by the target and init(), with one line each")
+{
+    const VulkanDevice *suite=gweni::test::vulkanDevice();
+
+    if(!vulkanRenderer() || !suite)
+    {
+        MESSAGE("skipped: the renderer is not renderer::Vulkan");
+        return;
+    }
+
+    // vk-bootstrap's default instance is 1.0: the driver (lavapipe, 1.3) has every
+    // feature, but the device's Vulkan is the instance's
+    for(const uint32_t apiVersion:{ VK_API_VERSION_1_2, VK_API_VERSION_1_0 })
+    {
+        CAPTURE(VK_API_VERSION_MINOR(apiVersion));
+
+        VkApplicationInfo application{};
+        application.sType=VK_STRUCTURE_TYPE_APPLICATION_INFO;
+        application.pApplicationName="gweni_unittests old instance";
+        application.apiVersion=apiVersion;
+        VkInstanceCreateInfo instanceInfo{};
+        instanceInfo.sType=VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+        instanceInfo.pApplicationInfo=&application;
+        VulkanDevice old;
+
+        REQUIRE(vkCreateInstance(&instanceInfo, nullptr, &old.instance) == VK_SUCCESS);
+        volkLoadInstanceOnly(old.instance);
+
+        uint32_t count=0;
+        vkEnumeratePhysicalDevices(old.instance, &count, nullptr);
+        std::vector<VkPhysicalDevice> physical(count);
+        vkEnumeratePhysicalDevices(old.instance, &count, physical.data());
+
+        VkPhysicalDeviceProperties properties{};
+        if(count > 0)
+        {
+            old.physicalDevice=physical[0];
+            vkGetPhysicalDeviceProperties(old.physicalDevice, &properties);
+        }
+
+        const float priority=1.0f;
+        VkDeviceQueueCreateInfo queueInfo{};
+        queueInfo.sType=VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        queueInfo.queueFamilyIndex=0;
+        queueInfo.queueCount=1;
+        queueInfo.pQueuePriorities=&priority;
+        VkDeviceCreateInfo deviceInfo{};
+        deviceInfo.sType=VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+        deviceInfo.queueCreateInfoCount=1;
+        deviceInfo.pQueueCreateInfos=&queueInfo;
+
+        const bool made=count > 0
+            && vkCreateDevice(old.physicalDevice, &deviceInfo, nullptr, &old.device) == VK_SUCCESS;
+
+        if(!made)
+        {
+            vkDestroyInstance(old.instance, nullptr);
+            loadVolkFor(*suite);
+        }
+        REQUIRE(made);
+        volkLoadDevice(old.device);
+        vkGetDeviceQueue(old.device, 0, 0, &old.queue);
+
+        // the driver is 1.3, so this is the instance's version alone
+        CHECK(properties.apiVersion >= VK_API_VERSION_1_3);
+
+        std::string targetPrinted;
+        bool targetCreated=true;
+        {
+            gweni::renderer::VulkanTarget target(old);
+            StderrCapture capture;
+
+            targetCreated=target.create(16, 16);
+            targetPrinted=capture.stop();
+        }
+
+        const Attempt attempt=attemptOn(old);
+
+        vkDestroyDevice(old.device, nullptr);
+        vkDestroyInstance(old.instance, nullptr);
+        loadVolkFor(*suite);
+
+        INFO("target printed: ", targetPrinted);
+        INFO("init printed: ", attempt.printed);
+        CHECK_FALSE(targetCreated);
+        CHECK(lineCount(targetPrinted) == 1);
+        CHECK(targetPrinted.find("gweni: VulkanTarget: cannot use the device: the device is not Vulkan 1.3")
+            != std::string::npos);
+        CHECK(attempt.error);
+        CHECK(lineCount(attempt.printed) == 1);
+        CHECK(attempt.printed.find("gweni: renderer::Vulkan: cannot use the device: the device is not Vulkan 1.3")
+            != std::string::npos);
+    }
+    CHECK(volkGetLoadedDevice() == suite->device);
 }
 
 #else

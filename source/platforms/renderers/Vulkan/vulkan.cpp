@@ -372,6 +372,12 @@ void VulkanTarget::destroy()
 
 bool VulkanTarget::create(int width, int height, VkFormat depthFormat)
 {
+    // no Vulkan call before the device is checked, and the images it has are kept
+    if(const char *unusable=unusableVulkanDevice(m_device))
+    {
+        std::fprintf(stderr, "gweni: VulkanTarget: cannot use the device: %s\n", unusable);
+        return false;
+    }
     destroy();
 
     // the depth format nearest GL's 24-bit depth buffer that the device renders to,
@@ -880,18 +886,24 @@ VkDescriptorSet Vulkan::allocateTextSet()
     return set;
 }
 
-const char *Vulkan::unusableDevice() const
+const char *unusableVulkanDevice(const VulkanDevice &device)
 {
     // volk's pointers first: until they are this instance's and this device's,
     // no Vulkan call may be made (a second volk in the program has none at all)
-    if(m_device.instance == VK_NULL_HANDLE || volkGetLoadedInstance() != m_device.instance)
+    if(device.instance == VK_NULL_HANDLE || volkGetLoadedInstance() != device.instance)
         return "volk is not loaded for this VkInstance (volkLoadInstance, and one volk in the program)";
-    if(m_device.device == VK_NULL_HANDLE || volkGetLoadedDevice() != m_device.device)
+    if(device.device == VK_NULL_HANDLE || volkGetLoadedDevice() != device.device)
         return "volk is not loaded for this VkDevice (volkLoadDevice, and one volk in the program)";
+    // A device's Vulkan is its instance's apiVersion, whatever the driver's: below
+    // 1.3 the loader gives volk no 1.3 entry point, and below 1.1 the instance's
+    // vkGetPhysicalDeviceFeatures2 dispatches through null. So this comes before
+    // any query of the physical device.
+    if(vkCmdBeginRendering == nullptr || vkCmdEndRendering == nullptr)
+        return "the device is not Vulkan 1.3 (instance and device made at apiVersion 1.3)";
 
     VkPhysicalDeviceProperties properties;
 
-    vkGetPhysicalDeviceProperties(m_device.physicalDevice, &properties);
+    vkGetPhysicalDeviceProperties(device.physicalDevice, &properties);
     if(properties.apiVersion < VK_API_VERSION_1_3)
         return "the physical device is not Vulkan 1.3";
 
@@ -900,12 +912,12 @@ const char *Vulkan::unusableDevice() const
     VkPhysicalDeviceFeatures2 features{};
     features.sType=VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
     features.pNext=&features13;
-    vkGetPhysicalDeviceFeatures2(m_device.physicalDevice, &features);
+    vkGetPhysicalDeviceFeatures2(device.physicalDevice, &features);
     if(!features13.dynamicRendering)
         return "the physical device does not support dynamicRendering";
     if(!features13.shaderDemoteToHelperInvocation)
         return "the physical device does not support shaderDemoteToHelperInvocation";
-    if(m_device.dualSourceBlend && !features.features.dualSrcBlend)
+    if(device.dualSourceBlend && !features.features.dualSrcBlend)
         return "VulkanDevice::dualSourceBlend is set, and the physical device does not support dualSrcBlend";
     // which features the app enabled is the validation layer's to say
     return nullptr;
@@ -916,7 +928,7 @@ void Vulkan::init()
     // nothing of the mirror is on the buffers below yet, and the view is the clip region
     SlotRenderer::init();
 
-    if(const char *unusable=unusableDevice())
+    if(const char *unusable=unusableVulkanDevice(m_device))
     {
         // nothing is made, and every hook returns at once: nothing is drawn
         std::fprintf(stderr, "gweni: renderer::Vulkan: cannot use the device: %s\n", unusable);
@@ -1788,9 +1800,10 @@ void Vulkan::uploadVertexRange(SlotPath path, size_t offset, size_t bytes, const
 
 size_t Vulkan::maxClipBoxRows() const
 {
-    // nothing is allocated on a device init() refused
+    // nothing is allocated on a device init() refused: the least every device has,
+    // so the core logs no capacity error after init()'s one line
     if(!m_deviceUsable)
-        return 1;
+        return 4096;
     return m_properties.limits.maxImageDimension2D;
 }
 
@@ -1930,9 +1943,9 @@ void Vulkan::destroyAtlasTexture(TextureHandle handle)
 
 size_t Vulkan::maxImageLayers() const
 {
-    // nothing is allocated on a device init() refused
+    // nothing is allocated on a device init() refused: the least every device has
     if(!m_deviceUsable)
-        return 1;
+        return 256;
     return std::max<size_t>(m_properties.limits.maxImageArrayLayers, 1);
 }
 

@@ -76,6 +76,14 @@ GWENI_EXPORT bool createVulkanDevice(VulkanDevice &device, const VulkanDeviceOpt
     std::string &error);
 //! Destroys what createVulkanDevice made, once everything made on it is gone.
 GWENI_EXPORT void destroyVulkanDevice(VulkanDevice &device);
+//! What makes \a device unusable to gweni (one line), or null, checked in this
+//! order with no Vulkan call before the first two: volk not loaded for its
+//! instance, or for its device; no Vulkan 1.3 entry points loaded (the instance or
+//! device made below apiVersion 1.3, whatever the driver has); the physical
+//! device below 1.3, without dynamicRendering or shaderDemoteToHelperInvocation,
+//! or without dualSrcBlend while dualSourceBlend is set. VulkanTarget::create()
+//! and Vulkan::init() refuse a device it names.
+GWENI_EXPORT const char *unusableVulkanDevice(const VulkanDevice &device);
 
 //! An image a renderer::Vulkan draws into: a colour image and its depth buffer
 //! of one size. It is the application's, as an EGL context's framebuffer is: any
@@ -100,8 +108,10 @@ GWENI_EXPORT void destroyVulkanDevice(VulkanDevice &device);
 //! - Its values are premultiplied (colour times alpha, and the alpha its
 //!   coverage) and sRGB-encoded, blended on the encoded values as GL blends them:
 //!   composite it with (ONE, ONE_MINUS_SRC_ALPHA) on encoded values, e.g. after
-//!   the application's tonemap, over its swapchain image. Cleared to a
-//!   transparent colour, it is the UI alone.
+//!   the application's tonemap, over its swapchain image. clearTarget()
+//!   stores its colour as given, not premultiplied: cleared to (0,0,0,0) (or a
+//!   colour already premultiplied), it is the UI alone; (30,30,30,0) would add 30
+//!   to every channel of the scene under it.
 //! - LCD text cannot be composited over a transparent clear (each channel has
 //!   its own coverage and the alpha their mean): draw it over an opaque clear,
 //!   or use grayscale text (the default).
@@ -120,7 +130,9 @@ public:
     //! The depth format is the one nearest GL's 24-bit depth buffer that the device
     //! renders to (X8_D24, D24S8, then D32_SFLOAT), or \a depthFormat when given,
     //! false if the device cannot render to it. A renderer drawing into the target
-    //! takes a new format through setTarget().
+    //! takes a new format through setTarget(). On a device unusableVulkanDevice()
+    //! names it prints one stderr line saying why, makes no Vulkan call, keeps the
+    //! images it had and returns false.
     bool create(int width, int height, VkFormat depthFormat=VK_FORMAT_UNDEFINED);
 
     int width() const { return m_width; }
@@ -182,9 +194,10 @@ public:
     //! Waits for the queue, then destroys everything it made.
     virtual ~Vulkan();
 
-    //! Checks the device first: volk loaded for its instance and device,
-    //! Vulkan 1.3, dynamicRendering and shaderDemoteToHelperInvocation supported,
-    //! and dualSourceBlend only where dualSrcBlend is. A device that fails prints
+    //! Checks the device first (unusableVulkanDevice(): volk loaded for its
+    //! instance and device, Vulkan 1.3's entry points loaded, the physical device
+    //! Vulkan 1.3 with dynamicRendering and shaderDemoteToHelperInvocation, and
+    //! dualSourceBlend only where dualSrcBlend is). A device that fails prints
     //! one stderr line naming what is missing, deviceError() is true from then on,
     //! and the renderer makes no Vulkan call and draws nothing.
     void init() override;
@@ -325,10 +338,6 @@ private:
     VkDevice device() const { return m_device.device; }
     //! Records a VkResult that is an error (deviceError()), and returns whether it succeeded.
     bool check(VkResult result, const char *what);
-    //! What makes the device unusable (one line), or null: volk not loaded for its
-    //! instance or device, no Vulkan 1.3, no dynamicRendering or
-    //! shaderDemoteToHelperInvocation, or dualSourceBlend set without dualSrcBlend
-    const char *unusableDevice() const;
 
     uint32_t memoryType(uint32_t typeBits, VkMemoryPropertyFlags properties) const;
     bool createBuffer(Buffer &buffer, VkDeviceSize size, VkBufferUsageFlags usage, bool hostVisible);

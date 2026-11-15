@@ -1440,19 +1440,29 @@ gweni each hold to (`VulkanDevice` and `VulkanTarget` in `vulkan.h` say the same
   links the static `volk::volk`, the application the same port): gweni calls
   `volkInitialize` only in `createVulkanDevice`, which an application with its own
   device does not call.
-- **`init()` checks the device** (`Vulkan::unusableDevice()`), before any other Vulkan
-  call: volk loaded for its instance (`volkGetLoadedInstance()`) and its device
-  (`volkGetLoadedDevice()`), which no Vulkan call is made before, so a second volk
-  in the program, whose pointers are null, is never called through; the physical
-  device at Vulkan 1.3; `dynamicRendering` and `shaderDemoteToHelperInvocation`
-  supported; `dualSourceBlend` only where `dualSrcBlend` is supported. A device that
-  fails prints one line (`gweni: renderer::Vulkan: cannot use the device: volk is
-  not loaded for this VkDevice (...)`), `deviceError()` is true from then on, and
-  every hook returns without a Vulkan call, so nothing is drawn, cleared or read.
-  Which features the application *enabled* `init()` cannot see; the validation layer
-  reports a missing one. `tests/vulkanDevice.cpp` refuses a device volk is not loaded
-  for (a second device made, which loads volk for itself, then volk loaded for the
-  suite's device again).
+- **The device is checked** (`unusableVulkanDevice()`) by `VulkanTarget::create()`
+  and `Vulkan::init()`, each before its first Vulkan call (the application makes
+  the target first, and `init()` builds pipelines for its formats), in this order:
+  volk loaded for its instance (`volkGetLoadedInstance()`) and its device
+  (`volkGetLoadedDevice()`), which reads volk's own state and calls nothing, so a
+  second volk in the program, whose pointers are null, is never called through;
+  then Vulkan 1.3's entry points loaded (`vkCmdBeginRendering`, `vkCmdEndRendering`).
+  That last one is what catches an instance made below 1.3 (vk-bootstrap's default
+  is 1.0) on a 1.3 driver: the device's Vulkan is the instance's `apiVersion`, the
+  loader gives volk no 1.3 function, and below 1.1 the instance's
+  `vkGetPhysicalDeviceFeatures2` is a trampoline into a null dispatch entry, so it
+  comes before any query of the physical device. Then the physical device at Vulkan
+  1.3, `dynamicRendering` and `shaderDemoteToHelperInvocation` supported, and
+  `dualSourceBlend` only where `dualSrcBlend` is supported. A refused target prints
+  one line (`gweni: VulkanTarget: cannot use the device: ...`), keeps the images it
+  had and returns false; a refused `init()` one line (`gweni: renderer::Vulkan:
+  cannot use the device: the device is not Vulkan 1.3 (...)`), `deviceError()` is
+  true from then on, and every hook returns without a Vulkan call, so nothing is
+  drawn, cleared or read. Which features the application *enabled* neither can see;
+  the validation layer reports a missing one. `tests/vulkanDevice.cpp` has each
+  refusal on lavapipe: volk loaded for another device (a second one made, which
+  loads volk for itself), a target made then, and an instance at `apiVersion` 1.2
+  and 1.0, volk loaded for the suite's device again after each.
 - **The queue.** Every renderer submits to `VulkanDevice::queue` from the thread
   that calls it, so all of that queue's submissions are made from one thread (the
   application's and gweni's). A frame's `end()` submits its uploads and draws with
@@ -1482,7 +1492,9 @@ gweni each hold to (`VulkanDevice` and `VulkanTarget` in `vulkan.h` say the same
   values, e.g. after its tonemap, over its swapchain image. Over an opaque clear
   every pixel's alpha is 255. `tests/premultipliedAlpha.cpp` holds both backends to
   this: a frame of fills, rounded corners, lines and grayscale text over a
-  transparent clear, composited on the CPU over a colour `S` (`rgb + S·(1-A)`), is
+  transparent clear (`clearTarget()` stores its colour as given, so that is
+  `(0,0,0,0)`, or a colour already premultiplied: `(30,30,30,0)` would add 30 to
+  the scene under it), composited on the CPU over a colour `S` (`rgb + S·(1-A)`), is
   the frame drawn over `S` within 1 level per channel (measured: 1 on llvmpipe and
   lavapipe, 0 over black).
 - **LCD text cannot be composited over a transparent clear**: each channel has its

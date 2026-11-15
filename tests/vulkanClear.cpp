@@ -107,15 +107,17 @@ TEST_CASE("Vulkan clear: a loop of clearTarget and frames over a settled canvas 
         frame(i);
 
     const uint64_t waits=renderer->queueWaitIdleCount();
+    const size_t clearBuffers=renderer->clearCommandBufferCount();
     const int frames=60;
 
     for(int i=0; i<frames; ++i)
         frame(5+i);
 
     CHECK(renderer->queueWaitIdleCount() == waits);
-    // the clears on the device at once: never every one of the loop's
-    INFO("clear command buffers: ", renderer->clearCommandBufferCount());
-    CHECK(renderer->clearCommandBufferCount() <= Vulkan::FramesInFlight+2);
+    // the clears on the device at once: never every one of the loop's (counted from
+    // before the loop, so an earlier case's clears do not count)
+    INFO("clear command buffers: ", clearBuffers, " before the loop, ", renderer->clearCommandBufferCount(), " after");
+    CHECK(renderer->clearCommandBufferCount()-clearBuffers <= Vulkan::FramesInFlight+2);
 
     // the last clear and the last frame's draws over it
     std::vector<uint8_t> pixels;
