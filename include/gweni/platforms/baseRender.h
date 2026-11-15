@@ -236,6 +236,21 @@ public:
     //! Set the current drawing color.
     virtual void setDrawColor(Color color) {}
 
+    //! The opacity levels the draws that follow are made at, each in [0, 1]:
+    //! \p surface for fills, borders, lines and the other shapes, \p text for
+    //! glyphs, icons and images (docs/architecture.md → "Control opacity").
+    //! The render drain sets each control's effective levels
+    //! (controls::Base::effectiveSurfaceOpacity()) before its hooks, and the
+    //! canvas sets 1 for the root. Stored here; a backend that applies them
+    //! overrides it (SlotRenderer). The default draws ignore them.
+    virtual void setOpacity(float surface, float text)
+    {
+        m_surfaceOpacity=surface;
+        m_textOpacity=text;
+    }
+    float surfaceOpacity() const { return m_surfaceOpacity; }
+    float textOpacity() const { return m_textOpacity; }
+
     virtual void startClip() {}     //!< Start clipping the drawing. \see setClipRegion().
     virtual void endClip() {}       //!< Stop clipping the drawing.
 
@@ -581,6 +596,8 @@ private:
     ResourcePaths &m_paths;
     gweni::Point m_renderOffset;
     gweni::Rect m_rectClipRegion;
+    float m_surfaceOpacity=1.0f;
+    float m_textOpacity=1.0f;
     ICacheToTexture *m_RTT;
 };
 

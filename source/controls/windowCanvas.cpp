@@ -154,6 +154,8 @@ void WindowCanvas::renderCanvas()
         render->setClipRegion(getRenderBounds());
         render->setRenderOffset(Point(-getX(), -getY()));
         render->setScale(scale());
+        // the root's levels: each control's own are set as the drain renders it
+        render->setOpacity(1.0f, 1.0f);
 
         {
             // the walk only draws: a tree change from here on is reported

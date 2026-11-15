@@ -124,6 +124,30 @@ public:
 
     void setDrawColor(gweni::Color color) override { drawColor=color; }
 
+    //! The opacity levels a draw was made at (renderer::Base::setOpacity).
+    struct Levels
+    {
+        float surface;
+        float text;
+    };
+
+    //! Counted in `opacityCalls`, then stored as renderer::Base does; each
+    //! draw records the levels it is made at in `primitiveLevels` or
+    //! `textLevels`.
+    void setOpacity(float surface, float text) override
+    {
+        ++opacityCalls;
+        Base::setOpacity(surface, text);
+    }
+
+    //! setOpacity() calls so far. Tests take deltas.
+    size_t opacityCalls=0;
+    //! Each primitive id's levels at its last write (a draw, a show, a hide,
+    //! a release)
+    std::map<size_t, Levels> primitiveLevels;
+    //! Each text id's levels at its last write (renderText, showText, hideText)
+    std::map<size_t, Levels> textLevels;
+
     //! Every text run laid out so far is stale, as a runtime text AA switch
     //! makes it: raises textLayoutSerial().
     void changeTextLayout() { textLayoutChanged(); }
@@ -386,12 +410,18 @@ private:
         return paths;
     }
 
-    void wrotePrimitive(size_t id) { m_pendingPrimitives.insert(id); }
+    void wrotePrimitive(size_t id)
+    {
+        m_pendingPrimitives.insert(id);
+        primitiveLevels[id]={surfaceOpacity(), textOpacity()};
+    }
 
     //! A run written twice in a frame counts its larger glyph count once.
     void wroteText(size_t id, size_t glyphs)
     {
         size_t &pending=m_pendingTexts[id];
+
+        textLevels[id]={surfaceOpacity(), textOpacity()};
 
         pending=std::max(pending, glyphs);
     }

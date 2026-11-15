@@ -864,6 +864,33 @@ public:
     virtual void hide() { setHidden(true); }    //!< Make control invisible.
     virtual void show(bool show=true) { setHidden(!show); }   //!< Make control visible if hidden.
 
+    // Opacity (docs/architecture.md → "Control opacity")
+
+    //! Sets this control's own opacity, both levels \p level.
+    void setOpacity(float level) { setOpacity(level, level); }
+    //! Sets this control's own opacity: \p surface for its fills, borders,
+    //! lines and the other shapes, \p text for its glyphs, icons and images,
+    //! each clamped to [0, 1] (NaN reads as 1). It applies to everything the
+    //! control contains, but a descendant with its own setting keeps it (the
+    //! levels are replaced, not multiplied). Marks StateChange_Background and
+    //! StateChange_Text on exactly the controls whose effective levels changed;
+    //! it lays nothing out and calls no invalidate(). At 0 nothing of it is
+    //! drawn, but it still lays out, hit-tests and takes the focus: hide()
+    //! removes a control.
+    void setOpacity(float surface, float text);
+    //! Drops this control's own setting: it inherits its parent's effective
+    //! levels again (1 with no parent).
+    void clearOpacity();
+    //! Whether setOpacity() set this control's own levels.
+    bool hasOwnOpacity() const { return m_ownOpacity; }
+    //! The levels setOpacity() set, 1 without an own setting.
+    float ownSurfaceOpacity() const { return m_ownOpacity?m_surfaceOpacity:1.0f; }
+    float ownTextOpacity() const { return m_ownOpacity?m_textOpacity:1.0f; }
+    //! The levels it is drawn at: its own if it set them, else its nearest
+    //! ancestor's (on the m_actualParent chain) that did, else 1. Cached: O(1).
+    float effectiveSurfaceOpacity() const { return m_surfaceOpacity; }
+    float effectiveTextOpacity() const { return m_textOpacity; }
+
     // Skin
     virtual void setSkin(skin::Base *skin, bool doChildren=true);
     virtual gweni::skin::Base *getSkin(void);
@@ -1219,6 +1246,11 @@ protected:
     //! control that hid itself, which is not shown either way.
     void setAncestorHidden(bool ancestorHidden);
 
+    //! Sets the effective opacity levels of this control and of each
+    //! descendant without an own setting (the walk stops there), marking
+    //! StateChange_Background|StateChange_Text on each whose levels changed.
+    void applyOpacity(float surface, float text);
+
     Base *m_toolTip=nullptr;
     gweni::String m_toolTipText;
 
@@ -1290,6 +1322,8 @@ protected:
     Padding m_padding;
     Margin m_margin;
     Alignment m_alignment;
+    //! effectiveSurfaceOpacity(), in the padding after m_alignment
+    float m_surfaceOpacity=1.0f;
 
     gweni::String m_name;
 
@@ -1510,6 +1544,8 @@ protected:
     //! The Canvas::s_passSerial of the last pass this control re-dirtied
     //! (noteRedirty()): it stays dirty past its Y arrange in that pass.
     unsigned m_redirtiedPass=0;
+    //! effectiveTextOpacity(), in the padding after m_redirtiedPass
+    float m_textOpacity=1.0f;
     //! Reports a re-dirty of this control to the running pass's canvas.
     void noteRedirty();
 
@@ -1704,6 +1740,8 @@ protected:
     //! control's size or padding changed, or a docked child was removed,
     //! reordered or had its dock or placement changed.
     bool m_arrangeAll[2]={true, true};
+    //! hasOwnOpacity(): m_surfaceOpacity and m_textOpacity are its own levels
+    bool m_ownOpacity=false;
     //! \}
 
     //! While one is alive, the layout invalidations raised are placement, not

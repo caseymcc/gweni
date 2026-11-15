@@ -448,6 +448,8 @@ void Canvas::renderCanvas()
     render->setClipRegion(getBounds());
     render->setRenderOffset(Point(0, 0));
     render->setScale(scale());
+    // the root's levels: each control's own are set as the drain renders it
+    render->setOpacity(1.0f, 1.0f);
     // here rather than in render(): the canvas is not rendered on a frame
     // nothing on it changed
     m_needsRedraw=false;

@@ -22,6 +22,7 @@
 #include <gweni/utility.h>
 #include <gweni/objectIdBank.h>
 #include <algorithm>
+#include <cmath>
 #include <cassert>
 #include <limits>
 #include <type_traits>
@@ -1110,6 +1111,55 @@ void Base::setAncestorHidden(bool ancestorHidden)
     onVisibleChanged();
 }
 
+namespace
+{
+
+//! An opacity level in [0, 1], NaN read as 1.
+float opacityLevel(float level)
+{
+    if(std::isnan(level))
+        return 1.0f;
+    return std::min(1.0f, std::max(0.0f, level));
+}
+
+}//namespace
+
+void Base::setOpacity(float surface, float text)
+{
+    m_ownOpacity=true;
+    applyOpacity(opacityLevel(surface), opacityLevel(text));
+}
+
+void Base::clearOpacity()
+{
+    if(!m_ownOpacity)
+        return;
+
+    m_ownOpacity=false;
+    if(m_actualParent)
+        applyOpacity(m_actualParent->m_surfaceOpacity, m_actualParent->m_textOpacity);
+    else
+        applyOpacity(1.0f, 1.0f);
+}
+
+void Base::applyOpacity(float surface, float text)
+{
+    if((m_surfaceOpacity == surface) && (m_textOpacity == text))
+        return;
+
+    m_surfaceOpacity=surface;
+    m_textOpacity=text;
+    // what ThemeEditor::applyToCanvas marks: every slot and run is drawn again
+    // at the new levels, with nothing laid out
+    addStateChange(StateChange_Background|StateChange_Text);
+
+    for(auto &&child : m_children)
+    {
+        if(!child->m_ownOpacity)
+            child->applyOpacity(surface, text);
+    }
+}
+
 void Base::invalidateChildren(bool recursive)
 {
     if(!recursive)
@@ -1417,6 +1467,9 @@ void Base::addChild(Base *child)
     // Not visible under a hidden parent, e.g. content built into a PageControl
     // page that is hidden before its content is added; its own flag is kept.
     child->setAncestorHidden(!visible());
+    // its levels are its new parent's, unless it set its own
+    if(!child->m_ownOpacity)
+        child->applyOpacity(m_surfaceOpacity, m_textOpacity);
     // new, or moved here from another place: its old labels mean nothing here
     child->m_zMoved=true;
     child->markZDirty();
@@ -1433,6 +1486,9 @@ void Base::addChildOfLayout(Base *child)
     child->m_actualParent=this;
     child->noteAdded();
     child->setAncestorHidden(!visible());
+    // its levels are its new parent's, unless it set its own
+    if(!child->m_ownOpacity)
+        child->applyOpacity(m_surfaceOpacity, m_textOpacity);
     // new, or moved here from another place: its old labels mean nothing here
     child->m_zMoved=true;
     child->markZDirty();
@@ -1464,7 +1520,11 @@ void Base::removeChild(Base *child)
         // On its own it is shown unless it hid itself; a new parent sets this
         // again as it is attached (at once, for a move: g_movingChild).
         if(child != g_movingChild)
+        {
             child->setAncestorHidden(false);
+            if(!child->m_ownOpacity)
+                child->applyOpacity(1.0f, 1.0f);
+        }
         if(child->m_attached)
             attachedChildLeft(child);
         // this control reserved z for its attached children
@@ -2804,6 +2864,9 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied, size_t treeSize)
     // This root's own state, as the canvas set it on the renderer.
     const RenderState root{baseRenderer->getRenderOffset(), baseRenderer->clipRegion(),
         baseRenderer->renderTransform()};
+    // and its opacity levels (1, from the canvas)
+    const float rootSurfaceOpacity=baseRenderer->surfaceOpacity();
+    const float rootTextOpacity=baseRenderer->textOpacity();
     unsigned treeChanges=g_renderWalkTreeChanges;
 
     // Runs the hooks of \p control, queued in \p slot, in \p state, and
@@ -2823,6 +2886,11 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied, size_t treeSize)
             baseRenderer->setRenderTransform(state.transform);
             baseRenderer->setRenderOffset(offset);
             baseRenderer->setClipRegion(clip);
+            // its own levels, cached on it (setOpacity()); set only when they
+            // differ, so a UI with none set makes no call here
+            if((control->m_surfaceOpacity != baseRenderer->surfaceOpacity())
+                || (control->m_textOpacity != baseRenderer->textOpacity()))
+                baseRenderer->setOpacity(control->m_surfaceOpacity, control->m_textOpacity);
             control->renderUnder(skin);
             if(queue[slot] == control)
                 control->render(skin);
@@ -3078,6 +3146,9 @@ void Base::drainRenderQueue(skin::Base *skin, bool zTied, size_t treeSize)
     baseRenderer->setRenderTransform(root.transform);
     baseRenderer->setRenderOffset(root.offset);
     baseRenderer->setClipRegion(root.clip);
+    if((baseRenderer->surfaceOpacity() != rootSurfaceOpacity)
+        || (baseRenderer->textOpacity() != rootTextOpacity))
+        baseRenderer->setOpacity(rootSurfaceOpacity, rootTextOpacity);
 
     // every slot is null unless something was carried or left past the cap
     if((carried == 0) && (appended == queue.size()))
