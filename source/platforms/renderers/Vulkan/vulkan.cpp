@@ -1547,6 +1547,8 @@ void Vulkan::endRendering()
 
 void Vulkan::submit()
 {
+    // the next frame's set is its own
+    m_primitiveSetWritten=false;
     if(!m_recording)
         return;
 
@@ -2207,7 +2209,21 @@ void Vulkan::beginPrimitiveDraws()
     Frame &current=frame();
 
     // this frame's set (the frame that last used it is done): the clip-box table
-    // and each class's image page, GL's texture 0 for a class with none
+    // and each class's image page, GL's texture 0 for a class with none. Written
+    // at the frame's first primitive draws: the sorted pass begins them again
+    // after it is bound, and nothing it holds changes between them (the uploads,
+    // a regrow's included, all come before the first draw)
+    if(m_primitiveSetWritten)
+    {
+        beginRendering();
+        vkCmdBindPipeline(current.draw, VK_PIPELINE_BIND_POINT_GRAPHICS, m_primitivePipeline);
+        vkCmdBindDescriptorSets(current.draw, VK_PIPELINE_BIND_POINT_GRAPHICS, m_primitiveLayout,
+            0, 1, &current.primitiveSet, 0, nullptr);
+        vkCmdBindIndexBuffer(current.draw, m_quadIndexBuffer.buffer, 0, VK_INDEX_TYPE_UINT16);
+        return;
+    }
+    m_primitiveSetWritten=true;
+
     const Texture *clip=texture(m_clipTexture);
     const Texture *black=texture(m_blackTexture);
     VkDescriptorImageInfo clipInfo{ m_clipSampler, clip?clip->view:VK_NULL_HANDLE,

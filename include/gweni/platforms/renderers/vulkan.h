@@ -456,6 +456,8 @@ private:
     //! the text pass's bound pipeline, and whether the atlas being drawn has a
     //! texture (beginTextAtlas)
     VkPipeline m_boundTextPipeline=VK_NULL_HANDLE;
+    //! this frame's primitive set is written (beginPrimitiveDraws), until submitFrame
+    bool m_primitiveSetWritten=false;
     bool m_drawingAtlas=false;
     bool m_error=false;
 };
