@@ -2612,6 +2612,20 @@ public:
     inline static const std::string_view name="StatsOverlay";
 };
 
+//! controls::internal::ModalScrim, Canvas::setModalScrim's backdrop: one
+//! tokyonight::ModalScrim surface over the canvas.
+class ModalScrim:public textured::ControlRegister<ModalScrim>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void generate(renderer::Base *renderer, controls::Base *baseControl) override;
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="ModalScrim";
+};
+
 //! dialogs::Dialog: [0] its shadow (DialogShadow) at getZIndex(), ShadowSize
 //! units below and right of the panel, [1] the panel (Dialog) at +1 over it,
 //! both inside its bounds.

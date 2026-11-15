@@ -523,6 +523,9 @@ inline Surface Dialog         { Color(0x1f,0x22,0x33), BgDark,                Li
 inline Surface DialogTitle    { BgStorm,               Color(0x20,0x24,0x37), BgStorm,     RadiusLg-1.0f, 0.0f };
 inline Surface DialogFooter   { Color(0x1a,0x1b,0x27), Color(0x18,0x19,0x24), Color(0x1a,0x1b,0x27), RadiusLg-1.0f, 0.0f };
 inline Surface DialogShadow   { Color(0x0b,0x0c,0x12), Color(0x0b,0x0c,0x12), Color(0x0b,0x0c,0x12), RadiusLg, 0.0f };
+// Canvas::setModalScrim's backdrop over the app, under the top modal: translucent,
+// so the app shows through it dimmed, text included (the sorted pass)
+inline Surface ModalScrim     { Color(0x0b,0x0c,0x12,0x99), Color(0x0b,0x0c,0x12,0x99), Color(0x0b,0x0c,0x12,0x99), 0.0f, 0.0f };
 
 // A toast (controls::Toast): its panel, opaque as a dialog's (a translucent one
 // would hide the app's text under it), and the accent strip down its left edge
@@ -616,7 +619,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"MarkdownCode",&MarkdownCode},{"MarkdownRule",&MarkdownRule},{"MarkdownQuoteBar",&MarkdownQuoteBar},
         {"MarkdownCodeBlock",&MarkdownCodeBlock},{"MarkdownTableHeader",&MarkdownTableHeader},
         {"MarkdownTableBorder",&MarkdownTableBorder},{"MarkdownImagePlaceholder",&MarkdownImagePlaceholder},
-        {"DropIndicator",&DropIndicator},{"DragSource",&DragSource},
+        {"ModalScrim",&ModalScrim},{"DropIndicator",&DropIndicator},{"DragSource",&DragSource},
         {"DragNumber",&DragNumber},{"DragNumberHover",&DragNumberHover},{"DragNumberFocus",&DragNumberFocus},
         {"DragNumberDown",&DragNumberDown},{"DragNumberDisabled",&DragNumberDisabled},
         {"VectorTagX",&VectorTagX},{"VectorTagY",&VectorTagY},{"VectorTagZ",&VectorTagZ},

@@ -300,6 +300,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/plotHistogram.cpp
     include/gweni/controls/plotLines.h
     source/controls/plotLines.cpp
+    include/gweni/controls/modalScrim.h
+    source/controls/modalScrim.cpp
     include/gweni/controls/popup.h
     include/gweni/controls/toast.h
     source/controls/popup.cpp

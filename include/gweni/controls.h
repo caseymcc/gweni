@@ -63,6 +63,7 @@
 #include <gweni/controls/menu.h>
 #include <gweni/controls/menuItem.h>
 #include <gweni/controls/menuStrip.h>
+#include <gweni/controls/modalScrim.h>
 #include <gweni/controls/navigationRail.h>
 #include <gweni/controls/nodeGraph.h>
 #include <gweni/controls/numericUpDown.h>

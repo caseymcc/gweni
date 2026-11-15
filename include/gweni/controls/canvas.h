@@ -33,7 +33,7 @@ enum class PopupPlacement;
 class Toast;
 enum class ToastKind: int;
 struct ToastOptions;
-namespace internal { class ToastHost; }
+namespace internal { class ToastHost; class ModalScrim; }
 
 /// What takes every input event a Canvas gets while it is the canvas's input
 /// capture (Canvas::setInputCapture): tools::DepthView's camera. The events
@@ -533,9 +533,18 @@ public:
     /// still exists, is visible and is allowed, then hit-tests the hover
     /// again. A modal deleted leaves the stack, and the focus comes back in the
     /// next update phase; one hidden (visible() false) or taken off the canvas
-    /// is popped by the next update phase. No backdrop is drawn: what is under
-    /// a modal stays as it is.
+    /// is popped by the next update phase. No backdrop is drawn unless
+    /// setModalScrim(true) asks for one.
     void pushModal(Base *control, Base *focusReturn=nullptr);
+    /// Draws a scrim while a modal is up: one slot over the whole canvas in the
+    /// translucent theme surface ModalScrim (an internal::ModalScrim child),
+    /// kept just under the top modal, so the app and the modals below the top
+    /// one show through it dimmed, text included, and it moves as modals are
+    /// pushed and popped. It takes no input (the stack already blocks the
+    /// app). Off by default; off, the scrim is deleted and nothing of it is
+    /// left.
+    void setModalScrim(bool scrim);
+    bool modalScrim() const { return m_modalScrim != nullptr; }
     void popModal(Base *control);
     /// The top of the stack, or null.
     Base *topModal() const { return m_modals.empty() ? nullptr : m_modals.back().control; }
@@ -1010,6 +1019,13 @@ protected:
         size_t focusId;
     };
     std::vector<ModalEntry> m_modals;
+    //! setModalScrim's backdrop, shown while m_modals is not empty
+    internal::ModalScrim *m_modalScrim=nullptr;
+    //! keepModalsInPlace's scratch: the modals and the scrim in their order
+    std::vector<Base *> m_modalOrder;
+    //! Shows the scrim while a modal is up and hides it otherwise, its place
+    //! made again at the next renumber
+    void updateModalScrim();
     /// A modal was deleted: the next update phase gives the focus back to
     /// m_modalFocusRestore's control.
     bool m_modalFocusPending=false;

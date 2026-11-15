@@ -6,6 +6,7 @@
 
 #include <gweni/gweni.h>
 #include <gweni/controls/canvas.h>
+#include <gweni/controls/modalScrim.h>
 #include <gweni/skin.h>
 #include <gweni/controls/menu.h>
 #include <gweni/controls/menuStrip.h>
@@ -1779,6 +1780,7 @@ void Canvas::pushModal(Base *control, Base *focusReturn)
         focusId=m_modalFocusRestore;
 
     m_modals.push_back({control, focusId});
+    updateModalScrim();
 
     if(KeyboardFocus && (KeyboardFocus->getCanvas() == this) && !modalAllows(KeyboardFocus))
         KeyboardFocus->unfocus();
@@ -1848,6 +1850,7 @@ void Canvas::eraseModal(size_t index)
             above.focusId=m_modals[index].focusId;
     }
     m_modals.erase(m_modals.begin()+index);
+    updateModalScrim();
 }
 
 void Canvas::modalDeleted(Base *control)
@@ -1912,12 +1915,29 @@ void Canvas::onChildRemoved(Base *child)
 
     if(isModal(child))
         popModal(child);
+    if(child == m_modalScrim)
+        m_modalScrim=nullptr;
 }
 
 void Canvas::keepModalsInPlace()
 {
     if(m_modals.empty())
         return;
+
+    // the modals in stack order, the shown scrim just under the top one
+    std::vector<Base *> &order=m_modalOrder;
+
+    order.clear();
+    for(size_t i=0; i < m_modals.size(); ++i)
+    {
+        Base *control=m_modals[i].control;
+
+        if(control->getParent() != this)
+            continue;
+        if((i+1 == m_modals.size()) && m_modalScrim && !m_modalScrim->hidden())
+            order.push_back(m_modalScrim);
+        order.push_back(control);
+    }
 
     // the last shown app child, which the modals go right after
     Base::List::reverse_iterator last=m_children.rbegin();
@@ -1926,25 +1946,22 @@ void Canvas::keepModalsInPlace()
     {
         Base *child=*last;
 
-        if(!child->hidden() && !isModal(child) && !aboveModals(child))
+        if(!child->hidden() && (child != m_modalScrim) && !isModal(child) && !aboveModals(child))
             break;
     }
 
-    // in place when they follow it in stack order, with only hidden
-    // children between them
+    // in place when they follow it in that order, with only hidden children
+    // between them
     Base::List::iterator iter=last.base();
     bool inPlace=true;
 
-    for(const ModalEntry &entry : m_modals)
+    for(Base *control : order)
     {
-        if(entry.control->getParent() != this)
-            continue;
-
-        while((iter != m_children.end()) && (*iter != entry.control)
+        while((iter != m_children.end()) && (*iter != control)
             && (*iter)->hidden() && !isModal(*iter))
             ++iter;
 
-        if((iter == m_children.end()) || (*iter != entry.control))
+        if((iter == m_children.end()) || (*iter != control))
         {
             inPlace=false;
             break;
@@ -1958,22 +1975,48 @@ void Canvas::keepModalsInPlace()
     const bool front=(last == m_children.rend());
     Base::List::iterator anchor=front ? m_children.end() : std::prev(last.base());
 
-    for(const ModalEntry &entry : m_modals)
-    {
-        if(entry.control->getParent() == this)
-            m_children.remove(entry.control);
-    }
+    for(Base *control : order)
+        m_children.remove(control);
 
     Base::List::iterator at=front ? m_children.begin() : std::next(anchor);
 
-    for(const ModalEntry &entry : m_modals)
+    for(Base *control : order)
     {
-        if(entry.control->getParent() != this)
-            continue;
-
-        m_children.insert(at, entry.control);
-        zOrderMoved(entry.control);
+        m_children.insert(at, control);
+        zOrderMoved(control);
     }
+}
+
+void Canvas::setModalScrim(bool scrim)
+{
+    if(scrim == (m_modalScrim != nullptr))
+        return;
+
+    if(scrim)
+    {
+        m_modalScrim=newChild<internal::ModalScrim>();
+        updateModalScrim();
+        return;
+    }
+
+    internal::ModalScrim *gone=m_modalScrim;
+
+    m_modalScrim=nullptr;
+    gone->setHidden(true);
+    gone->delayedDelete();
+}
+
+void Canvas::updateModalScrim()
+{
+    if(!m_modalScrim || m_releasingChildren)
+        return;
+
+    const bool hide=m_modals.empty();
+
+    if(m_modalScrim->hidden() != hide)
+        m_modalScrim->setHidden(hide);
+    // under the new top modal
+    m_zOrderDirty=true;
 }
 
 Base *Canvas::getControlAt(int x, int y, bool bOnlyIfMouseEnabled)

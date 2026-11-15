@@ -2027,6 +2027,26 @@ void StatsOverlay::remove(renderer::Base *renderer, controls::Base *baseControl)
     releasePrimitives(renderer);
 }
 
+///////////////////////////////////////////////////////////////////////////
+//ModalScrim
+void ModalScrim::generate(renderer::Base *renderer, controls::Base *baseControl)
+{
+    generatePrimitives(renderer, requiredPrimitives());
+}
+
+void ModalScrim::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::ModalScrim);
+}
+
+void ModalScrim::remove(renderer::Base *renderer, controls::Base *baseControl)
+{
+    releasePrimitives(renderer);
+}
+
 //Bullet
 void Bullet::update(renderer::Base *renderer, controls::Base *baseControl)
 {
@@ -5964,6 +5984,7 @@ template class ControlRegister<Separator>;
 template class ControlRegister<Bullet>;
 template class ControlRegister<InspectorHighlight>;
 template class ControlRegister<StatsOverlay>;
+template class ControlRegister<ModalScrim>;
 template class ControlRegister<DropIndicator>;
 template class ControlRegister<DragSourceVeil>;
 template class ControlRegister<Dialog>;
