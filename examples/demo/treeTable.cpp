@@ -101,14 +101,17 @@ GWENI_CONTROL_CONSTRUCTOR(TreeTableDemo)
     m_add=newChild<controls::Button>();
     m_add->setText("Add file");
     m_add->setBounds(10, 446, 90, 24);
+    m_add->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
     m_add->onPressCaller.add(this, &TreeTableDemo::onAddPressed);
     m_remove=newChild<controls::Button>();
     m_remove->setText("Remove");
     m_remove->setBounds(106, 446, 80, 24);
+    m_remove->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
     m_remove->onPressCaller.add(this, &TreeTableDemo::onRemovePressed);
     m_rename=newChild<controls::Button>();
     m_rename->setText("Rename");
     m_rename->setBounds(192, 446, 80, 24);
+    m_rename->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
     m_rename->onPressCaller.add(this, &TreeTableDemo::onRenamePressed);
 
     build();
@@ -293,13 +296,16 @@ void TreeTableDemo::addFile()
     if(node)
         parent=node->hasChildren?selected:node->parent;
 
+    // a lazy folder never opened asks for its own files first: an added
+    // file would otherwise be its children, and it would never ask
+    if(parent != controls::TreeTable::Root)
+        m_table->setExpanded(parent, true);
+
     const size_t id=m_nextAdded++;
 
     m_names[id]="new-file-"+std::to_string(id-FirstAdded+1)+".txt";
     if(m_table->insertNode(parent, static_cast<size_t>(-1), id) != id)
         return;
-    if(parent != controls::TreeTable::Root)
-        m_table->setExpanded(parent, true);
     m_table->setSelectedNode(id);
     m_table->scrollToItem(m_table->itemForNode(id));
     showSelection();

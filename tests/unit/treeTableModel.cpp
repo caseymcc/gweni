@@ -25,7 +25,14 @@
  *  compared until it is expanded; inserts, batches, moves, renames
  *  (nodeChanged), a leaf becoming a folder, removals and a lazy answer go to
  *  their sorted place; sorted edits bind the same rows with the same pool,
- *  controls and ids at 1 000 and 100 000 nodes.
+ *  controls and ids at 1 000 and 100 000 nodes. Review cases: a hidden
+ *  selection (moved under a collapsed node) takes no Left/Right step and a
+ *  collapseAll fires no event for it; a move under a loading node is its
+ *  answer; siblings renamed before their nodeChanged still end sorted; a lazy
+ *  answer whose placeholder is the top row shows its first child there;
+ *  expandSubtree keeps the first shown node; a sort and then an insert above
+ *  the viewport keep the stripes on screen; an edit leaves a pending
+ *  scrollToItem alone; a parent whose last child goes is a collapsed leaf.
  */
 #include "headlessFixture.h"
 
@@ -134,10 +141,19 @@ struct Model
             nodes.emplace(id, Node{parent, {}, false});
     }
 
+    //! A parent whose last child went is a collapsed leaf.
+    void emptied(Id parent)
+    {
+        if(parent != Root && nodes.at(parent).children.empty())
+            nodes.at(parent).expanded=false;
+    }
+
     void remove(Id id)
     {
-        auto &siblings=children(nodes.at(id).parent);
+        const Id parent=nodes.at(id).parent;
+        auto &siblings=children(parent);
         siblings.erase(std::find(siblings.begin(), siblings.end(), id));
+        emptied(parent);
         std::vector<Id> pending{id};
         while(!pending.empty())
         {
@@ -151,8 +167,10 @@ struct Model
 
     void move(Id id, Id parent, size_t at)
     {
-        auto &old=children(nodes.at(id).parent);
+        const Id from=nodes.at(id).parent;
+        auto &old=children(from);
         old.erase(std::find(old.begin(), old.end(), id));
+        emptied(from);
         auto &next=children(parent);
         next.insert(next.begin()+std::min(at, next.size()), id);
         nodes.at(id).parent=parent;
@@ -1421,4 +1439,304 @@ TEST_CASE("TreeTable model: sorted edits bind locally with the same pool control
     }
     REQUIRE(costs.size() == 2);
     CHECK(costs[0] == costs[1]);
+}
+
+TEST_CASE("TreeTable model: Left and Right with a selection hidden by a move stay on it")
+{
+    Scene scene;
+    Tree *tree=scene.tree;
+    for(Id id : {Id(1), Id(2)})
+        REQUIRE(tree->addNode(Root, id) == id);
+    REQUIRE(tree->addNode(1, 10) == 10);
+    REQUIRE(tree->addNode(10, 100) == 100);
+    REQUIRE(tree->addNode(1, 11) == 11);
+    REQUIRE(tree->addNode(2, 20) == 20);
+    tree->setExpanded(1, true);
+    tree->setExpanded(10, true);
+    scene.settle();
+    tree->focus();
+
+    // an expanded parent (Right would go to its first child's row) and a
+    // leaf with a parent (Left would scan up from its row), each moved under
+    // the collapsed node 2: hidden, NoItem
+    for(const Id id : {Id(10), Id(11)})
+    {
+        CAPTURE(id);
+        REQUIRE(tree->setSelectedNode(id));
+        REQUIRE(tree->moveNode(id, 2, 0));
+        scene.frame();
+        REQUIRE(tree->getSelectedNode() == id);
+        REQUIRE(tree->getSelectedItem() == Tree::NoItem);
+        CHECK(tree->onKeyRight(true));
+        CHECK(tree->getSelectedNode() == id);
+        if(id == 11)
+        {
+            CHECK(tree->onKeyLeft(true));
+            CHECK(tree->getSelectedNode() == id);
+        }
+        scene.frame();
+    }
+}
+
+TEST_CASE("TreeTable model: a move under a loading node is its answer and matches a rebuild")
+{
+    for(const bool sorted : {false, true})
+    {
+        CAPTURE(sorted);
+        Scene scene;
+        Tree *tree=scene.tree;
+        REQUIRE(tree->addNode(Root, 1, true) == 1);
+        REQUIRE(tree->addNode(Root, 2) == 2);
+        REQUIRE(tree->addNode(Root, 3) == 3);
+        if(sorted)
+        {
+            tree->setSortComparator(0, [](Id a, Id b) { return a < b; });
+            tree->setSortColumn(0, controls::SortDirection::Ascending);
+        }
+        tree->setExpanded(1, true);
+        scene.settle();
+        REQUIRE(scene.tree->getVisibleNodes().size() == 4);
+        REQUIRE(tree->nodeForItem(1) == Tree::NoNode);
+
+        REQUIRE(tree->moveNode(3, 1, 0));
+        scene.frame();
+        auto ids=[&]()
+            {
+                std::vector<Id> result;
+                for(const auto &node : tree->getVisibleNodes())
+                    result.push_back(node.id);
+                return result;
+            };
+        // the moved node takes the placeholder's place
+        CHECK(ids() == std::vector<Id>{1, 3, 2});
+        CHECK_FALSE(tree->getNode(1)->loading);
+        tree->collapseAll();
+        tree->expandAll();
+        scene.frame();
+        CHECK(ids() == std::vector<Id>{1, 3, 2});
+
+        // a later answer adds to it
+        REQUIRE(tree->insertNodes(1, 99, {100, 101}));
+        scene.frame();
+        CHECK(ids() == std::vector<Id>{1, 3, 100, 101, 2});
+    }
+}
+
+TEST_CASE("TreeTable model: sorted siblings renamed before their nodeChanged end in sorted order")
+{
+    struct Case
+    {
+        std::vector<double> keys;
+        std::vector<std::pair<Id, double>> renames;
+        std::vector<Id> expected;
+    };
+    // the second is the dashboard's case: several keys change, then each
+    // node is told of, the first nodeChanged seeing another out of place
+    const std::vector<Case> cases{
+        {{1, 2, 5, 6, 7, 6.5, 3, 4}, {{3, 0}, {0, 3.5}, {6, 9}}, {3, 1, 0, 7, 2, 5, 4, 6}},
+        {{1, 2, 5, 6, 7, 6.5}, {{0, 3}, {3, 0}}, {3, 1, 0, 2, 5, 4}}};
+    for(const Case &test : cases)
+    {
+        CAPTURE(test.expected.size());
+        Scene scene;
+        Tree *tree=scene.tree;
+        std::map<Id, double> key;
+        for(Id id=0; id < test.keys.size(); ++id)
+        {
+            REQUIRE(tree->addNode(Root, id) == id);
+            key[id]=test.keys[id];
+        }
+        tree->setSortComparator(0, [&key](Id a, Id b) { return key.at(a) < key.at(b); });
+        tree->setSortColumn(0, controls::SortDirection::Ascending);
+        scene.settle();
+        for(const auto &rename : test.renames)
+            key[rename.first]=rename.second;
+        for(const auto &rename : test.renames)
+            tree->nodeChanged(rename.first);
+        scene.frame();
+        std::vector<Id> shown;
+        for(const auto &node : tree->getVisibleNodes())
+            shown.push_back(node.id);
+        CHECK(shown == test.expected);
+        CHECK(tree->getShownChildren(Root) == test.expected);
+        // the app's order untouched
+        tree->setSortColumn(-1, controls::SortDirection::None);
+        std::vector<Id> app;
+        for(Id id=0; id < test.keys.size(); ++id)
+            app.push_back(id);
+        CHECK(tree->getShownChildren(Root) == app);
+    }
+}
+
+TEST_CASE("TreeTable model: a lazy answer whose placeholder is the top row shows its children there")
+{
+    Scene scene;
+    Tree *tree=scene.tree;
+    for(Id id=0; id < 40; ++id)
+        REQUIRE(tree->addNode(Root, id, id == 5) == id);
+    tree->setExpanded(5, true);
+    scene.settle();
+    REQUIRE(tree->nodeForItem(6) == Tree::NoNode);
+    tree->getVirtualBody()->setVerticalScrollOffset(6*20);
+    scene.settle();
+    REQUIRE(tree->getVirtualBody()->firstVisibleItem() == 6);
+
+    REQUIRE(tree->insertNodes(5, 0, {100, 101, 102}));
+    scene.frame();
+    CHECK(tree->getVirtualBody()->firstVisibleItem() == 6);
+    CHECK(scene.top() == 100);
+}
+
+TEST_CASE("TreeTable model: expandSubtree keeps a first shown node inside the subtree at the top")
+{
+    Scene scene;
+    Tree *tree=scene.tree;
+    REQUIRE(tree->addNode(Root, 1) == 1);
+    for(Id i=0; i < 30; ++i)
+    {
+        REQUIRE(tree->addNode(1, 100+i) == 100+i);
+        REQUIRE(tree->addNode(100+i, 1000+i) == 1000+i);
+    }
+    REQUIRE(tree->addNode(Root, 2) == 2);
+    tree->setExpanded(1, true);
+    scene.settle();
+    tree->getVirtualBody()->setVerticalScrollOffset(5*20+7);
+    scene.settle();
+    const Id before=scene.top();
+    REQUIRE(before == 104);
+
+    tree->expandSubtree(1);
+    scene.frame();
+    CHECK(scene.top() == before);
+    CHECK(tree->getVirtualBody()->getVerticalScrollOffset()%20 == 7);
+}
+
+TEST_CASE("TreeTable model: the stripes on screen survive a sort and then an insert above the viewport")
+{
+    for(const int startTop : {37, 40, 41})
+    {
+        CAPTURE(startTop);
+        Scene scene;
+        Tree *tree=scene.tree;
+        tree->setStriped(true);
+        for(Id id=0; id < 100; ++id)
+        {
+            REQUIRE(tree->addNode(Root, id) == id);
+            scene.names[id]=String(1, char('a'+(id*7)%26))+std::to_string(1000+id);
+        }
+        scene.settle();
+        tree->getVirtualBody()->setVerticalScrollOffset(startTop*20);
+        scene.settle();
+        tree->setSortComparator(0, [&scene](Id a, Id b) { return scene.names.at(a) < scene.names.at(b); });
+        tree->setSortColumn(0, controls::SortDirection::Ascending);
+        scene.settle();
+
+        std::map<controls::DataTableRow *, bool> stripes;
+        for(controls::Base *control : tree->getVirtualBody()->getRows())
+        {
+            auto *row=gweni_cast<controls::DataTableRow>(control);
+            if(!row->hidden())
+                stripes[row]=row->isStriped();
+        }
+        REQUIRE_FALSE(stripes.empty());
+        // sorted to the very front: one row above the viewport
+        scene.names[5000]="!first";
+        REQUIRE(tree->insertNode(Root, 0, 5000) == 5000);
+        scene.frame();
+        REQUIRE(tree->itemForNode(5000) == 0);
+        int flipped=0;
+        for(const auto &entry : stripes)
+            flipped+=entry.first->isStriped() != entry.second;
+        CHECK(flipped == 0);
+    }
+}
+
+TEST_CASE("TreeTable model: collapseAll with a selection hidden already fires no selection event")
+{
+    Scene scene;
+    Tree *tree=scene.tree;
+    Selections selections;
+    for(Id id : {Id(1), Id(2)})
+        REQUIRE(tree->addNode(Root, id) == id);
+    REQUIRE(tree->addNode(1, 10) == 10);
+    REQUIRE(tree->addNode(1, 11) == 11);
+    REQUIRE(tree->addNode(2, 20) == 20);
+    REQUIRE(tree->addNode(20, 200) == 200);
+    tree->setExpanded(1, true);
+    tree->setExpanded(20, true);
+    scene.settle();
+    REQUIRE(tree->setSelectedNode(10));
+    // 2 is collapsed: 10 hidden under 2 > 20
+    REQUIRE(tree->moveNode(10, 20, 0));
+    scene.frame();
+    tree->onSelectionChange.add(&selections, &Selections::changed);
+
+    tree->collapseAll();
+    scene.frame();
+    CHECK(selections.ids.empty());
+    CHECK(tree->getSelectedNode() == 10);
+    // shown again, it is selected on its row
+    tree->expandAll();
+    scene.frame();
+    CHECK(selections.ids.empty());
+    CHECK(tree->getSelectedNode() == 10);
+    CHECK(tree->getSelectedItem() == tree->itemForNode(10));
+    // a shown selection a collapse hides goes to its shown ancestor, once
+    tree->collapseAll();
+    scene.frame();
+    CHECK(selections.ids == std::vector<Id>{2});
+    CHECK(tree->getSelectedNode() == 2);
+}
+
+TEST_CASE("TreeTable model: an edit's anchor leaves a pending scrollToItem to the next layout")
+{
+    Scene scene;
+    Tree *tree=scene.tree;
+    for(Id id=0; id < 100; ++id)
+        REQUIRE(tree->addNode(Root, id) == id);
+    REQUIRE(tree->addNode(3, 300) == 300);
+    scene.settle();
+    tree->scrollToItem(80);
+    // moveNode restores its anchor
+    REQUIRE(tree->moveNode(300, 4, 0));
+    scene.frame();
+    controls::VirtualList *body=tree->getVirtualBody();
+    const size_t first=body->firstVisibleItem();
+    CHECK(first <= 80);
+    CHECK(80 < first+200/20);
+}
+
+TEST_CASE("TreeTable model: a parent whose last child goes is a collapsed leaf")
+{
+    for(const bool byMove : {false, true})
+    {
+        CAPTURE(byMove);
+        Scene scene;
+        Tree *tree=scene.tree;
+        struct Events: event::Handler
+        {
+            std::vector<Id> collapsed;
+            void onCollapsed(event::Info info) { collapsed.push_back(info.integer); }
+        } events;
+        tree->onCollapsed.add(&events, &Events::onCollapsed);
+        for(Id id : {Id(1), Id(2)})
+            REQUIRE(tree->addNode(Root, id) == id);
+        REQUIRE(tree->addNode(1, 10) == 10);
+        tree->setExpanded(1, true);
+        scene.settle();
+        if(byMove)
+            REQUIRE(tree->moveNode(10, 2, 0));
+        else
+            REQUIRE(tree->removeNode(10));
+        scene.frame();
+        CHECK_FALSE(tree->isExpanded(1));
+        CHECK_FALSE(tree->getNode(1)->hasChildren);
+        CHECK(events.collapsed == std::vector<Id>{1});
+        // Left on it is a leaf's at the top level: nothing
+        REQUIRE(tree->setSelectedNode(1));
+        tree->focus();
+        tree->onKeyLeft(true);
+        CHECK(events.collapsed == std::vector<Id>{1});
+        scene.frame();
+    }
 }

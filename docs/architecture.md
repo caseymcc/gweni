@@ -4072,16 +4072,24 @@ two programs and the draws. What follows describes both together:
   that now show a new node are; a parent whose child count or expander changed is bound
   again through `nodeChanged`, and `nodeChanged` binds a shown node's row alone (an
   off-screen or hidden node costs nothing). Indexes are in the app's order and clamp to
-  the end. **The anchor** is the first shown row's node and the offset into its row:
+  the end. A parent whose last child is removed or moved away is a collapsed leaf
+  (`onCollapsed` if it was expanded), so Left and the expander see a leaf. **The anchor** is the first shown row's node and the offset into its row:
   `VirtualList`'s shifts keep it for an edit above the viewport (the thumb alone moves),
   and a move whose subtree holds the anchor puts the offset back on its node at its new
-  place. The stripes are by item parity, so an odd run added or removed above the view
+  place, as `expandSubtree` does when the first shown row is inside the subtree it
+  shows again. A range replaced with the top row inside it (a placeholder answered)
+  shows its first new row at the top: `spliceVisible` inserts after the range, below the
+  top, and then removes it. Putting the anchor back leaves a `scrollToItem()` not yet laid
+  out alone (the app asked for that view). The stripes are by item parity, so an odd run added or removed above the view
   would flip every row on screen: `m_stripePhase` is flipped with the first shown item's
   parity, so the rows on screen keep their stripes (`DataTable::syncSourceRows`). **The
   selection** stays on its node through every edit, also under a collapsed parent (shown
   as no item until it shows again); a removed selection (itself or an ancestor) goes to
   the removed subtree's next sibling as shown, else the previous one, else the parent
-  (QTreeView), with one `onSelectionChange`. **Lazy children:** `setHasChildren(id,
+  (QTreeView), with one `onSelectionChange`. A hidden selection takes no row key that
+  moves from its row (Right onto a first child, Left up to a parent), and a collapse
+  moves to its shown ancestor only a selection that was shown, with an event only when
+  it moved. **Lazy children:** `setHasChildren(id,
   true)` (or `addNode(..., true)`) gives a node with no children an expander; its first
   expand fires `onChildrenRequested` (`integer` the id) once (`Node::childrenRequested`)
   until `resetChildren(id)`, which drops the children, collapses the node and arms the
@@ -4097,7 +4105,8 @@ two programs and the draws. What follows describes both together:
   The answer is the first `insertNodes`/`insertNode`/`addNode` under it, in this frame or
   any later one: its children take the placeholder's place in one splice; an empty
   `insertNodes` or `setHasChildren(id, false)` takes the placeholder and the expander away
-  and collapses the node (`onCollapsed` if it had expanded). **Sorting across the
+  and collapses the node (`onCollapsed` if it had expanded). A `moveNode` under a loading
+  node is its answer too: the moved subtree takes the placeholder's place. **Sorting across the
   hierarchy:** `setSortComparator(column, less)` gives a column a strict weak order over
   app ids; while that column is DataTable's sort column (its own cycle, ascending then
   descending, through the protected `DataTable::sortOrderChanged()` hook, which
@@ -4119,7 +4128,12 @@ two programs and the draws. What follows describes both together:
   the current group (`sortedPlace`: the comparator's equal run, then the app's order) and
   splices it there; a batch into an empty group (a lazy answer) is sorted whole and shown
   as one run; `nodeChanged` re-places its node among its siblings, its visible subtree
-  with it, so a rename re-sorts it and, folders first, a leaf that became a folder (the
+  with it, so a rename re-sorts it; the app's `nodeChanged` first checks that the rest of
+  the group is still in order (`std::is_sorted`, linear in the group), since siblings
+  renamed before their own `nodeChanged` (a live dashboard's batch) would mislead the
+  binary search, and otherwise sorts the group again whole and rewrites its visible run
+  in place (`resortGroup`: the same entries, so no row shifts and only the rows whose
+  node changed are bound again); folders first, a leaf that became a folder (the
   insert under it calls `nodeChanged` on its parent) moves before the leaves. The
   comparator is called during an insert, so the app's data for a new id exists before it
   is inserted. Without a comparator for the sort column the order is the app's and a

@@ -164,16 +164,22 @@ public:
     bool insertNodes(NodeId parentId, size_t index, const std::vector<NodeId> &ids);
     //! Removes the node and its entire subtree. A removed selection takes
     //! this subtree's next sibling, previous sibling, then parent (or none),
-    //! firing onSelectionChange once. False for an unknown id.
+    //! firing onSelectionChange once. A parent left with no children is a
+    //! collapsed leaf (onCollapsed if it was expanded). False for an unknown
+    //! id.
     bool removeNode(NodeId id);
     //! Moves the subtree to index in newParent's children after detaching it
     //! (Root: the roots), clamped to the end. Expansion and selection stay
-    //! with their nodes, even when hidden at the destination. False for
-    //! unknown nodes/parents or a move into the node or its descendants.
+    //! with their nodes, even when hidden at the destination. A move under a
+    //! loading node is its answer (the placeholder goes), and an old parent
+    //! left with no children is a collapsed leaf. False for unknown
+    //! nodes/parents or a move into the node or its descendants.
     bool moveNode(NodeId id, NodeId newParent, size_t index);
     //! The app's fields changed: bind this node again if on screen. While a
     //! sort is active the node also moves to its sorted place among its
-    //! siblings (its visible subtree with it), so a rename re-sorts it.
+    //! siblings (its visible subtree with it), so a rename re-sorts it; if
+    //! other siblings were renamed first, their order is checked (linear in
+    //! the group) and the group is sorted again whole.
     void nodeChanged(NodeId id);
 
     //! Lazy children. setHasChildren(id, true) gives a node with no children
@@ -322,8 +328,18 @@ private:
     //! The parent's sorted order if it is current, else null.
     std::vector<NodeId> *currentSorted(NodeId parent);
     //! Moves the node to its sorted place among its siblings, its visible
-    //! subtree with it.
-    void keepSorted(NodeId id);
+    //! subtree with it. With verify (the app's nodeChanged) the rest of the
+    //! group is checked first: other siblings whose keys changed before
+    //! their own nodeChanged leave it out of order, and it is sorted again
+    //! whole (resortGroup) instead.
+    void keepSorted(NodeId id, bool verify);
+    //! The parent's group sorted again from the app's order and, if shown,
+    //! put in place of its visible run (the same entries, reordered): only
+    //! the pooled rows whose node changed are bound again.
+    void resortGroup(NodeId parent);
+    //! nodeChanged's work; the model's own calls (a parent's expander after
+    //! an insert, say) need no check of the rest of the group.
+    void refreshNode(NodeId id, bool verify);
     //! A new sort: the shown groups are sorted and the projection is built
     //! again, the first shown node and the selection kept.
     void applySort();
@@ -353,6 +369,9 @@ private:
     //! NoItem when the parent's children are hidden.
     size_t insertionItem(NodeId parent, size_t index) const;
     bool isInSubtree(NodeId id, NodeId ancestor) const;
+    //! A parent left with no children becomes a collapsed leaf; true when
+    //! it was expanded.
+    bool collapseIfEmpty(NodeId parent);
     //! The single-node path uses a stack id, the batch path the app's ids.
     bool insertNodes(NodeId parent, size_t index, const NodeId *ids, size_t count);
     //! Replace only this range; the VirtualList shifts its row associations
@@ -362,9 +381,9 @@ private:
     void spliceVisible(size_t at, size_t removed, const VisibleNode *added, size_t count);
     void syncVisibleSelection();
     //! The visible rows changed from firstChanged on, and the selected node
-    //! is now the item `selected` (or none): the item count, the selection's
-    //! item and the pooled rows of the suffix follow.
-    void visibleChanged(size_t firstChanged, size_t selected);
+    //! is now `selected` (or none; it may be hidden): the item count, the
+    //! selection's item and the pooled rows of the suffix follow.
+    void visibleChanged(size_t firstChanged, NodeId selected);
     //! The topmost collapsed ancestor of the node, or the node itself when
     //! every ancestor is expanded: the node that shows in its place.
     NodeId shownAncestor(NodeId id) const;
