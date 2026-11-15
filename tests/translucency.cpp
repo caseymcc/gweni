@@ -12,7 +12,9 @@
  *  frame, back to front, into the same target with no clear between the frames
  *  (each frame hiding the others), so every item blends over exactly what is
  *  behind it. Each pixel must be the reference's within 2 per channel (the
- *  backends' bound):
+ *  backends' bound), and drawn in today's order (setTranslucentSort(false),
+ *  slot-id order with every glyph after every slot) some pixel must not be, but
+ *  where that order is z order:
  *
  *    text behind       a translucent slot in front of text blends over the
  *                      glyphs, the run taken before the slot and after it, and
@@ -27,6 +29,10 @@
  *                      taken before it, blends its corner arcs over the panel
  *                      (no fringe of the background round it), and text in
  *                      front of the panel does the same;
+ *    image             an image whose texels are half transparent (its tint
+ *                      opaque), taken first, shows the opaque slot taken
+ *                      later behind it, and one whose texels are all opaque
+ *                      or transparent draws in today's order;
  *    chunks            two translucent slots and an opaque one behind them in
  *                      different index chunks (setIndexChunkSlots(64)).
  *
@@ -188,15 +194,12 @@ Frame drawReference(std::vector<Item> items)
     return readFrame();
 }
 
-//! Every pixel of \a scene's frame within 2 per channel of its reference's
-void checkScene(const std::vector<Item> &items)
+//! The pixels of \a frame more than 2 off \a reference in a channel, the first
+//! of them logged
+size_t badPixels(const Frame &frame, const Frame &reference)
 {
-    const Frame reference=drawReference(items);
-    const Frame frame=drawScene(items);
     const Point size=gweni::test::viewSize();
     size_t bad=0;
-    int firstX=-1, firstY=-1;
-    Color got, want;
 
     for(int y=0; y<size.y; ++y)
     {
@@ -208,25 +211,40 @@ void checkScene(const std::vector<Item> &items)
             if((std::abs(a.r-b.r) > 2) || (std::abs(a.g-b.g) > 2) || (std::abs(a.b-b.b) > 2))
             {
                 if(bad == 0)
-                {
-                    firstX=x;
-                    firstY=y;
-                    got=a;
-                    want=b;
-                }
+                    MESSAGE("first at ", x, ",", y, ": got ", int(a.r), ",", int(a.g), ",", int(a.b),
+                        " want ", int(b.r), ",", int(b.g), ",", int(b.b));
                 ++bad;
             }
         }
     }
-    CAPTURE(firstX);
-    CAPTURE(firstY);
-    CAPTURE(static_cast<int>(got.r));
-    CAPTURE(static_cast<int>(got.g));
-    CAPTURE(static_cast<int>(got.b));
-    CAPTURE(static_cast<int>(want.r));
-    CAPTURE(static_cast<int>(want.g));
-    CAPTURE(static_cast<int>(want.b));
-    CHECK(bad == 0);
+    return bad;
+}
+
+//! Every pixel of the scene's frame within 2 per channel of its reference's,
+//! and, unless \a oldOrderDraws, some pixel not without the sorted pass
+//! (setTranslucentSort(false), today's order)
+void checkScene(const std::vector<Item> &items, bool oldOrderDraws=false)
+{
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
+    const Frame reference=drawReference(items);
+
+    renderer.setTranslucentSort(false);
+
+    const Frame oldOrder=drawScene(items);
+
+    renderer.setTranslucentSort(true);
+
+    const size_t oldBad=badPixels(oldOrder, reference);
+
+    if(oldOrderDraws)
+        CHECK(oldBad == 0);
+    else
+        CHECK(oldBad > 0);
+
+    // last, so a case reads the sorted frame back
+    const Frame frame=drawScene(items);
+
+    CHECK(badPixels(frame, reference) == 0);
 }
 
 const Color panel(240, 230, 40, 128);
@@ -274,8 +292,9 @@ TEST_CASE("Translucency: two translucent slots blend in z order whatever their i
     }
     SUBCASE("the later slot in front")
     {
+        // slot-id order is z order here, so today's order draws it too
         checkScene({rect(prims[0], Rect(20, 20, 120, 80), Color(250, 20, 20, 128), 3),
-            rect(prims[1], Rect(80, 50, 120, 80), Color(20, 250, 20, 128), 5)});
+            rect(prims[1], Rect(80, 50, 120, 80), Color(20, 250, 20, 128), 5)}, true);
     }
 }
 
@@ -332,4 +351,53 @@ TEST_CASE("Translucency: the same pixels with the slots in different index chunk
     checkScene({rect(prims[0], Rect(20, 20, 120, 80), Color(250, 20, 20, 128), 5),
         rect(prims[70], Rect(80, 50, 120, 80), Color(20, 250, 20, 128), 3),
         rect(prims[139], Rect(60, 40, 60, 80), Color(200, 30, 200, 255), 1)});
+}
+
+TEST_CASE("Translucency: an image with half-transparent texels shows the slot taken later behind it")
+{
+    Ids ids;
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
+    const std::vector<size_t> prims=ids.primitives(2);
+    const int side=16;
+    std::vector<uint8_t> texels(side*side*4);
+    gweni::Texture image;
+
+    SUBCASE("half transparent")
+    {
+        for(size_t i=0; i<texels.size(); i+=4)
+        {
+            texels[i]=250;
+            texels[i+1]=250;
+            texels[i+2]=30;
+            texels[i+3]=128;
+        }
+    }
+    SUBCASE("opaque and transparent")
+    {
+        for(size_t i=0; i<texels.size(); i+=4)
+        {
+            texels[i]=250;
+            texels[i+1]=250;
+            texels[i+2]=30;
+            // the edge between them left of the slot behind, which sees only
+            // transparent texels (discarded)
+            texels[i+3]=((i/4)%side < 2)?255:0;
+        }
+    }
+    REQUIRE((renderer.loadTexturePixels(image, side, side, side*4, texels.data()) == gweni::Texture::Status::Loaded));
+
+    const bool translucent=texels[3] == 128;
+    const Item picture{5,
+        [&](SlotRenderer &renderer)
+        {
+            renderer.setDrawColor(Color(255, 255, 255, 255));
+            renderer.drawTexturedRect(image, prims[0], Rect(20, 20, 128, 128), 5, 0.0f, 0.0f, 1.0f, 1.0f);
+        },
+        [&](SlotRenderer &renderer) { renderer.hidePrimitive(prims[0]); }};
+
+    checkScene({picture, rect(prims[1], Rect(60, 40, 60, 60), Color(200, 30, 200, 255), 2)}, !translucent);
+    renderer.hidePrimitive(prims[0]);
+    renderer.begin();
+    renderer.end();
+    renderer.freeTexture(image);
 }

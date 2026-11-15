@@ -1012,6 +1012,33 @@ Texture::Status SlotRenderer::finishTextureLoad(Texture &texture, SlotTextureDat
     if(!placeImage(texData))
         return failTextureLoad(&texData, "has no image layer left", source);
 
+    // a texel neither transparent nor opaque makes the image's slots translucent
+    // (slotTranslucent); a transparent one is discarded, so it is as opaque
+    bool translucent=false;
+
+    for(size_t i=3; i<texData.m_readData.size(); i+=4)
+    {
+        const uint8_t a=texData.m_readData[i];
+
+        if((a != 0) && (a != 255))
+        {
+            translucent=true;
+            break;
+        }
+    }
+
+    std::vector<uint8_t> &layers=m_translucentImageLayers[texData.m_imageClass];
+    const bool wasTranslucent=(texData.m_layer < layers.size()) && (layers[texData.m_layer] != 0);
+
+    if(translucent != wasTranslucent)
+    {
+        if(layers.size() <= texData.m_layer)
+            layers.resize(texData.m_layer+1, 0);
+        layers[texData.m_layer]=translucent?1:0;
+        // a slot already drawing this layer is classified again at the next flush
+        m_imageTranslucencyChanged=true;
+    }
+
     texData.readable=texture.readable;
     if(!texture.readable)
     {
@@ -1232,6 +1259,9 @@ SlotRenderer::SlotRenderer(ResourcePaths &paths, const Rect &viewRect)
     m_clippingBoxes.reserve(minClippingSize);
 
     m_uploadStats=(getenv("GWENI_UPLOAD_STATS") != nullptr);
+
+    if(const char *sort=getenv("GWENI_TRANSLUCENT_SORT"))
+        m_translucentSort=(strcmp(sort, "0") != 0);
 
     // <gap>,<cap>, two decimal counts that fit a size_t, the cap at least 1;
     // anything else (a sign, a space, a count past size_t) keeps the defaults
@@ -1517,6 +1547,73 @@ SlotRenderer::QuadBounds SlotRenderer::quadBounds(const Vertex *vertexes)
     return {std::min(x01, x23), std::max(X01, X23), std::min(y01, y23), std::max(Y01, Y23)};
 }
 
+bool SlotRenderer::slotTranslucent(const Vertex *vertexes) const
+{
+    // the alphas the style draws, in the low byte of each colour's ba half
+    bool opaque=true;
+    bool clear=true;
+    auto alpha=[&](uint16_t ba)
+    {
+        const uint8_t a=uint8_t(ba&0xff);
+
+        opaque=opaque && (a == 255);
+        clear=clear && (a == 0);
+    };
+
+    for(size_t i=0; i<4; ++i)
+    {
+        const Vertex &vertex=vertexes[i];
+
+        switch(vertex.style)
+        {
+        case 0:
+            break;
+        case 1: // fill
+        case 3: // line
+        case 5: // icon, arc
+        case 9: // trapezoid
+            alpha(vertex.ty);
+            break;
+        case 2: // image: the tint, and its texels
+        {
+            alpha(vertex.cy);
+
+            const std::vector<uint8_t> &layers=m_translucentImageLayers[std::min<size_t>(vertex.radius, ImageClasses-1)];
+
+            if((vertex.border < layers.size()) && (layers[vertex.border] != 0))
+                return true;
+            break;
+        }
+        case 4: // rounded rect: its gradient, and its border with one
+            alpha(vertex.ty);
+            alpha(vertex.cy);
+            if(vertex.border != 0)
+                alpha(vertex.by);
+            break;
+        case 6: // bilinear: its top and bottom edges
+            alpha(vertex.ty);
+            alpha(vertex.dy);
+            if(vertex.border != 0)
+                alpha(vertex.by);
+            break;
+        case 7: // checker: opaque over its cells, whatever the fill's alpha
+            alpha(vertex.cy);
+            alpha(vertex.dy);
+            if(vertex.border != 0)
+                alpha(vertex.by);
+            break;
+        case 8: // grid: its minor and major lines
+            alpha(vertex.cy);
+            alpha(vertex.dy);
+            break;
+        default:
+            alpha(vertex.ty);
+            break;
+        }
+    }
+    return !opaque && !clear;
+}
+
 void SlotRenderer::updateSlotVisibility(size_t slot)
 {
     if(m_vertexes.size() < slot*4+4)
@@ -1549,7 +1646,18 @@ void SlotRenderer::updateSlotVisibility(size_t slot, bool hasArea)
             --m_primitiveSlotsCulled;
     }
 
-    if(((m_visibleSlots[word]&bit) != 0) == visible)
+    // a translucent slot's bit is set only while it can show, and the bits are
+    // allocated only once one is
+    const bool translucent=visible && slotTranslucent(vertexes);
+    const bool wasTranslucent=(word < m_translucentSlots.size()) && ((m_translucentSlots[word]&bit) != 0);
+
+    // a sorted slot redrawn may have moved in z, so the order is made again
+    if(translucent || wasTranslucent)
+        m_sortedScheduleStale=true;
+
+    const bool wasVisible=(m_visibleSlots[word]&bit) != 0;
+
+    if((wasVisible == visible) && (wasTranslucent == translucent))
         return;
 
     const size_t chunk=slot/m_chunkSlots;
@@ -1560,16 +1668,112 @@ void SlotRenderer::updateSlotVisibility(size_t slot, bool hasArea)
     PrimitiveChunkSlots &slots=m_primitiveChunks[chunk];
 
     slots.stale=true;
-    if(visible)
+    if(visible != wasVisible)
     {
-        m_visibleSlots[word]|=bit;
-        ++slots.visible;
+        if(visible)
+        {
+            m_visibleSlots[word]|=bit;
+            ++slots.visible;
+        }
+        else
+        {
+            m_visibleSlots[word]&=~bit;
+            --slots.visible;
+        }
     }
-    else
+    if(translucent != wasTranslucent)
     {
-        m_visibleSlots[word]&=~bit;
-        --slots.visible;
+        if(translucent)
+        {
+            if(m_translucentSlots.size() <= word)
+                m_translucentSlots.resize(m_visibleSlots.size(), 0);
+            m_translucentSlots[word]|=bit;
+            ++slots.translucent;
+            ++m_translucentCount;
+        }
+        else
+        {
+            m_translucentSlots[word]&=~bit;
+            --slots.translucent;
+            --m_translucentCount;
+        }
     }
+}
+
+void SlotRenderer::setTranslucentSort(bool sort)
+{
+    if(sort == m_translucentSort)
+        return;
+    m_translucentSort=sort;
+    for(PrimitiveChunkSlots &slots:m_primitiveChunks)
+        slots.stale=true;
+    m_sortedScheduleStale=true;
+}
+
+void SlotRenderer::buildSortedSchedule()
+{
+    // the translucent slots back to front, z from the slot's first vertex (a
+    // quad's four share it), ties by slot id
+    m_sortedOrder.clear();
+    for(size_t word=0; word<m_translucentSlots.size(); ++word)
+    {
+        for(uint64_t bits=m_translucentSlots[word]; bits != 0; bits&=bits-1)
+        {
+            const size_t slot=word*64+lowestBit(bits);
+
+            m_sortedOrder.emplace_back(m_vertexes[slot*4].z, slot);
+        }
+    }
+    std::sort(m_sortedOrder.begin(), m_sortedOrder.end());
+
+    // a group of consecutive slots in one chunk is one draw of its ranges in that
+    // order (a multi-draw draws its ranges in order), a run of consecutive ids one
+    // range
+    m_sortedDrawCount=0;
+    m_sortedSlotsDrawn=m_sortedOrder.size();
+    for(size_t i=0; i<m_sortedOrder.size(); ++i)
+    {
+        const size_t slot=m_sortedOrder[i].second;
+        const size_t chunk=slot/m_chunkSlots;
+        const size_t first=chunk*m_chunkSlots;
+
+        if((m_sortedDrawCount == 0) || (m_sortedDraws[m_sortedDrawCount-1].chunk != chunk))
+        {
+            if(m_sortedDraws.size() <= m_sortedDrawCount)
+                m_sortedDraws.emplace_back();
+
+            ChunkDraw &draw=m_sortedDraws[m_sortedDrawCount++];
+
+            draw.chunk=chunk;
+            draw.counts.clear();
+            draw.offsets.clear();
+        }
+
+        ChunkDraw &draw=m_sortedDraws[m_sortedDrawCount-1];
+
+        if((i > 0) && (m_sortedOrder[i-1].second+1 == slot) && !draw.counts.empty())
+            draw.counts.back()+=6;
+        else
+        {
+            draw.counts.push_back(6);
+            draw.offsets.push_back(uintptr_t((slot-first)*6*sizeof(uint16_t)));
+        }
+    }
+    m_sortedScheduleStale=false;
+}
+
+bool SlotRenderer::sortedSlotIn(size_t begin, size_t end) const
+{
+    if(!sortingTranslucent())
+        return false;
+    for(size_t slot=begin; slot<end; ++slot)
+    {
+        const size_t word=slot/64;
+
+        if((word < m_translucentSlots.size()) && ((m_translucentSlots[word]>>(slot%64))&1))
+            return true;
+    }
+    return false;
 }
 
 void SlotRenderer::buildPrimitiveRanges(size_t chunk)
@@ -1587,7 +1791,7 @@ void SlotRenderer::buildPrimitiveRanges(size_t chunk)
     runs.reserve((m_chunkSlots+1)/2);
     for(size_t slot=first; slot < limit;)
     {
-        const uint64_t shown=m_visibleSlots[slot/64]>>(slot%64);
+        const uint64_t shown=opaqueSlotWord(slot/64)>>(slot%64);
 
         if(shown == 0)
         {
@@ -1607,7 +1811,7 @@ void SlotRenderer::buildPrimitiveRanges(size_t chunk)
         // zeros, which read as slots that can
         while(stop < limit)
         {
-            const uint64_t hidden=(~m_visibleSlots[stop/64])>>(stop%64);
+            const uint64_t hidden=(~opaqueSlotWord(stop/64))>>(stop%64);
 
             if(hidden == 0)
             {
@@ -1619,7 +1823,8 @@ void SlotRenderer::buildPrimitiveRanges(size_t chunk)
         }
         stop=std::min(stop, limit);
 
-        if(!runs.empty() && (start-runs.back().second < m_primitiveRangeGap))
+        if(!runs.empty() && (start-runs.back().second < m_primitiveRangeGap)
+            && !sortedSlotIn(runs.back().second, start))
             runs.back().second=stop;
         else
             runs.emplace_back(start, stop);
@@ -1631,13 +1836,19 @@ void SlotRenderer::buildPrimitiveRanges(size_t chunk)
     if(runs.size() > m_maxPrimitiveRanges)
     {
         std::vector<std::pair<size_t, size_t>> &gaps=m_primitiveGaps;
-        const size_t merges=runs.size()-m_maxPrimitiveRanges;
+        size_t merges=runs.size()-m_maxPrimitiveRanges;
 
+        // a gap holding a sorted slot is never merged (it would draw it here too)
         gaps.clear();
         gaps.reserve((m_chunkSlots+1)/2);
         for(size_t i=0; i+1 < runs.size(); ++i)
-            gaps.emplace_back(runs[i+1].first-runs[i].second, i);
-        std::nth_element(gaps.begin(), gaps.begin()+(merges-1), gaps.end());
+        {
+            if(!sortedSlotIn(runs[i].second, runs[i+1].first))
+                gaps.emplace_back(runs[i+1].first-runs[i].second, i);
+        }
+        merges=std::min(merges, gaps.size());
+        if(merges > 0)
+            std::nth_element(gaps.begin(), gaps.begin()+(merges-1), gaps.end());
         // gaps[0..merges) are the gaps to close; mark each by emptying the run
         // after it into the one before
         std::sort(gaps.begin(), gaps.begin()+merges,
@@ -1691,8 +1902,11 @@ void SlotRenderer::recountPrimitiveChunks()
             if(m_primitiveChunks.size() <= chunk)
                 m_primitiveChunks.resize(chunk+1);
             ++m_primitiveChunks[chunk].visible;
+            if((word < m_translucentSlots.size()) && ((m_translucentSlots[word]>>(slot%64))&1))
+                ++m_primitiveChunks[chunk].translucent;
         }
     }
+    m_sortedScheduleStale=true;
 }
 
 void SlotRenderer::setPrimitiveRangeLimits(size_t gap, size_t maxRanges)
@@ -2080,6 +2294,16 @@ void SlotRenderer::flush()
             updateSlotVisibility(slot);
         // after the dirty slots' visibility, so it is the frame this flush draws
         m_frameStats.primitiveSlotsCulled=m_primitiveSlotsCulled;
+        //and whether one is translucent with them, or with its image's texels
+        if(m_imageTranslucencyChanged)
+        {
+            m_imageTranslucencyChanged=false;
+            for(size_t slot=0; slot<m_vertexes.size()/4; ++slot)
+            {
+                if(m_vertexes[slot*4].style == 2)
+                    updateSlotVisibility(slot);
+            }
+        }
 
         //copy only the primitive slots that changed since the last frame
         uploadDirty(SlotPath::Primitives, m_vertexBufferCapacity, m_vertexBufferSent,
@@ -2098,6 +2322,7 @@ void SlotRenderer::flush()
         // leaving it out changes no pixel. A chunk's ranges are built again only
         // when its bits changed.
         const size_t slots=m_vertexes.size()/4;
+        const bool sorting=sortingTranslucent();
 
         beginPrimitiveDraws();
         for(size_t chunk=0, first=0; first<slots; ++chunk, first+=m_chunkSlots)
@@ -2121,7 +2346,7 @@ void SlotRenderer::flush()
 
             PrimitiveChunkSlots &chunkSlots=m_primitiveChunks[chunk];
 
-            if(chunkSlots.visible == 0)
+            if(chunkSlots.visible == (sorting?chunkSlots.translucent:0))
                 continue;
             if(chunkSlots.stale)
                 buildPrimitiveRanges(chunk);
@@ -2130,6 +2355,23 @@ void SlotRenderer::flush()
             ++m_frameStats.drawCalls;
             m_frameStats.primitiveRanges+=chunkSlots.draw.counts.size();
             m_frameStats.primitiveSlotsDrawn+=chunkSlots.slots;
+        }
+
+        // The sorted pass: the translucent slots after every other, back to front
+        // by z (ties by slot id), so each blends over what is behind it whatever
+        // the order its id would have drawn it in. They keep writing depth: drawn
+        // back to front, a later one is never behind one drawn before it.
+        if(sorting)
+        {
+            if(m_sortedScheduleStale)
+                buildSortedSchedule();
+            for(size_t i=0; i<m_sortedDrawCount; ++i)
+            {
+                drawPrimitiveChunk(m_sortedDraws[i]);
+                ++m_frameStats.drawCalls;
+                m_frameStats.primitiveRanges+=m_sortedDraws[i].counts.size();
+            }
+            m_frameStats.primitiveSlotsDrawn+=m_sortedSlotsDrawn;
         }
         endPrimitiveDraws();
     }

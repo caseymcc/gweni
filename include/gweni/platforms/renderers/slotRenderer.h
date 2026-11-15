@@ -739,6 +739,14 @@ public:
     //! Whether any of the text run's glyphs is in its font's draw list as the
     //! last flush built it, so is drawn. A test hook.
     bool textRunInDrawList(size_t textId) const;
+    //! Whether flush() draws the slots that can blend with what is behind them
+    //! (translucent: slotTranslucent()) in a pass of their own after the others,
+    //! back to front by z, ties by slot id, instead of in slot-id order with the
+    //! rest: on by default, off with GWENI_TRANSLUCENT_SORT=0 (read at
+    //! construction). Off, or with setDrawEveryPrimitiveSlot, it draws as it did
+    //! before the pass existed. A test hook, to show what a case draws without it.
+    void setTranslucentSort(bool sort);
+    bool translucentSort() const { return m_translucentSort; }
     //! A primitive chunk's ranges: a gap of fewer than kPrimitiveRangeGap hidden
     //! slots between two runs of slots that can show is drawn with them, and a
     //! chunk draws at most kMaxPrimitiveRanges ranges, the smallest gaps (the
@@ -1300,12 +1308,57 @@ private:
     //! slots (updateSlotVisibility)
     std::vector<uint64_t> m_culledSlots;
     size_t m_primitiveSlotsCulled=0;
+    //! Which of the slots that can show are translucent (slotTranslucent()), one
+    //! bit per slot, kept with m_visibleSlots from the dirty slots; empty (nothing
+    //! allocated) until the first translucent slot can show
+    std::vector<uint64_t> m_translucentSlots;
+    size_t m_translucentCount=0;
+    //! The image layers whose image has a texel that is neither transparent nor
+    //! opaque, per image page, set at load (finishTextureLoad), so a style 2 slot
+    //! of one is translucent; empty until such an image is loaded
+    std::vector<uint8_t> m_translucentImageLayers[ImageClasses];
+    bool m_imageTranslucencyChanged=false;
+    bool m_translucentSort=true;
+    //! The sorted pass's draws (flush()): its slots back to front, a group of
+    //! consecutive ones in one chunk a draw, built again when stale (a dirty
+    //! translucent slot, one turning translucent or opaque, a new chunk size)
+    std::vector<ChunkDraw> m_sortedDraws;
+    size_t m_sortedDrawCount=0;
+    size_t m_sortedSlotsDrawn=0;
+    bool m_sortedScheduleStale=true;
+    //! buildSortedSchedule's scratch: (z, slot) of the sorted slots
+    std::vector<std::pair<uint32_t, size_t>> m_sortedOrder;
+    //! Whether the slot's vertexes blend with what is behind them: the alphas of
+    //! the colours its style draws (a border's only with a border) neither all 255
+    //! nor all 0, or an image (style 2) with a texel neither transparent nor
+    //! opaque. All 255 or all 0 draw in the opaque pass, as every slot did.
+    bool slotTranslucent(const Vertex *vertexes) const;
+    //! Whether the sorted pass draws translucent slots this frame
+    bool sortingTranslucent() const
+    {
+        return m_translucentSort && !m_drawEveryPrimitiveSlot && (m_translucentCount > 0);
+    }
+    //! Bit word `word` of the slots the opaque pass draws: m_visibleSlots less the
+    //! sorted pass's
+    uint64_t opaqueSlotWord(size_t word) const
+    {
+        uint64_t bits=m_visibleSlots[word];
+
+        if(sortingTranslucent() && (word < m_translucentSlots.size()))
+            bits&=~m_translucentSlots[word];
+        return bits;
+    }
+    //! Whether a slot in [begin, end) is drawn by the sorted pass this frame
+    bool sortedSlotIn(size_t begin, size_t end) const;
+    //! Builds m_sortedDraws from m_translucentSlots
+    void buildSortedSchedule();
     //! Per primitive index chunk of m_chunkSlots slots: how many of its slots can
     //! show, and its draw's ranges, built from its bits when it is drawn after a
     //! change of them (stale) and kept until the next
     struct PrimitiveChunkSlots
     {
         size_t visible=0;
+        size_t translucent=0; //!< of the visible, those in m_translucentSlots
         bool stale=true;
         size_t slots=0;     //!< the slots draw's ranges cover
         ChunkDraw draw;
