@@ -1472,7 +1472,9 @@ alpha 0xb0) with a label and buttons, a `Cube` tag (a Button the app places over
 cube's centre each frame, drawn over the cube only because of `clearDepth()`) and the
 stats overlay (F10, `--stats-overlay`), with preserve on. In the window (always
 continuous: the scene moves every frame) a left drag that starts on the bare canvas
-orbits the cube, the wheel over the scene zooms, and Space and R are the scene's while
+orbits the cube until its release, over the panel too (the drag's moves and release
+are `false`, its press's answer), the wheel zooms only where `pointerOverControl()` is
+false (not over a Label or the panel's bare part), and Space and R are the scene's while
 no control has the keyboard. `--headless --screenshot <png>` captures on the stepped
 clock and prints the probe points it drew at; `--renderer vulkan` prints one line and
 exits 1 (a Vulkan HUD example is later). `hud_example` (`tests/hudExample.mjs`, label

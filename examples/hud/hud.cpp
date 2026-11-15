@@ -16,7 +16,9 @@
  *
  *  Input the UI did not take (Canvas's input calls and input::GLFW3's
  *  process* return false) is the scene's: a left drag that starts on the bare
- *  canvas orbits the cube, the wheel over it zooms, Space toggles the spin and
+ *  canvas orbits the cube until its release, over the panel too (a press's
+ *  moves and release get its answer), the wheel over the bare canvas zooms
+ *  (pointerOverControl() keeps one over a Label from it), Space toggles the spin and
  *  R resets the view while no control has the keyboard. A press on the bare
  *  canvas drops the keyboard focus, so the keys come back to the scene.
  *
@@ -449,9 +451,11 @@ void focusCallback(GLFWwindow *, int focused)
 
 void cursorCallback(GLFWwindow *, double x, double y)
 {
-    // the canvas hovers what is under the cursor, an orbit going on or not
-    g_glfwInput.processMouseMove(x, y);
-    if(g_orbiting)
+    // the canvas hovers what is under the cursor, an orbit going on or not;
+    // the moves of a press the scene got are the scene's (false) all the way
+    const bool taken=g_glfwInput.processMouseMove(x, y);
+
+    if(g_orbiting && !taken)
     {
         g_scene.yaw-=float(x-g_lastX)*0.01f;
         g_scene.pitch=std::fmax(-1.5f, std::fmin(1.5f, g_scene.pitch+float(y-g_lastY)*0.01f));
@@ -471,7 +475,11 @@ void buttonCallback(GLFWwindow *window, int button, int action, int mods)
 
     if(button != GLFW_MOUSE_BUTTON_LEFT)
         return;
-    if(action == GLFW_PRESS && !taken)
+    if(taken)
+        return;
+    // a release gets its press's answer, so the orbit's comes here wherever
+    // the cursor is, over the panel too
+    if(action == GLFW_PRESS)
     {
         glfwGetCursorPos(window, &g_lastX, &g_lastY);
         g_orbiting=true;
@@ -482,7 +490,9 @@ void buttonCallback(GLFWwindow *window, int button, int action, int mods)
 
 void scrollCallback(GLFWwindow *, double xoffset, double yoffset)
 {
-    if(!g_glfwInput.processScroll(xoffset, yoffset))
+    // a wheel no control scrolled is not the scene's while it is over the HUD
+    // (a Label, the panel's bare part)
+    if(!g_glfwInput.processScroll(xoffset, yoffset) && g_canvas && !g_canvas->pointerOverControl())
         g_scene.distance=std::fmax(2.0f, std::fmin(12.0f, g_scene.distance*float(std::pow(0.9, yoffset))));
 }
 
