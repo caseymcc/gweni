@@ -14,7 +14,8 @@
  *                  to a few controls of a larger tree); a child at 1 inside a
  *                  0.5 panel draws at 1, and an override stops the walk; the
  *                  drain leaves the renderer at 1 afterwards.
- *    clamp         levels are clamped to [0, 1], NaN reads as 1.
+ *    clamp         levels are clamped to [0, 1], NaN reads as 1, on a control
+ *                  and in renderer::Base::setOpacity.
  *    clear         clearOpacity() re-inherits the parent's levels, and the
  *                  drawn levels follow.
  *    attach        a control added under a translucent parent inherits; moved
@@ -404,4 +405,16 @@ TEST_CASE("Opacity: a hidden control is marked when it is shown, not when its le
     scene.frame();
     checkLevels(scene.drawn(scene.sibling), 0.75f, 0.75f);
     checkLevels(scene.drawnText(scene.child), 0.75f, 0.75f);
+}
+
+TEST_CASE("Opacity: renderer::Base::setOpacity clamps to [0, 1], NaN reads as 1")
+{
+    test::StubRenderer renderer;
+
+    renderer.setOpacity(-0.5f, 2.0f);
+    CHECK(renderer.surfaceOpacity() == 0.0f);
+    CHECK(renderer.textOpacity() == 1.0f);
+    renderer.setOpacity(std::numeric_limits<float>::quiet_NaN(), 0.25f);
+    CHECK(renderer.surfaceOpacity() == 1.0f);
+    CHECK(renderer.textOpacity() == 0.25f);
 }

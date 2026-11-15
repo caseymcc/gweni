@@ -13281,18 +13281,9 @@ std::string opacityStepText(const OpacityStep &step)
 bool sameInside(const Session &s, const std::vector<uint8_t> &a, const std::vector<uint8_t> &b,
     const gweni::Rect &rect, int inset)
 {
-    const gweni::Point topLeft=devicePixels(gweni::Point(rect.x+inset, rect.y+inset), s.scale);
-    const gweni::Point bottomRight=devicePixels(gweni::Point(rect.x+rect.w-inset, rect.y+rect.h-inset), s.scale);
+    const gweni::Rect inner(rect.x+inset, rect.y+inset, rect.w-2*inset, rect.h-2*inset);
 
-    for(int y=std::max(topLeft.y, 0); y < std::min(bottomRight.y, s.pixels.y); ++y)
-    {
-        const size_t at=(static_cast<size_t>(y)*s.pixels.x+std::max(topLeft.x, 0))*4;
-        const size_t bytes=static_cast<size_t>(std::max(0, std::min(bottomRight.x, s.pixels.x)-std::max(topLeft.x, 0)))*4;
-
-        if(std::memcmp(&a[at], &b[at], bytes) != 0)
-            return false;
-    }
-    return true;
+    return (inner.w <= 0) || (inner.h <= 0) || (differencesIn(s, a, b, inner) == 0);
 }
 
 }//namespace
@@ -13352,14 +13343,16 @@ static bool runOpacityScenario(Session &s, const std::string &shotDir, bool &pas
             return 4*(subtreeControls(slider)+depth);
         };
 
-    const size_t sliderBound=sliderLayout(surface);
+    // the two sliders' bounds, printed at the end once the demo is gone
+    const size_t surfaceBound=sliderLayout(surface);
+    const size_t textBound=sliderLayout(text);
 
     surface->setFloatValue(0.5f);
 
     const OpacityStep surfaceStep=opacityStep(s, {panel, surface}, pixels);
 
     checks.check("surface_step", surfaceStep.within && surfaceStep.wrote && surfaceStep.passes <= 1
-        && surfaceStep.visited <= sliderLayout(surface) && surfaceStep.outside == 0,
+        && surfaceStep.visited <= surfaceBound && surfaceStep.outside == 0,
         "the surface slider's step "+opacityStepText(surfaceStep));
     checks.check("surface_level", panel->effectiveSurfaceOpacity() == 0.5f
         && panel->effectiveTextOpacity() == 1.0f, "the panel is at "
@@ -13371,7 +13364,7 @@ static bool runOpacityScenario(Session &s, const std::string &shotDir, bool &pas
     const OpacityStep textStep=opacityStep(s, {panel, text}, pixels);
 
     checks.check("text_step", textStep.within && textStep.wrote && textStep.passes <= 1
-        && textStep.visited <= sliderLayout(text) && textStep.outside == 0, "the text slider's step "+opacityStepText(textStep));
+        && textStep.visited <= textBound && textStep.outside == 0, "the text slider's step "+opacityStepText(textStep));
     idle+=settleCodeEditor(s, pixels);
     if(!shoot(s, shotDir+"/opacity-02-levels.png"))
         ok=false;
@@ -13436,8 +13429,8 @@ static bool runOpacityScenario(Session &s, const std::string &shotDir, bool &pas
     std::cout<<"opacity";
     for(const auto &result : checks.results)
         std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
-    std::cout<<" fade_frames="<<fadeFrames<<" slider_visited="<<surfaceStep.visited<<","<<textStep.visited
-             <<" (at most "<<sliderBound<<")\n";
+    std::cout<<" fade_frames="<<fadeFrames<<" slider_visited="<<surfaceStep.visited<<" (at most "
+             <<surfaceBound<<"),"<<textStep.visited<<" (at most "<<textBound<<")\n";
     return ok;
 }
 

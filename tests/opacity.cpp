@@ -12,17 +12,20 @@
  *    surface level  a fill at alpha 0xe0 drawn at 0.5 is the same frame, pixel
  *                   for pixel, as the fill drawn at alpha 0x70 at 1, and that
  *                   pixel is the 0x70 blend over the background within 2; so
- *                   is a rounded rect, a line, a checker (opaque at 1) and a
- *                   bilinear rect; glyphs and an icon drawn with it stay as
- *                   at 1.
- *    text level     glyphs, an icon and an image drawn at a text level of 0.5
- *                   are half-way between the background and themselves at 1
- *                   (within 2), a fill drawn with them stays as at 1; and a
+ *                   is a rounded rect, a line, a checker (opaque at 1), a
+ *                   bilinear rect and a rule (an icon of kind 6); glyphs and
+ *                   an icon drawn with it stay as at 1.
+ *    text level     glyphs, an icon, an image and the missing image drawn at a
+ *                   text level of 0.5 are half-way between the background and
+ *                   themselves at 1 (within 2), a fill and a rule drawn with
+ *                   them stay as at 1; and a
  *                   run drawn again at another level writes its glyph slots.
  *    level 0        a fill, a rounded rect, an icon, an image and a run at
  *                   level 0, taken before an opaque fill behind them, leave
  *                   the frame the fill alone gives: nothing drawn, no depth.
- *                   The run at level 0 is in no draw.
+ *                   The run at level 0 is in no draw. A slot shown again at
+ *                   level 0 stays hidden, and a rule shown again at text level
+ *                   0 draws (it takes the surface level).
  *    per element    a panel at 0.5 and a button on it at 0.5 (the button's
  *                   slot taken first) blend in z order: the panel's fill shows
  *                   through the button, as the two drawn one a frame back to
@@ -188,6 +191,22 @@ Item icon(size_t id, const Rect &r, const Color &color, int z)
 {
     return Item{z, 1.0f, 1.0f,
         [=](SlotRenderer &renderer) { renderer.drawIcon(id, r, 0, 0, color, z); },
+        [=](SlotRenderer &renderer) { renderer.hidePrimitive(id); }};
+}
+
+//! A rule: an icon of kind 6, which takes the surface level
+Item rule(size_t id, const Rect &r, const Color &color, int z)
+{
+    return Item{z, 1.0f, 1.0f,
+        [=](SlotRenderer &renderer) { renderer.drawIcon(id, r, 6, 0, color, z); },
+        [=](SlotRenderer &renderer) { renderer.hidePrimitive(id); }};
+}
+
+//! The missing image (an image that did not load), which takes the text level
+Item missingImage(size_t id, const Rect &r, int z)
+{
+    return Item{z, 1.0f, 1.0f,
+        [=](SlotRenderer &renderer) { renderer.drawMissingImage(id, r, z); },
         [=](SlotRenderer &renderer) { renderer.hidePrimitive(id); }};
 }
 
@@ -401,9 +420,10 @@ TEST_CASE("Opacity: the surface level scales a fill's alpha, 0xe0 at 0.5 drawn a
 TEST_CASE("Opacity: the surface level reaches every shape, and leaves glyphs and icons")
 {
     Ids ids;
-    const std::vector<size_t> prims=ids.primitives(6);
+    const std::vector<size_t> prims=ids.primitives(7);
     const size_t run=ids.text();
     const std::vector<Item> shapes{
+        rule(prims[5], Rect(100, 140, 120, 9), Color(250, 250, 250, 255), 2),
         rounded(prims[0], Rect(10, 10, 80, 50), Color(240, 120, 40, 255), Color(255, 255, 255, 255), 2),
         line(prims[1], PointF(100.0f, 20.0f), PointF(180.0f, 60.0f), Color(40, 240, 120, 255), 2),
         checker(prims[2], Rect(200, 10, 64, 48), 2),
@@ -431,6 +451,9 @@ TEST_CASE("Opacity: the surface level reaches every shape, and leaves glyphs and
     CHECK(offBy2(frame, mixed, Rect(200, 10, 64, 48)) == 0);
     CHECK(offBy2(frame, mixed, Rect(10, 80, 80, 50)) == 0);
     CHECK(offBy2(frame, mixed, Rect(100, 18, 82, 44)) == 0);
+    // the rule, an icon of kind 6, is a line: the surface level
+    CHECK(offBy2(frame, mixed, Rect(100, 140, 120, 9)) == 0);
+    CHECK(notExact(frame, full, Rect(100, 140, 120, 9)) > 0);
     CHECK(notExact(frame, full, Rect(110, 80, 32, 32)) == 0);
     CHECK(notExact(frame, full, Rect(160, 80, 120, 50)) == 0);
     // and something of the shapes is not as at 1
@@ -441,11 +464,13 @@ TEST_CASE("Opacity: the surface level reaches every shape, and leaves glyphs and
 TEST_CASE("Opacity: the text level scales glyphs, icons and images, apart from the surface level")
 {
     Ids ids;
-    const std::vector<size_t> prims=ids.primitives(3);
+    const std::vector<size_t> prims=ids.primitives(5);
     const size_t run=ids.text();
     Quarters quarters;
     const std::vector<Item> all{
         fill(prims[0], Rect(10, 10, 60, 40), Color(240, 120, 40, 255), 2),
+        rule(prims[3], Rect(220, 10, 80, 9), Color(250, 250, 250, 255), 2),
+        missingImage(prims[4], Rect(220, 30, 32, 32), 2),
         icon(prims[1], Rect(90, 10, 32, 32), Color(250, 250, 250, 255), 2),
         image(prims[2], quarters.texture, Rect(140, 10, 32, 32), 2),
         text(run, Point(10, 60), "HHHH", Color(250, 250, 250, 255), 2)};
@@ -461,6 +486,10 @@ TEST_CASE("Opacity: the text level scales glyphs, icons and images, apart from t
     const Frame mixed=halfway(bg, full);
 
     CHECK(notExact(frame, full, Rect(10, 10, 60, 40)) == 0);
+    // a rule stays as at 1, the missing image takes the text level as an image does
+    CHECK(notExact(frame, full, Rect(220, 10, 80, 9)) == 0);
+    CHECK(offBy2(frame, mixed, Rect(220, 30, 32, 32)) == 0);
+    CHECK(notExact(frame, full, Rect(220, 30, 32, 32)) > 0);
     CHECK(offBy2(frame, mixed, Rect(90, 10, 32, 32)) == 0);
     CHECK(offBy2(frame, mixed, Rect(140, 10, 32, 32)) == 0);
     CHECK(offBy2(frame, mixed, Rect(10, 60, 200, 50)) == 0);
@@ -477,7 +506,7 @@ TEST_CASE("Opacity: the text level scales glyphs, icons and images, apart from t
     gweni::test::clearView(background);
     renderer.begin();
     renderer.setOpacity(1.0f, 0.25f);
-    all[3].draw(renderer);
+    all.back().draw(renderer);
     renderer.setOpacity(1.0f, 1.0f);
     renderer.end();
     CHECK(renderer.frameStats().textSlotsWritten == 4);
@@ -540,6 +569,22 @@ TEST_CASE("Opacity: at level 0 nothing is drawn and nothing behind it is hidden"
         renderer.setOpacity(1.0f, 1.0f);
         renderer.end();
         CHECK(notExact(readFrame(), reference) == 0);
+    }
+    SUBCASE("a rule shown again at text level 0 draws: it takes the surface level")
+    {
+        SlotRenderer &renderer=gweni::test::gpuRenderer();
+        const Item ruleItem=rule(prims[0], Rect(20, 40, 200, 9), Color(250, 250, 250, 255), 6);
+        const Frame drawn=drawScene({ruleItem, behind});
+
+        CHECK(notExact(drawn, reference) > 0);
+        gweni::test::clearView(background);
+        renderer.begin();
+        renderer.hidePrimitive(prims[0]);
+        renderer.setOpacity(1.0f, 0.0f);
+        renderer.showPrimitive(5, prims[0]);
+        renderer.setOpacity(1.0f, 1.0f);
+        renderer.end();
+        CHECK(notExact(readFrame(), drawn) == 0);
     }
 }
 

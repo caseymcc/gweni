@@ -1542,9 +1542,14 @@ them (`surfaceOpacity()`, `textOpacity()`) and its default draws ignore them;
 **In `SlotRenderer`.** Every draw packs its colours' alpha times a level, chosen by
 style, so no skin renderer changes for it (`SlotRenderer::atLevel`): glyphs (colour
 spans included), icons and arcs (style 5: ticks, chevrons, window glyphs, the
-spinner's arc) and images (style 2, its tint) take the **text** level; fills, rounded,
-bilinear and checker rects, borders, lines, grids and trapezoids (so selections and
-the caret) take the **surface** level. At 1 the bytes are those written before #686.
+spinner's arc) and images (style 2, its tint, and the missing image drawn in an
+image's place) take the **text** level; fills, rounded, bilinear and checker rects,
+borders, lines, grids and trapezoids (so selections and the caret) take the
+**surface** level, and so does a rule, though it is an icon (kind 6: a Separator or
+MenuDivider, a DataTable's or PropertyTree's lines, a StepperConnector, a Markdown
+rule and table grid, a RichText's underline and strikethrough), since it is a line
+of the panel's chrome (`SlotRenderer::styleLevel`, read in the draws and in
+`showPrimitive()`). At 1 the bytes are those written before #686.
 A checker (style 7) keeps its fill's alpha over its cells and outputs the level as
 its alpha (packed in the cells' alphas, which its shader did not read), so
 `slotTranslucent()` reads it there. A glyph's alpha was always 1; it is now the run's

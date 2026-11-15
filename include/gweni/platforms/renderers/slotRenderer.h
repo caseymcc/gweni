@@ -1310,7 +1310,12 @@ private:
     //! Control opacity (docs/architecture.md → "Control opacity"): each draw
     //! packs its colours at surfaceOpacity() or textOpacity(), the level the
     //! render drain set for the control drawing. Glyphs, icons (style 5) and
-    //! images (style 2) take the text level, every other style the surface level.
+    //! images (style 2) take the text level, every other style (and a rule,
+    //! icon kind 6) the surface level (styleLevel()).
+    //! The level a slot of \a style draws at (\a kind an icon's, style 5): the
+    //! text level for images (2) and icons, the surface level for a rule (an
+    //! icon of kind 6) and every other style.
+    float styleLevel(int style, int kind) const;
     //! \a color with its alpha times \a level (as is at 1, the bytes unchanged).
     static gweni::Color atLevel(gweni::Color color, float level);
     //! \a level as an 8-bit alpha, rounded.

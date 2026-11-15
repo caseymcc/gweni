@@ -353,6 +353,9 @@ Base::~Base()
     }
 
     m_accelerators.clear();
+    // its levels are its own from here: leaving its parent re-levels and marks
+    // nothing of a control that is going
+    m_ownOpacity=true;
     setParent(nullptr);
     // a control with no parent left its attachment in removeChild already
     if(m_attached)

@@ -139,8 +139,17 @@ bool Base::clipRegionVisible()
 
 void Base::drawMissingImage(size_t primitiveId, gweni::Rect targetRect, int zIndex)
 {
+    // in place of an image, so at the text level images take (a fill would
+    // take the surface level)
+    const float surface=surfaceOpacity();
+    const float text=textOpacity();
+
+    if(surface != text)
+        setOpacity(text, text);
     setDrawColor(colors::Missing);
     drawFilledRect(primitiveId, targetRect, zIndex);
+    if(surface != text)
+        setOpacity(surface, text);
 }
 
 //! a + (b-a)*t per channel, rounded; t in [0,1].

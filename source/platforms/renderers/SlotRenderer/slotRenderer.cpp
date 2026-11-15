@@ -3745,11 +3745,22 @@ void SlotRenderer::writeRoundedQuad(size_t primitiveId, gweni::Rect rect, int zI
     markPrimitiveChanges(primitiveId, before);
 }
 
+float SlotRenderer::styleLevel(int style, int kind) const
+{
+    // an image and an icon follow the text level, a rule (an icon of kind 6:
+    // a Separator, a table's lines, a RichText's underline) and every other
+    // style the surface level
+    if((style == 2) || ((style == 5) && (kind != 6)))
+        return textOpacity();
+    return surfaceOpacity();
+}
+
 void SlotRenderer::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int direction,
     gweni::Color color, int zIndex)
 {
-    // an icon follows the text level
-    color=atLevel(color, textOpacity());
+    const float level=styleLevel(5, kind);
+
+    color=atLevel(color, level);
     translate(rect);
 
     size_t vertexIndex=primitiveId*4;
@@ -3789,7 +3800,7 @@ void SlotRenderer::drawIcon(size_t primitiveId, gweni::Rect rect, int kind, int 
     setIcon(vertexIndex++, x1, y1, +hw, +hh);
 
     cullOutOfRangeQuad(primitiveId, rect);
-    hideAtLevelZero(primitiveId, textOpacity());
+    hideAtLevelZero(primitiveId, level);
     cullClippedQuad(primitiveId);
     markPrimitiveChanges(primitiveId, before);
 }
@@ -4350,7 +4361,7 @@ void SlotRenderer::showPrimitive(int style, size_t primitiveId)
 
     // at a level that draws nothing of it (its control's, as the drain set it:
     // clearAtLevel) it stays hidden
-    if(clearAtLevel(&m_vertexes[vertexIndex], style, ((style == 2) || (style == 5))?textOpacity():surfaceOpacity()))
+    if(clearAtLevel(&m_vertexes[vertexIndex], style, styleLevel(style, m_vertexes[vertexIndex].radius)))
         style=0;
 
 //    std::cout<<"Show: "<<primitiveId<<"\n";
@@ -4546,7 +4557,8 @@ std::pair<size_t, size_t> SlotRenderer::drawnRange(const TextRun &run)
 
 void SlotRenderer::markTextDrawList(TextRun &run, std::pair<size_t, size_t> before)
 {
-    const bool counted=run.culled && !run.hidden && (run.glyphs > 0);
+    // a run at text level 0 is in no draw list either way, so not counted
+    const bool counted=run.culled && !run.hidden && (run.glyphs > 0) && (run.color.a != 0);
 
     if(counted != run.culledCounted)
     {
@@ -4929,7 +4941,7 @@ void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::
 
     // The colour the rebuild below bakes into the glyphs. Its alpha is the
     // control's text level (opaque at 1), so the draw colour's alpha takes no
-    // part: a change in alpha alone would rebuild the run into the same bytes.
+    // part: a change of it alone leaves the run's bytes as they are.
     const gweni::Color color(m_color.r, m_color.g, m_color.b, levelByte(textOpacity()));
 
     FontData &fontData=m_lastFont->second;

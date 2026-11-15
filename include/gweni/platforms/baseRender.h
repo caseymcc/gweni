@@ -11,6 +11,7 @@
 
 #include <gweni/platforms/platformTypes.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <vector>
@@ -245,8 +246,9 @@ public:
     //! it packs each colour; the default draws ignore them.
     virtual void setOpacity(float surface, float text)
     {
-        m_surfaceOpacity=surface;
-        m_textOpacity=text;
+        // clamped to [0, 1], NaN read as 1, as controls::Base::setOpacity does
+        m_surfaceOpacity=(surface == surface)?std::min(1.0f, std::max(0.0f, surface)):1.0f;
+        m_textOpacity=(text == text)?std::min(1.0f, std::max(0.0f, text)):1.0f;
     }
     float surfaceOpacity() const { return m_surfaceOpacity; }
     float textOpacity() const { return m_textOpacity; }
