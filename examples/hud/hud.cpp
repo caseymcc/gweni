@@ -475,6 +475,10 @@ void buttonCallback(GLFWwindow *window, int button, int action, int mods)
 
     if(button != GLFW_MOUSE_BUTTON_LEFT)
         return;
+    // every left press starts afresh, so an orbit whose release was lost (to
+    // an input capture, a window that lost it) does not run on
+    if(action == GLFW_PRESS)
+        g_orbiting=false;
     if(taken)
         return;
     // a release gets its press's answer, so the orbit's comes here wherever

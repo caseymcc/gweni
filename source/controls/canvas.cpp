@@ -1090,6 +1090,11 @@ bool Canvas::inputMouseMoved(int x, int y, int deltaX, int deltaY)
 {
     const bool taken=deliverMouseMoved(x, y, deltaX, deltaY);
 
+    // An input capture takes every move, one set during a press the scene got
+    // included (canvas.h, "Input").
+    if(m_inputCapture)
+        return taken;
+
     // The moves of a held press get its answer (canvas.h, "Input"): a drag
     // begun on the scene stays the scene's over the UI, and one the UI took
     // stays the UI's off it.
@@ -1110,6 +1115,18 @@ static bool heldBeforeCapture(int button)
     if(button == 1)
         return input::isRightMouseDown();
 
+    return false;
+}
+
+// Whether a Menu floats shown on the canvas (a ComboBox's list, a submenu, a
+// context menu), which a press anywhere closes; a MenuStrip never closes.
+static bool floatingMenuShown(Canvas *canvas)
+{
+    for(Base *child:canvas->getChildren())
+    {
+        if(gweni_cast<Menu>(child) && !gweni_cast<MenuStrip>(child) && !child->hidden())
+            return true;
+    }
     return false;
 }
 
@@ -1206,13 +1223,22 @@ bool Canvas::deliverMouseButton(int button, bool down)
             m_toolTipSuppressed=pressed;
     }
 
+    // A press that closes an open menu or popup is the UI's wherever it lands,
+    // the bare canvas included: the click dismissed it (canvas.h, "Input").
+    const bool dismisses=down && (m_popup || floatingMenuShown(this));
+
     // a modal blocks what is under it, the app's scene included
-    return input::onMouseClicked(this, button, down) || (topModal() != nullptr);
+    return input::onMouseClicked(this, button, down) || (topModal() != nullptr) || dismisses;
 }
 
 bool Canvas::pointerOverControl() const
 {
-    if(m_inputCapture || topModal())
+    // a capture takes the canvas's input even while it is hidden
+    if(m_inputCapture)
+        return true;
+    if(hidden())
+        return false;
+    if(topModal())
         return true;
     if(draganddrop::isDragging() && (draganddrop::dragCanvas() == this))
         return true;
@@ -2320,7 +2346,12 @@ bool Canvas::inputModifierKey(int key, bool down)
 
 bool Canvas::holdsKeyboard() const
 {
-    if(m_inputCapture || topModal())
+    // a capture takes the canvas's input even while it is hidden
+    if(m_inputCapture)
+        return true;
+    if(hidden())
+        return false;
+    if(topModal())
         return true;
     return KeyboardFocus && (KeyboardFocus->getCanvas() == this) && KeyboardFocus->visible();
 }

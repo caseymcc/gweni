@@ -1426,7 +1426,10 @@ the canvas has the keyboard focus, a modal is up or an input capture is set), wh
 the focus used it or not, and otherwise only when something took it (an accelerator,
 Escape closing a popup); a key's OS repeats are taken exactly when its press was. A
 press on the bare canvas drops the keyboard focus (but under a modal), so the keys go
-back to the scene. Any of the first five mouse buttons over a control is taken, the
+back to the scene; one that closes an open menu, context menu or popup is taken all the
+same (the click dismissed it, as on a desktop), so only the next press reaches the
+scene. A hidden canvas takes nothing (`pointerOverControl()` and `holdsKeyboard()` are
+false whatever its stale hover or modals), but for what an input capture gets. Any of the first five mouse buttons over a control is taken, the
 middle one included (the press has focused and touched it). **A release gets its
 press's answer**, wherever it lands: a mouse button pressed on the scene is released to
 the scene alone (no control hears that release, so a Button under it is not clicked),
@@ -1434,8 +1437,12 @@ one the UI took is released as `true`, and a key's release through `input::GLFW3
 its press's answer whichever control has the focus by then. While a press the scene got
 is held, and none the UI took, every move returns `false` (it still hovers the UI), and
 while one the UI took is held, `true`: so a drag begun on the scene orbits on over the
-panel and ends where it is let go, and a scroll bar's drag never reaches the scene. The
-cursor leaving, the window losing focus and quitting are the scene's too (`false`).
+panel and ends where it is let go, and a scroll bar's drag never reaches the scene. An
+input capture set during a scene press takes its moves (`true`; the scene's drag stops
+there), and the press's release is still the scene's, so nothing stays held in it. A
+modal opened during a scene press does not take it: the press began before the modal,
+so its moves and release stay `false` until it is let go, and only new input is
+blocked. The cursor leaving, the window losing focus and quitting are the scene's too (`false`).
 `tests/unit/inputPassThrough.cpp` pins them.
 
 **The GL state.** `OpenGLCore::setPreserveAppState(true)` (off by default, so a frame

@@ -358,7 +358,8 @@ public:
 
     /// Internal. Do not call directly. Draws the background with the skin's
     /// Canvas renderer while it is on; a canvas whose background was never on
-    /// takes no slot, renders nothing and counts in no ChangeStats.
+    /// takes no slot and renders nothing (a queued canvas is still counted in
+    /// ChangeStats::visited, as any queued control is).
     void render(skin::Base *render) override;
 
     /// Child panels call parent->getCanvas() until they get to
@@ -776,15 +777,24 @@ public:
     /// input capture is set), whether the focus used it or not, and otherwise
     /// when something took it (an accelerator, Escape closing a popup). A
     /// press on the bare canvas drops the keyboard focus (but under a modal),
-    /// so the keys go back to the scene. inputMouseLeave() and inputQuit() are
-    /// for the scene too.
+    /// so the keys go back to the scene; one that closes an open menu, context
+    /// menu or popup is taken all the same (the click dismissed it, as a
+    /// desktop's does), and only the next press reaches the scene. A hidden
+    /// canvas takes nothing but what an input capture gets.
+    /// inputMouseLeave() and inputQuit() are for the scene too.
     /// A mouse release gets its press's answer, wherever the pointer is then:
     /// a press the scene got (false) is released to the scene alone, no
     /// control hearing that release, and one the UI took is released as true.
     /// While a press the scene got is held and none the UI took, every move
     /// returns false too (it still hovers the UI), so a drag that began on the
     /// scene stays the scene's over the panel; while one the UI took is held,
-    /// every move returns true. A key's release likewise gets its press's
+    /// every move returns true. An input capture takes every move and returns
+    /// true, one set during a press the scene got included (the scene's drag
+    /// stops there), but that press's release is still the scene's (false),
+    /// so nothing stays held in it. A modal opened during such a press does
+    /// not take it from the scene: the press began before the modal, so its
+    /// moves and release stay false until it is let go, and only new input is
+    /// blocked. A key's release likewise gets its press's
     /// answer in input::GLFW3 (which knows the key). Any of the first five
     /// buttons over a control is taken, the middle one included (the press
     /// focuses and touches it); the sixth on reach no control.
@@ -811,11 +821,13 @@ public:
     }
     /// Whether the pointer is over the UI: a control of this canvas is
     /// hovered (not the canvas itself) or holds the mouse, a drag or an input
-    /// capture is live, or a modal is up. What an app asks before it moves its
+    /// capture is live, or a modal is up; false on a hidden canvas but for a
+    /// capture (which still takes its input). What an app asks before it moves its
     /// scene with an event a control did not take (a wheel over a Label).
     bool pointerOverControl() const;
     /// Whether the UI has the keyboard: a visible control of this canvas has
-    /// the keyboard focus, a modal is up or an input capture is set.
+    /// the keyboard focus, a modal is up or an input capture is set; false on
+    /// a hidden canvas but for a capture.
     bool holdsKeyboard() const;
     /// \}
 

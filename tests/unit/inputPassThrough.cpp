@@ -31,12 +31,23 @@
  *    in the TextBox and released after the focus went, true;
  *  - the middle button over a control is taken (true, the press focusing
  *    the TextBox), over the bare canvas not;
- *  - under a modal with no keyboard focus, a character is taken.
+ *  - under a modal with no keyboard focus, a character is taken;
+ *  - on a hidden canvas pointerOverControl() and holdsKeyboard() are false,
+ *    with a stale hover and with a modal up, and a move returns false; with
+ *    an input capture set they and the move are true;
+ *  - a capture set during a press the scene got takes the moves (true, the
+ *    capture hearing each), and the press's release is still the scene's;
+ *  - a modal opened during a press the scene got leaves its moves and
+ *    release the scene's (false), and the next press is the modal's (true);
+ *  - a press on the bare canvas that closes an open menu or popup is taken,
+ *    its release too, and the next one is the scene's.
  */
 #include "headlessFixture.h"
 
 #include <gweni/controls/button.h>
 #include <gweni/controls/canvas.h>
+#include <gweni/controls/menu.h>
+#include <gweni/controls/popup.h>
 #include <gweni/controls/scrollControl.h>
 #include <gweni/controls/textBox.h>
 #include <gweni/inputHandler.h>
@@ -123,6 +134,14 @@ struct Scene
 
 // the bare canvas: right of the Button, under the ScrollControl
 constexpr int BareX=350, BareY=250;
+
+//! Counts the moves it is given.
+struct CountingCapture: controls::InputCapture
+{
+    int moves=0;
+
+    void captureMouseMoved(int, int, int, int) override { ++moves; }
+};
 
 }//namespace
 
@@ -344,4 +363,111 @@ TEST_CASE("Input pass-through: the middle button over a control is taken")
     CHECK(canvas->inputMouseButton(2, true));
     CHECK(KeyboardFocus == static_cast<controls::Base *>(scene.text));
     CHECK(canvas->inputMouseButton(2, false));
+}
+
+TEST_CASE("Input pass-through: a hidden canvas takes nothing but what an input capture gets")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+    controls::Base *panel=canvas->newChild<controls::Base>();
+    CountingCapture capture;
+
+    Scene::place(panel, 100, 100, 150, 80);
+    CHECK(canvas->inputMouseMoved(20, 15, 0, 0));
+    REQUIRE(canvas->pointerOverControl());
+
+    // the hover is stale: the canvas is hidden over the Button
+    canvas->hide();
+    scene.frame();
+    CHECK_FALSE(canvas->inputMouseMoved(BareX, BareY, 0, 0));
+    CHECK_FALSE(canvas->pointerOverControl());
+    CHECK_FALSE(canvas->holdsKeyboard());
+
+    canvas->pushModal(panel);
+    CHECK_FALSE(canvas->pointerOverControl());
+    CHECK_FALSE(canvas->holdsKeyboard());
+    CHECK_FALSE(canvas->inputCharacter('w'));
+    canvas->popModal(panel);
+
+    canvas->setInputCapture(&capture);
+    CHECK(canvas->inputMouseMoved(BareX+1, BareY, 1, 0));
+    CHECK(capture.moves == 1);
+    CHECK(canvas->pointerOverControl());
+    CHECK(canvas->holdsKeyboard());
+    canvas->setInputCapture(nullptr);
+
+    canvas->show();
+    scene.frame();
+}
+
+TEST_CASE("Input pass-through: a capture set during a scene press takes its moves, the release stays the scene's")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+    CountingCapture capture;
+
+    CHECK_FALSE(canvas->inputMouseMoved(BareX, BareY, 0, 0));
+    CHECK_FALSE(canvas->inputMouseButton(0, true));
+    canvas->setInputCapture(&capture);
+    CHECK(canvas->inputMouseMoved(BareX+5, BareY, 5, 0));
+    CHECK(canvas->inputMouseMoved(BareX+9, BareY, 4, 0));
+    CHECK(capture.moves == 2);
+    CHECK_FALSE(canvas->inputMouseButton(0, false));
+    canvas->setInputCapture(nullptr);
+}
+
+TEST_CASE("Input pass-through: a modal opened during a scene press leaves its moves and release the scene's")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+    controls::Base *panel=canvas->newChild<controls::Base>();
+
+    Scene::place(panel, 100, 100, 150, 80);
+    panel->setMouseInputEnabled(true);
+    CHECK_FALSE(canvas->inputMouseMoved(BareX, BareY, 0, 0));
+    CHECK_FALSE(canvas->inputMouseButton(0, true));
+    canvas->pushModal(panel);
+    scene.frame();
+    CHECK_FALSE(canvas->inputMouseMoved(BareX-5, BareY, -5, 0));
+    CHECK_FALSE(canvas->inputMouseMoved(150, 140, -195, -110));
+    CHECK_FALSE(canvas->inputMouseButton(0, false));
+    // new input is the modal's
+    CHECK(scene.click(BareX, BareY));
+    canvas->popModal(panel);
+    scene.frame();
+}
+
+TEST_CASE("Input pass-through: a press on the bare canvas that closes a menu is taken")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+    controls::Menu *menu=canvas->newChild<controls::Menu>();
+
+    menu->setDeleteOnClose(false);
+    menu->addItem("One");
+    menu->addItem("Two");
+    menu->openAt(Point(100, 120));
+    scene.frame();
+    REQUIRE_FALSE(menu->hidden());
+
+    CHECK(scene.click(BareX, BareY));
+    CHECK(menu->hidden());
+    // nothing to close any more: the scene's
+    CHECK_FALSE(scene.click(BareX, BareY));
+}
+
+TEST_CASE("Input pass-through: a press on the bare canvas that closes a popup is taken")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+    controls::Popup *popup=scene.button->createPopup();
+
+    Scene::place(popup->newChild<controls::Base>(), 0, 0, 60, 40);
+    popup->open(scene.button);
+    scene.frame();
+    REQUIRE(canvas->shownPopup() == static_cast<controls::Base *>(popup));
+
+    CHECK(scene.click(BareX, BareY));
+    CHECK(canvas->shownPopup() == nullptr);
+    CHECK_FALSE(scene.click(BareX, BareY));
 }
