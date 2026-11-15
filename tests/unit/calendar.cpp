@@ -69,6 +69,10 @@
  *  not the one pressed, is hovered. setView() shows the cursor's month (year)
  *  in the view it sets, so a cursor the zoomed-out view's keys moved past the
  *  month kept for it is ringed there and the next arrow moves on from it.
+ *  A double-click whose first click changed what the cells show (a month or
+ *  a year zoomed into, a day of the next month) acts once: its second press
+ *  lands on a cell showing another date and does nothing, while one on a
+ *  cell still showing the date pressed first is a click as any other.
  */
 #include "headlessFixture.h"
 
@@ -183,6 +187,17 @@ struct Scene
 
         clock+=1.0f;
         canvas->inputMouseMoved(at.x+control->getWidth()/2, at.y+control->getHeight()/2, 0, 0);
+        input::onMouseClicked(canvas, 0, true);
+        input::onMouseClicked(canvas, 0, false);
+        frame();
+    }
+
+    //! Two clicks at the control's centre 0.1 s apart, a frame after each:
+    //! the input handler takes the second press for a double-click.
+    void doubleClick(controls::Base *control)
+    {
+        click(control);
+        clock+=0.1f;
         input::onMouseClicked(canvas, 0, true);
         input::onMouseClicked(canvas, 0, false);
         frame();
@@ -1285,4 +1300,51 @@ TEST_CASE("Calendar: setView shows the cursor's month or year")
     CHECK(calendar->getDisplayedYear() == 2039);
     CHECK(cursorCells(calendar) == 1);
     CHECK(calendar->getCell(0)->getLook().cursor);
+}
+
+TEST_CASE("Calendar: a double-click whose first click changed the view acts once")
+{
+    Scene scene;
+    Calendar *calendar=scene.calendar(2026, 11);
+    Events events;
+
+    events.attach(calendar);
+
+    // the reviewer's case: Apr in the year view shows April and selects nothing
+    scene.click(calendar->getTitle());
+    REQUIRE(calendar->getView() == Calendar::View::Year);
+    scene.doubleClick(calendar->getCell(3));
+    CHECK(calendar->getView() == Calendar::View::Month);
+    CHECK(calendar->getDisplayedMonth() == 4);
+    CHECK_FALSE(calendar->getSelectedDate().has_value());
+    CHECK(events.selections == 0);
+
+    // a year in the decade view zooms in one level, to its months
+    scene.click(calendar->getTitle());
+    scene.click(calendar->getTitle());
+    REQUIRE(calendar->getView() == Calendar::View::Decade);
+    scene.doubleClick(calendar->getCell(3));
+    CHECK(calendar->getView() == Calendar::View::Year);
+    CHECK(calendar->getDisplayedYear() == calendar->decadeFirstYear()+3);
+
+    // a day of the next month selects it and shows that month; the second
+    // press, on the cell now showing another date, selects nothing more
+    calendar->setView(Calendar::View::Month);
+    calendar->setDisplayedMonth(2026, 11);
+    scene.frame();
+    events.selections=0;
+    REQUIRE(cellOf(calendar, Date(2026, 12, 3)));
+    scene.doubleClick(cellOf(calendar, Date(2026, 12, 3)));
+    CHECK(calendar->getDisplayedMonth() == 12);
+    CHECK(calendar->getSelectedDate().value_or(Date()).toIso() == "2026-12-03");
+    CHECK(events.selections == 1);
+
+    // a double-click on a range's day of the month shown is two clicks: the
+    // start, then the end on the same day
+    calendar->setSelectionMode(Calendar::SelectionMode::Range);
+    scene.frame();
+    events.selections=0;
+    scene.doubleClick(cellOf(calendar, Date(2026, 12, 16)));
+    CHECK(events.selections == 2);
+    CHECK(calendar->getRange().second.value_or(Date()).toIso() == "2026-12-16");
 }

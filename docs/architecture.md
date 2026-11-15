@@ -4528,8 +4528,13 @@ two programs and the draws. What follows describes both together:
     (Up/Down four), PageUp/PageDown a year or a decade, and a month or a year with no
     date inside the limits is disabled (the filter is not asked). A view change moves
     the cells under a resting mouse, so it calls `Canvas::hoverMayHaveMoved()` and the
-    hover goes to the cell under the mouse once the layout has placed them. Zooming out
-    and back in gives the month's frame back, byte for byte.
+    hover goes to the cell under the mouse once the layout has placed them. It also puts
+    another date under the mouse, so a cell takes a double-click only while it shows the
+    date and view its first press hit (`CalendarCell::onMouseDoubleClickLeft`): a quick
+    second press on Apr, on a year or on a day of the next month does nothing, instead of
+    choosing the date the first click put there. `setView()` shows the cursor's month
+    (year) in the view it sets. Zooming out and back in gives the month's frame back,
+    byte for byte.
   `tests/unit/calendar.cpp` pins the grid for every first weekday, the month change,
   the limits and the filter, every key, both selections and the views headless;
   `--scenario calendar` holds the costs and pixels on CalendarDemo, whose four

@@ -82,6 +82,23 @@ void CalendarCell::bind(const Date &date, const String &text, int column, int co
         redraw();
 }
 
+void CalendarCell::onMouseClickLeft(int x, int y, bool down)
+{
+    if(down && m_calendar)
+    {
+        m_calendar->m_pressedDate=m_date;
+        m_calendar->m_pressedView=m_calendar->m_view;
+    }
+    Button::onMouseClickLeft(x, y, down);
+}
+
+void CalendarCell::onMouseDoubleClickLeft(int x, int y)
+{
+    if(m_calendar && ((m_calendar->m_pressedDate != m_date) || (m_calendar->m_pressedView != m_calendar->m_view)))
+        return;
+    Button::onMouseDoubleClickLeft(x, y);
+}
+
 void CalendarCell::updateColors()
 {
     const auto &colors=getSkin()->Colors.Calendar;

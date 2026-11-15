@@ -94,6 +94,13 @@ protected:
 
     friend class gweni::controls::Calendar;
 
+    //! A press records the date and view it hit, for the double-click.
+    void onMouseClickLeft(int x, int y, bool down) override;
+    //! Does nothing unless this cell shows the date and view the click before
+    //! it pressed: a click that zoomed in or showed another month put another
+    //! date under the mouse, which the second press must not choose.
+    void onMouseDoubleClickLeft(int x, int y) override;
+
     //! Each a write only when it changes; a new look or column repaints it.
     void bind(const Date &date, const String &text, int column, int columns, const CalendarCellLook &look);
 
@@ -347,6 +354,8 @@ public:
 
 protected:
 
+    friend class internal::CalendarCell;
+
     void arrange(skin::Base *skin, Dim dim) override;
     void onKeyboardFocus() override;
     void onLostKeyboardFocus() override;
@@ -434,6 +443,9 @@ protected:
     //! The range's other end while only the start is set: the hovered date
     //! or the cursor.
     std::optional<Date> m_preview;
+    //! What the last single press on a cell hit (CalendarCell::onMouseClickLeft).
+    Date m_pressedDate;
+    View m_pressedView=View::Month;
     Date m_cursor;
     bool m_losingFocus=false;
     std::vector<String> m_monthNames;
