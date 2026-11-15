@@ -1931,9 +1931,11 @@ two programs and the draws. What follows describes both together:
     whole: clamping one would move its UV, colour and SDF interpolation, which is why
     `cullOutOfRangeQuad` collapses too.
   - **Counters.** `FrameStats::primitiveSlotsCulled` (the shown slots culled now,
-    `m_culledSlots`, kept from the dirty slots and by `setIndexChunkSlots()`'s
-    recount; a quad collapsed by `cullOutOfRangeQuad` has no area either but is not
-    counted) and `textRunsCulled` (the shown runs with glyphs culled now). They are
+    `m_culledSlots`, kept from the dirty slots and as the cull's decisions flip; a
+    new chunk size, `setIndexChunkSlots()`, recounts the chunks from `m_visibleSlots`,
+    which leaves the culled slots out already, and needs no recount of them; a quad
+    collapsed by `cullOutOfRangeQuad` has no area either but is not counted) and
+    `textRunsCulled` (the shown runs with glyphs culled now). They are
     **sizes**, not work: `primitive_slots_culled=` and `text_runs_culled=` in
     `gweni_bench` (in `bench/scaling.cmake`'s `UNCHECKED` and `tools/bench_report.py`'s
     `SIZE_COUNTERS`), `ControlTest --stats` and `GWENI_UPLOAD_STATS=1`'s line (`..., C
@@ -1964,7 +1966,8 @@ two programs and the draws. What follows describes both together:
     (904.57 M), and in `tools/bench.sh compare` against the base no scene writes or
     uploads more (`resize`'s uploads, which the collapse grew, are the base's). The scene draws 76
     primitive slots of 1036 (960 culled), and 960 text runs are culled; Demo at
-    1024x768 culls 96 slots and 101 runs. **`primitive_ranges` grows**, 6 -> 12 there:
+    640x480 (`controltest_clip_cull`'s run) culls 120 slots and 123 runs.
+    **`primitive_ranges` grows**, 6 -> 12 there:
     without the cull each ScrollControl's slots (its background, its rows, its bar)
     are one run, and the culled rows above and below the shown ones become two gaps
     in it. They are left open, as a hidden slot's gap of 2 or more is (merging them

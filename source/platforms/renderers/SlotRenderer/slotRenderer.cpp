@@ -2073,8 +2073,9 @@ void SlotRenderer::flush()
 
     if(!m_vertexes.empty())
     {
-        //which slots can show changes only with a slot's bytes, so only in a dirty
-        //slot; the upload below clears them
+        //which slots can show changes with a slot's bytes, so in a dirty slot, or
+        //with a cull decision that flips, which cullClippedQuad has brought up to
+        //date already; the upload below clears the dirty slots
         for(size_t slot: m_dirtyVertexSlots.slots())
             updateSlotVisibility(slot);
         // after the dirty slots' visibility, so it is the frame this flush draws
