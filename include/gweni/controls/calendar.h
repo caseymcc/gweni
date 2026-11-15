@@ -232,7 +232,7 @@ public:
     bool canShowPrevious() const;
     bool canShowNext() const;
 
-    //! The view; setView fires nothing.
+    //! The view; setView shows the cursor's month (year, decade) in it and fires nothing.
     void setView(View view);
     View getView() const { return m_view; }
     //! The title's press: Month to Year to Decade (nothing in Decade).
@@ -394,7 +394,9 @@ protected:
     Date enabledDayIn(int year, int month, int day) const;
     //! Keeps the cursor on what the view shows and enables: an enabled day of the month
     //! (enabledDayIn), the nearest enabled month of the year, the nearest enabled year of
-    //! the decade. Called when the month shown, the view, the limits or the filter change.
+    //! the decade. Called when the month shown, the limits or the filter change, and when
+    //! the view changes (setView first showing the cursor's month or year, a zoom in the
+    //! clicked one).
     void fitCursor();
     //! The cursor moved: shows its month (year, decade) and rebinds.
     void cursorMoved();

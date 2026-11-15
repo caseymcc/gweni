@@ -403,6 +403,12 @@ void Calendar::setView(View view)
         return;
 
     m_view=view;
+    // the view shows what the cursor is in: the keys of a zoomed-out view
+    // move the cursor past the month kept for it
+    m_year=m_cursor.year;
+    if(view == View::Month)
+        m_month=m_cursor.month;
+    fitCursor();
     m_preview.reset();
     viewChanged();
 }

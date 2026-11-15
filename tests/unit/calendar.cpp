@@ -66,7 +66,9 @@
  *  disables while it holds the press (a page past the limits) lets it go, so
  *  the next click is the calendar's. A view change (a month or a year
  *  clicked) hit-tests the hover again, so the cell under the resting mouse,
- *  not the one pressed, is hovered.
+ *  not the one pressed, is hovered. setView() shows the cursor's month (year)
+ *  in the view it sets, so a cursor the zoomed-out view's keys moved past the
+ *  month kept for it is ringed there and the next arrow moves on from it.
  */
 #include "headlessFixture.h"
 
@@ -215,13 +217,14 @@ CalendarCell *cellOf(Calendar *calendar, const Date &date)
     return calendar->getCell(calendar->cellIndex(date));
 }
 
-//! The cells whose look has the cursor's ring.
+//! The shown cells whose look has the cursor's ring (a zoomed-out view's
+//! hidden cells keep the month's looks).
 int cursorCells(Calendar *calendar)
 {
     int count=0;
 
     for(int i=0; i < Calendar::CellCount; ++i)
-        count+=calendar->getCell(i)->getLook().cursor?1:0;
+        count+=(!calendar->getCell(i)->hidden() && calendar->getCell(i)->getLook().cursor)?1:0;
     return count;
 }
 
@@ -1245,4 +1248,41 @@ TEST_CASE("Calendar: a range's ends draw no border on the side joined to the str
     scene.frame();
     REQUIRE(cellOf(calendar, Date(2026, 11, 9))->getLook().cursor);
     CHECK(edgesOf(Date(2026, 11, 9)) == squareRight);
+}
+
+TEST_CASE("Calendar: setView shows the cursor's month or year")
+{
+    Scene scene;
+    Calendar *calendar=scene.calendar(2026, 11);
+
+    // the reviewer's case: Right twice in the year view takes the cursor to
+    // January of the next year, which setView(Month) shows
+    scene.click(cellOf(calendar, Date(2026, 11, 11)));
+    scene.click(calendar->getTitle());
+    REQUIRE(calendar->getView() == Calendar::View::Year);
+    scene.key(keys::Right);
+    scene.key(keys::Right);
+    REQUIRE(calendar->getCursor().toIso() == "2027-01-11");
+    calendar->setView(Calendar::View::Month);
+    scene.frame();
+    CHECK(calendar->getDisplayedYear() == 2027);
+    CHECK(calendar->getDisplayedMonth() == 1);
+    CHECK(cursorCells(calendar) == 1);
+    REQUIRE(cellOf(calendar, Date(2027, 1, 11)));
+    CHECK(cellOf(calendar, Date(2027, 1, 11))->getLook().cursor);
+    scene.key(keys::Right);
+    CHECK(calendar->getCursor().toIso() == "2027-01-12");
+    CHECK(calendar->getDisplayedMonth() == 1);
+
+    // the decade view's cursor moved to another decade: setView(Year) shows
+    // the cursor's year
+    calendar->setView(Calendar::View::Decade);
+    for(int i=0; i < 12; ++i)
+        scene.key(keys::Right);
+    REQUIRE(calendar->getCursor().year == 2039);
+    calendar->setView(Calendar::View::Year);
+    scene.frame();
+    CHECK(calendar->getDisplayedYear() == 2039);
+    CHECK(cursorCells(calendar) == 1);
+    CHECK(calendar->getCell(0)->getLook().cursor);
 }
