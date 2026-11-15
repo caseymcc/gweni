@@ -1977,8 +1977,16 @@ two programs and the draws. What follows describes both together:
     `primeChunks` (`bench/main.cpp`) draws a scene's first frame with the cull off,
     every chunk drawn once, then marks the tree changed and draws it again with the
     cull as the run has it (so `--clip-cull off` is primed by the same two frames),
-    before the warm-up; every scene's other counters are the same with and without
-    it. Not for a scene measured from its first frame (`build`).
+    before the warm-up. Not for a scene measured from its first frame (`build`), nor
+    for one whose `Scene::primesChunks()` says false: the two frames lay the tree
+    out before the first step, and a LogView would bind its prefilled end rows
+    before the first appends move them on (`log-append` and `log-append-capped`
+    then uploaded in 40 calls where main's most is 38, with the cull on or off), so
+    the log scenes, whose few rows stay in the first chunk, are not primed. Where
+    llvmpipe compiles is not the first draw of a chunk alone: priming inside the
+    warm-up instead (the first warm-up frame with the cull off) left `type` at
+    N=10000 compiling 18 165 allocations' worth in its second measured frame, so
+    the two frames stay before the warm-up for the other scenes.
   - **Tests.** `tests/clipCulling.cpp` (GL and Vulkan, `primitiveCulled()` /
     `textRunCulled()`, and `textRunInDrawList()`, whether the run is in its font's
     draw list as the last flush built it): a slot in, out and back in its box; hidden while culled, shown
