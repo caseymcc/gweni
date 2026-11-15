@@ -21,7 +21,9 @@
  *  item drag (Package::sourceList) is its list's, not the pressed row's: the
  *  row deleted mid-drag leaves it running, the list hidden (in the next update
  *  phase) or deleted cancels it, telling the target it left. Escape cancels a
- *  live drag ahead of the focused control, and its release goes nowhere; over
+ *  live drag ahead of the focused control, including a SearchComboBox field
+ *  in an open Popup: the query, its list and the Popup stay until the next
+ *  Escape, and the cancelled drag's release drops nothing. Over
  *  nothing that accepts the item the cursor the core asked for is No, and a
  *  release there cancels; a cancel calls no handleDrop and ends the source's
  *  drag with false. A press moved under 5 units starts nothing. Once a drag
@@ -38,6 +40,8 @@
 #include <gweni/gweni.h>
 #include <gweni/controls/dockBase.h>
 #include <gweni/controls/dockedTabControl.h>
+#include <gweni/controls/popup.h>
+#include <gweni/controls/searchComboBox.h>
 #include <gweni/controls/scrollControl.h>
 #include <gweni/controls/tabControl.h>
 #include <gweni/controls/tabTitleBar.h>
@@ -595,6 +599,68 @@ TEST_CASE("dragAndDrop: Escape cancels the live drag ahead of the focused contro
     input::onKeyEvent(scene.canvas, keys::Escape, true);
     input::onKeyEvent(scene.canvas, keys::Escape, false);
     CHECK(focused->escapes == 1);
+}
+
+TEST_CASE("dragAndDrop: Escape cancels a live drag before a SearchComboBox field in a shown Popup")
+{
+    Scene scene;
+    Lists lists(scene);
+    controls::Base *anchor=scene.canvas->newChild<controls::Base>();
+    anchor->setBounds(120, 180, 160, 20);
+    controls::Popup *popup=anchor->createPopup();
+    controls::SearchComboBox *box=popup->newChild<controls::SearchComboBox>();
+    box->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    box->setBounds(0, 0, 160, 20);
+    box->addOption("Option 0");
+    box->setFilterable(true);
+    scene.frame();
+
+    startDrag(scene, at(lists.leftRows[0]));
+    scene.move(at(lists.rightRows[2]));
+    REQUIRE(draganddrop::isDragging());
+    REQUIRE(draganddrop::HoveredControl == lists.right);
+
+    popup->open(anchor);
+    scene.frame();
+    box->getField()->focus();
+    box->getField()->onSelectAll(box->getField());
+    scene.canvas->inputCharacter(static_cast<UnicodeChar>('x'));
+    scene.frame();
+    REQUIRE(popup->isOpen());
+    REQUIRE(box->isListOpen());
+    REQUIRE(box->getField()->isFocussed());
+    REQUIRE(box->getField()->getText() == "x");
+    REQUIRE(draganddrop::isDragging());
+
+    CHECK(input::onKeyEvent(scene.canvas, keys::Escape, true));
+    CHECK_FALSE(input::onKeyEvent(scene.canvas, keys::Escape, false));
+    scene.frame();
+    CHECK_FALSE(draganddrop::isDragging());
+    CHECK(lists.left->ends == std::vector<bool>{false});
+    CHECK(lists.right->leaves == 1);
+    CHECK(lists.right->drops.empty());
+    CHECK(popup->isOpen());
+    CHECK(box->isListOpen());
+    CHECK(box->getField()->getText() == "x");
+    CHECK(box->getField()->isFocussed());
+
+    // The mouse release after cancellation cannot finish the drop.
+    input::onMouseClicked(scene.canvas, 0, false);
+    scene.frame();
+    CHECK(lists.right->drops.empty());
+    CHECK(lists.left->ends == std::vector<bool>{false});
+
+    // With no live drag, the next Escape belongs to the field, then the Popup.
+    input::onKeyEvent(scene.canvas, keys::Escape, true);
+    input::onKeyEvent(scene.canvas, keys::Escape, false);
+    scene.frame();
+    CHECK_FALSE(box->isListOpen());
+    CHECK(box->getField()->getText() == "Option 0");
+    CHECK(popup->isOpen());
+    input::onKeyEvent(scene.canvas, keys::Escape, true);
+    input::onKeyEvent(scene.canvas, keys::Escape, false);
+    scene.frame();
+    CHECK_FALSE(popup->isOpen());
 }
 
 TEST_CASE("dragAndDrop: over nothing that accepts the item the cursor is No, and a release there cancels")

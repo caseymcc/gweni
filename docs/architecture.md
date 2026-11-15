@@ -4503,7 +4503,9 @@ two programs and the draws. What follows describes both together:
   the list open or closed (`onKeyEscape`, the field edited). In a `Popup` the field is
   offered the key before the canvas (`input::onKeyEvent` gives Escape to a focus inside
   the shown Popup first), so that Escape too is the box's, the popup stays open, and the
-  next Escape, closing the popup, has nothing to take. A field outside the shown Popup
+  next Escape, closing the popup, has nothing to take. A live drag takes Escape before
+  either: it cancels, leaving the query, list and popup for the next Escape, and its
+  mouse release drops nothing. A field outside the shown Popup
   never sees the key while the canvas closes something with it: when that is the box's
   list, open over the popup (Tab out of it, or a popup the app opened over the open
   list), `listVisibilityChanged` reads `Canvas::closingOnEscape()` and gives the value
