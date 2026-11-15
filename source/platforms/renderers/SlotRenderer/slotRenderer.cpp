@@ -4255,22 +4255,37 @@ size_t SlotRenderer::fillTextDrawList(const FontData &fontData, std::vector<Chun
 
     ranges.clear();
     ranges.reserve(fontData.textRuns.size());
+
+    size_t drawn=0;
+
     for(size_t textId:fontData.textRuns)
     {
         const std::pair<size_t, size_t> range=drawnRange(m_textRuns[textId]);
 
+        if(range.second == 0)
+            continue;
+        ++drawn;
         // a run the sorted pass draws is drawn there alone
-        if((range.second > 0) && !runSorted(textId))
+        if(!runSorted(textId))
             ranges.push_back(range);
     }
 
     // The entries already there are refilled in order, their vectors cleared but
     // not freed, so a rebuild into as many chunks as last time allocates nothing.
-    return fillDrawChunks(ranges, drawChunks, 0);
+    // While the sorted pass takes runs out of the list, the runs it takes split
+    // the font's ranges, so how many a chunk holds moves with what is under a
+    // translucent slot, and its vectors would grow on whichever frame passes their
+    // old most: room for one range per run of the font that draws, sorted ones
+    // included (at most one per two glyph slots of a chunk), is made instead,
+    // which only what draws changing moves, as buildPrimitiveRanges makes its room.
+    const size_t room=m_overlap.sortedRuns.empty() ? 0 :
+        std::min(drawn+1, (m_chunkSlots+1)/2+1);
+
+    return fillDrawChunks(ranges, drawChunks, 0, room);
 }
 
 size_t SlotRenderer::fillDrawChunks(std::vector<std::pair<size_t, size_t>> &ranges, std::vector<ChunkDraw> &drawChunks,
-    size_t used)
+    size_t used, size_t room)
 {
     const size_t firstUsed=used;
 
@@ -4307,6 +4322,8 @@ size_t SlotRenderer::fillDrawChunks(std::vector<std::pair<size_t, size_t>> &rang
                 next.chunk=chunk;
                 next.counts.clear();
                 next.offsets.clear();
+                next.counts.reserve(room);
+                next.offsets.reserve(room);
             }
 
             ChunkDraw &draw=drawChunks[used-1];

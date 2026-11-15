@@ -1304,7 +1304,11 @@ anti-aliased (partly transparent) edge texels counts, and so does a disabled tin
 TabControlDemo and ImageGridDemo build the index for them, their pixels unchanged. A bit
 per slot (`m_translucentSlots`, with a list of them) is kept from the dirty slots with
 the visibility bits (`updateSlotVisibility`), so it costs O(slots changed), and is
-allocated only when the first translucent slot shows.
+allocated only when the first translucent slot shows. A slot or run the clip cull
+leaves out (#570, "What lies wholly outside its clip box is not drawn") is in neither
+pass: the translucent bit is set only while the slot can show, which a culled one
+cannot, and a culled slot's or run's footprint (below) is empty, so it is in no cell
+and no query finds it.
 
 **The overlap index** (`SlotRenderer::OverlapIndex`): a grid of 64-device-px cells
 over the view, each listing the slots and runs that can show whose **footprint**
@@ -1332,7 +1336,10 @@ dialog given a wider text, each frame of a dialog drag) builds the schedule agai
 visiting about every item on screen (887 for 640 Labels behind a dialog); a settled
 frame builds nothing. A sorted text group's runs are drawn by font in the order
 the fonts were loaded (`FontData::serial`), the same in every build. The chunks whose slots enter or leave the set build their ranges again and never
-merge a gap across a sorted slot; the fonts whose runs do, their draw lists. With no
+merge a gap across a sorted slot; the fonts whose runs do, their draw lists (while
+the set holds runs, a font's list gives each chunk room for one range per run of the
+font that draws, sorted ones included, since the runs taken out split its ranges and
+how many a chunk holds moves with what is under the slot). With no
 translucent slot it is exactly the old order and draws, and the samples are the same
 bytes (ChartLinesDemo's and ChartAreasDemo's translucent areas and spans included).
 

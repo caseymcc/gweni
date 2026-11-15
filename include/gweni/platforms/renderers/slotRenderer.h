@@ -1679,9 +1679,10 @@ private:
     size_t fillTextDrawList(const FontData &fontData, std::vector<ChunkDraw> &drawChunks);
     //! Appends to drawChunks from entry `used` on the draws of `ranges` ((first
     //! glyph slot, count) pairs, sorted here), merged where they touch and split
-    //! at the chunks' edges; returns the entries in use after them.
+    //! at the chunks' edges; returns the entries in use after them. Each entry it
+    //! fills is given room for `room` ranges first (0: none made ahead).
     size_t fillDrawChunks(std::vector<std::pair<size_t, size_t>> &ranges, std::vector<ChunkDraw> &drawChunks,
-        size_t used);
+        size_t used, size_t room=0);
     //! In a debug build (no NDEBUG), asserts that fontData's drawChunks, not
     //! stale, are what a rebuild gives, so a run change that did not mark them
     //! really left them as they were. flush() calls it for every such font.
