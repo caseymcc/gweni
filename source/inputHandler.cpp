@@ -385,7 +385,7 @@ static bool deliverMouseClick(controls::Base *canvas, int iMouseButton, bool dow
         return false;
     }
 
-    if(iMouseButton > static_cast<int>(c_MaxMouseButtons))
+    if((iMouseButton < 0) || (iMouseButton >= static_cast<int>(c_MaxMouseButtons)))
         return false;
 
     // A press under a modal (a stale hover, before the end of the update
@@ -483,7 +483,9 @@ static bool deliverMouseClick(controls::Base *canvas, int iMouseButton, bool dow
         return true;
     }
 
-    return false;
+    // a middle or extra button reached the control too (the press focused
+    // and touched it), so it is the UI's, not the scene's
+    return true;
 }
 
 bool handleAccelerator(controls::Base *canvas, UnicodeChar chr)

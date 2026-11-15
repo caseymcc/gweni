@@ -20,7 +20,18 @@
  *  - with a modal up a move and a press on the bare canvas return true (the
  *    modal blocks the scene) and the press leaves the focus in the modal;
  *  - through input::GLFW3, a key's OS repeats are taken exactly when its
- *    press was: with the TextBox focused, not over the bare canvas.
+ *    press was: with the TextBox focused, not over the bare canvas;
+ *  - a mouse release gets its press's answer wherever it lands: a press on
+ *    the bare canvas released over the Button is false (and leaves the
+ *    Button unpressed), its moves over the Button false too, and a press on
+ *    the Button released over the bare canvas true, its moves there true
+ *    (the right button on the ScrollControl, which pins no mouse focus, too);
+ *  - through input::GLFW3, a key's release gets its press's answer: pressed
+ *    with no focus and released after the TextBox took it, false; pressed
+ *    in the TextBox and released after the focus went, true;
+ *  - the middle button over a control is taken (true, the press focusing
+ *    the TextBox), over the bare canvas not;
+ *  - under a modal with no keyboard focus, a character is taken.
  */
 #include "headlessFixture.h"
 
@@ -211,6 +222,13 @@ TEST_CASE("Input pass-through: under a modal the bare canvas is taken and the fo
     CHECK(KeyboardFocus == static_cast<controls::Base *>(field));
     CHECK(canvas->holdsKeyboard());
 
+    // no focus under the modal: its text is still not the scene's
+    field->unfocus();
+    REQUIRE(KeyboardFocus == nullptr);
+    CHECK(canvas->inputCharacter('w'));
+    CHECK(canvas->inputModifierKey(keys::Up, true));
+    CHECK(canvas->inputModifierKey(keys::Up, false));
+
     canvas->popModal(panel);
     scene.frame();
 }
@@ -240,4 +258,90 @@ TEST_CASE("Input pass-through: GLFW3 reports a key's repeats taken exactly when 
     CHECK(glfw.processKeyEvent({GLFW_KEY_UP, 0, GLFW_RELEASE, 0}));
     // a repeat after the release is the scene's: the press it follows is gone
     CHECK_FALSE(glfw.processKeyEvent({GLFW_KEY_UP, 0, GLFW_REPEAT, 0}));
+}
+
+TEST_CASE("Input pass-through: a mouse release and a held press's moves get the press's answer")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+
+    SUBCASE("pressed on the bare canvas, released over the Button")
+    {
+        CHECK_FALSE(canvas->inputMouseMoved(BareX, BareY, 0, 0));
+        CHECK_FALSE(canvas->inputMouseButton(0, true));
+        CHECK_FALSE(canvas->inputMouseMoved(20, 15, 0, 0));
+        CHECK(HoveredControl == static_cast<controls::Base *>(scene.button));
+        CHECK_FALSE(scene.button->isDepressed());
+        CHECK_FALSE(canvas->inputMouseButton(0, false));
+        CHECK_FALSE(scene.button->isDepressed());
+        // the press is over: a move over the Button is the UI's again
+        CHECK(canvas->inputMouseMoved(21, 15, 0, 0));
+    }
+
+    SUBCASE("pressed on the Button, released over the bare canvas")
+    {
+        CHECK(canvas->inputMouseMoved(20, 15, 0, 0));
+        CHECK(canvas->inputMouseButton(0, true));
+        CHECK(scene.button->isDepressed());
+        CHECK(canvas->inputMouseMoved(BareX, BareY, 0, 0));
+        CHECK(canvas->inputMouseButton(0, false));
+        CHECK_FALSE(scene.button->isDepressed());
+        CHECK_FALSE(canvas->inputMouseMoved(BareX+1, BareY, 0, 0));
+    }
+
+    SUBCASE("the right button pressed on the bare canvas, released over the Button")
+    {
+        CHECK_FALSE(canvas->inputMouseMoved(BareX, BareY, 0, 0));
+        CHECK_FALSE(canvas->inputMouseButton(1, true));
+        CHECK_FALSE(canvas->inputMouseMoved(20, 15, 0, 0));
+        CHECK_FALSE(canvas->inputMouseButton(1, false));
+    }
+
+    SUBCASE("the right button pressed on the ScrollControl, released over the bare canvas")
+    {
+        // it pins no MouseFocus (a Button would), so the hover leaves it
+        CHECK(canvas->inputMouseMoved(240, 40, 0, 0));
+        CHECK(canvas->inputMouseButton(1, true));
+        REQUIRE(MouseFocus == nullptr);
+        CHECK(canvas->inputMouseMoved(BareX, BareY, 0, 0));
+        CHECK(HoveredControl == static_cast<controls::Base *>(canvas));
+        CHECK(canvas->inputMouseButton(1, false));
+        CHECK_FALSE(canvas->inputMouseMoved(BareX+1, BareY, 0, 0));
+    }
+}
+
+TEST_CASE("Input pass-through: GLFW3 gives a key's release its press's answer")
+{
+    Scene scene;
+    input::GLFW3 glfw;
+
+    glfw.initialize(scene.canvas);
+
+    // pressed for the scene, the TextBox focused before the release
+    CHECK_FALSE(glfw.processKeyEvent({GLFW_KEY_SPACE, 0, GLFW_PRESS, 0}));
+    scene.text->focus();
+    REQUIRE(scene.canvas->holdsKeyboard());
+    CHECK_FALSE(glfw.processKeyEvent({GLFW_KEY_SPACE, 0, GLFW_RELEASE, 0}));
+
+    // pressed in the TextBox, the focus gone before the release
+    CHECK(glfw.processKeyEvent({GLFW_KEY_UP, 0, GLFW_PRESS, 0}));
+    scene.text->unfocus();
+    REQUIRE_FALSE(scene.canvas->holdsKeyboard());
+    CHECK(glfw.processKeyEvent({GLFW_KEY_UP, 0, GLFW_RELEASE, 0}));
+}
+
+TEST_CASE("Input pass-through: the middle button over a control is taken")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+
+    CHECK_FALSE(canvas->inputMouseMoved(BareX, BareY, 0, 0));
+    CHECK_FALSE(canvas->inputMouseButton(2, true));
+    CHECK_FALSE(canvas->inputMouseButton(2, false));
+
+    CHECK(canvas->inputMouseMoved(20, 60, 0, 0));
+    REQUIRE(HoveredControl == static_cast<controls::Base *>(scene.text));
+    CHECK(canvas->inputMouseButton(2, true));
+    CHECK(KeyboardFocus == static_cast<controls::Base *>(scene.text));
+    CHECK(canvas->inputMouseButton(2, false));
 }

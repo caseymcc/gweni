@@ -40,7 +40,8 @@ inline double windowToLogical(double window, int windowSize, int framebufferSize
 //! over its own scene to hand to that scene (Canvas's input calls say which;
 //! docs/architecture.md -> "gweni over an app's scene"). A key's OS repeats are
 //! taken exactly when its press was; the window losing focus and the cursor
-//! leaving are the scene's too.
+//! leaving are the scene's too. A key's release gets its press's answer, as
+//! a mouse button's release does (Canvas, "Input").
 class GLFW3
 {
 public:
@@ -226,9 +227,16 @@ public:
         // X11 the mods are the state before the event, without Ctrl on Ctrl's
         // own press and with it on its release.
         handled = m_eventCaller->inputModifierKey(key, bPressed) || handled;
-        if (known)
-            m_keyTaken[(size_t)event.key] = bPressed && handled;
-        return handled;
+        if (!known)
+            return handled;
+
+        // A release gets its press's answer, wherever the focus is now: a
+        // key pressed for the scene is released to it even if a control took
+        // the focus meanwhile, and one a control took is not the scene's.
+        const bool pressTaken = m_keyTaken[(size_t)event.key];
+
+        m_keyTaken[(size_t)event.key] = bPressed && handled;
+        return bPressed ? handled : pressTaken;
     }
 
     // Typed text, from glfwSetCharCallback: one codepoint per call, forwarded

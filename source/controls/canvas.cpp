@@ -1041,7 +1041,7 @@ void Canvas::releaseChildren()
     m_releasingChildren=false;
 }
 
-bool Canvas::inputMouseMoved(int x, int y, int deltaX, int deltaY)
+bool Canvas::deliverMouseMoved(int x, int y, int deltaX, int deltaY)
 {
     if(m_inputCapture)
     {
@@ -1086,6 +1086,20 @@ bool Canvas::inputMouseMoved(int x, int y, int deltaX, int deltaY)
     return true;
 }
 
+bool Canvas::inputMouseMoved(int x, int y, int deltaX, int deltaY)
+{
+    const bool taken=deliverMouseMoved(x, y, deltaX, deltaY);
+
+    // The moves of a held press get its answer (canvas.h, "Input"): a drag
+    // begun on the scene stays the scene's over the UI, and one the UI took
+    // stays the UI's off it.
+    if(m_uiPresses)
+        return true;
+    if(m_scenePresses)
+        return false;
+    return taken;
+}
+
 // A button the canvas pressed before its input capture was set and has not
 // let go yet (input:: tracks the left and right ones).
 static bool heldBeforeCapture(int button)
@@ -1099,7 +1113,48 @@ static bool heldBeforeCapture(int button)
     return false;
 }
 
+// The bit of a button in m_scenePresses / m_uiPresses (0 for one past them).
+static uint32_t pressBit(int button)
+{
+    return ((button >= 0) && (button < 32)) ? (uint32_t(1) << button) : 0;
+}
+
 bool Canvas::inputMouseButton(int button, bool down)
+{
+    const uint32_t bit=pressBit(button);
+
+    // A release gets its press's answer (canvas.h, "Input"): the release of a
+    // press the scene got is the scene's alone, as the press reached no
+    // control.
+    if(!down && (m_scenePresses & bit))
+    {
+        m_scenePresses&=~bit;
+        return false;
+    }
+
+    if(!down && (m_uiPresses & bit))
+    {
+        m_uiPresses&=~bit;
+        deliverMouseButton(button, false);
+        return true;
+    }
+
+    const bool taken=deliverMouseButton(button, down);
+
+    if(down)
+    {
+        // a press whose release never came (the window lost it) is forgotten
+        m_scenePresses&=~bit;
+        m_uiPresses&=~bit;
+        if(taken)
+            m_uiPresses|=bit;
+        else
+            m_scenePresses|=bit;
+    }
+    return taken;
+}
+
+bool Canvas::deliverMouseButton(int button, bool down)
 {
     if(m_inputCapture)
     {
@@ -2292,15 +2347,16 @@ bool Canvas::inputCharacter(UnicodeChar chr)
     if(input::handleAccelerator(this, chr))
         return true;
 
-    // Handle characters
+    // Handle characters: with no focus of its own here, a modal still has
+    // the keyboard (holdsKeyboard), so the scene gets no text under it
     if(!KeyboardFocus)
-        return false;
+        return holdsKeyboard();
 
     if(KeyboardFocus->getCanvas() != this)
-        return false;
+        return holdsKeyboard();
 
     if(!KeyboardFocus->visible())
-        return false;
+        return holdsKeyboard();
 
     // the focus has the keyboard whether it takes the character or not
     if(input::isControlDown())

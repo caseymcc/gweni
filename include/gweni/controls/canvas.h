@@ -778,6 +778,16 @@ public:
     /// press on the bare canvas drops the keyboard focus (but under a modal),
     /// so the keys go back to the scene. inputMouseLeave() and inputQuit() are
     /// for the scene too.
+    /// A mouse release gets its press's answer, wherever the pointer is then:
+    /// a press the scene got (false) is released to the scene alone, no
+    /// control hearing that release, and one the UI took is released as true.
+    /// While a press the scene got is held and none the UI took, every move
+    /// returns false too (it still hovers the UI), so a drag that began on the
+    /// scene stays the scene's over the panel; while one the UI took is held,
+    /// every move returns true. A key's release likewise gets its press's
+    /// answer in input::GLFW3 (which knows the key). Any of the first five
+    /// buttons over a control is taken, the middle one included (the press
+    /// focuses and touches it); the sixth on reach no control.
     bool inputMouseMoved(int x, int y, int deltaX, int deltaY) override;
     bool inputMouseButton(int button, bool down) override;
     /// A modifier key was inputted.
@@ -833,6 +843,10 @@ protected:
     /// Common wheel dispatch: captures take the original axis; controls take
     /// Shift+wheel as horizontal, with the same hover and modal checks.
     bool inputMouseWheelOnAxis(int val, Dim dim);
+    /// inputMouseMoved's and inputMouseButton's work, before a held press's
+    /// answer is applied to what they return.
+    bool deliverMouseMoved(int x, int y, int deltaX, int deltaY);
+    bool deliverMouseButton(int button, bool down);
 
     bool m_needsRedraw;
     float m_scale;
@@ -1078,6 +1092,11 @@ protected:
     float m_toolTipDelay=0.5f;
     //! setInputCapture's, or null
     InputCapture *m_inputCapture=nullptr;
+    /// Per mouse button (bit = button, 0..31): its press is held and was the
+    /// scene's (inputMouseButton returned false), or the UI's (true), so its
+    /// release, and the moves while it is held, get the press's answer.
+    uint32_t m_scenePresses=0;
+    uint32_t m_uiPresses=0;
     bool m_toolTipShown=false;
     size_t m_toolTipShownForId=0;
     /// The owner's tooltip changed while shown.
