@@ -153,6 +153,8 @@ set(GWENI_SOURCES
     source/text/document.cpp
     include/gweni/text/highlightCache.h
     source/text/highlightCache.cpp
+    include/gweni/text/markdown.h
+    source/text/markdown.cpp
     source/text/highlight/languages.h
     source/text/highlight/languages.cpp
     source/text/highlight/scan.h
@@ -455,6 +457,11 @@ set(GWENI_COMPILE_DEFINITIONS "")
 # rather than an imported target.
 find_package(RapidJSON CONFIG REQUIRED)
 include_directories(${RAPIDJSON_INCLUDE_DIRS})
+
+# md4c (MIT, plain C): the CommonMark parser text::parseMarkdown builds its
+# blocks from; only source/text/markdown.cpp includes its header
+find_package(md4c CONFIG REQUIRED)
+list(APPEND GWENI_ADDITIONAL_LIBRARIES md4c::md4c)
 
 # The slot core, with either renderer: SlotRenderer, the API-independent part
 # of a retained renderer (the mirrors, the vertex packing, the text runs and

@@ -18,6 +18,7 @@
         },
         "libpng",
         "libjpeg-turbo",
+        "md4c",
         "doctest"
     ],
     "features": {
