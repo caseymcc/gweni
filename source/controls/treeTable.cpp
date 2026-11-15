@@ -8,6 +8,8 @@
 #include <gweni/controls/canvas.h>
 
 #include <algorithm>
+#include <climits>
+#include <unordered_set>
 #include <utility>
 
 namespace gweni
@@ -253,50 +255,268 @@ const TreeTable::Node *TreeTable::getNode(NodeId id) const
 
 TreeTable::NodeId TreeTable::addNode(NodeId parentId, NodeId appId, bool hasChildren)
 {
-    if(appId == NoNode || m_nodeIndex.count(appId))
-        return NoNode;
+    const NodeId id=insertNode(parentId, NoItem, appId);
 
-    const Node *parent=getNode(parentId);
-
-    if(parentId != Root && !parent)
-        return NoNode;
-
-    Node node;
-
-    node.id=appId;
-    node.parent=parentId;
-    node.depth=parent?parent->depth+1:0;
-    node.hasChildren=hasChildren;
-    m_nodeIndex.emplace(appId, m_nodes.size());
-    m_nodes.push_back(std::move(node));
-
-    size_t at=m_visible.size();
-
-    if(parentId == Root)
-        m_roots.push_back(appId);
-    else
+    if(id != NoNode && hasChildren)
     {
-        // push_back above may have relocated the store.
-        Node &entry=m_nodes[m_nodeIndex.at(parentId)];
+        m_nodes[m_nodeIndex.at(id)].hasChildren=true;
+        nodeChanged(id);
+    }
+    return id;
+}
 
-        entry.children.push_back(appId);
-        entry.hasChildren=true;
-        if(!entry.expanded)
-            return appId;
+std::vector<TreeTable::NodeId> &TreeTable::childrenOf(NodeId parent)
+{
+    return parent == Root?m_roots:m_nodes[m_nodeIndex.at(parent)].children;
+}
 
-        const size_t item=itemForNode(parentId);
+size_t TreeTable::insertionItem(NodeId parent, size_t index) const
+{
+    const Node *node=getNode(parent);
+    const auto &children=parent == Root?m_roots:node->children;
 
-        if(item == NoItem)
-            return appId;
-        at=subtreeEnd(item);
+    if(parent != Root && (!node->expanded || itemForNode(parent) == NoItem))
+        return NoItem;
+
+    if(index < children.size())
+        return itemForNode(children[index]);
+    if(parent == Root)
+        return m_visible.size();
+    return subtreeEnd(itemForNode(parent));
+}
+
+TreeTable::NodeId TreeTable::insertNode(NodeId parent, size_t index, NodeId appId)
+{
+    return insertNodes(parent, index, &appId, 1)?appId:NoNode;
+}
+
+bool TreeTable::insertNodes(NodeId parent, size_t index, const std::vector<NodeId> &ids)
+{
+    return insertNodes(parent, index, ids.data(), ids.size());
+}
+
+bool TreeTable::insertNodes(NodeId parent, size_t index, const NodeId *ids, size_t count)
+{
+    if(parent != Root && !getNode(parent))
+        return false;
+
+    // Validate the entire batch before modifying either the hierarchy or its
+    // projection. The common one-node edit needs no duplicate-check set.
+    std::unordered_set<NodeId> unique;
+
+    for(size_t i=0; i < count; ++i)
+    {
+        const NodeId id=ids[i];
+
+        if(id == NoNode || m_nodeIndex.count(id)
+            || (count > 1 && !unique.insert(id).second))
+            return false;
+    }
+    if(count == 0)
+        return true;
+
+    index=std::min(index, childrenOf(parent).size());
+
+    const size_t at=insertionItem(parent, index);
+    const size_t depth=parent == Root?0:getNode(parent)->depth+1;
+    std::vector<VisibleNode> visible;
+
+    if(at != NoItem && count > 1)
+        visible.reserve(count);
+    for(size_t i=0; i < count; ++i)
+    {
+        const NodeId id=ids[i];
+        Node node;
+
+        node.id=id;
+        node.parent=parent;
+        node.depth=depth;
+        m_nodeIndex.emplace(id, m_nodes.size());
+        m_nodes.push_back(std::move(node));
+        if(at != NoItem && count > 1)
+            visible.push_back({id, depth});
     }
 
-    m_visible.insert(m_visible.begin()+at, {appId, m_nodes.back().depth});
+    // The node store may have moved while the batch was appended.
+    auto &siblings=childrenOf(parent);
 
-    const size_t selected=getSelectedItem();
+    siblings.insert(siblings.begin()+index, ids, ids+count);
+    if(parent != Root)
+        m_nodes[m_nodeIndex.at(parent)].hasChildren=true;
+    if(at != NoItem)
+    {
+        if(count == 1)
+        {
+            const VisibleNode single{ids[0], depth};
 
-    visibleChanged(at, (selected != NoItem && selected >= at)?selected+1:selected);
-    return appId;
+            spliceVisible(at, 0, &single, 1);
+        }
+        else
+            spliceVisible(at, 0, visible);
+    }
+    nodeChanged(parent);
+    return true;
+}
+
+bool TreeTable::isInSubtree(NodeId id, NodeId ancestor) const
+{
+    for(const Node *node=getNode(id); node; node=getNode(node->parent))
+    {
+        if(node->id == ancestor)
+            return true;
+    }
+    return false;
+}
+
+bool TreeTable::removeNode(NodeId id)
+{
+    const Node *node=getNode(id);
+
+    if(!node)
+        return false;
+
+    const NodeId parent=node->parent;
+    auto &siblings=childrenOf(parent);
+    const auto found=std::find(siblings.begin(), siblings.end(), id);
+    const size_t index=static_cast<size_t>(found-siblings.begin());
+    const bool selected=isInSubtree(m_selectedNode, id);
+
+    if(selected)
+        m_selectedNode=index+1 < siblings.size()?siblings[index+1]
+            :index > 0?siblings[index-1]:parent;
+    siblings.erase(found);
+    if(parent != Root)
+        m_nodes[m_nodeIndex.at(parent)].hasChildren=!siblings.empty();
+
+    const size_t item=itemForNode(id);
+
+    if(item != NoItem)
+        spliceVisible(item, subtreeEnd(item)-item, {});
+
+    // Swap/pop just the removed subtree's records, keeping every surviving
+    // id's store lookup current; neither a store rebuild nor a recursive walk.
+    std::vector<NodeId> pending{id};
+
+    while(!pending.empty())
+    {
+        const NodeId next=pending.back();
+        const size_t at=m_nodeIndex.at(next);
+
+        pending.pop_back();
+        const auto &children=m_nodes[at].children;
+
+        pending.insert(pending.end(), children.begin(), children.end());
+        if(at != m_nodes.size()-1)
+        {
+            m_nodes[at]=std::move(m_nodes.back());
+            m_nodeIndex.at(m_nodes[at].id)=at;
+        }
+        m_nodes.pop_back();
+        m_nodeIndex.erase(next);
+    }
+    syncVisibleSelection();
+    nodeChanged(parent);
+    if(selected)
+        selectionEvent();
+    return true;
+}
+
+bool TreeTable::moveNode(NodeId id, NodeId newParent, size_t index)
+{
+    const Node *node=getNode(id);
+
+    if(!node || (newParent != Root && !getNode(newParent)) || isInSubtree(newParent, id))
+        return false;
+
+    const NodeId oldParent=node->parent;
+    auto &old=childrenOf(oldParent);
+    const auto found=std::find(old.begin(), old.end(), id);
+    const size_t oldIndex=static_cast<size_t>(found-old.begin());
+    const size_t finalSize=childrenOf(newParent).size()-(oldParent == newParent?1:0);
+
+    index=std::min(index, finalSize);
+    if(oldParent == newParent && oldIndex == index)
+        return true;
+
+    const int offset=sourceScrollOffset();
+    VirtualList *body=getVirtualBody();
+    const NodeId anchor=nodeForItem(body->firstVisibleItem());
+    const int into=offset%getRowHeight();
+    const size_t item=itemForNode(id);
+
+    if(item != NoItem)
+        spliceVisible(item, subtreeEnd(item)-item, {});
+    old.erase(found);
+    if(oldParent != Root)
+        m_nodes[m_nodeIndex.at(oldParent)].hasChildren=!old.empty();
+
+    const size_t at=insertionItem(newParent, index);
+    auto &siblings=childrenOf(newParent);
+
+    siblings.insert(siblings.begin()+index, id);
+    m_nodes[m_nodeIndex.at(id)].parent=newParent;
+    if(newParent != Root)
+        m_nodes[m_nodeIndex.at(newParent)].hasChildren=true;
+
+    // A moved subtree's hidden nodes need the new depth too, so a later
+    // expansion agrees with a tree built directly at the destination.
+    std::vector<NodeId> pending{id};
+
+    while(!pending.empty())
+    {
+        Node &next=m_nodes[m_nodeIndex.at(pending.back())];
+
+        pending.pop_back();
+        next.depth=next.parent == Root?0:getNode(next.parent)->depth+1;
+        pending.insert(pending.end(), next.children.rbegin(), next.children.rend());
+    }
+    if(at != NoItem)
+    {
+        std::vector<VisibleNode> visible;
+
+        appendVisible(visible, {id});
+        spliceVisible(at, 0, visible);
+    }
+
+    // insert/remove already anchor surviving rows. If the anchor itself was
+    // in the moved subtree, follow its node at its new position as well.
+    const size_t anchorItem=itemForNode(anchor);
+
+    if(anchorItem != NoItem)
+    {
+        const size_t before=body->firstVisibleItem();
+        const uint64_t target=static_cast<uint64_t>(anchorItem)*getRowHeight()+into;
+
+        body->setVerticalScrollOffset(static_cast<int>(std::min<uint64_t>(target, INT_MAX)));
+        m_stripePhase^=(before^body->firstVisibleItem())%2;
+    }
+    syncVisibleSelection();
+    nodeChanged(oldParent);
+    if(oldParent != newParent)
+        nodeChanged(newParent);
+    return true;
+}
+
+void TreeTable::nodeChanged(NodeId id)
+{
+    if(!getNode(id))
+        return;
+
+    // A hidden/offscreen node costs no layout and no binder call. In
+    // particular, building children under an unseen parent never scans the
+    // whole visible index just to discover that it has no row.
+    for(Base *control : getVirtualBody()->getRows())
+    {
+        const size_t item=getVirtualBody()->itemForRow(control);
+
+        if(item != NoItem && nodeForItem(item) == id)
+        {
+            rebindItem(item);
+            if(Canvas *canvas=getCanvas())
+                canvas->hoverMayHaveMoved();
+            return;
+        }
+    }
 }
 
 void TreeTable::setNodeBinder(NodeBinder binder)
@@ -312,6 +532,9 @@ TreeTable::NodeId TreeTable::nodeForItem(size_t item) const
 
 size_t TreeTable::itemForNode(NodeId id) const
 {
+    if(!getNode(id))
+        return NoItem;
+
     const auto found=std::find_if(m_visible.begin(), m_visible.end(),
         [id](const VisibleNode &node) { return node.id == id; });
 
@@ -326,6 +549,34 @@ size_t TreeTable::subtreeEnd(size_t item) const
     while(end < m_visible.size() && m_visible[end].depth > depth)
         ++end;
     return end;
+}
+
+void TreeTable::syncVisibleSelection()
+{
+    syncSourceRows(itemForNode(m_selectedNode), m_stripePhase);
+}
+
+void TreeTable::spliceVisible(size_t at, size_t removed, const std::vector<VisibleNode> &added)
+{
+    spliceVisible(at, removed, added.data(), added.size());
+}
+
+void TreeTable::spliceVisible(size_t at, size_t removed, const VisibleNode *added, size_t count)
+{
+    if(removed == 0 && count == 0)
+        return;
+
+    sourceScrollOffset();
+    VirtualList *body=getVirtualBody();
+    const size_t top=body->firstVisibleItem();
+
+    m_visible.erase(m_visible.begin()+at, m_visible.begin()+at+removed);
+    if(count > 0)
+        m_visible.insert(m_visible.begin()+at, added, added+count);
+    body->removeItems(at, removed);
+    body->insertItems(at, count);
+    m_stripePhase^=(top^body->firstVisibleItem())%2;
+    syncVisibleSelection();
 }
 
 // Iterative preorder, so a hierarchy deeper than the process stack still
@@ -352,15 +603,13 @@ void TreeTable::appendVisible(std::vector<VisibleNode> &into,
 // refresh those alone. Rows before the insertion/removal keep their content.
 // A row bound again in place may show or hide its expander under a resting
 // mouse, so the hover is hit-tested again after the layout.
-// The selection's item is set on both sides of the count, so the count never
-// finds it past its end (which would drop it, with an event): while the old
-// count holds it, and again after (the item past the old count, or none).
+// Bulk expansion can replace the whole projection. Unlike a splice, its
+// unchanged prefix keeps its indexes and only the suffix is bound again.
 void TreeTable::visibleChanged(size_t firstChanged, size_t selected)
 {
-    if(selected < getItemCount())
-        DataTable::setSelectedItem(selected, false);
-    DataTable::setItemCount(m_visible.size());
-    DataTable::setSelectedItem(selected, false);
+    getVirtualBody()->setItemCount(m_visible.size());
+    m_selectedNode=nodeForItem(selected);
+    syncSourceRows(selected, m_stripePhase);
 
     bool rebound=false;
 
@@ -419,8 +668,6 @@ void TreeTable::setExpanded(NodeId id, bool expanded)
         syncExpanders(item+1);
 
         const size_t at=item+1;
-        const size_t selected=getSelectedItem();
-
         if(expanded)
         {
             std::vector<VisibleNode> children;
@@ -428,10 +675,7 @@ void TreeTable::setExpanded(NodeId id, bool expanded)
             appendVisible(children, node.children);
             if(!children.empty())
             {
-                const size_t count=children.size();
-
-                m_visible.insert(m_visible.begin()+at, children.begin(), children.end());
-                visibleChanged(at, (selected != NoItem && selected >= at)?selected+count:selected);
+                spliceVisible(at, 0, children);
             }
         }
         else
@@ -440,23 +684,16 @@ void TreeTable::setExpanded(NodeId id, bool expanded)
 
             if(end > at)
             {
-                size_t moved=selected;
-
                 // a selected descendant hides: the collapsed node takes it
-                if(selected != NoItem && selected >= at && selected < end)
+                if(m_selectedNode != id && isInSubtree(m_selectedNode, id))
                 {
-                    moved=item;
+                    m_selectedNode=id;
                     selectionMoved=true;
                 }
-                else if(selected != NoItem && selected >= end)
-                    moved=selected-(end-at);
-
-                m_visible.erase(m_visible.begin()+at, m_visible.begin()+end);
-                visibleChanged(at, moved);
+                spliceVisible(at, end-at, {});
             }
         }
     }
-
     expansionEvent(id, expanded);
     if(selectionMoved)
         selectionEvent();
@@ -552,27 +789,10 @@ void TreeTable::expandSubtree(NodeId id)
 
         const size_t at=item+1;
         const size_t end=subtreeEnd(item);
-        const NodeId selectedNode=m_selectedNode;
-        size_t selected=getSelectedItem();
         std::vector<VisibleNode> children;
 
         appendVisible(children, getNode(id)->children);
-        m_visible.erase(m_visible.begin()+at, m_visible.begin()+end);
-        m_visible.insert(m_visible.begin()+at, children.begin(), children.end());
-
-        // a node shown before stays shown: one after the subtree shifts, one
-        // inside it is found in the new rows
-        if(selected != NoItem && selected >= end)
-            selected=selected-(end-at)+children.size();
-        else if(selected != NoItem && selected >= at)
-        {
-            for(size_t i=0; i < children.size(); ++i)
-            {
-                if(children[i].id == selectedNode)
-                    selected=at+i;
-            }
-        }
-        visibleChanged(at, selected);
+        spliceVisible(at, end-at, children);
     }
 
     for(NodeId changedId : changed)
@@ -584,6 +804,7 @@ bool TreeTable::setSelectedNode(NodeId id)
     if(id == NoNode)
     {
         DataTable::setSelectedItem(NoItem, false);
+        m_selectedNode=NoNode;
         return true;
     }
 
@@ -593,6 +814,7 @@ bool TreeTable::setSelectedNode(NodeId id)
         return false;
 
     DataTable::setSelectedItem(item, false);
+    m_selectedNode=id;
     return true;
 }
 

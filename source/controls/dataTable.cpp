@@ -939,7 +939,7 @@ void DataTable::restripe()
         {
             const size_t item=itemForRow(row);
 
-            row->setStriped(m_striped && item != NoItem && (item%2) == 1);
+            row->setStriped(m_striped && item != NoItem && ((item+m_sourceStripePhase)%2) == 1);
         }
         return;
     }
@@ -1012,7 +1012,7 @@ void DataTable::bindRow(Base *control, size_t item)
     if(!row)
         return;
 
-    row->setStriped(m_striped && (item%2) == 1);
+    row->setStriped(m_striped && ((item+m_sourceStripePhase)%2) == 1);
     row->setSelected(item == m_selectedItem, false);
 
     if(m_rowBinder)
@@ -1066,6 +1066,40 @@ void DataTable::setRowHeight(int height)
 
     if(m_virtualBody)
         m_virtualBody->setRowHeight(m_rowHeight);
+}
+
+int DataTable::sourceScrollOffset()
+{
+    if(!m_virtualBody)
+        return 0;
+
+    m_virtualBody->takeBarScroll();
+    return m_virtualBody->getVerticalScrollOffset();
+}
+
+void DataTable::syncSourceRows(size_t selected, size_t stripePhase)
+{
+    if(!m_virtualBody)
+        return;
+
+    m_selectedItem=selected < getItemCount()?selected:NoItem;
+    m_sourceStripePhase=stripePhase%2;
+    for(Base *control : m_virtualBody->getRows())
+    {
+        DataTableRow *row=gweni_cast<DataTableRow>(control);
+
+        if(!row)
+            continue;
+
+        const size_t item=itemForRow(row);
+
+        row->setSelected(item != NoItem && item == m_selectedItem, false);
+        // A freed row is about to be hidden or bound to its next node. Leave
+        // its old stripe until that binding rather than clearing it now and
+        // setting it back, which would mark a background that did not change.
+        if(item != NoItem)
+            row->setStriped(m_striped && ((item+m_sourceStripePhase)%2) == 1);
+    }
 }
 
 // The selection is the item: the row showing the old one (if it is on

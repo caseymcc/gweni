@@ -453,6 +453,15 @@ public:
     size_t pageRows() const;
 
 protected:
+    //! A model subclass remapped the VirtualList's items: update the selected
+    //! item and pooled rows' selection/stripes without events or binding.
+    //! stripePhase lets an anchored model keep the stripes on screen when
+    //! an odd run was added/removed above them; ordinary tables use zero.
+    void syncSourceRows(size_t selected, size_t stripePhase=0);
+    //! Takes a vertical bar moved since layout before a model captures its
+    //! scroll anchor (at the old content size).
+    int sourceScrollOffset();
+
     //! Source mode: the selection moved to the item (setSelectedItem, the
     //! row showing it or null): fires onSelectionChange with doEvents. A
     //! subclass that selects something else through the item (a TreeTable's
@@ -512,6 +521,7 @@ private:
 
     RowBinder m_rowBinder;
     size_t m_selectedItem=NoItem;
+    size_t m_sourceStripePhase=0;
     int m_rowHeight=DefaultRowHeight;
 
     int m_sortColumn=-1;

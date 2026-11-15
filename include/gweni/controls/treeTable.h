@@ -98,9 +98,10 @@ private:
 //! the viewport's rows have pooled DataTableRows. Columns, the frozen header,
 //! grips, stripes, borders and sort notifications are DataTable's.
 //!
-//! Build the hierarchy with addNode before showing it. App ids are unique,
-//! stable size_t values, also used as handles; Root denotes no parent and
-//! cannot be a node's id. Sorting and live hierarchy edits are not supported.
+//! App ids are unique, stable size_t values, also used as handles; Root
+//! denotes no parent and cannot be a node's id. Live edits splice the visible
+//! preorder and keep the first shown node anchored, with only changed or
+//! newly shown nodes bound again. Sorting is not yet supported.
 //! A header sort notification leaves the hierarchy in its original order.
 class GWENI_EXPORT TreeTable: public DataTable
 {
@@ -137,8 +138,26 @@ public:
     //! The handle is appId. A duplicate/reserved id or missing parent returns
     //! NoNode and changes nothing. hasChildren may advertise unloaded children.
     NodeId addNode(NodeId parentId, NodeId appId, bool hasChildren=false);
+    //! Inserts before child index (Root: a root), clamped to the end.
+    //! Same id/parent validation and return value as addNode.
+    NodeId insertNode(NodeId parentId, size_t index, NodeId appId);
+    //! Inserts the ids as one run. False on a missing parent, reserved or
+    //! duplicate id (also within ids), changing nothing; empty ids succeeds
+    //! with a valid parent. index is clamped to the end.
+    bool insertNodes(NodeId parentId, size_t index, const std::vector<NodeId> &ids);
+    //! Removes the node and its entire subtree. A removed selection takes
+    //! this subtree's next sibling, previous sibling, then parent (or none),
+    //! firing onSelectionChange once. False for an unknown id.
+    bool removeNode(NodeId id);
+    //! Moves the subtree to index in newParent's children after detaching it
+    //! (Root: the roots), clamped to the end. Expansion and selection stay
+    //! with their nodes, even when hidden at the destination. False for
+    //! unknown nodes/parents or a move into the node or its descendants.
+    bool moveNode(NodeId id, NodeId newParent, size_t index);
+    //! The app's fields changed: bind this node again if on screen.
+    void nodeChanged(NodeId id);
     size_t getNodeCount() const { return m_nodes.size(); }
-    //! Null for an unknown id. The pointer lasts until the next addNode.
+    //! Null for an unknown id. The pointer lasts until the next model edit.
     const Node *getNode(NodeId id) const;
 
     void setNodeBinder(NodeBinder binder);
@@ -164,7 +183,9 @@ public:
     void expandSubtree(NodeId id);
 
     //! The selection is a node: it stays on it across expand, collapse and
-    //! scroll, and moves to the collapsed ancestor when one hides it, firing
+    //! scroll and moves. A move under a collapsed parent keeps the selected
+    //! node with NoItem until it shows again. Collapsing an ancestor moves
+    //! it to that ancestor, firing
     //! onSelectionChange (DataTable's caller) with the id as the info's
     //! `integer` (NoNode for none) and the row showing it, if any, as its
     //! `control`. A click on a row and the row keys select its node, firing
@@ -223,6 +244,19 @@ private:
 
     void appendVisible(std::vector<VisibleNode> &into, const std::vector<NodeId> &children) const;
     size_t subtreeEnd(size_t item) const;
+    std::vector<NodeId> &childrenOf(NodeId parent);
+    //! Where child index of this parent starts in the visible preorder, or
+    //! NoItem when the parent's children are hidden.
+    size_t insertionItem(NodeId parent, size_t index) const;
+    bool isInSubtree(NodeId id, NodeId ancestor) const;
+    //! The single-node path uses a stack id, the batch path the app's ids.
+    bool insertNodes(NodeId parent, size_t index, const NodeId *ids, size_t count);
+    //! Replace only this range; the VirtualList shifts its row associations
+    //! and anchor, then the selection and stripes follow without rebinding
+    //! rows that kept their nodes.
+    void spliceVisible(size_t at, size_t removed, const std::vector<VisibleNode> &added);
+    void spliceVisible(size_t at, size_t removed, const VisibleNode *added, size_t count);
+    void syncVisibleSelection();
     //! The visible rows changed from firstChanged on, and the selected node
     //! is now the item `selected` (or none): the item count, the selection's
     //! item and the pooled rows of the suffix follow.
@@ -242,6 +276,8 @@ private:
     NodeBinder m_nodeBinder;
     int m_treeColumn=0;
     NodeId m_selectedNode=NoNode;
+    //! Keeps the stripes of anchored rows when an odd run changes above them.
+    size_t m_stripePhase=0;
 };
 
 }//namespace controls
