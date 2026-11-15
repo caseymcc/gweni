@@ -2603,6 +2603,7 @@ void SlotRenderer::drawArc(size_t primitiveId, gweni::Rect rect, float startTurn
     setArc(vertexIndex++, x1, y1, +hw, +hh);
 
     cullOutOfRangeQuad(primitiveId, rect);
+    cullClippedQuad(primitiveId);
     markPrimitiveChanges(primitiveId, before);
 }
 

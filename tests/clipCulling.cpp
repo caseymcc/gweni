@@ -15,9 +15,9 @@
  *  after a draw whose box covers it (as a control shown again is drawn in the
  *  region it is in now) it is drawn. A line whose round cap and anti-aliased
  *  rim reach into the box past its segment's end is not culled, and draws what
- *  it draws with the cull off. A trapezoid (style 9) follows a slot in, out
- *  and back in of its box. A box that only touches a slot's edge culls
- *  it, and one reaching a pixel over that edge, on each side, does not (the
+ *  it draws with the cull off. An arc (style 5, kind 9) and a trapezoid (style 9)
+ *  follow a slot in, out and back in of its box. A box that only touches a slot's
+ *  edge culls it, and one reaching a pixel over that edge, on each side, does not (the
  *  shaders' half-open test at pixel centres). A slot culled and drawn again
  *  uploads what it uploads with the cull off: the cull leaves its vertexes as
  *  drawn, so only a moved clip box is sent. A settled frame builds no range. A text run
@@ -429,6 +429,49 @@ TEST_CASE("Clip cull: a line whose cap reaches into its box past the segment's e
     const Frame unculled=draw();
 
     CHECK(unculled.pixels == culled.pixels);
+}
+
+TEST_CASE("Clip cull: an arc drawn out of its box is culled, and drawn again back in it")
+{
+    Guard guard;
+    Primitives prims(1);
+    const size_t id=prims.ids[0];
+
+    const Frame empty=emptyFrame();
+    const size_t culledBefore=stats().primitiveSlotsCulled;
+
+    auto draw=[&](const Rect &clip)
+    {
+        return drawFrame([&](SlotRenderer &renderer)
+            {
+                renderer.setClipRegion(clip);
+                renderer.drawArc(id, Rect(40, 30, 80, 80), 0.125f, 0.75f, 4.0f, white, 1);
+            });
+    };
+
+    const Frame in=draw(inside);
+    const size_t drawnIn=stats().primitiveSlotsDrawn;
+
+    CHECK(in.drawn() > 0);
+    CHECK_FALSE(renderer().primitiveCulled(id));
+    CHECK(stats().primitiveSlotsCulled == culledBefore);
+
+    const Frame out=draw(outside);
+
+    CHECK(renderer().primitiveCulled(id));
+    CHECK(stats().primitiveSlotsCulled == culledBefore+1);
+    CHECK(stats().primitiveSlotsDrawn < drawnIn);
+    CHECK(out.pixels == empty.pixels);
+
+    const Frame back=draw(inside);
+
+    CHECK_FALSE(renderer().primitiveCulled(id));
+    CHECK(stats().primitiveSlotsCulled == culledBefore);
+    CHECK(stats().primitiveSlotsDrawn == drawnIn);
+    CHECK(back.pixels == in.pixels);
+
+    renderer().setClipCulling(false);
+    CHECK(draw(outside).pixels == out.pixels);
 }
 
 TEST_CASE("Clip cull: a trapezoid drawn out of its box is culled, and drawn again back in it")
