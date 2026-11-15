@@ -1307,11 +1307,12 @@ private:
         bool hasArea() const { return (x1 > x0) && (y1 > y0); }
     };
     static QuadBounds quadBounds(const Vertex *vertexes);
-    //! Control opacity (docs/architecture.md → "Control opacity"): each draw
-    //! packs its colours at surfaceOpacity() or textOpacity(), the level the
-    //! render drain set for the control drawing. Glyphs, icons (style 5) and
-    //! images (style 2) take the text level, every other style (and a rule,
-    //! icon kind 6) the surface level (styleLevel()).
+    // Control opacity (docs/architecture.md → "Control opacity"): each draw
+    // packs its colours at surfaceOpacity() or textOpacity(), the level the
+    // render drain set for the control drawing. Glyphs, icons (style 5) and
+    // images (style 2) take the text level, every other style (and a rule,
+    // icon kind 6) the surface level (styleLevel()).
+
     //! The level a slot of \a style draws at (\a kind an icon's, style 5): the
     //! text level for images (2) and icons, the surface level for a rule (an
     //! icon of kind 6) and every other style.
@@ -1677,8 +1678,9 @@ private:
     //! The one renderText, \a spans null for the plain call.
     void renderTextRun(size_t textId, const gweni::Font &font, gweni::Point pos, int zIndex,
         const gweni::String &text, const std::vector<ColorSpan> *spans);
-    //! Writes each glyph's colour (its span's in \a spans, else run.color,
-    //! opaque; run.color alone with \a spans null) into its vertexes, marking for
+    //! Writes each glyph's colour (its span's in \a spans, else run.color;
+    //! run.color alone with \a spans null) into its vertexes, every glyph's alpha
+    //! the run's text level (run.color's alpha, whatever a span's), marking for
     //! the upload only the glyph slots whose colour changed where markChanged is set.
     void colorTextRun(TextRun &run, const TextRunSpans *spans, bool markChanged);
     //! The spans of the text ids whose run has hasSpans set
@@ -1703,7 +1705,8 @@ private:
     //! Grows the text mirrors so the first `glyphSlots` glyph slots exist.
     void ensureTextSlots(size_t glyphSlots);
     //! What the run puts in its font's draw list: (first glyph slot, glyph count),
-    //! or (0, 0) for a hidden or culled run and one with no glyphs, which draw nothing.
+    //! or (0, 0) for a hidden or culled run, one with no glyphs and one at text level 0
+    //! (run.color's alpha 0), which draw nothing.
     static std::pair<size_t, size_t> drawnRange(const TextRun &run);
     //! The run's drawnRange was `before`: if it is not now, its font's draw list is
     //! rebuilt before the next draw. A change of font is setTextRunFont's to mark.

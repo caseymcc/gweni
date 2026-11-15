@@ -1569,6 +1569,14 @@ level made 0 is hidden as well (`SlotRenderer::clearAtLevel`, read in both place
 (`drawnRange`). A level-0 control still lays out, hit-tests and
 takes the focus: `hide()` removes a control.
 
+**A look drawn over itself shows its seam.** Per-element alpha blends every slot on
+its own, so where a control's look is one slot drawn over another's edge, the edge
+shows through it below level 1: a selected notebook tab reaches over its page
+frame's border ("Notebook tabs"), and at 0.5 that border is a faint line across the
+tab's base, where at 1 the tab and the frame are one outline. Group opacity, ruled
+out above, would hide it; under per-element alpha the skin would have to draw such a
+join without the overlap.
+
 **Skin Controls that keep what they drew.** A level change marks
 `Background|Text`, which a Control that draws again only what its own look says
 changed would pass over. Those hold a `skin::textured::DrawnOpacity`, the levels they
