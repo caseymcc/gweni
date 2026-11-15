@@ -494,13 +494,15 @@ class VirtualList;
 //! as rows are bound to other items, and is hidden while it is out of view.
 //! A move or a scroll frame calls neither function.
 //!
-//! A null keyOf or indexOf keys each item by its index (key i is item i),
-//! which is no stable key: it holds only while no item is inserted or removed
-//! above the dragged one. After such an edit the dragged index is moved by
-//! arithmetic (insertItems/removeItems) but a list change that asks indexOf
-//! (setItemCount, refresh) and the drop find the item now at the old index,
-//! so the drop reports another item. Pass both for a list that changes while
-//! a drag is live.
+//! A null keyOf and indexOf key each item by its index (key i is item i).
+//! Each falls back on its own (a null keyOf gives the index as the key, a
+//! null indexOf reads a key as an index), so pass both or neither: one alone
+//! mixes the app's keys with indexes. An index is no stable key: it holds
+//! only while no item is inserted or removed above the dragged one. After
+//! such an edit the dragged index is moved by arithmetic (insertItems/
+//! removeItems) but a list change that asks indexOf (setItemCount, refresh)
+//! and the drop find the item now at the old index, so the drop reports
+//! another item. Pass both for a list that changes while a drag is live.
 class GWENI_EXPORT VirtualListReorder: public Reorderable
 {
 public:
