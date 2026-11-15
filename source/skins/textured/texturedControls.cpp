@@ -223,9 +223,16 @@ void Canvas::update(renderer::Base *renderer, controls::Base *baseControl)
     if(m_primitives.empty())
         return;
 
-    // Full-window background: flat Tokyo Night base color (no rounding).
-    renderer->setDrawColor(tokyonight::Bg);
-    renderer->drawFilledRect(m_primitives[0], baseControl->getRenderBounds(), baseControl->getZIndex());
+    // the whole canvas in the Canvas surface, or nothing with its background
+    // off again (Canvas::setDrawBackground), where an app's own scene shows
+    if(baseControl->shouldDrawBackground() && baseControl->visible())
+    {
+        const tokyonight::Surface &surface=tokyonight::Canvas;
+        renderer->drawRoundedRect(m_primitives[0], baseControl->getRenderBounds(), surface.radius,
+            surface.borderWidth, surface.top, surface.bottom, surface.border, baseControl->getZIndex());
+    }
+    else
+        renderer->hidePrimitive(m_primitives[0]);
 }
 
 ///////////////////////////////////////////////////////////////////////////

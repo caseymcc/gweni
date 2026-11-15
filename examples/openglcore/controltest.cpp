@@ -2055,8 +2055,6 @@ static gweni::controls::Canvas *createCanvas(gweni::skin::Base *skin, const gwen
     gweni::controls::Canvas *canvas=new gweni::controls::Canvas(skin);
     canvas->setScale(scale);
     canvas->setSize(size.x, size.y);
-    canvas->setDrawBackground(true);
-    canvas->setBackgroundColor(gweni::skin::textured::tokyonight::Canvas.top);
     if(g_statsOverlay)
         gweni::tools::StatsOverlay::open(canvas);
     return canvas;

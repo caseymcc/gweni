@@ -52,8 +52,8 @@ Canvas::Canvas(skin::Base *skin): ParentClass()
 
     setBounds(0, 0, 10000, 10000);
     setScale(1.0f);
-    setBackgroundColor(Color(255, 255, 255, 255));
-    setDrawBackground(false);
+    // no background of its own unless asked (setDrawBackground)
+    m_drawBackground=false;
 
     if(skin)
         setSkin(skin);
@@ -452,12 +452,6 @@ void Canvas::renderCanvas()
     // nothing on it changed
     m_needsRedraw=false;
 
-    if(m_drawBackground && (m_stateChange != StateChange_Nothing))
-    {
-        render->setDrawColor(m_backgroundColor);
-//        render->drawFilledRect(m_primitiveIds[0], getRenderBounds(), getZIndex());
-    }
-
     const ChangeStats before=getChangeStats();
 
     {
@@ -491,8 +485,17 @@ void Canvas::renderPendingControls()
     drainRenderQueue(m_skin, m_zClamped, size_t(m_zHigh)/size_t(1+m_zGap));
 }
 
-void Canvas::render(skin::Base * /*render*/)
+void Canvas::render(skin::Base *skin)
 {
+    const bool hasSlot=m_skinControl && !m_skinControl->getPrimitives().empty();
+
+    // a canvas whose background was never on draws, takes and counts nothing
+    if(!shouldDrawBackground() && !hasSlot)
+        return;
+    // turned on after the canvas was created: the slot is taken now
+    if(m_skinControl && !hasSlot && !(getStateChange()&StateChange_Created))
+        m_skinControl->generate(m_skin->getRenderer(), this);
+    ParentClass::render(skin);
 }
 
 void Canvas::doThink()

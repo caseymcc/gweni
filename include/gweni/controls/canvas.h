@@ -356,7 +356,9 @@ public:
         return stale;
     }
 
-    // Internal. Do not call directly.
+    /// Internal. Do not call directly. Draws the background with the skin's
+    /// Canvas renderer while it is on; a canvas whose background was never on
+    /// takes no slot, renders nothing and counts in no ChangeStats.
     void render(skin::Base *render) override;
 
     /// Child panels call parent->getCanvas() until they get to
@@ -784,20 +786,23 @@ public:
     }
     /// \}
 
-    // Background
-    virtual void setBackgroundColor(const gweni::Color &color)
+    /// Whether the canvas fills itself with the skin's background (the
+    /// textured skin's `Canvas` surface, a theme's `"Canvas"`), off by default.
+    /// Off, what the target was cleared to, or an app's own scene drawn into
+    /// it, shows wherever no control draws (gweni as a HUD,
+    /// docs/architecture.md -> "gweni over an app's scene"); the canvas takes
+    /// its slot the first time it is turned on and hides it when it is turned
+    /// off again. A change marks the canvas. The colour is the theme's: there
+    /// is no colour of the canvas's own.
+    void setDrawBackground(bool draw)
     {
-        m_backgroundColor=color;
+        if(draw != shouldDrawBackground())
+            setShouldDrawBackground(draw);
     }
 
-    virtual void setDrawBackground(bool bShouldDraw)
+    bool drawsBackground()
     {
-        m_drawBackground=bShouldDraw;
-    }
-
-    virtual const gweni::Color &getBackgroundColor() const
-    {
-        return m_backgroundColor;
+        return shouldDrawBackground();
     }
 
 protected:
@@ -1000,9 +1005,6 @@ protected:
     /// The current pass's entries not counted and counted, for passOnlyExcluded().
     size_t m_passExcludedEntries=0;
     size_t m_passCountedEntries=0;
-
-    bool m_drawBackground;
-    gweni::Color m_backgroundColor;
 
     /// The shown popup and its anchor; m_popupIsMenu when it is a context
     /// menu, then also m_contextMenu.

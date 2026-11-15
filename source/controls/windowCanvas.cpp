@@ -155,12 +155,6 @@ void WindowCanvas::renderCanvas()
         render->setRenderOffset(Point(-getX(), -getY()));
         render->setScale(scale());
 
-        if(m_drawBackground)
-        {
-            render->setDrawColor(m_backgroundColor);
-//            render->drawFilledRect(m_primitiveIds[0], getRenderBounds(), getZIndex());
-        }
-
         {
             // the walk only draws: a tree change from here on is reported
             RenderWalkScope walk;

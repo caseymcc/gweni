@@ -688,8 +688,6 @@ int main(int argc, char *argv[])
     gweni::controls::Canvas *canvas=new gweni::controls::Canvas(skin);
     canvas->setScale(1.0f);
     canvas->setSize(size.x, size.y);
-    canvas->setDrawBackground(true);
-    canvas->setBackgroundColor(background);
 
     bench::SceneContext sceneCtx;
     sceneCtx.canvas=canvas;
