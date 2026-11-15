@@ -4888,8 +4888,11 @@ two programs and the draws. What follows describes both together:
     character a separator shown as it is. A pattern is a date's (year, month and day)
     or a time's (an hour, the minute, AP exactly with a 12-hour hour), each section
     once and a separator between two, and a DateEdit takes only a date's and a
-    TimeEdit only a time's (`formatAllowed`); anything else is refused, the format
-    kept. The section under the caret is found from the text as typed, not from the
+    TimeEdit only a time's (`formatAllowed`); a time's hour comes before its minute
+    and AP last, the order the parse reads, so a field can read back what it shows
+    (`mm:HH` and `AP h:mm` are refused); anything else is refused, the format kept. A
+    date's year is 1..9999 whatever the range (`clampValue`), so it fits the four
+    digits of the width, and a typed year of five digits is no date. The section under the caret is found from the text as typed, not from the
     format: its alphanumeric runs, the caret in a run or at its end being in it and one
     between two in the next (`sectionAt`), so it works on half-typed text too.
   - *Stepping.* Up and Down step that section by one, wrapping inside it with no carry
@@ -4903,7 +4906,11 @@ two programs and the draws. What follows describes both together:
     or down, so a typed 07 steps to 15 or 0 by 15 and stays 07 until stepped. A step
     whose value the range clamps back, or that the filter refuses, goes on in its
     direction (a weekday-only field steps Friday to Monday; at a limit a day wraps
-    round to the range's other end), and changes nothing when no value is taken. A or
+    round to the range's other end), and changes nothing when no value is taken. A
+    year or month step goes on from the day it began with, clamped only for the value
+    tried, so a weekday-only January 30 refused on February 28 goes to March 30, not
+    March 28. A step from empty searches on a day at a time (a minute step for a time)
+    from `setToday`'s value to the first the filter takes, whatever the section. A or
     P typed in the AP section sets it. The caret stays in its section, as far into it
     as it was. Typed text is read before a step, so Up after typing steps what was
     typed.
@@ -4924,7 +4931,8 @@ two programs and the draws. What follows describes both together:
     each digit place the widest digit, AP the wider of AM and PM, the separators, the
     padding, a unit for the caret and the children docked Left or Right (the calendar
     button), reported as its request (`requestedSizeExtra(X)`), so a parent placing it
-    by its request gets that width too and a width the app asks for is not used. So a
+    by its request gets that width too and a width the app asks for is not used; the
+    measure is kept for the font and the renderer's `textLayoutSerial()`. So a
     new value never resizes the box, and with its Text keeping its layout for a string
     of the same size (`setSameSizeKeepsLayout`) a step that keeps the string's width, a
     digit for a digit in a face whose digits are one width, lays nothing out and

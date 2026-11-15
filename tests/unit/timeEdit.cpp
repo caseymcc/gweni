@@ -19,7 +19,8 @@
  *  Escape. setRange clamping a typed and a stepped time. Empty allowed and
  *  not. The minute step: Up and Down by it to its next multiple, a typed
  *  minute kept. onValueChanged once per real change by the user, never from
- *  setTime, setRange, setTwelveHour or setMinuteStep.
+ *  setTime, setRange, setTwelveHour or setMinuteStep. A format the parse
+ *  cannot read back (the minute before the hour, AP not last) refused.
  */
 #include "headlessFixture.h"
 
@@ -319,4 +320,22 @@ TEST_CASE("TimeEdit: the minute step")
     edit->setMinuteStep(7);
     CHECK(edit->getMinuteStep() == 7);
     CHECK(scene.events.count == 9);
+}
+
+TEST_CASE("TimeEdit: a format the parse cannot read back is refused")
+{
+    Scene scene;
+    TimeEdit *edit=scene.edit;
+
+    edit->setTime(TimeOfDay(14, 30));
+    // the minute before the hour, AP before the time
+    CHECK_FALSE(edit->setFormat("mm:HH"));
+    CHECK_FALSE(edit->setFormat("AP h:mm"));
+    CHECK_FALSE(edit->setFormat("h AP mm"));
+    CHECK(edit->getFormat() == "HH:mm");
+    CHECK(edit->setFormat("h:mm AP"));
+    CHECK(edit->setFormat("h.mm AP"));
+    CHECK(edit->getText() == "2.30 PM");
+    CHECK(edit->setFormat("H:mm"));
+    CHECK(scene.events.count == 0);
 }

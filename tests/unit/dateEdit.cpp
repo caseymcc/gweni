@@ -25,6 +25,10 @@
  *  change by the user, never from setDate, setRange, setFormat or the filter.
  *  The calendar button inside the field's padding, at its height; disabled
  *  with the field and while it is read-only, when nothing opens the calendar.
+ *  A filtered month or year step going on from the day it began with (Jan 30
+ *  to Mar 30, not Mar 28), a step from empty searching on by day in the year
+ *  section too, years held to 1..9999 (set, stepped and typed), and a new
+ *  renderer text layout measuring the format's width again.
  */
 #include "headlessFixture.h"
 
@@ -600,4 +604,72 @@ TEST_CASE("DateEdit: read-only, the calendar does not open and the date stays")
     scene.caretAt(3);
     scene.key(keys::F4);
     CHECK(edit->isCalendarOpen());
+}
+
+TEST_CASE("DateEdit: a filtered month step goes on from the day it began with")
+{
+    Scene scene;
+    DateEdit *edit=scene.edit;
+
+    // 2026-01-30 is a Friday; a month on is Feb 28 (a Saturday, refused),
+    // then March 30 (a Monday), not March 28 (a Saturday too)
+    edit->setDate(Date(2026, 1, 30));
+    edit->setDateFilter(weekday);
+    CHECK(scene.step(5, keys::Up) == "2026-03-30");
+    CHECK(scene.events.count == 1);
+    // and a year step: 2027-01-30 is a Saturday, 2028-01-30 a Sunday,
+    // 2029-01-30 a Tuesday
+    edit->setDate(Date(2026, 1, 30));
+    CHECK(scene.step(2, keys::Up) == "2029-01-30");
+}
+
+TEST_CASE("DateEdit: a step from empty searches on by day")
+{
+    Scene scene;
+    DateEdit *edit=scene.edit;
+
+    edit->setAllowEmpty(true);
+    edit->setDate(std::nullopt);
+    edit->setDateFilter(weekday);
+    // 2026-11-14 is a Saturday: the step shows the Monday after it, whichever
+    // section the caret is in (an ISO field's first is the year)
+    edit->setToday(Date(2026, 11, 14));
+    CHECK(scene.step(0, keys::Up) == "2026-11-16");
+    CHECK(scene.events.count == 1);
+}
+
+TEST_CASE("DateEdit: a year is 1..9999")
+{
+    Scene scene;
+    DateEdit *edit=scene.edit;
+
+    edit->setDate(Date(-1, 6, 1));
+    CHECK(edit->getText() == "0001-01-01");
+    edit->setDate(Date(10000, 1, 1));
+    CHECK(edit->getText() == "9999-12-31");
+    // past the last year a step changes nothing; a five-digit year is no date
+    CHECK(scene.step(2, keys::Up) == "9999-12-31");
+    CHECK(scene.enter("20261-01-01") == "9999-12-31");
+    edit->setDate(Date(1, 1, 1));
+    CHECK(scene.step(2, keys::Down) == "0001-01-01");
+    CHECK(scene.events.count == 0);
+}
+
+TEST_CASE("DateEdit: a new text layout measures the format's width again")
+{
+    Scene scene;
+    DateEdit *edit=scene.edit;
+
+    // the same font and format: the cached width, no measure of the format
+    edit->invalidate();
+    size_t before=scene.renderer.measures;
+    scene.frame();
+    const size_t cached=scene.renderer.measures-before;
+
+    edit->invalidate();
+    scene.renderer.changeTextLayout();
+    before=scene.renderer.measures;
+    scene.frame();
+    // the format's ten samples and AM/PM's two measured again
+    CHECK(scene.renderer.measures-before >= cached+10);
 }

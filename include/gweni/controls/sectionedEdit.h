@@ -34,7 +34,10 @@ namespace internal
 //! is a date (a year, a month and a day, nothing of a time) or a time (an
 //! hour and the minute, AP exactly with a 12-hour hour, nothing of a date),
 //! each section once: "YYYY-MM-DD", "DD/MM/YYYY", "M/D/YYYY", "HH:mm",
-//! "h:mm AP". Anything else is refused, keeping the format it had.
+//! "h:mm AP". A time's hour comes before its minute and AP last, the order
+//! the parse reads ("mm:HH" and "AP h:mm" are refused). Anything else is
+//! refused, keeping the format it had. A date's year is 1..9999 whatever
+//! the range (clampValue()), so it fits the format's four digits.
 //!
 //! **Stepping.** Up and Down step the section the caret is in (sectionAt())
 //! by one, wrapping inside the section with no carry, as QDateTimeEdit does:
@@ -48,15 +51,18 @@ namespace internal
 //! year in a date's day and month sections, ten years in its year section,
 //! ten minutes (rounded up to a multiple of the minute step) in the minute
 //! section, twelve hours in the hour and AP sections. A step from an empty
-//! field shows setEmptyStepValue() (clamped) instead. A step whose value the
+//! field shows setEmptyStepValue() (clamped) instead, or the first day (a
+//! time: minute step) after it acceptsValue() takes. A step whose value the
 //! range clamps or acceptsValue() refuses is taken further in its direction
-//! until one is accepted, or not at all if none is.
+//! until one is accepted, or not at all if none is; a year or month step
+//! goes on from the day it began with, so January 30 refused on February 28
+//! tries March 30.
 //!
 //! **The parse** is lenient. A date's digits are three groups split by
 //! anything that is no digit, read in the format's order of year, month and
 //! day ("2026-11-1" for YYYY-MM-DD, "11/1/2026" for M/D/YYYY), or one group
 //! of 8 (or 6) digits split at the format's widths ("20261101"); a year of
-//! one or two digits is in 2000-2099. A time is TimeOfDay::fromText's
+//! one or two digits is in 2000-2099, and one of five or more is no date. A time is TimeOfDay::fromText's
 //! ("1430", "2:30 pm"), in either clock. A letter in a date is no date.
 //! A parsed value is clamped to setFieldRange(); one acceptsValue() refuses,
 //! and text that is no value, revert to the last value, as Escape does when
@@ -248,8 +254,10 @@ protected:
     bool m_allowEmpty=false;
     int m_minuteStep=1;
 
-    //! formatWidth()'s measure, for the font and format it was taken in.
+    //! formatWidth()'s measure, for the font, format and renderer text layout
+    //! (textLayoutSerial()) it was taken in.
     const gweni::Font *m_widthFont=nullptr;
+    unsigned m_widthSerial=0;
     int m_width=-1;
     //! The box's width from its last X measure: the format's, the padding,
     //! the caret and the docked children; -1 before it.

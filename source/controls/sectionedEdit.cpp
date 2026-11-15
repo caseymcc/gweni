@@ -89,6 +89,10 @@ bool isBlank(const String &text)
     return text.find_first_not_of(" \t") == String::npos;
 }
 
+// a date field's years: the format's four digits
+constexpr Date MinDate(1, 1, 1);
+constexpr Date MaxDate(9999, 12, 31);
+
 void clampDay(Date &date)
 {
     const int last=Date::daysInMonth(date.year, date.month);
@@ -114,6 +118,8 @@ bool SectionedEdit::setFormat(const String &pattern)
     std::vector<Section> sections;
     std::vector<Piece> pieces;
     bool hasKind[7]={};
+    int hourAt=-1;
+    int minuteAt=-1;
     size_t i=0;
 
     while(i < pattern.size())
@@ -137,6 +143,10 @@ bool SectionedEdit::setFormat(const String &pattern)
             if(hasKind[kind] || (!pieces.empty() && (pieces.back().section >= 0)))
                 return false;
             hasKind[kind]=true;
+            if(found->kind == SectionKind::Minute)
+                minuteAt=static_cast<int>(sections.size());
+            else if((found->kind == SectionKind::Hour24) || (found->kind == SectionKind::Hour12))
+                hourAt=static_cast<int>(sections.size());
             pieces.push_back({static_cast<int>(sections.size()), String()});
             sections.push_back({found->kind, found->digits});
             i+=std::char_traits<char>::length(found->text);
@@ -169,6 +179,12 @@ bool SectionedEdit::setFormat(const String &pattern)
         if(has(SectionKind::Hour24) == has(SectionKind::Hour12))
             return false;
         if(!has(SectionKind::Minute) || (has(SectionKind::AmPm) != has(SectionKind::Hour12)))
+            return false;
+        // the order TimeOfDay::fromText reads: the hour before the minute,
+        // AP after both, so the field can read back what it shows
+        if(hourAt > minuteAt)
+            return false;
+        if(has(SectionKind::AmPm) && (sections.back().kind != SectionKind::AmPm))
             return false;
     }
 
@@ -228,11 +244,21 @@ void SectionedEdit::setMinuteStep(int step)
 
 SectionedEdit::Value SectionedEdit::clampValue(const Value &value) const
 {
-    if(m_min && (value < *m_min))
-        return *m_min;
-    if(m_max && (*m_max < value))
-        return *m_max;
-    return value;
+    Value clamped=value;
+
+    if(m_min && (clamped < *m_min))
+        clamped=*m_min;
+    if(m_max && (*m_max < clamped))
+        clamped=*m_max;
+    // a date's year is 1..9999 whatever the range: the format's 4 digits
+    if(m_dateFormat)
+    {
+        if(clamped.date < MinDate)
+            clamped.date=MinDate;
+        else if(MaxDate < clamped.date)
+            clamped.date=MaxDate;
+    }
+    return clamped;
 }
 
 String SectionedEdit::formatValue(const std::optional<Value> &value) const
@@ -334,7 +360,7 @@ std::optional<SectionedEdit::Value> SectionedEdit::parse(const String &text) con
         const String &group=groups[i];
         const bool year=(m_sections[i].kind == SectionKind::Year);
 
-        if(group.size() > (year?9u:2u))
+        if(group.size() > (year?4u:2u))
             return std::nullopt;
 
         int number=std::atoi(group.c_str());
@@ -444,8 +470,16 @@ bool SectionedEdit::stepSection(int direction, bool large)
     {
         Value start=clampValue(m_emptyStepValue);
 
+        // a date searched a day at a time (the filter refuses days), a time
+        // a minute step at a time
         for(int i=0; (i < 1000) && !acceptsValue(start); ++i)
-            start=clampValue(stepValue(start, m_sections[0].kind, 1, false));
+        {
+            if(m_dateFormat)
+                start.date=start.date.addDays(1);
+            else
+                start=stepValue(start, SectionKind::Minute, 1, false);
+            start=clampValue(start);
+        }
         return acceptsValue(start) && userSetValue(start);
     }
 
@@ -455,11 +489,22 @@ bool SectionedEdit::stepSection(int direction, bool large)
 
     // on in the step's direction until a value the range and the filter take,
     // or back where it began
+    // a year or month step goes on from the day it began with, clamped to
+    // each month's last only for the value tried: Jan 30 refused on Feb 28
+    // tries Mar 30, not Mar 28
+    const bool keepDay=(kind == SectionKind::Year) || (kind == SectionKind::Month);
+
     for(int i=0; i < 1000; ++i)
     {
         stepped=stepValue(stepped, kind, direction, large);
+        if(keepDay)
+            stepped.date.day=current.date.day;
 
-        const Value clamped=clampValue(stepped);
+        Value tried=stepped;
+
+        clampDay(tried.date);
+
+        const Value clamped=clampValue(tried);
 
         if((clamped != current) && acceptsValue(clamped))
             return userSetValue(clamped);
@@ -632,7 +677,10 @@ void SectionedEdit::setFont(const gweni::Font &font)
 
 int SectionedEdit::formatWidth()
 {
-    if((m_width >= 0) && (m_widthFont == &getFont()))
+    const renderer::Base *renderer=getSkin()?getSkin()->getRenderer():nullptr;
+    const unsigned serial=renderer?renderer->textLayoutSerial():0;
+
+    if((m_width >= 0) && (m_widthFont == &getFont()) && (m_widthSerial == serial))
         return m_width;
 
     const gweni::Font &font=getFont();
@@ -657,6 +705,7 @@ int SectionedEdit::formatWidth()
     }
 
     m_widthFont=&font;
+    m_widthSerial=serial;
     m_width=width;
     return width;
 }
