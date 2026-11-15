@@ -2644,13 +2644,16 @@ void RichText::update(renderer::Base *renderer, controls::Base *baseControl)
 
     for(const text::RichPiece &piece:pieces)
     {
-        if(spans[piece.span].style&controls::RichSpan::Code)
+        const unsigned style=spans[piece.span].style;
+
+        if(style&(controls::RichSpan::Code|controls::RichSpan::Placeholder))
         {
             gweni::Rect box=piece.box();
 
             box.x+=origin.x;
             box.y+=origin.y;
-            wants.push_back({ false, box, tokyonight::RichTextCode, gweni::Color(), z });
+            wants.push_back({ false, box, (style&controls::RichSpan::Placeholder)?
+                tokyonight::MarkdownImagePlaceholder:tokyonight::RichTextCode, gweni::Color(), z });
         }
     }
     for(const text::RichPiece &piece:pieces)
@@ -2739,6 +2742,89 @@ void MarkdownQuote::update(renderer::Base *renderer, controls::Base *baseControl
 
     bar.w=std::min(bar.w, controls::internal::MarkdownQuote::BarWidth);
     tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::MarkdownQuoteBar, bar);
+}
+
+void MarkdownCodeBlock::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::MarkdownCodeBlock);
+}
+
+void MarkdownTable::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    controls::internal::MarkdownTable *table=static_cast<controls::internal::MarkdownTable *>(baseControl);
+    const std::vector<int> &columns=table->getColumnEdges();
+    const std::vector<int> &rows=table->getRowEdges();
+    const bool visible=table->visible() && (columns.size() > 1) && (rows.size() > 1);
+    const unsigned int stateChange=table->getStateChange();
+    const bool all=(stateChange&(controls::StateChange_Geometry|controls::StateChange_Visibility
+        |controls::StateChange_Created)) != 0;
+    const Rect &bounds=table->getRenderBounds();
+    const int z=table->getZIndex();
+    const int border=controls::internal::MarkdownTable::Border;
+
+    struct Want
+    {
+        bool rule;
+        bool vertical;
+        Rect rect;
+    };
+    std::vector<Want> wants;
+
+    if(visible)
+    {
+        const int left=bounds.x+columns.front();
+        const int right=bounds.x+columns.back()+border;
+        const int top=bounds.y+rows.front();
+        const int bottom=bounds.y+rows.back()+border;
+
+        // the header row inside its lines
+        wants.push_back({ false, false, Rect(left+border, top+border, right-left-2*border,
+            rows[1]-rows[0]-border) });
+        // a rule runs through the middle of its quad, which reaches one unit
+        // past its line on both sides (as a Separator's)
+        for(int y:rows)
+            wants.push_back({ true, false, Rect(left, bounds.y+y-1, right-left, border+2) });
+        for(int x:columns)
+            wants.push_back({ true, true, Rect(bounds.x+x-1, top, border+2, bottom-top) });
+    }
+
+    resizePlotPrimitives(renderer, m_primitives, wants.size());
+    m_drawn.resize(wants.size());
+
+    const tokyonight::Surface &header=tokyonight::MarkdownTableHeader;
+    const Color line=tokyonight::MarkdownTableBorder.top;
+
+    for(size_t i=0; i < wants.size(); ++i)
+    {
+        const Want &want=wants[i];
+        Drawn &drawn=m_drawn[i];
+        const int wantZ=want.rule?z+1:z;
+
+        if(!all && drawn.valid && drawn.shown && (drawn.rule == want.rule) && (drawn.vertical == want.vertical)
+            && (drawn.rect == want.rect) && (drawn.zIndex == wantZ)
+            && (want.rule?(drawn.color == line):sameSurface(drawn.surface, header)))
+            continue;
+
+        if(want.rule)
+            renderer->drawIcon(m_primitives[i], want.rect, 6, want.vertical?1:0, line, wantZ);
+        else
+            renderer->drawRoundedRect(m_primitives[i], want.rect, header.radius, header.borderWidth,
+                header.top, header.bottom, header.border, wantZ);
+        drawn.valid=true;
+        drawn.shown=true;
+        drawn.rule=want.rule;
+        drawn.vertical=want.vertical;
+        drawn.rect=want.rect;
+        drawn.surface=header;
+        drawn.color=line;
+        drawn.zIndex=wantZ;
+    }
+}
+
+void MarkdownTable::remove(renderer::Base *renderer, controls::Base *baseControl)
+{
+    m_drawn.clear();
+    releasePrimitives(renderer);
 }
 
 
@@ -5897,6 +5983,8 @@ template class ControlRegister<Timeline>;
 template class ControlRegister<RichText>;
 template class ControlRegister<MarkdownRule>;
 template class ControlRegister<MarkdownQuote>;
+template class ControlRegister<MarkdownCodeBlock>;
+template class ControlRegister<MarkdownTable>;
 template class ControlRegister<ColorLerpBox>;
 template class ControlRegister<ColorSlider>;
 template class ControlRegister<ColorDisplay>;

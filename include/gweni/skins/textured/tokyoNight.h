@@ -421,6 +421,15 @@ inline Surface RichTextSelection{ Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), 
 inline Surface MarkdownRule    { Line,                  Line,                  Line,  0.0f,     0.0f };
 // A Markdown block quote's bar down its left edge.
 inline Surface MarkdownQuoteBar{ Line,                  Line,                  Line,  1.5f,     0.0f };
+// A Markdown code block's background.
+inline Surface MarkdownCodeBlock{ BgDark,               BgDark,                BgHighlight, RadiusSm, BorderW };
+// A Markdown table's header row, and the lines round and between its cells
+// (flat, so only top is read, as a rule's colour).
+inline Surface MarkdownTableHeader{ BgHighlight,        BgHighlight,           BgHighlight, 0.0f, 0.0f };
+inline Surface MarkdownTableBorder{ Line,               Line,                  Line,  0.0f,     0.0f };
+// What stands in for a Markdown image not shown: a box a shade over the
+// panel, bordered, under its alt text.
+inline Surface MarkdownImagePlaceholder{ Surf,          Surf,                  Line,  RadiusSm, BorderW };
 
 // gweni::tools::StatsOverlay's panel, in the canvas's corner: translucent, so
 // the app's fills show dimly through it.
@@ -601,6 +610,8 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"StatsOverlay",&StatsOverlay},
         {"RichTextCode",&RichTextCode},{"RichTextSelection",&RichTextSelection},
         {"MarkdownRule",&MarkdownRule},{"MarkdownQuoteBar",&MarkdownQuoteBar},
+        {"MarkdownCodeBlock",&MarkdownCodeBlock},{"MarkdownTableHeader",&MarkdownTableHeader},
+        {"MarkdownTableBorder",&MarkdownTableBorder},{"MarkdownImagePlaceholder",&MarkdownImagePlaceholder},
         {"DropIndicator",&DropIndicator},{"DragSource",&DragSource},
         {"DragNumber",&DragNumber},{"DragNumberHover",&DragNumberHover},{"DragNumberFocus",&DragNumberFocus},
         {"DragNumberDown",&DragNumberDown},{"DragNumberDisabled",&DragNumberDisabled},

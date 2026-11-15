@@ -908,6 +908,53 @@ public:
     inline static const std::string_view name="MarkdownQuote";
 };
 
+// A Markdown code block (controls::internal::MarkdownCodeBlock): [0] its
+// background, the MarkdownCodeBlock surface over its bounds.
+class MarkdownCodeBlock:public textured::ControlRegister<MarkdownCodeBlock>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="MarkdownCodeBlock";
+};
+
+// A Markdown table (controls::internal::MarkdownTable): [0] the header row's
+// background (MarkdownTableHeader) inside its lines, then a line per row edge
+// across the columns and one per column edge down the rows, each an icon of
+// kind 6 (a Separator's rule) in MarkdownTableBorder's top colour at
+// getZIndex()+1, over the header. The slot list follows the row and column
+// counts, and a slot is drawn again only when its rect, look or z moved, so a
+// cell's edit that keeps the grid writes none of them.
+class MarkdownTable:public textured::ControlRegister<MarkdownTable>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 0; }
+    size_t depthLayers() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="MarkdownTable";
+
+private:
+    struct Drawn
+    {
+        bool valid=false;
+        bool shown=false;
+        bool rule=false;
+        bool vertical=false;
+        Rect rect;
+        tokyonight::Surface surface{};
+        Color color;
+        int zIndex=0;
+    };
+    std::vector<Drawn> m_drawn;
+};
+
 // A NodeGraph: [0] its backdrop (GraphGrid's fill, over the render bounds) and
 // [1] its grid at getZIndex()+1 over it, one drawGrid over the render bounds: a
 // line every NodeGraph::gridStep() graph units from the graph's origin on each

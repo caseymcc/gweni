@@ -33,7 +33,10 @@ struct GWENI_EXPORT RichSpan
         Italic=2,       //!< its italic face (with Bold, its bold italic one)
         Code=4,         //!< the skin's mono face, on the RichTextCode surface
         Strike=8,       //!< a line through the text
-        Underline=16    //!< a line under the text
+        Underline=16,   //!< a line under the text
+        //! Something not shown in its place (a Markdown image's alt text): on
+        //! the MarkdownImagePlaceholder surface, padded as Code is
+        Placeholder=32
     };
 
     gweni::String text;
@@ -82,7 +85,7 @@ public:
 
 public:
 
-    //! Room a Code span's background takes either side of its text
+    //! Room a Code or Placeholder span's background takes either side of its text
     static constexpr int CodePadding=3;
 
     void setSpans(std::vector<RichSpan> spans);

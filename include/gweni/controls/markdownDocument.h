@@ -10,8 +10,10 @@
 
 #include <gweni/controls/base.h>
 #include <gweni/controls/richText.h>
+#include <gweni/controls/scrollControl.h>
 #include <gweni/text/markdown.h>
 
+#include <functional>
 #include <vector>
 
 namespace gweni
@@ -20,6 +22,13 @@ namespace controls
 {
 
 class MarkdownDocument;
+
+//! A code block's colours: the spans its text (in the language the fence
+//! names, empty for none) is shown as. Their texts, in order, must make up
+//! the code exactly, else it is shown plain; a span's Code bit is dropped
+//! (the block is already in the mono face, on its own background).
+using MarkdownHighlighter=std::function<std::vector<RichSpan>(const gweni::String &language,
+    const gweni::String &code)>;
 
 namespace internal
 {
@@ -111,11 +120,133 @@ public:
 public:
     void setBlock(const text::MarkdownBlock &block) override;
     //! The RichText spans a Markdown block's spans are shown as: the style
-    //! bits as they are, a url a link, an image its alt text in italics
+    //! bits as they are, a url a link, an image its alt text (or "image" for
+    //! none) on a placeholder (RichSpan::Placeholder, in italics)
     static std::vector<RichSpan> richSpans(const std::vector<text::MarkdownSpan> &spans);
+
+    //! A table's header cell: its text bold (set before setBlock)
+    void setHeader(bool header) { m_header=header; }
+    bool isHeader() const { return m_header; }
 
 protected:
     void onLink(event::Info info);
+
+    bool m_header=false;
+};
+
+//! The ScrollControl a code block scrolls sideways in: horizontal only, and a
+//! vertical wheel over it goes on to its parents (a page scrolling past it)
+//! instead of moving its horizontal bar.
+class GWENI_EXPORT MarkdownCodeScroll: public ScrollControl
+{
+public:
+
+    GWENI_CONTROL(MarkdownCodeScroll, ScrollControl);
+
+public:
+    GWENI_DRAWS_NOTHING
+
+    bool onMouseWheeled(int delta) override;
+};
+
+//! A fenced or indented code block: its text a RichText in the skin's mono
+//! face at the body font's size (MarkdownDocument::codeFont), coloured by the
+//! document's highlighter if it has one, on the MarkdownCodeBlock surface,
+//! Padding units in. Wrapped (MarkdownDocument::setCodeWrap(true)), the text
+//! is laid out at the block's width and wraps; else it is one line per line
+//! of code in a MarkdownCodeScroll that scrolls it sideways when it is wider
+//! than the block, the block then that much taller for the bar.
+class GWENI_EXPORT MarkdownCodeBlock: public Base, public MarkdownBlockControl
+{
+public:
+
+    GWENI_CONTROL(MarkdownCodeBlock, Base);
+
+public:
+    static constexpr int Padding=8;
+
+    void setBlock(const text::MarkdownBlock &block) override;
+
+    //! Wraps the code (true) or scrolls it sideways (false); nothing done
+    //! when it already does
+    void setWrap(bool wrap);
+    bool isWrapped() const { return m_wrap; }
+
+    MarkdownText *getText() const { return m_text; }
+    //! The scroller, null while wrapped
+    MarkdownCodeScroll *getScroll() const { return m_wrap?nullptr:m_scroll; }
+    //! The code's language, as the fence names it
+    const gweni::String &getLanguage() const { return m_language; }
+
+    void calculateSize(skin::Base *skin, Dim dim) override;
+    void arrange(skin::Base *skin, Dim dim) override;
+
+protected:
+    //! The text's spans from the code, the highlighter and the font
+    void showCode();
+
+    gweni::String m_code;
+    gweni::String m_language;
+    bool m_wrap=true;
+    MarkdownText *m_text=nullptr;
+    MarkdownCodeScroll *m_scroll=nullptr;
+};
+
+//! A GFM table: a grid of MarkdownText cells, the header row's bold on the
+//! MarkdownTableHeader surface, a Border-unit line (MarkdownTableBorder)
+//! round and between the cells, each cell CellPaddingX and CellPaddingY units
+//! in from its lines. A column is as wide as its widest cell on one line;
+//! when the columns are wider than the table they are narrowed
+//! (splitColumns) and their cells wrap. A cell narrower than its column is
+//! placed in it by the column's alignment. Kept across setBlock: a cell
+//! keeps its control by its row and column, so an edited cell is the only
+//! one given new spans.
+class GWENI_EXPORT MarkdownTable: public Base, public MarkdownBlockControl
+{
+public:
+
+    GWENI_CONTROL(MarkdownTable, Base);
+
+public:
+    static constexpr int Border=1;
+    static constexpr int CellPaddingX=6;
+    static constexpr int CellPaddingY=4;
+
+    void setBlock(const text::MarkdownBlock &block) override;
+
+    size_t getRowCount() const { return m_cells.size(); }
+    size_t getColumnCount() const { return m_aligns.size(); }
+    MarkdownText *getCell(size_t row, size_t column) const;
+    text::MarkdownBlock::Align getAlign(size_t column) const { return m_aligns[column]; }
+
+    //! The x of each column's left line and, last, of the right line, from
+    //! the table's left, as last laid out
+    const std::vector<int> &getColumnEdges() const { return m_columnEdges; }
+    //! The y of each row's top line and, last, of the bottom line
+    const std::vector<int> &getRowEdges() const { return m_rowEdges; }
+
+    //! Column widths (lines aside) for columns that want natural widths in
+    //! available units: the natural widths when they fit; else each column
+    //! wanting no more than an even share of what is left keeps its width
+    //! and the rest share what remains in proportion to theirs, the integer
+    //! remainder to the lowest-index ones, each at least 1, so the widths add
+    //! up to available (when it is at least one a column).
+    static std::vector<int> splitColumns(const std::vector<int> &natural, int available);
+
+    //! X: its columns at their natural widths and the lines. Y: its rows at
+    //! the widths the X arrange gave the cells, as layout::Flow measures.
+    void calculateSize(skin::Base *skin, Dim dim) override;
+    void arrange(skin::Base *skin, Dim dim) override;
+
+protected:
+    std::vector<std::vector<MarkdownText *>> m_cells;
+    std::vector<text::MarkdownBlock::Align> m_aligns;
+    //! each column's widest cell on one line, as the X measure gave it
+    std::vector<int> m_natural;
+    std::vector<int> m_columnWidths;
+    std::vector<int> m_columnEdges;
+    std::vector<int> m_rowHeights;
+    std::vector<int> m_rowEdges;
 };
 
 //! A horizontal rule: a 1-unit line across its middle (the MarkdownRule
@@ -234,8 +365,9 @@ protected:
 //! The blocks: a paragraph or a heading is a RichText (internal::MarkdownText,
 //! a heading at headingSize(level) and bold), a rule an internal::MarkdownRule,
 //! a quote an internal::MarkdownQuote, a list an internal::MarkdownList of
-//! internal::MarkdownListItem; a code block, raw HTML and a table are shown
-//! as their text for now.
+//! internal::MarkdownListItem, a code block an internal::MarkdownCodeBlock, a
+//! table an internal::MarkdownTable, and raw HTML a MarkdownText of the HTML
+//! as it was written. An image is its alt text on a placeholder.
 class GWENI_EXPORT MarkdownDocument: public internal::MarkdownColumn
 {
 public:
@@ -259,6 +391,17 @@ public:
     //! A heading's size in units: 24, 20, 17, 15, 13, 12 for levels 1..6 at
     //! the default font's 11 (each scaled by the body font's size / 11)
     float headingSize(int level);
+    //! The font of code: the skin's mono face at the body font's size
+    gweni::Font codeFont();
+
+    //! Code blocks wrap at the document's width (true) or scroll sideways
+    //! (false, the default)
+    void setCodeWrap(bool wrap);
+    bool getCodeWrap() const { return m_codeWrap; }
+    //! Colours every code block (none by default: plain); a new one shows
+    //! every code block again
+    void setCodeHighlighter(MarkdownHighlighter highlighter);
+    const MarkdownHighlighter &getCodeHighlighter() const { return m_highlighter; }
 
     //! Units between two blocks of the document, a quote or a loose list's
     //! item, and between two items of a tight list
@@ -272,9 +415,15 @@ public:
     event::Caller onLinkClicked;
 
 private:
+    //! Every block control under the document that is no column, and the
+    //! block it shows, with each list item's marker (block null)
+    void forEachBlock(const std::function<void(Base *, const text::MarkdownBlock *)> &visit);
+
     gweni::String m_markdown;
     gweni::Font m_font;
     bool m_hasFont=false;
+    bool m_codeWrap=false;
+    MarkdownHighlighter m_highlighter;
 };
 
 }//namespace controls

@@ -181,7 +181,7 @@ std::vector<text::RichLayoutSpan> RichText::layoutSpans()
         spans[i].text=m_spans[i].text;
         spans[i].font=spanFont(i);
         spans[i].url=m_spans[i].isLink() && looksLikeUrl(m_spans[i].text);
-        spans[i].padding=(m_spans[i].style&RichSpan::Code)?CodePadding:0;
+        spans[i].padding=(m_spans[i].style&(RichSpan::Code|RichSpan::Placeholder))?CodePadding:0;
     }
     return spans;
 }

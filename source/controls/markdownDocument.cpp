@@ -113,6 +113,10 @@ Base *MarkdownColumn::buildBlock(const text::MarkdownBlock &block)
         item->setDocument(m_document);
         return item;
     }
+    case Type::CodeBlock:
+        return newChild<MarkdownCodeBlock>();
+    case Type::Table:
+        return newChild<MarkdownTable>();
     default:
         return newChild<MarkdownText>();
     }
@@ -298,7 +302,11 @@ std::vector<RichSpan> MarkdownText::richSpans(const std::vector<text::MarkdownSp
         out.style=span.style;
         out.url=span.url;
         if(span.image)
-            out.style|=RichSpan::Italic;
+        {
+            out.style|=RichSpan::Italic|RichSpan::Placeholder;
+            if(out.text.empty())
+                out.text="image";
+        }
         rich.push_back(out);
     }
     return rich;
@@ -311,35 +319,19 @@ void MarkdownText::setBlock(const text::MarkdownBlock &block)
     MarkdownDocument *document=documentOf(this);
 
     if(document)
-        setFont((block.type == Type::Heading)?document->headingFont(block.level):document->getFont());
+    {
+        Font font=(block.type == Type::Heading)?document->headingFont(block.level):document->getFont();
+
+        if(m_header)
+            font.bold=true;
+        setFont(font);
+    }
 
     switch(block.type)
     {
-    case Type::CodeBlock:
-        setSpans({ RichSpan::plain(block.text, RichSpan::Code) });
-        break;
     case Type::Html:
         setSpans({ RichSpan::plain(block.text) });
         break;
-    case Type::Table:
-    {
-        // the cells' text until tables have their grid
-        String textOfRows;
-
-        for(const text::MarkdownBlock &row:block.children)
-        {
-            if(!textOfRows.empty())
-                textOfRows+='\n';
-            for(size_t cell=0; cell < row.children.size(); ++cell)
-            {
-                if(cell > 0)
-                    textOfRows+=" | ";
-                textOfRows+=row.children[cell].plainText();
-            }
-        }
-        setSpans({ RichSpan::plain(textOfRows) });
-        break;
-    }
     default:
         setSpans(richSpans(block.spans));
         break;
@@ -350,6 +342,361 @@ void MarkdownText::onLink(event::Info info)
 {
     if(MarkdownDocument *document=documentOf(this))
         document->onLinkClicked.call(document, info);
+}
+
+///////////////////////////////////////////////////////////////////////////
+// MarkdownCodeScroll
+
+GWENI_CONTROL_CONSTRUCTOR(MarkdownCodeScroll)
+{
+    // the code where a wrapped block's is: no inset round it
+    m_innerPanel->setMargin(Margin(0, 0, 0, 0));
+    setScroll(true, false);
+    setAutoHideBars(true);
+}
+
+bool MarkdownCodeScroll::onMouseWheeled(int delta)
+{
+    // the page's: a vertical wheel never moves the horizontal bar here
+    return Base::onMouseWheeled(delta);
+}
+
+///////////////////////////////////////////////////////////////////////////
+// MarkdownCodeBlock
+
+GWENI_CONTROL_CONSTRUCTOR(MarkdownCodeBlock)
+{
+    setPadding(gweni::Padding(Padding, Padding, Padding, Padding));
+    m_text=newChild<MarkdownText>();
+    m_text->setPlacement(Placement::Owner);
+}
+
+void MarkdownCodeBlock::setBlock(const text::MarkdownBlock &block)
+{
+    m_code=block.text;
+    m_language=block.language;
+    if(MarkdownDocument *document=documentOf(this))
+        setWrap(document->getCodeWrap());
+    showCode();
+}
+
+void MarkdownCodeBlock::showCode()
+{
+    MarkdownDocument *document=documentOf(this);
+    std::vector<RichSpan> spans;
+
+    if(document && document->getCodeHighlighter())
+    {
+        spans=document->getCodeHighlighter()(m_language, m_code);
+
+        String joined;
+
+        for(RichSpan &span:spans)
+        {
+            span.style&=~unsigned(RichSpan::Code);
+            joined+=span.text;
+        }
+        if(joined != m_code)
+            spans.clear();
+    }
+    if(spans.empty())
+        spans.push_back(RichSpan::plain(m_code));
+    if(document)
+        m_text->setFont(document->codeFont());
+    m_text->setSpans(std::move(spans));
+}
+
+void MarkdownCodeBlock::setWrap(bool wrap)
+{
+    if(wrap == m_wrap)
+        return;
+
+    m_wrap=wrap;
+    if(wrap)
+    {
+        m_text->setParent(this);
+        m_text->setDock(DockPosition::None);
+        m_text->setPlacement(Placement::Owner);
+        if(m_scroll)
+            m_scroll->setHidden(true);
+    }
+    else
+    {
+        if(!m_scroll)
+        {
+            m_scroll=newChild<MarkdownCodeScroll>();
+            m_scroll->setPlacement(Placement::Owner);
+        }
+        m_scroll->setHidden(false);
+        // no width yet: measured before it is laid out, its lines are the
+        // code's own, never the ones a narrower wrapped width broke it into
+        placeChild(m_text, 0, 0, 0, m_text->getHeight());
+        m_text->setPlacement(Placement::Parent);
+        m_text->setParent(m_scroll);
+        m_text->setDock(DockPosition::Top);
+        m_scroll->setHorizontalScrollOffset(0);
+    }
+    invalidate();
+}
+
+void MarkdownCodeBlock::calculateSize(skin::Base *skin, Dim dim)
+{
+    ParentClass::calculateSize(skin, dim);
+
+    Base *content=m_wrap?static_cast<Base *>(m_text):static_cast<Base *>(m_scroll);
+    const gweni::Padding &padding=getPadding();
+
+    if(dim == Dim::X)
+    {
+        m_preferredSize.width=preferredFromContent(content->getPreferredSize().width+padding.left+padding.right,
+            Dim::X);
+        return;
+    }
+    if(inLayoutPass() && !laidOutThisPass(Dim::X))
+        return;
+
+    int height=content->getPreferredSize().height;
+
+    // scrolled: the bar's room under the lines when they are wider than it
+    if(!m_wrap && (m_scroll->getPreferredSize().width > getWidth()-padding.left-padding.right))
+        height+=skin->Metrics.ScrollBarThickness;
+    m_preferredSize.height=preferredFromContent(height+padding.top+padding.bottom, Dim::Y);
+}
+
+void MarkdownCodeBlock::arrange(skin::Base *skin, Dim dim)
+{
+    const gweni::Padding &padding=getPadding();
+    Base *content=m_wrap?static_cast<Base *>(m_text):static_cast<Base *>(m_scroll);
+
+    if(dim == Dim::X)
+        placeChild(content, padding.left, padding.top, std::max(0, getWidth()-padding.left-padding.right),
+            content->getHeight());
+    else
+        placeChild(content, content->getX(), padding.top, content->getWidth(),
+            std::max(0, getHeight()-padding.top-padding.bottom));
+
+    ParentClass::arrange(skin, dim);
+}
+
+///////////////////////////////////////////////////////////////////////////
+// MarkdownTable
+
+GWENI_CONTROL_CONSTRUCTOR(MarkdownTable)
+{
+}
+
+MarkdownText *MarkdownTable::getCell(size_t row, size_t column) const
+{
+    if((row >= m_cells.size()) || (column >= m_cells[row].size()))
+        return nullptr;
+    return m_cells[row][column];
+}
+
+void MarkdownTable::setBlock(const text::MarkdownBlock &block)
+{
+    if(m_aligns != block.aligns)
+    {
+        m_aligns=block.aligns;
+        invalidate();
+    }
+
+    const size_t columns=m_aligns.size();
+    const size_t rows=block.children.size();
+
+    // a cell keeps its control by its row and column
+    while(m_cells.size() > rows)
+    {
+        for(MarkdownText *cell:m_cells.back())
+        {
+            cell->setHidden(true);
+            cell->delayedDelete();
+        }
+        m_cells.pop_back();
+    }
+    m_cells.resize(rows);
+    for(size_t row=0; row < rows; ++row)
+    {
+        const text::MarkdownBlock &rowBlock=block.children[row];
+        std::vector<MarkdownText *> &cells=m_cells[row];
+
+        while(cells.size() > columns)
+        {
+            cells.back()->setHidden(true);
+            cells.back()->delayedDelete();
+            cells.pop_back();
+        }
+        while(cells.size() < columns)
+        {
+            cells.push_back(newChild<MarkdownText>());
+            cells.back()->setPlacement(Placement::Owner);
+        }
+        for(size_t column=0; column < columns; ++column)
+        {
+            MarkdownText *cell=cells[column];
+
+            cell->setHeader(rowBlock.header);
+            if(column < rowBlock.children.size())
+                cell->setBlock(rowBlock.children[column]);
+            else
+                cell->setBlock(text::MarkdownBlock());
+        }
+    }
+}
+
+std::vector<int> MarkdownTable::splitColumns(const std::vector<int> &natural, int available)
+{
+    const size_t count=natural.size();
+    int total=0;
+
+    for(int width:natural)
+        total+=width;
+    if((count == 0) || (total <= available))
+        return natural;
+
+    std::vector<int> widths(count, 0);
+    std::vector<bool> fixed(count, false);
+    int left=std::max(available, int(count));
+    size_t open=count;
+
+    // a column wanting no more than an even share of what is left keeps its
+    // width, until none does
+    for(bool changed=true; changed && (open > 0);)
+    {
+        changed=false;
+        for(size_t i=0; i < count; ++i)
+        {
+            if(!fixed[i] && (natural[i]*int(open) <= left))
+            {
+                fixed[i]=true;
+                widths[i]=std::max(natural[i], 1);
+                left-=widths[i];
+                --open;
+                changed=true;
+            }
+        }
+    }
+    if(open == 0)
+        return widths;
+
+    // the rest share what remains in proportion to their widths
+    long long wanted=0;
+
+    for(size_t i=0; i < count; ++i)
+    {
+        if(!fixed[i])
+            wanted+=natural[i];
+    }
+
+    int given=0;
+
+    for(size_t i=0; i < count; ++i)
+    {
+        if(fixed[i])
+            continue;
+        widths[i]=std::max(1, int((long long)(left)*natural[i]/std::max(wanted, 1LL)));
+        given+=widths[i];
+    }
+    for(size_t i=0; (given < left) && (i < count); ++i)
+    {
+        if(!fixed[i])
+        {
+            ++widths[i];
+            ++given;
+        }
+    }
+    return widths;
+}
+
+void MarkdownTable::calculateSize(skin::Base *skin, Dim dim)
+{
+    const size_t columns=m_aligns.size();
+
+    if(dim == Dim::X)
+    {
+        ParentClass::calculateSize(skin, dim);
+
+        m_natural.assign(columns, 0);
+        for(const std::vector<MarkdownText *> &cells:m_cells)
+        {
+            for(size_t column=0; column < columns; ++column)
+                m_natural[column]=std::max(m_natural[column], cells[column]->getPreferredSize().width);
+        }
+
+        int width=Border;
+
+        for(int natural:m_natural)
+            width+=natural+2*CellPaddingX+Border;
+        m_preferredSize.width=preferredFromContent(width, Dim::X);
+        return;
+    }
+    if(inLayoutPass() && !laidOutThisPass(Dim::X))
+        return;
+
+    ParentClass::calculateSize(skin, dim);
+
+    int height=Border;
+
+    m_rowHeights.assign(m_cells.size(), 0);
+    for(size_t row=0; row < m_cells.size(); ++row)
+    {
+        int tallest=0;
+
+        for(const MarkdownText *cell:m_cells[row])
+            tallest=std::max(tallest, cell->getPreferredSize().height);
+        m_rowHeights[row]=tallest+2*CellPaddingY;
+        height+=m_rowHeights[row]+Border;
+    }
+    m_preferredSize.height=preferredFromContent(height, Dim::Y);
+}
+
+void MarkdownTable::arrange(skin::Base *skin, Dim dim)
+{
+    using Align=text::MarkdownBlock::Align;
+    const size_t columns=m_aligns.size();
+
+    if(dim == Dim::X)
+    {
+        std::vector<int> natural(columns);
+
+        for(size_t column=0; column < columns; ++column)
+            natural[column]=((column < m_natural.size())?m_natural[column]:0)+2*CellPaddingX;
+        m_columnWidths=splitColumns(natural, getWidth()-int(columns+1)*Border);
+        m_columnEdges.assign(columns+1, 0);
+        for(size_t column=0; column < columns; ++column)
+            m_columnEdges[column+1]=m_columnEdges[column]+Border+m_columnWidths[column];
+
+        for(const std::vector<MarkdownText *> &cells:m_cells)
+        {
+            for(size_t column=0; column < columns; ++column)
+            {
+                MarkdownText *cell=cells[column];
+                const int room=std::max(0, m_columnWidths[column]-2*CellPaddingX);
+                const int width=std::min(cell->getPreferredSize().width, room);
+                int x=m_columnEdges[column]+Border+CellPaddingX;
+
+                if(m_aligns[column] == Align::Right)
+                    x+=room-width;
+                else if(m_aligns[column] == Align::Center)
+                    x+=(room-width)/2;
+                placeChild(cell, x, cell->getY(), width, cell->getHeight());
+            }
+        }
+    }
+    else
+    {
+        m_rowEdges.assign(m_cells.size()+1, 0);
+        for(size_t row=0; row < m_cells.size(); ++row)
+        {
+            const int height=(row < m_rowHeights.size())?m_rowHeights[row]:0;
+
+            m_rowEdges[row+1]=m_rowEdges[row]+Border+height;
+            for(MarkdownText *cell:m_cells[row])
+                placeChild(cell, cell->getX(), m_rowEdges[row]+Border+CellPaddingY, cell->getWidth(),
+                    cell->getPreferredSize().height);
+        }
+    }
+
+    ParentClass::arrange(skin, dim);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -512,29 +859,74 @@ void MarkdownDocument::setFont(const Font &font)
     m_font=font;
     m_hasFont=true;
 
-    // every text block again in the new font: its own spans, its font
-    std::vector<Base *> pending(1, this);
+    // every block again in the new font, from its own block
+    forEachBlock([this](Base *control, const text::MarkdownBlock *block)
+    {
+        if(block)
+        {
+            if(internal::MarkdownBlockControl *blockControl=dynamic_cast<internal::MarkdownBlockControl *>(control))
+                blockControl->setBlock(*block);
+        }
+        else if(internal::MarkdownText *marker=dynamic_cast<internal::MarkdownText *>(control))
+            marker->setFont(m_font);
+    });
+}
+
+void MarkdownDocument::forEachBlock(const std::function<void(Base *, const text::MarkdownBlock *)> &visit)
+{
+    std::vector<internal::MarkdownColumn *> pending(1, this);
 
     while(!pending.empty())
     {
-        Base *control=pending.back();
+        internal::MarkdownColumn *column=pending.back();
 
         pending.pop_back();
-        if(internal::MarkdownColumn *column=dynamic_cast<internal::MarkdownColumn *>(control))
+        if(internal::MarkdownListItem *item=dynamic_cast<internal::MarkdownListItem *>(column))
+            visit(item->getMarker(), nullptr);
+        for(size_t i=0; i < column->getBlockCount(); ++i)
         {
-            for(size_t i=0; i < column->getBlockCount(); ++i)
-            {
-                Base *block=column->getBlockControl(i);
+            Base *block=column->getBlockControl(i);
 
-                if(internal::MarkdownText *text=dynamic_cast<internal::MarkdownText *>(block))
-                    text->setBlock(column->getBlocks()[i]);
-                else
-                    pending.push_back(block);
-            }
-            if(internal::MarkdownListItem *item=dynamic_cast<internal::MarkdownListItem *>(column))
-                item->getMarker()->setFont(m_font);
+            if(internal::MarkdownColumn *inner=dynamic_cast<internal::MarkdownColumn *>(block))
+                pending.push_back(inner);
+            else
+                visit(block, &column->getBlocks()[i]);
         }
     }
+}
+
+Font MarkdownDocument::codeFont()
+{
+    const Font body=getFont();
+    Font font=body;
+
+    if(skin::Base *skin=getSkin())
+        font=skin->getDefaultMonoFont();
+    font.size=body.size;
+    return font;
+}
+
+void MarkdownDocument::setCodeWrap(bool wrap)
+{
+    if(wrap == m_codeWrap)
+        return;
+
+    m_codeWrap=wrap;
+    forEachBlock([wrap](Base *control, const text::MarkdownBlock *)
+    {
+        if(internal::MarkdownCodeBlock *code=dynamic_cast<internal::MarkdownCodeBlock *>(control))
+            code->setWrap(wrap);
+    });
+}
+
+void MarkdownDocument::setCodeHighlighter(MarkdownHighlighter highlighter)
+{
+    m_highlighter=std::move(highlighter);
+    forEachBlock([](Base *control, const text::MarkdownBlock *block)
+    {
+        if(internal::MarkdownCodeBlock *code=dynamic_cast<internal::MarkdownCodeBlock *>(control))
+            code->setBlock(*block);
+    });
 }
 
 Font MarkdownDocument::getFont()
