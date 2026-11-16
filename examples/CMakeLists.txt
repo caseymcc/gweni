@@ -116,6 +116,8 @@ set(GWENI_DEMO_SOURCES
     demo/dragNumber.h
     demo/knob.cpp
     demo/knob.h
+    demo/sequencer.cpp
+    demo/sequencer.h
     demo/vectorField.cpp
     demo/curveEditor.cpp
     demo/curveEditor.h

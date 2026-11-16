@@ -36,6 +36,7 @@
 #include "demo/chartAreas.h"
 #include "demo/dragNumber.h"
 #include "demo/knob.h"
+#include "demo/sequencer.h"
 #include "demo/vectorField.h"
 #include "demo/curveEditor.h"
 #include "demo/gradientEditor.h"
@@ -285,6 +286,7 @@ void Demo::init(const String &name)
         addDemo<RangeSliderDemo>(cat, "RangeSliderDemo", "Range slider");
         addDemo<DragNumberDemo>(cat, "DragNumberDemo", "Drag number");
         addDemo<KnobDemo>(cat, "KnobDemo", "Knob");
+        addDemo<SequencerDemo>(cat, "SequencerDemo", "Sequencer");
         addDemo<VectorFieldDemo>(cat, "VectorFieldDemo", "Vector field");
         addDemo<HexViewDemo>(cat, "HexViewDemo", "Hex view");
         addDemo<GradientEditorDemo>(cat, "GradientEditorDemo", "Gradient editor");

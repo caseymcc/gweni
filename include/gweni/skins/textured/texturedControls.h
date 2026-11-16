@@ -1535,9 +1535,9 @@ private:
 //   SequencerSnapGuide's top colour) at z+GuideLayer, and the playhead, a
 //   1-unit drawLine across the area and a head in the ruler (drawIcon kind 7
 //   pointing down) in SequencerPlayhead's top colour, at z+PlayheadLayer;
-// and a pool of text runs for the ruler's labels (Sequencer::getTicks(),
-// getTickLabelRects(), in Colors.Timeline.AxisText), the sequencer's own: its
-// zoom and pan move them and lay nothing out.
+// and a text run per ruler label, taken and given back with the ticks
+// (Sequencer::getTicks(), getTickLabelRects(), in Colors.Timeline.AxisText),
+// the sequencer's own: its zoom and pan move them and lay nothing out.
 // The lanes, grid, clips, keys and labels are drawn again only when
 // getItemsSerial() moved, the clips changed or the frame marks its geometry,
 // visibility, creation or text (a theme edit), and then each slot only when it

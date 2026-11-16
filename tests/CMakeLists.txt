@@ -289,17 +289,18 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # scrim and overlay, the opacity scenario's level changes and fade,
     # the knobs' drags and typed entry, the hex view's scroll, cursor keys,
     # copy and edit, the gradient editor's drags, typed colour, added stop
-    # and picker, and the curve editor's key and tangent drags, zoom, pan and
-    # added key
+    # and picker, the curve editor's key and tangent drags, zoom, pan and
+    # added key, and the sequencer's drags, scrub, zoom, pan and deletes
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
             dialog toast flow switch spinner navigation-rail board field-validation segmented
             tree-table tree-table-live split-button breadcrumb toolbar range-slider stepper code-view rich-text markdown
             markdown-images search-combo command-palette reorder calendar date-time translucency opacity knob hex-view
-            gradient-editor curve-editor)
+            gradient-editor curve-editor sequencer)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
-        if(verify_scenario STREQUAL "navigation-rail" OR verify_scenario STREQUAL "knob")
+        if(verify_scenario STREQUAL "navigation-rail" OR verify_scenario STREQUAL "knob"
+            OR verify_scenario STREQUAL "sequencer")
             list(APPEND verify_flags --require-one-pass)
         endif()
         if(verify_scenario STREQUAL "markdown" OR verify_scenario STREQUAL "markdown-images")
@@ -663,6 +664,17 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_knob_scale200 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario knob --require-one-pass --scale 2
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/knob_scale200@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # SequencerDemo: a clip and a key dragged until they snap write their own
+    # and the snap guide's slots alone, laying nothing out and changing no
+    # pixel outside the lanes; a scrub the playhead's; a Ctrl+wheel zoom and a
+    # pan lay nothing out; a vetoed and a made Delete keep the live ids; the
+    # playback animates only while playing and shown; settled frames write
+    # nothing and the ids come back
+    gweni_whole_app_test(controltest_sequencer 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario sequencer --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/sequencer@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # ChartTimeBarsDemo, ChartLinesDemo and ChartAreasDemo with their ranges

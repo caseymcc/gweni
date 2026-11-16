@@ -25,6 +25,7 @@
 #include <gweni/controls/reorderable.h>
 #include <gweni/controls/scrollControl.h>
 #include <gweni/controls/textBox.h>
+#include <gweni/controls/sequencer.h>
 #include <gweni/controls/timeline.h>
 #include <gweni/controls/treeControl.h>
 #include <gweni/controls/treeTable.h>
@@ -2018,6 +2019,73 @@ private:
     int m_drops=0;
 };
 
+//-----------------------------------------------------------------------------
+// sequencer-drag: a Sequencer filling the canvas, 20 tracks of N clips between
+// them at 10 frames a second, clip k of a track from 2k to 2k+1 seconds, the
+// view fixed to the first 20 seconds, so the clips on screen are the same at
+// any N. Track 0's clip 1 is pressed in the warm-up and moved past the drag
+// threshold; each measured frame moves it 2 units on along its gap (snapping
+// to whole frames, nothing else in reach), the last one releasing it. Every
+// frame's work is the dragged clip's slot, at any N.
+//-----------------------------------------------------------------------------
+class SequencerDragScene: public Scene
+{
+public:
+    static constexpr int Tracks=20;
+
+    void build(SceneContext &ctx) override
+    {
+        m_seq=ctx.canvas->newChild<controls::Sequencer>();
+        place(m_seq, 10, 10, ctx.size.x-20, ctx.size.y-20);
+        m_seq->setFrameRate(10.0);
+
+        const int perTrack=std::max(2, (ctx.n+Tracks-1)/Tracks);
+
+        m_seq->setTimeRange(0.0, 2.0*perTrack);
+        m_seq->setViewRange(0.0, 20.0);
+        for(int track=0; track < Tracks; ++track)
+        {
+            m_seq->addTrack(format("track %02d", track), uint64_t(track));
+
+            const int clips=ctx.n/Tracks+((track < ctx.n%Tracks) ? 1 : 0);
+
+            for(int k=0; k < std::max(clips, track == 0 ? 2 : 0); ++k)
+                m_seq->addClip(size_t(track), 2.0*k, 2.0*k+1.0, String(), uint64_t(track)*1000000+k);
+        }
+    }
+
+    void step(SceneContext &ctx, int frame) override
+    {
+        gweni::Rect rect;
+
+        if(frame == -2)
+        {
+            if(!m_seq->getClipRect(0, 1, rect))
+                return;
+            m_origin=m_seq->localPosToCanvas(Point(rect.x+rect.w/2, rect.y+rect.h/2));
+            moveMouse(ctx, m_mouse, m_origin);
+            ctx.canvas->inputMouseButton(0, true);
+            return;
+        }
+        if(frame == -1)
+        {
+            moveMouse(ctx, m_mouse, m_origin+Point(4, 0));
+            return;
+        }
+        if(frame < 0)
+            return;
+
+        moveMouse(ctx, m_mouse, m_origin+Point(4+2*(frame+1), 0));
+        if(frame == ctx.frames-1)
+            ctx.canvas->inputMouseButton(0, false);
+    }
+
+private:
+    controls::Sequencer *m_seq=nullptr;
+    Point m_origin;
+    Point m_mouse=Point(-1, -1);
+};
+
 const std::vector<SceneInfo> &scenes()
 {
     static const std::vector<SceneInfo> list=
@@ -2136,6 +2204,9 @@ const std::vector<SceneInfo> &scenes()
         {"curve-key-drag", "drag a key of a CurveEditor's curve of N Smooth keys, between its neighbours",
             true, 1000, 3, 20, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new CurveKeyDragScene()); }},
+        {"sequencer-drag", "drag a clip along its gap a step per frame in a Sequencer of N clips over 20 tracks",
+            true, 1000, 3, 20, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new SequencerDragScene()); }},
     };
     return list;
 }

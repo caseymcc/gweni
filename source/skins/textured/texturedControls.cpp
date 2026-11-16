@@ -4479,10 +4479,12 @@ void Sequencer::update(renderer::Base *renderer, controls::Base *baseControl)
             return (count > list.ids.size()) || (count*2 < list.taken);
         };
         // the grid's slots are taken for as many ticks as the area's width
-        // can show, so a zoom or a pan, whose tick count moves, takes none
+        // can show (chooseTicks() asks for a tick per 60 units at most, plus
+        // the two axis lines), so a zoom or a pan, whose tick count moves,
+        // takes none, and a width back is the slots it had
         const size_t gridRoom=std::max(gridCount, size_t(area.w/60)+4);
         bool retake=m_playhead.ids.empty() || (m_clips.size() != trackCount)
-            || outgrown(m_lanes, trackCount) || itemsOutgrown(m_grid, gridRoom);
+            || outgrown(m_lanes, trackCount) || outgrown(m_grid, gridRoom);
 
         for(size_t i=0; i<trackCount && !retake; ++i)
             retake=itemsOutgrown(m_clips[i], clipsNeed[i]) || itemsOutgrown(m_keys[i], keysNeed[i]);
@@ -4678,7 +4680,13 @@ void Sequencer::update(renderer::Base *renderer, controls::Base *baseControl)
             }
             label.valid=true;
         }
-        hideLabels(std::min(ticks.size(), rects.size()));
+        // the runs past the ticks given back, so a view or a width back has
+        // the runs it had
+        while(m_labels.size() > std::min(ticks.size(), rects.size()))
+        {
+            renderer->releaseTextPrimitive(m_labels.back().id);
+            m_labels.pop_back();
+        }
 
         m_drawnAll=true;
         m_drawnSerial=seq->getItemsSerial();

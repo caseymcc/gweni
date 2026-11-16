@@ -172,7 +172,8 @@
  *                       virtual-list | hex-view |
  *                       virtual-list-variable |
  *                       data-table-virtual | hide-show | demo-labels |
- *                       plot-histogram | plot-lines | knob | chart | timeline |
+ *                       plot-histogram | plot-lines | knob | sequencer |
+ *                       chart | timeline |
  *                       inspector |
  *                       stats-overlay | depth-view | zoom-panel |
  *                       node-graph | code-editor | log-view |
@@ -702,6 +703,25 @@
  *                 settled frames write nothing, and all primitive and text
  *                 ids come back (knob.png). One line gives each drag frame's
  *                 counts and the checks as yes/no.
+ *
+ *    sequencer    SequencerDemo, the clock frozen, its readout not following
+ *                 the playhead, through the GLFW translator: every frame of a
+ *                 drag of a track's first clip until its end snaps to the
+ *                 next clip's start (the view on the two clips, the next one
+ *                 moved on until no other target is near where the dragged
+ *                 one's edges go), and of a key until it snaps to the
+ *                 playhead, writes no slot but the dragged item's and the
+ *                 snap guide's and no glyph, lays nothing out and changes no
+ *                 pixel outside the lanes, and each snaps; every frame of
+ *                 a scrub in the ruler writes the playhead's slots alone; a
+ *                 Ctrl+wheel zoom and a Shift+wheel pan lay nothing out and
+ *                 change no pixel outside it; a Delete on the locked first
+ *                 track's clip (the demo's veto) removes nothing and one on
+ *                 another track's removes it, the live ids the same; playing
+ *                 runs the playback's one animation, hidden or paused none;
+ *                 settled frames write nothing and run no animation; and the
+ *                 demo gives its ids back (sequencer.png). One line gives
+ *                 each frame's counts and the checks as yes/no.
  *
  *    node-graph   NodeGraphDemo on a 900x560 canvas at scale 1, the clock
  *                 frozen, through the GLFW translator: a title-bar drag of a
@@ -1909,6 +1929,7 @@
 #include <gweni/controls/hexView.h>
 #include <gweni/controls/dragNumber.h>
 #include <demo/knob.h>
+#include <demo/sequencer.h>
 #include <gweni/controls/knob.h>
 #include <demo/vectorField.h>
 #include <demo/curveEditor.h>
@@ -2039,7 +2060,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(ChartAreasDemo) X(TimelineDemo) X(ComboBoxDemo) X(SearchComboDemo) X(CommandPaletteDemo) \
     X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(NavigationRailDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(TreeTableDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(CodeViewDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(SegmentedButtonsDemo) X(CalendarDemo) X(DateTimeDemo) X(SplitButtonDemo) X(BreadcrumbDemo) X(ToolBarDemo) X(StepperDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
-    X(CheckBoxDemo) X(SwitchDemo) X(SpinnerDemo) X(FieldValidationDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(RangeSliderDemo) X(DragNumberDemo) X(KnobDemo) X(VectorFieldDemo) X(HexViewDemo) X(GradientEditorDemo) X(CurveEditorDemo) X(MenuStripDemo) \
+    X(CheckBoxDemo) X(SwitchDemo) X(SpinnerDemo) X(FieldValidationDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(RangeSliderDemo) X(DragNumberDemo) X(KnobDemo) X(SequencerDemo) X(VectorFieldDemo) X(HexViewDemo) X(GradientEditorDemo) X(CurveEditorDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
     X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo) X(InspectorDemo) X(ThemeEditorDemo) \
@@ -2136,7 +2157,7 @@ static void printUsage(std::ostream &out)
          "                     | hide-show\n"
          "                     | opacity-round-trip | opacity\n"
          "                     | demo-labels\n"
-         "                     | plot-histogram | plot-lines | knob | chart | timeline\n"
+         "                     | plot-histogram | plot-lines | knob | sequencer | chart | timeline\n"
          "                     | inspector\n"
          "                     | stats-overlay | depth-view | zoom-panel\n"
          "                     | node-graph | code-editor | log-view | chip-badge\n"
@@ -3206,7 +3227,7 @@ enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typ
     PlotLines, Knob, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
     ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented, SplitButton, ToolBar,
     Breadcrumb, RangeSlider, Stepper, CodeView, RichText, Markdown, MarkdownImages, SearchCombo, CommandPalette, Reorder, Calendar, DateTime, Translucency,
-    OpacityRoundTrip, Opacity, HexView, GradientEditor, CurveEditor };
+    OpacityRoundTrip, Opacity, HexView, GradientEditor, CurveEditor, Sequencer };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -3239,6 +3260,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "plot-histogram") scenario=Scenario::PlotHistogram;
     else if(name == "plot-lines") scenario=Scenario::PlotLines;
     else if(name == "knob") scenario=Scenario::Knob;
+    else if(name == "sequencer") scenario=Scenario::Sequencer;
     else if(name == "chart") scenario=Scenario::Chart;
     else if(name == "timeline") scenario=Scenario::Timeline;
     else if(name == "inspector") scenario=Scenario::Inspector;
@@ -10906,6 +10928,360 @@ static bool runKnobScenario(Session &s, const std::string &shotDir, bool &passed
     passed=checks.allPassed();
     std::cout<<"knob"<<frames.str()<<" kept="<<kept<<" changed="<<changed<<" same_text="<<sameText
              <<" idle_slots="<<idleSlots<<" idle_changed="<<idleChanges<<" arc_misses="<<arcMisses;
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<"\n";
+    return shot;
+}
+
+// SequencerDemo, the clock frozen, through the GLFW translator: each input
+// frame held to the slots it may write (skin::textured::Sequencer's lists) and
+// to the sequencer's pixels; see the usage comment.
+static bool runSequencerScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    using gweni::controls::Sequencer;
+    using gweni::controls::SequencerItem;
+    typedef gweni::skin::textured::Sequencer SkinSequencer;
+
+    s.freezeClock=true;
+    s.label="sequencer";
+    InteractionChecks checks;
+    checks.scenario="sequencer";
+    const size_t primitivesBefore=livePrimitiveIds();
+    const size_t textsBefore=liveTextIds();
+    auto *demo=gweni::gweni_cast<gweni::SequencerDemo>(addControl(s, "SequencerDemo"));
+    renderFrames(s, s.frames);
+    if(!demo || !demo->sequencer())
+    {
+        std::cerr<<"ControlTest: sequencer: SequencerDemo has no sequencer\n";
+        dropControl(s, demo);
+        return false;
+    }
+
+    Sequencer *seq=demo->sequencer();
+    const size_t tracks=seq->getTrackCount();
+    const SkinSequencer *drawn=static_cast<const SkinSequencer *>(seq->getSkinControl());
+    const gweni::Point off(s.size.x-1, s.size.y-1);
+    size_t idleSlots=0, idleChanges=0, idleAnims=0;
+    std::ostringstream frames;
+    auto steady=[&]()
+    {
+        renderFrames(s, 1);
+        const auto &gpu=s.renderer->getFrameStats();
+        idleSlots+=gpu.primitiveSlotsWritten+gpu.textSlotsWritten;
+        idleChanges+=gweni::controls::getChangeStats().controls;
+        idleAnims+=s.canvas->getUpdateStats().animsRun;
+    };
+    auto pps=[&]() { return seq->getBarArea().w/(seq->getViewEnd()-seq->getViewStart()); };
+    auto local=[&](double t, size_t track)
+    {
+        gweni::Rect lane;
+        seq->getLaneRect(track, lane);
+        return gweni::Point(int(std::lround(seq->xPosition(t))), lane.y+lane.h/2);
+    };
+    // a point on the clip's body that is no key's
+    auto bodyOf=[&](size_t track, size_t index, gweni::Point &at)
+    {
+        gweni::Rect rect;
+        if(!seq->getClipRect(track, index, rect))
+            return false;
+        for(int x=rect.x+Sequencer::GripWidth; x < rect.x+rect.w-Sequencer::GripWidth; ++x)
+        {
+            SequencerItem item;
+            const gweni::Point p(x, rect.y+rect.h/2);
+            if(seq->hitTest(p, item) == Sequencer::Part::ClipBody && item == SequencerItem(SequencerItem::Kind::Clip, track, index))
+            {
+                at=seq->localPosToCanvas(p);
+                return true;
+            }
+        }
+        return false;
+    };
+
+    demo->setReadoutFollows(false);
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, s.frames);
+    steady();
+
+    // The pixels of two frames that differ outside the lanes (the bar area,
+    // snapped to device pixels).
+    auto lanesOutside=[&](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b)
+    {
+        const gweni::Rect area=seq->getBarArea();
+        const gweni::Point topLeft=devicePixels(seq->localPosToCanvas(gweni::Point(area.x, area.y)), s.scale);
+        const gweni::Point bottomRight=devicePixels(seq->localPosToCanvas(gweni::Point(area.x+area.w,
+            area.y+area.h)), s.scale);
+        size_t count=0;
+        for(int y=0; y < s.pixels.y; ++y)
+        {
+            for(int x=0; x < s.pixels.x; ++x)
+            {
+                if(x >= topLeft.x && x < bottomRight.x && y >= topLeft.y && y < bottomRight.y)
+                    continue;
+                const size_t at=(size_t(y)*s.pixels.x+x)*4;
+                if(std::memcmp(&a[at], &b[at], 4) != 0)
+                    ++count;
+            }
+        }
+        return count;
+    };
+
+    // One drag, from \p from by \p dx in \p steps frames: each frame writes no
+    // slot but \p allowed's, no glyph, lays nothing out and changes no pixel
+    // outside the lanes.
+    bool dragsLocal=true;
+    auto drag=[&](const std::string &name, const gweni::Point &from, int dx, int steps,
+        const std::vector<size_t> &allowed)
+    {
+        moveMouse(s, from.x, from.y);
+        renderFrames(s, 1);
+        mouseDown(s, from.x, from.y, true);
+        renderFrames(s, 1);
+        for(int i=1; i <= steps; ++i)
+        {
+            const auto before=framePixels(s);
+            moveMouse(s, from.x+dx*i/steps, from.y);
+            renderFrames(s, 1);
+            size_t written=0;
+            const size_t stray=slotsOutside(s, allowed, written);
+            const size_t glyphs=s.renderer->getFrameStats().textSlotsWritten;
+            const int passes=s.canvas->getLayoutStats().passes;
+            const size_t outside=lanesOutside(before, framePixels(s));
+            frames<<" "<<name<<i<<":prim="<<written<<",strays="<<stray<<",text="<<glyphs
+                  <<",passes="<<passes<<",outside="<<outside;
+            dragsLocal=dragsLocal && stray == 0 && glyphs == 0 && passes == 0 && outside == 0;
+        }
+    };
+    std::vector<size_t> guide=drawn->guidePrimitives();
+
+    // A track's first clip dragged until its end snaps to the next clip's
+    // start: the first track where nothing else (a clip's edge, a key, the
+    // playhead) is within twice the snap distance of where its edges go.
+    auto clear=[&](double t, double except)
+    {
+        const double window=2.0*Sequencer::SnapDistance/pps();
+        auto near=[&](double u) { return u != except && std::fabs(u-t) <= window; };
+        if(near(seq->getPlayhead()))
+            return false;
+        for(size_t k=0; k < seq->getTrackCount(); ++k)
+        {
+            for(size_t i=0; i < seq->getClipCount(k); ++i)
+            {
+                if(near(seq->getClip(k, i).start) || near(seq->getClip(k, i).end))
+                    return false;
+            }
+            for(size_t i=0; i < seq->getKeyCount(k); ++i)
+            {
+                if(near(seq->getKey(k, i).time))
+                    return false;
+            }
+        }
+        return true;
+    };
+    // the next clip moved on (an app edit) a frame at a time until it is so
+    size_t track=0;
+    for(size_t k=1; k < seq->getTrackCount() && track == 0; ++k)
+    {
+        if(seq->getClipCount(k) < 2)
+            continue;
+        const double s0=seq->getClip(k, 0).start;
+        const double e0=seq->getClip(k, 0).end;
+        const double s1=seq->getClip(k, 1).start;
+        const double e1=seq->getClip(k, 1).end;
+        for(int d=0; d < 48 && track == 0; ++d)
+        {
+            const double start=s1+d*seq->frameLength();
+            // the view on the two clips, the moving clip's whole way in it
+            seq->setViewRange(s0-0.1, start+0.1);
+            seq->setClip(k, 1, start, e1+d*seq->frameLength());
+            if(clear(s0+(start-e0), e0) && clear(start, start))
+                track=k;
+        }
+        if(track == 0)
+            seq->setClip(k, 1, s1, e1);
+    }
+    if(track > 0)
+        seq->setViewRange(seq->getClip(track, 0).start-0.1, seq->getClip(track, 1).start+0.1);
+    renderFrames(s, 1);
+    steady();
+    bool clipSnapped=false;
+    gweni::Point grab;
+    if(track > 0 && bodyOf(track, 0, grab))
+    {
+        const double gap=seq->getClip(track, 1).start-seq->getClip(track, 0).end;
+        std::vector<size_t> allowed=guide;
+        allowed.push_back(drawn->clipPrimitives(track)[0]);
+        drag("clip", grab, int(std::lround(gap*pps()))-2, 6, allowed);
+        double at=0.0;
+        clipSnapped=seq->getSnapGuide(at) && at == seq->getClip(track, 1).start
+            && seq->getClip(track, 0).end == seq->getClip(track, 1).start;
+        mouseUp(s, s.mouse.x, s.mouse.y);
+        renderFrames(s, 1);
+    }
+    checks.check("clip_snap", clipSnapped, "a clip's end dragged 2 units short of its neighbour did not snap to it: end "
+        +std::to_string(seq->getClip(track, 0).end)+", the next clip's start "+std::to_string(seq->getClip(track, 1).start));
+    seq->setViewRange(seq->getRangeStart(), seq->getRangeEnd());
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, 1);
+    steady();
+
+    // a key of track 4 dragged until it snaps to the playhead, half a second on
+    bool keySnapped=false;
+    if(seq->getKeyCount(4) >= 2)
+    {
+        const double key=seq->getKey(4, 1).time;
+        seq->setPlayhead(seq->snapToFrame(key+0.5));
+        renderFrames(s, 1);
+        steady();
+        std::vector<size_t> allowed=guide;
+        allowed.push_back(drawn->keyPrimitives(4)[1]);
+        const gweni::Point at=seq->localPosToCanvas(local(key, 4));
+        drag("key", at, int(std::lround((seq->getPlayhead()-key)*pps()))-2, 4, allowed);
+        double snapped=0.0;
+        keySnapped=seq->getSnapGuide(snapped) && snapped == seq->getPlayhead()
+            && seq->getKey(4, 1).time == seq->getPlayhead();
+        mouseUp(s, s.mouse.x, s.mouse.y);
+        renderFrames(s, 1);
+    }
+    checks.check("key_snap", keySnapped, "a key dragged 2 units short of the playhead did not snap to it");
+    checks.check("drag_local", dragsLocal, "a drag frame wrote more than its item and the guide:"+frames.str());
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, 1);
+    steady();
+
+    // a scrub in the ruler: the playhead's slots alone
+    {
+        const std::vector<size_t> playhead=drawn->playheadPrimitives();
+        const gweni::Rect row=seq->getAxisRow();
+        const gweni::Point start=seq->localPosToCanvas(gweni::Point(int(std::lround(seq->xPosition(2.0))), row.y+2));
+        bool scrubOk=true;
+        moveMouse(s, start.x, start.y);
+        renderFrames(s, 1);
+        steady();
+        mouseDown(s, start.x, start.y, true);
+        for(int i=0; i <= 4; ++i)
+        {
+            const auto before=framePixels(s);
+            if(i > 0)
+                moveMouse(s, start.x+i*13, start.y);
+            renderFrames(s, 1);
+            size_t written=0;
+            const size_t stray=slotsOutside(s, playhead, written);
+            const size_t outside=differencesOutside(s, before, framePixels(s), seq);
+            frames<<" scrub"<<i<<":prim="<<written<<",text="<<s.renderer->getFrameStats().textSlotsWritten
+                  <<",outside="<<outside;
+            scrubOk=scrubOk && stray == 0 && written > 0 && s.renderer->getFrameStats().textSlotsWritten == 0
+                && outside == 0;
+        }
+        mouseUp(s, s.mouse.x, s.mouse.y);
+        renderFrames(s, 1);
+        checks.check("scrub", scrubOk, "a scrub frame wrote more than the playhead's slots:"+frames.str());
+    }
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, 1);
+    steady();
+
+    // a Ctrl+wheel zoom and a Shift+wheel pan over the lanes: no layout pass,
+    // nothing changed outside the sequencer
+    {
+        const gweni::Rect area=seq->getBarArea();
+        const gweni::Point over=seq->localPosToCanvas(gweni::Point(area.x+area.w/3, area.y+area.h/2));
+        moveMouse(s, over.x, over.y);
+        renderFrames(s, 1);
+        steady();
+        const double span=seq->getViewEnd()-seq->getViewStart();
+        auto wheel=[&](int key, int mod, int delta, int &passes, size_t &outside)
+        {
+            const auto before=framePixels(s);
+            glfwKey(s, key, GLFW_PRESS, 0);
+            scrollWheel(s, delta);
+            glfwKey(s, key, GLFW_RELEASE, mod);
+            renderFrames(s, 1);
+            passes=s.canvas->getLayoutStats().passes;
+            outside=differencesOutside(s, before, framePixels(s), seq);
+            steady();
+        };
+        int zoomPasses=-1, panPasses=-1;
+        size_t zoomOutside=1, panOutside=1;
+        wheel(GLFW_KEY_LEFT_CONTROL, GLFW_MOD_CONTROL, 60, zoomPasses, zoomOutside);
+        const double zoomed=seq->getViewEnd()-seq->getViewStart();
+        const double start=seq->getViewStart();
+        wheel(GLFW_KEY_LEFT_SHIFT, GLFW_MOD_SHIFT, -60, panPasses, panOutside);
+        frames<<" zoom:passes="<<zoomPasses<<",outside="<<zoomOutside
+              <<" pan:passes="<<panPasses<<",outside="<<panOutside;
+        checks.check("zoom", zoomed < span && zoomPasses == 0 && zoomOutside == 0,
+            "a Ctrl+wheel zoom did not zoom, laid out or changed pixels outside the sequencer");
+        checks.check("pan", seq->getViewStart() != start && panPasses == 0 && panOutside == 0,
+            "a Shift+wheel pan did not pan, laid out or changed pixels outside the sequencer");
+        seq->setViewRange(seq->getRangeStart(), seq->getRangeEnd());
+        renderFrames(s, 1);
+        moveMouse(s, off.x, off.y);
+        renderFrames(s, 1);
+        steady();
+    }
+
+    // Delete on the locked track's clip (vetoed) and on another's (made):
+    // the live ids stay (a removed clip's slot is its list's spare)
+    {
+        const size_t ids=livePrimitiveIds();
+        const size_t clips0=seq->getClipCount(0);
+        const size_t clips2=seq->getClipCount(2);
+        seq->focus();
+        seq->select(SequencerItem(SequencerItem::Kind::Clip, 0, 0));
+        renderFrames(s, 1);
+        sendKey(s, "delete");
+        renderFrames(s, 1);
+        const bool vetoed=seq->getClipCount(0) == clips0 && livePrimitiveIds() == ids;
+        seq->clearSelection();
+        seq->select(SequencerItem(SequencerItem::Kind::Clip, 2, 0));
+        renderFrames(s, 1);
+        sendKey(s, "delete");
+        renderFrames(s, 1);
+        const bool removed=seq->getClipCount(2) == clips2-1 && livePrimitiveIds() == ids;
+        checks.check("delete_veto", vetoed, "a Delete on the locked track removed its clip or moved the live ids");
+        checks.check("delete", removed, "a Delete did not remove the clip, or the live ids moved");
+        seq->unfocus();
+        renderFrames(s, 1);
+        steady();
+    }
+
+    // playing runs the playback's animation; paused or hidden, none runs
+    {
+        renderFrames(s, 1);
+        steady();
+        const size_t pausedAnims=idleAnims;
+        demo->setPlaying(true);
+        renderFrames(s, 1);
+        const size_t playing=s.canvas->getUpdateStats().animsRun;
+        demo->setHidden(true);
+        renderFrames(s, 1);
+        renderFrames(s, 1);
+        const size_t hidden=s.canvas->getUpdateStats().animsRun;
+        const bool hiddenStopped=!demo->isAnimating();
+        demo->setHidden(false);
+        renderFrames(s, 1);
+        const bool resumed=demo->isAnimating();
+        demo->setPlaying(false);
+        renderFrames(s, 2);
+        steady();
+        checks.check("animation", pausedAnims == 0 && playing == 1 && hidden == 0 && hiddenStopped && resumed
+            && !demo->isAnimating() && s.canvas->getUpdateStats().animsRun == 0,
+            "the playback ran while paused or hidden, or not while playing");
+    }
+
+    checks.check("settled", idleSlots == 0 && idleChanges == 0 && idleAnims == 0,
+        "settled frames wrote "+std::to_string(idleSlots)+" slots, changed "
+        +std::to_string(idleChanges)+" controls, ran "+std::to_string(idleAnims)+" animations");
+
+    const bool shot=shoot(s, shotDir+"/sequencer.png");
+    forgetMouse(s);
+    dropControl(s, demo);
+    renderFrames(s, 1);
+    checks.check("ids_back", livePrimitiveIds() == primitivesBefore && liveTextIds() == textsBefore,
+        "the demo leaked primitive or text ids");
+    passed=checks.allPassed();
+    std::cout<<"sequencer tracks="<<tracks<<frames.str()
+             <<" idle_slots="<<idleSlots<<" idle_changed="<<idleChanges<<" idle_anims="<<idleAnims;
     for(const auto &result : checks.results)
         std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
     std::cout<<"\n";
@@ -26263,6 +26639,15 @@ int main(int argc, char *argv[])
         {
             bool passed=false;
             ok=runKnobScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;
+            break;
+        }
+
+        case Scenario::Sequencer:
+        {
+            bool passed=false;
+            ok=runSequencerScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;
             break;
