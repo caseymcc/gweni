@@ -14,6 +14,7 @@
 #include <gweni/controls/chart.h>
 #include <gweni/controls/checkBox.h>
 #include <gweni/controls/codeEditor.h>
+#include <gweni/controls/curveEditor.h>
 #include <gweni/controls/groupBox.h>
 #include <gweni/controls/hexView.h>
 #include <gweni/controls/label.h>
@@ -1881,6 +1882,73 @@ private:
 };
 
 //-----------------------------------------------------------------------------
+// curve-key-drag: a CurveEditor filling the canvas over one Smooth curve of N
+// keys, key i at time i and a value that is a function of i alone, the view
+// 20 keys wide around key 500 (N/2 below N=1000), so the keys on screen are
+// the same at any N from 1000 on. That key is pressed in the last warm-up
+// frame and dragged 3 and 2 units a frame, turning back every 10, between its
+// neighbours: each frame rewrites the spans its edit changes (two each side
+// of it, their neighbours Smooth), its disc and the footer fields' glyphs,
+// and finds nothing by scanning the keys.
+//-----------------------------------------------------------------------------
+class CurveKeyDragScene: public Scene
+{
+public:
+    void build(SceneContext &ctx) override
+    {
+        std::vector<Curve::Key> keys;
+
+        for(int i=0; i < ctx.n; ++i)
+        {
+            Curve::Key key;
+
+            key.time=double(i);
+            key.value=0.5+0.3*std::sin(double(i)*0.7)+0.1*std::sin(double(i)*2.3);
+            keys.push_back(key);
+        }
+        m_curve.setKeys(std::move(keys));
+        m_key=size_t((ctx.n >= 1000)?500:ctx.n/2);
+
+        m_editor=ctx.canvas->newChild<controls::CurveEditor>();
+        place(m_editor, 0, 0, ctx.size.x, ctx.size.y);
+        m_editor->addCurve(&m_curve);
+        m_editor->setView(double(m_key)-10.0, double(m_key)+10.0, 0.0, 1.0);
+    }
+
+    void step(SceneContext &ctx, int frame) override
+    {
+        if(frame < -1 || (m_key >= m_curve.keyCount()))
+            return;
+
+        if(!m_pressed)
+        {
+            const Curve::Key &key=m_curve.key(m_key);
+            const PointF local=m_editor->curveToLocal(CurvePoint{key.time, key.value});
+            const Point origin=m_editor->getPlot()->localPosToCanvas();
+
+            moveMouse(ctx, m_mouse, Point(origin.x+int(std::lround(local.x)), origin.y+int(std::lround(local.y))));
+            ctx.canvas->inputMouseButton(0, true);
+            m_pressed=true;
+        }
+        if(frame < 0)
+            return;
+
+        const int sign=((frame/10)%2 == 0) ? 1 : -1;
+        moveMouse(ctx, m_mouse, m_mouse+Point(3*sign, 2*sign));
+
+        if(frame == ctx.frames-1)
+            ctx.canvas->inputMouseButton(0, false);
+    }
+
+private:
+    Curve m_curve;
+    size_t m_key=0;
+    controls::CurveEditor *m_editor=nullptr;
+    Point m_mouse=Point(-1, -1);
+    bool m_pressed=false;
+};
+
+//-----------------------------------------------------------------------------
 // reorder-drag: a VirtualList of N 20-unit rows, 300x400, its items reordered
 // by drag and drop (a VirtualListReorder keyed by index: the app's key
 // functions are O(1) here, and are not called on a move or a scroll frame
@@ -2065,6 +2133,9 @@ const std::vector<SceneInfo> &scenes()
         {"reorder-drag", "drag an item of an N-item VirtualList across its gaps, then let it auto-scroll",
             true, 1000, 3, 20, Scaling::Local,
             []{ return std::unique_ptr<Scene>(new ReorderDragScene()); }},
+        {"curve-key-drag", "drag a key of a CurveEditor's curve of N Smooth keys, between its neighbours",
+            true, 1000, 3, 20, Scaling::Local,
+            []{ return std::unique_ptr<Scene>(new CurveKeyDragScene()); }},
     };
     return list;
 }

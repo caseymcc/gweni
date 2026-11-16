@@ -1710,6 +1710,13 @@ private:
     Point m_plotSize;
     //! the ids in the order takeAll() took them
     std::vector<size_t> m_order;
+    //! update()'s scratch lists, kept so a frame allocates nothing for them
+    std::vector<std::vector<size_t>> m_dirtySpans;
+    std::vector<std::vector<size_t>> m_dirtyKeys;
+    std::vector<CurvePoint> m_samples;
+    std::vector<PointF> m_points;
+    std::vector<PointF> m_before;
+    std::vector<PointF> m_after;
 };
 
 // A Node: [0] its frame (NodeBody, NodeSelected while it is selected, over

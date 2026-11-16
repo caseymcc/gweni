@@ -288,14 +288,15 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # toolbar's width steps, menu and keys, the translucency scenario's panel,
     # scrim and overlay, the opacity scenario's level changes and fade,
     # the knobs' drags and typed entry, the hex view's scroll, cursor keys,
-    # copy and edit, and the gradient editor's drags, typed colour, added
-    # stop and picker
+    # copy and edit, the gradient editor's drags, typed colour, added stop
+    # and picker, and the curve editor's key and tangent drags, zoom, pan and
+    # added key
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
             dialog toast flow switch spinner navigation-rail board field-validation segmented
             tree-table tree-table-live split-button breadcrumb toolbar range-slider stepper code-view rich-text markdown
             markdown-images search-combo command-palette reorder calendar date-time translucency opacity knob hex-view
-            gradient-editor)
+            gradient-editor curve-editor)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail" OR verify_scenario STREQUAL "knob")
@@ -780,6 +781,19 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_gradient_editor_scale125 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario gradient-editor --require-one-pass --scale 1.25
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/gradient_editor_scale125@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # CurveEditorDemo, the clock frozen and its readout detached (#641): each
+    # frame of a key's drag writes no slot but its changed spans' (and the
+    # spans beside them), the curve's extensions, the key's disc and the
+    # footer fields', changes no pixel outside the editor and fires onChanged
+    # once; a Free key's tangent drag writes its spans, disc and handles
+    # alone; a wheel zoom and a right-drag pan lay nothing out and write the
+    # plot's slots alone; an added and deleted key give the live ids back;
+    # settled frames write nothing; the demo gives its ids back
+    gweni_whole_app_test(controltest_curve_editor 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario curve-editor --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/curve_editor@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # SwitchDemo, the clock stepping: a hover writes the track's slot alone,

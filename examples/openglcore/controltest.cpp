@@ -184,7 +184,7 @@
  *                       search-combo | command-palette |
  *                       reorder |
  *                       calendar | date-time | translucency |
- *                       gradient-editor (see below)
+ *                       gradient-editor | curve-editor (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -950,6 +950,25 @@
  *                 with the picker open too; the demo gives its ids back.
  *                 Two more lines list each drag and typing frame's writes.
  *                 Exits non-zero if any check is no.
+ *    curve-editor CurveEditorDemo, the clock frozen and its readout detached
+ *                 (curve-editor-drag.png): curve x's key at 5 s dragged a
+ *                 few units at a time; curve z's Free key at 8 s clicked and
+ *                 its out handle dragged up; a wheel notch and a right-drag
+ *                 pan over the plot's centre; a key added by a double-click
+ *                 on curve x at 1.25 s and deleted. One line
+ *                   curve-editor drag_within=yes|no ... ids_back=yes|no
+ *                 reports the checks: each key drag frame writes no slot
+ *                 but those of the spans its edit changed and the spans
+ *                 beside them, the curve's extensions, the key's disc and
+ *                 the footer fields', changes no pixel outside the editor
+ *                 and fires onChanged once a move; each tangent drag frame
+ *                 writes no slot but the curve's changed spans, the key's
+ *                 disc and its handles; the zoom and the pan lay nothing
+ *                 out, write only the plot's slots and labels and open no
+ *                 menu; the added and deleted key leaves the live ids as
+ *                 they were; settled frames write nothing; the demo gives
+ *                 its ids back. Three more lines list each drag, tangent
+ *                 and view frame's writes. Exits non-zero if any check is no.
  *    chip-badge   ChipBadgeDemo, the clock frozen (chip-badge.png): the
  *                 Inbox entry's badge counted one more (the same width),
  *                 then 9 -> 10 (wider); the "Corners" button, a badge at
@@ -2126,7 +2145,7 @@ static void printUsage(std::ostream &out)
          "                     | toolbar | range-slider | stepper | code-view\n"
          "                     | rich-text\n"
          "                     | search-combo | command-palette | reorder | calendar | date-time\n"
-         "                     | translucency | gradient-editor;\n"
+         "                     | translucency | gradient-editor | curve-editor;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -3187,7 +3206,7 @@ enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typ
     PlotLines, Knob, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
     ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented, SplitButton, ToolBar,
     Breadcrumb, RangeSlider, Stepper, CodeView, RichText, Markdown, MarkdownImages, SearchCombo, CommandPalette, Reorder, Calendar, DateTime, Translucency,
-    OpacityRoundTrip, Opacity, HexView, GradientEditor };
+    OpacityRoundTrip, Opacity, HexView, GradientEditor, CurveEditor };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -3215,6 +3234,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "opacity-round-trip") scenario=Scenario::OpacityRoundTrip;
     else if(name == "opacity") scenario=Scenario::Opacity;
     else if(name == "gradient-editor") scenario=Scenario::GradientEditor;
+    else if(name == "curve-editor") scenario=Scenario::CurveEditor;
     else if(name == "demo-labels") scenario=Scenario::DemoLabels;
     else if(name == "plot-histogram") scenario=Scenario::PlotHistogram;
     else if(name == "plot-lines") scenario=Scenario::PlotLines;
@@ -9571,6 +9591,307 @@ static bool runGradientEditorScenario(Session &s, const std::string &shotDir, bo
                                  " or did not recolour the stop"
                      : !addOk ? "an added and deleted stop did not give the live ids back"
                      : !pickerOk ? "the picker did not open and close, or a settled frame with it open wrote slots"
+                     : !settled ? "a settled frame wrote slots"
+                     : "the demo did not give its primitive ids back")<<"\n";
+    return shot;
+}
+
+//-----------------------------------------------------------------------------
+// --scenario curve-editor: CurveEditorDemo's keys dragged, a Free key's
+// tangent dragged, the view zoomed and panned, and a key added and deleted
+//
+// The demo's readout is detached from the editor, so nothing outside the
+// editor follows an edit. Each drag frame of curve x's third key (Smooth) is
+// held to the slots of the spans its edit changed (Curve::lastChange()) and
+// the spans beside them, its disc and the footer fields' (their glyphs), and
+// fires onChanged once; the drag changes no pixel outside the editor. Each
+// frame of a drag of curve z's Free key's out handle is held to its spans,
+// its disc and its handles. A wheel notch and a right-drag pan lay nothing
+// out and write only the plot's slots and labels. A key added by a
+// double-click on curve x and deleted with Delete gives the live ids back;
+// settled frames write nothing; the demo gives its ids back.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+struct CurveChanges: public gweni::event::Handler
+{
+    void changed(gweni::event::Info) { ++count; }
+
+    int count=0;
+};
+
+}//namespace
+
+static bool runCurveEditorScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    const size_t idsBefore=livePrimitiveIds();
+    gweni::controls::Base *control=addControl(s, "CurveEditorDemo");
+    auto *demo=gweni::gweni_cast<gweni::CurveEditorDemo>(control);
+
+    if(!demo || !demo->editor())
+    {
+        std::cerr<<"ControlTest: curve-editor: CurveEditorDemo has no editor\n";
+        return false;
+    }
+
+    gweni::controls::CurveEditor *editor=demo->editor();
+    gweni::controls::internal::CurvePlot *plotControl=editor->getPlot();
+    CurveChanges changes;
+
+    // the readout follows no edit: what is outside the editor stays
+    editor->onChanged.removeHandler(demo);
+    editor->onChanged.add(&changes, &CurveChanges::changed);
+
+    s.label="curve-editor";
+    renderFrames(s, s.frames);
+
+    auto plot=[&]()
+    {
+        return static_cast<const gweni::skin::textured::CurvePlot *>(plotControl->getSkinControl());
+    };
+    // the canvas point a curve point is drawn at
+    auto canvasAt=[&](double time, double value)
+    {
+        const gweni::Point origin=plotControl->localPosToCanvas();
+        const gweni::PointF local=editor->curveToLocal(gweni::CurvePoint{time, value});
+
+        return gweni::Point(origin.x+int(std::lround(local.x)), origin.y+int(std::lround(local.y)));
+    };
+    // the slots of curve \p curve's spans the last edit changed, and the
+    // spans beside them
+    auto changedSpans=[&](size_t curve, std::set<size_t> &ids)
+    {
+        const gweni::Curve &c=*editor->getCurve(curve);
+        const gweni::CurveSpanChange change=c.lastChange();
+        const size_t from=(change.first > 0)?change.first-1:0;
+        const size_t to=std::min(c.spanCount(), change.first+change.inserted+1);
+
+        for(size_t k=from; k < to; ++k)
+        {
+            for(size_t id : plot()->spanPrimitives(curve, k))
+                ids.insert(id);
+        }
+        // the extensions follow the first and the last key
+        for(size_t id : plot()->extensionPrimitives(curve))
+            ids.insert(id);
+    };
+
+    size_t idleWritten=gradientFrame(s).written;
+
+    auto settle=[&]()
+    {
+        idleWritten+=gradientFrame(s).written;
+    };
+
+    //--- a key drag: curve x's key at 5 s, a few units at a time
+    gweni::Curve &x=demo->curve(0);
+    const gweni::Point grab=canvasAt(x.key(2).time, x.key(2).value);
+
+    mouseDown(s, grab.x, grab.y, true);
+    renderFrames(s, s.frames);
+
+    const std::vector<uint8_t> before=framePixels(s);
+    const int changesBefore=changes.count;
+    std::string frames;
+    bool dragWithin=true, dragMoved=true;
+    int moves=0;
+    const gweni::Point steps[]={{3, 0}, {2, -3}, {4, 2}, {0, -5}, {6, 1}};
+    gweni::Point at=grab;
+
+    for(const gweni::Point &step : steps)
+    {
+        const gweni::Curve::Key key=x.key(2);
+
+        at.x+=step.x;
+        at.y+=step.y;
+        moveMouse(s, at.x, at.y);
+        if(!(x.key(2) == key))
+            ++moves;
+
+        std::set<size_t> primitives, texts;
+
+        changedSpans(0, primitives);
+        primitives.insert(plot()->keyPrimitive(0, 2));
+        subtreeIds(editor->getTimeField(), primitives, texts);
+        subtreeIds(editor->getValueField(), primitives, texts);
+
+        const GradientFrame frame=gradientFrame(s);
+        std::string outside;
+
+        if(!writesWithin(frame, primitives, texts, outside))
+            dragWithin=false;
+        if(frame.primitives.empty())
+            dragMoved=false;
+        frames+=" prim="+std::to_string(frame.primitives.size())+",text="+std::to_string(frame.texts.size())
+            +(outside.empty()?"":",outside="+outside);
+    }
+
+    const SplitDifferences dragDiff=differencesSplit(s, before, framePixels(s), editor, editor);
+    const bool shot=shoot(s, shotDir+"/curve-editor-drag.png");
+    const int dragChanges=changes.count-changesBefore;
+
+    mouseUp(s, at.x, at.y);
+    renderFrames(s, s.frames);
+    settle();
+
+    //--- a tangent drag: curve z's Free key at 8 s, selected, its out handle
+    gweni::Curve &z=demo->curve(2);
+    const gweni::Point free=canvasAt(z.key(2).time, z.key(2).value);
+
+    clickMouse(s, free.x, free.y);
+    renderFrames(s, s.frames);
+    settle();
+
+    gweni::PointF in, out;
+
+    editor->handlePositions(2, 2, in, out);
+
+    const gweni::Point origin=plotControl->localPosToCanvas();
+    gweni::Point handle(origin.x+int(std::lround(out.x)), origin.y+int(std::lround(out.y)));
+    std::string tangentFrames;
+    bool tangentWithin=true, tangentMoved=true;
+    const bool showsHandles=editor->showsHandles(2, 2);
+
+    mouseDown(s, handle.x, handle.y, true);
+    renderFrames(s, s.frames);
+
+    const bool draggingTangent=editor->draggingTangent();
+
+    for(int i=0; i < 3; ++i)
+    {
+        handle.y-=4;
+        moveMouse(s, handle.x, handle.y);
+
+        std::set<size_t> primitives, texts;
+        const std::vector<size_t> handles=plot()->handlePrimitives(2, 2);
+
+        changedSpans(2, primitives);
+        primitives.insert(plot()->keyPrimitive(2, 2));
+        primitives.insert(handles.begin(), handles.end());
+
+        const GradientFrame frame=gradientFrame(s);
+        std::string outside;
+
+        if(!writesWithin(frame, primitives, texts, outside))
+            tangentWithin=false;
+        if(frame.primitives.empty())
+            tangentMoved=false;
+        tangentFrames+=" prim="+std::to_string(frame.primitives.size())+(outside.empty()?"":",outside="+outside);
+    }
+    mouseUp(s, handle.x, handle.y);
+    renderFrames(s, s.frames);
+    settle();
+
+    const bool tangentSet=std::fabs(z.key(2).outTangent) > 0.0 && (z.key(2).inTangent == z.key(2).outTangent);
+
+    //--- a wheel notch and a right-drag pan: no layout, the plot's slots alone
+    std::set<size_t> plotPrimitives, plotTexts;
+    const gweni::Point centre=centreOf(plotControl);
+    bool viewWithin=true;
+    int viewPasses=0;
+    std::string viewFrames;
+    const double spanBefore=editor->viewX1()-editor->viewX0();
+
+    moveMouse(s, centre.x, centre.y);
+    renderFrames(s, s.frames);
+    settle();
+
+    auto viewFrame=[&](const char *name)
+    {
+        const GradientFrame frame=gradientFrame(s);
+        std::string outside;
+
+        // the plot's ids as it drew them: a new view can take more labels
+        plotPrimitives.clear();
+        plotTexts.clear();
+        subtreeIds(plotControl, plotPrimitives, plotTexts);
+        viewPasses+=s.canvas->getLayoutStats().passes;
+        if(!writesWithin(frame, plotPrimitives, plotTexts, outside) || frame.primitives.empty())
+            viewWithin=false;
+        viewFrames+=std::string(" ")+name+":prim="+std::to_string(frame.primitives.size())+",text="
+            +std::to_string(frame.texts.size())+",passes="+std::to_string(s.canvas->getLayoutStats().passes)
+            +(outside.empty()?"":",outside="+outside);
+    };
+
+    scrollWheel(s, 60);
+    viewFrame("wheel");
+
+    const bool zoomed=(editor->viewX1()-editor->viewX0()) < spanBefore;
+    const double panFrom=editor->viewX0();
+
+    mouseDown(s, centre.x, centre.y, true, GLFW_MOUSE_BUTTON_RIGHT);
+    renderFrames(s, 1);
+    moveMouse(s, centre.x+12, centre.y);
+    viewFrame("pan1");
+    moveMouse(s, centre.x+30, centre.y+6);
+    viewFrame("pan2");
+    mouseUp(s, centre.x+30, centre.y+6, GLFW_MOUSE_BUTTON_RIGHT);
+    renderFrames(s, s.frames);
+
+    const bool panned=editor->viewX0() < panFrom;
+    const bool noMenu=!s.canvas->shownContextMenu();
+
+    forgetMouse(s);
+    renderFrames(s, s.frames);
+    settle();
+
+    //--- a key added by a double-click on curve x, and deleted
+    const size_t idsSettled=livePrimitiveIds();
+    const size_t keysBefore=x.keyCount();
+    const gweni::Point onCurve=canvasAt(1.25, x.evaluate(1.25));
+
+    doubleClickMouse(s, onCurve.x, onCurve.y);
+    renderFrames(s, s.frames);
+
+    const bool added=(x.keyCount() == keysBefore+1);
+
+    sendKey(s, "delete");
+    renderFrames(s, s.frames);
+
+    const bool deleted=(x.keyCount() == keysBefore);
+    const size_t idsDeleted=livePrimitiveIds();
+
+    forgetMouse(s);
+    renderFrames(s, s.frames);
+    settle();
+
+    editor->onChanged.removeHandler(&changes);
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()-idsBefore;
+    const bool dragOk=dragWithin && dragMoved && dragDiff.outside == 0 && moves > 0 && dragChanges == moves;
+    const bool tangentOk=showsHandles && draggingTangent && tangentWithin && tangentMoved && tangentSet;
+    const bool viewOk=viewWithin && viewPasses == 0 && zoomed && panned && noMenu;
+    const bool addOk=added && deleted && idsDeleted == idsSettled;
+    const bool settled=idleWritten == 0;
+    const bool idsBack=idsLeft == 0;
+
+    passed=dragOk && tangentOk && viewOk && addOk && settled && idsBack;
+
+    std::cout<<"curve-editor drag_within="<<(dragWithin?"yes":"no")<<" drag_moved="<<(dragMoved?"yes":"no")
+             <<" drag_outside_pixels="<<dragDiff.outside<<" drag_moves="<<moves<<" drag_changes="<<dragChanges
+             <<" tangent_within="<<(tangentWithin?"yes":"no")<<" tangent_set="<<(tangentSet?"yes":"no")
+             <<" view_within="<<(viewWithin?"yes":"no")<<" view_layout_passes="<<viewPasses
+             <<" zoomed="<<(zoomed?"yes":"no")<<" panned="<<(panned?"yes":"no")<<" pan_menu="<<(noMenu?"no":"yes")
+             <<" key_added="<<(added?"yes":"no")<<" key_deleted="<<(deleted?"yes":"no")
+             <<" ids_after_delete="<<(idsDeleted == idsSettled?"same":"differ")
+             <<" idle_written="<<idleWritten<<" ids_left="<<idsLeft<<" ids_back="<<(idsBack?"yes":"no")<<"\n";
+    std::cout<<"curve_editor_drag"<<frames<<"\n";
+    std::cout<<"curve_editor_tangent"<<tangentFrames<<"\n";
+    std::cout<<"curve_editor_view"<<viewFrames<<"\n";
+    if(!passed)
+        std::cerr<<"ControlTest: curve-editor: "
+                 <<(!dragOk ? "a key drag frame wrote outside its changed spans, its disc and the fields, moved"
+                              " nothing, changed pixels outside the editor, or onChanged did not fire once a move"
+                     : !tangentOk ? "a tangent drag frame wrote outside its spans, its disc and its handles, or set"
+                                    " no tangent"
+                     : !viewOk ? "a zoom or pan laid out, wrote outside the plot, or did not move the view"
+                     : !addOk ? "an added and deleted key did not give the live ids back"
                      : !settled ? "a settled frame wrote slots"
                      : "the demo did not give its primitive ids back")<<"\n";
     return shot;
@@ -26317,6 +26638,15 @@ int main(int argc, char *argv[])
         {
             bool passed=false;
             ok=runGradientEditorScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // an edit wrote outside what it touched
+            break;
+        }
+
+        case Scenario::CurveEditor:
+        {
+            bool passed=false;
+            ok=runCurveEditorScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // an edit wrote outside what it touched
             break;

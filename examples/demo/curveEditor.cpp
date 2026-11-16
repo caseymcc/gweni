@@ -51,7 +51,7 @@ GWENI_CONTROL_CONSTRUCTOR(CurveEditorDemo)
 
     m_editor=newChild<controls::CurveEditor>();
     m_editor->setPos(10, 10);
-    m_editor->setSize(640, 360);
+    m_editor->setSize(620, 340);
     m_editor->addCurve(&m_curves[0]);
     m_editor->addCurve(&m_curves[1]);
     m_editor->addCurve(&m_curves[2]);
@@ -61,10 +61,10 @@ GWENI_CONTROL_CONSTRUCTOR(CurveEditorDemo)
     controls::Label *caption=newChild<controls::Label>();
 
     caption->setText("evaluate() at");
-    caption->setPos(10, 384);
+    caption->setPos(10, 364);
 
     m_sample=newChild<controls::DragNumber>();
-    m_sample->setPos(90, 380);
+    m_sample->setPos(90, 360);
     m_sample->setWidth(80);
     m_sample->setRange(0.0, 10.0);
     m_sample->setSpeed(0.05);
@@ -73,7 +73,7 @@ GWENI_CONTROL_CONSTRUCTOR(CurveEditorDemo)
     m_sample->onValueChanged.add(this, &CurveEditorDemo::onChanged);
 
     m_readout=newChild<controls::Label>();
-    m_readout->setPos(180, 384);
+    m_readout->setPos(180, 364);
     updateReadout();
 }
 

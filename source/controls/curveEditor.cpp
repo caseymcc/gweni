@@ -813,6 +813,21 @@ bool CurveEditor::showsHandles(size_t curve, size_t key) const
     return isSelected(curve, key) && (m_curves[curve].curve->key(key).mode == Curve::TangentMode::Free);
 }
 
+size_t CurveEditor::shownHandleCount() const
+{
+    size_t count=0;
+
+    for(size_t curve=0; curve < m_curves.size(); ++curve)
+    {
+        for(size_t key : m_curves[curve].selected)
+        {
+            if(showsHandles(curve, key))
+                ++count;
+        }
+    }
+    return count;
+}
+
 // Each handle HandleLength from its key along its tangent as drawn: the out
 // handle to the right, the in handle to the left.
 void CurveEditor::handlePositions(size_t curve, size_t key, PointF &in, PointF &out) const

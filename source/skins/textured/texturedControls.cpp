@@ -5175,13 +5175,8 @@ void CurvePlot::takeAll(renderer::Base *renderer, const controls::CurveEditor *e
     }
 
     // the handle sets: every set's stems, then every set's discs, in front
-    size_t shown=0;
+    const size_t shown=editor->shownHandleCount();
 
-    for(const controls::CurveKeyRef &ref : editor->getSelection())
-    {
-        if(editor->showsHandles(ref.curve, ref.key))
-            ++shown;
-    }
     m_handles.assign(std::max<size_t>(4, shown+shown/2), HandleSet());
     for(HandleSet &set : m_handles)
     {
@@ -5388,8 +5383,17 @@ void CurvePlot::update(renderer::Base *renderer, controls::Base *baseControl)
     // what changed, onto the lists: every list again when one ran out of
     // spare slots, the plot's size or the curve count changed, or a curve
     // was changed by the app
-    std::vector<std::vector<size_t>> dirtySpans(curves);
-    std::vector<std::vector<size_t>> dirtyKeys(curves);
+    // the frame's scratch lists, kept from frame to frame with their room
+    std::vector<std::vector<size_t>> &dirtySpans=m_dirtySpans;
+    std::vector<std::vector<size_t>> &dirtyKeys=m_dirtyKeys;
+
+    dirtySpans.resize(curves);
+    dirtyKeys.resize(curves);
+    for(size_t c=0; c<curves; ++c)
+    {
+        dirtySpans[c].clear();
+        dirtyKeys[c].clear();
+    }
     bool retake=!m_taken || (m_curves.size() != curves) || (m_plotSize.x != bounds.w)
         || (m_plotSize.y != bounds.h);
 
@@ -5397,14 +5401,7 @@ void CurvePlot::update(renderer::Base *renderer, controls::Base *baseControl)
         retake=editor->pendingAll(c) || !replay(renderer, editor, c, dirtySpans[c], dirtyKeys[c]);
     if(!retake)
     {
-        size_t shown=0;
-
-        for(const controls::CurveKeyRef &ref : editor->getSelection())
-        {
-            if(editor->showsHandles(ref.curve, ref.key))
-                ++shown;
-        }
-        retake=(shown > m_handles.size());
+        retake=(editor->shownHandleCount() > m_handles.size());
     }
     if(retake)
     {
@@ -5606,8 +5603,9 @@ void CurvePlot::update(renderer::Base *renderer, controls::Base *baseControl)
         const Curve::Key &b=curve.key(k+1);
         const PointF from=local(a.time, a.value);
         const PointF to=local(b.time, b.value);
-        std::vector<CurvePoint> samples;
+        std::vector<CurvePoint> &samples=m_samples;
 
+        samples.clear();
         curve.tessellate(k, segmentsFor(curve.spanShape(k), std::hypot(to.x-from.x, to.y-from.y)), samples);
         points.clear();
         for(const CurvePoint &sample : samples)
@@ -5630,7 +5628,9 @@ void CurvePlot::update(renderer::Base *renderer, controls::Base *baseControl)
         return surface;
     };
 
-    std::vector<PointF> points, before, after;
+    std::vector<PointF> &points=m_points;
+    std::vector<PointF> &before=m_before;
+    std::vector<PointF> &after=m_after;
 
     for(size_t c=0; c<curves; ++c)
     {

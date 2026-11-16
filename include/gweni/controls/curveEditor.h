@@ -232,6 +232,8 @@ public:
     //! where they are in the plot's units.
     bool showsHandles(size_t curve, size_t key) const;
     void handlePositions(size_t curve, size_t key, gweni::PointF &in, gweni::PointF &out) const;
+    //! How many keys show their handles now (selected Free keys).
+    size_t shownHandleCount() const;
     //! \}
 
     //! \sect{Hit tests, in the plot's units}
