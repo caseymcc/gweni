@@ -240,6 +240,11 @@ void Button::onMouseDoubleClickLeft(int x, int y)
     onDoubleClickCaller.call(this);
 }
 
+String Button::getImageName() const
+{
+    return m_image?m_image->getImageName():String();
+}
+
 void Button::setImageAlpha(float f)
 {
     if(!m_image)

@@ -13,6 +13,8 @@
 #include "gweni/controls/textBox.h"
 #include "gweni/controls/toolBar.h"
 
+#include <algorithm>
+
 namespace gweni
 {
 
@@ -99,7 +101,7 @@ GWENI_CONTROL_CONSTRUCTOR(ToolBarDemo)
     m_width->setDock(DockPosition::Left);
     m_width->setSize(300, 20);
     m_width->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
-    m_width->setRange(120, 780);
+    m_width->setRange(LeastWidth, 780);
     m_width->setFloatValue(DefaultWidth, false);
     m_width->onValueChanged.add(this, &ToolBarDemo::onWidthChanged);
 
@@ -163,7 +165,8 @@ void ToolBarDemo::onMenuItem(event::Info info)
 
 void ToolBarDemo::onWidthChanged(event::Info)
 {
-    setBarWidth(static_cast<int>(m_width->getFloatValue()+0.5f));
+    // never below the bar's minimum, whatever the fonts make it
+    setBarWidth(std::max(m_editor->minimumWidth(), static_cast<int>(m_width->getFloatValue()+0.5f)));
 }
 
 }//namespace gweni

@@ -16,17 +16,26 @@
  *  in one update-phase pass, with layout verification finding nothing, and
  *  changes no preferred size of the toolbar.
  *
+ *  Below minimumWidth() the overflow button stays at the toolbar's right
+ *  edge, where the hit test finds it and a click opens the menu. The width
+ *  that shows every item counts the button AlwaysOverflow items force. A
+ *  tool button keeps a tooltip the app set, its text being its tooltip only
+ *  in IconOnly.
+ *
  *  The overflow menu, built as the overflow button opens it: an entry per
- *  overflowed item in order, a tool button its text, a toggle a checkable
+ *  overflowed item in order, a tool button its text and icon, a toggle a checkable
  *  entry checked as it is, a separator a divider (never first), a drop-down
  *  a submenu of copies of its menu's items (submenus copied too), a
- *  SplitButton one with its main action, a divider and its menu's items, a
+ *  SplitButton one with its main action, a divider and its menu's items (no
+ *  divider for an empty menu), a
  *  disabled item a disabled entry, an addControl item its overflow text.
  *  Choosing an entry fires its item's own press once (a tool button's
  *  onPress, a toggle's onToggle, a drop-down item's onMenuItemSelected, a
  *  SplitButton's onPress) and then the toolbar's onOverflowItemChosen; the
  *  toggle's state shows in its entry on the next open, from the menu or from
- *  the app. The menu is built again only when the overflowed set changed.
+ *  the app. The menu is built again only when the overflowed set changed;
+ *  each open brings a drop-down's, a split button's and its main action's
+ *  text up to date.
  *
  *  The keys: the tool items are one Tab stop, the last focused; Left, Right,
  *  Home and End move the focus over the shown, enabled tool items, the
@@ -303,10 +312,25 @@ TEST_CASE("ToolBar: AlwaysShow and AlwaysOverflow items, and a control with no m
     checkOnePass(scene.frame());
     CHECK(scene.shown() == "c1 s1 +");
 
-    // narrower still: the AlwaysShow items stay, past the toolbar's edge
+    // narrower still: the AlwaysShow items stay, running on past the
+    // toolbar's edge, but the overflow button stays at its right edge,
+    // inside it and in reach of the mouse
     scene.setWidth(bar->minimumWidth()/2);
     checkOnePass(scene.frame());
     CHECK(scene.shown() == "c1 s1 +");
+
+    controls::Base *more=bar->getOverflowButton();
+    const Point centre=more->localPosToCanvas(Point(more->getWidth()/2, more->getHeight()/2));
+
+    CHECK(more->getBounds().x+more->getWidth() == bar->getWidth()-bar->getPadding().right);
+    CHECK(scene.canvas->getControlAt(centre.x, centre.y) == more);
+    // and a click there opens the menu
+    scene.canvas->inputMouseMoved(centre.x, centre.y, 0, 0);
+    scene.canvas->inputMouseButton(0, true);
+    scene.canvas->inputMouseButton(0, false);
+    scene.frame();
+    CHECK(bar->getOverflowButton()->isMenuOpen());
+    scene.closeMenu();
 
     bar->setOverflowPriority(d, OverflowPriority::Normal);
     bar->setOverflowPriority(a, OverflowPriority::AlwaysShow);
@@ -523,6 +547,80 @@ TEST_CASE("ToolBar: the overflow menu holds every overflowed item in its menu fo
     CHECK(entries(entry(menu, "Paste")->getMenu()) == std::vector<std::string>{"Paste", "-", "Paste plain"});
     CHECK(m.scene.bar->getMenuEntrySource(entry(menu, "a1 button")) == m.a);
     CHECK(m.scene.bar->getMenuEntry(m.t) == entry(menu, "Bold"));
+}
+
+TEST_CASE("ToolBar: each open brings a drop-down's, a split button's and its main action's text up to date")
+{
+    MenuBar m;
+    controls::Menu *menu=m.scene.openMenu();
+
+    REQUIRE(entry(menu, "Export"));
+    m.scene.closeMenu();
+    m.dd->setText("Share");
+    m.sp->setText("Insert");
+    menu=m.scene.openMenu();
+    // the overflowed set did not change: the same entries, new texts
+    CHECK(m.scene.bar->getMenuBuildCount() == 1);
+    CHECK(entries(menu) == std::vector<std::string>{"a1 button", "-", "[x] Bold", "Share >", "-",
+        "Insert >", "(off) Off", "Search"});
+    REQUIRE(entry(menu, "Insert"));
+    CHECK(entries(entry(menu, "Insert")->getMenu()) == std::vector<std::string>{"Insert", "-", "Paste plain"});
+}
+
+TEST_CASE("ToolBar: an overflow entry has its tool button's icon, and an empty split button no divider")
+{
+    Scene scene;
+    ToolBar *bar=scene.bar;
+    controls::ToolButton *icon=bar->addButton("", "test16.png");
+    controls::SplitButton *solo=bar->addSplitButton("Solo");
+
+    bar->setOverflowPriority(icon, OverflowPriority::AlwaysOverflow);
+    bar->setOverflowPriority(solo, OverflowPriority::AlwaysOverflow);
+    scene.settle();
+
+    controls::Menu *menu=scene.openMenu();
+    controls::MenuItem *iconEntry=bar->getMenuEntry(icon);
+
+    REQUIRE(iconEntry);
+    CHECK(iconEntry->getImageName() == "test16.png");
+    REQUIRE(entry(menu, "Solo"));
+    CHECK(entries(entry(menu, "Solo")->getMenu()) == std::vector<std::string>{"Solo"});
+}
+
+TEST_CASE("ToolBar: the width that shows every item counts the button AlwaysOverflow items force")
+{
+    Scene scene;
+    ToolBar *bar=scene.bar;
+
+    button(bar, "a1");
+    button(bar, "b1");
+    // a narrow item, always in the menu
+    controls::Base *narrow=bar->addSeparator();
+    controls::ToolButton *c=bar->addButton("", "");
+
+    (void)narrow;
+    bar->setOverflowPriority(c, OverflowPriority::AlwaysOverflow);
+    scene.settle();
+    scene.setWidth(bar->fullWidth());
+    scene.settle();
+    CHECK(scene.shown() == "a1 b1 +");
+}
+
+TEST_CASE("ToolBar: a tool button keeps a tooltip of the app's own")
+{
+    Scene scene;
+    controls::ToolButton *b=button(scene.bar, "a1");
+
+    b->setToolTipText("mine");
+    b->setText("other");
+    b->setImage("test16.png");
+    CHECK(b->getToolTipText() == "mine");
+
+    // in IconOnly the text is the tooltip, and back it is cleared
+    scene.bar->setDisplay(controls::ToolBarDisplay::IconOnly);
+    CHECK(b->getToolTipText() == "other");
+    scene.bar->setDisplay(controls::ToolBarDisplay::TextOnly);
+    CHECK(b->getToolTipText().empty());
 }
 
 TEST_CASE("ToolBar: choosing an overflow entry fires its item's event, toggles kept in step both ways")

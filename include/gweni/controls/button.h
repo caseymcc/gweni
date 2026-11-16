@@ -70,6 +70,8 @@ public:
     }
 
     virtual void setImage(const String &name, bool center=false);
+    //! The image setImage() set, empty for none.
+    String getImageName() const;
 
     void sizeToContents() override;
     void postLayout(skin::Base *skin) override;

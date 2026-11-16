@@ -122,7 +122,17 @@ void ToolButton::updateToolTip()
 {
     const bool iconOnly=imageShows() && !textShows() && !m_text->getText().empty();
 
-    setToolTipText(iconOnly?m_text->getText():String());
+    // an app's own tooltip is left alone; only the one set here is cleared
+    if(iconOnly)
+    {
+        setToolTipText(m_text->getText());
+        m_textToolTip=true;
+    }
+    else if(m_textToolTip)
+    {
+        setToolTipText(String());
+        m_textToolTip=false;
+    }
 }
 
 int ToolButton::imageWidth() const
@@ -546,8 +556,23 @@ int ToolBar::rowWidth(std::vector<bool> &shown) const
 int ToolBar::fullWidth() const
 {
     std::vector<bool> shown(m_items.size(), true);
+    bool forced=false;
 
-    return rowWidth(shown)+getPadding().left+getPadding().right;
+    // an AlwaysOverflow item is never in the row, but the button it forces is
+    for(size_t i=0; i < m_items.size(); ++i)
+    {
+        if(m_info[i].priority == OverflowPriority::AlwaysOverflow && canOverflow(m_items[i]))
+        {
+            shown[i]=false;
+            forced=forced || !m_info[i].separator;
+        }
+    }
+
+    int width=rowWidth(shown);
+
+    if(forced && m_overflowButton)
+        width+=(width > 0?Spacing:0)+m_overflowButton->getPreferredSize().width;
+    return width+getPadding().left+getPadding().right;
 }
 
 int ToolBar::minimumWidth() const
@@ -558,14 +583,14 @@ int ToolBar::minimumWidth() const
     for(size_t i=0; i < m_items.size(); ++i)
     {
         shown[i]=!m_info[i].separator && !canOverflow(m_items[i]);
-        overflows=overflows || canOverflow(m_items[i]);
+        overflows=overflows || (!m_info[i].separator && canOverflow(m_items[i]));
     }
 
     int width=rowWidth(shown);
 
     if(overflows && m_overflowButton)
         width+=(width > 0?Spacing:0)+m_overflowButton->getPreferredSize().width;
-    return width+2*Padding;
+    return width+getPadding().left+getPadding().right;
 }
 
 void ToolBar::calculateSize(skin::Base *skin, Dim dim)
@@ -719,8 +744,10 @@ void ToolBar::handleOverflow()
         {
             const int button=m_overflowButton->getPreferredSize().width;
 
-            placeChild(m_overflowButton, std::max(x, padding.left+available-button), m_overflowButton->getY(),
-                button, m_overflowButton->getHeight());
+            // at the right edge, inside the bar even when the AlwaysShow
+            // items do not fit (they run on under it, so it stays in reach)
+            placeChild(m_overflowButton, std::max(padding.left, padding.left+available-button),
+                m_overflowButton->getY(), button, m_overflowButton->getHeight());
         }
     }
 
@@ -736,10 +763,16 @@ size_t ToolBar::idOf(const Base *control)
     return control?const_cast<Base *>(control)->getControlId():0;
 }
 
-void ToolBar::addMenuEntry(MenuItem *entry, Base *source, Base *item)
+String ToolBar::imageNameOf(const Button *button)
+{
+    return button?button->getImageName():String();
+}
+
+void ToolBar::addMenuEntry(MenuItem *entry, Base *source, Base *item, bool itemText)
 {
     MenuEntry e;
 
+    e.itemText=itemText;
     e.entry=idOf(entry);
     e.source=idOf(source);
     e.item=idOf(item);
@@ -747,13 +780,13 @@ void ToolBar::addMenuEntry(MenuItem *entry, Base *source, Base *item)
     entry->onMenuItemSelected.add(this, &ToolBar::onMenuEntryChosen);
 }
 
-void ToolBar::copyMenu(Menu *from, Menu *to, Base *item)
+void ToolBar::copyMenu(Menu *from, Menu *to, Base *item, bool dividerFirst)
 {
     if(!from)
         return;
 
-    bool pendingDivider=false;
-    bool any=false;
+    bool pendingDivider=dividerFirst;
+    bool any=dividerFirst;
 
     for(Base *child : from->getChildren())
     {
@@ -779,7 +812,7 @@ void ToolBar::copyMenu(Menu *from, Menu *to, Base *item)
         // a submenu is copied whole, its items chosen as themselves
         if(source->hasMenu())
         {
-            copyMenu(source->getMenu(), entry->getMenu(), item);
+            copyMenu(source->getMenu(), entry->getMenu(), item, false);
             addMenuEntry(entry, nullptr, item);
             continue;
         }
@@ -821,29 +854,29 @@ void ToolBar::buildMenu(Menu *menu)
 
         if(ToolButton *button=gweni_cast<ToolButton>(item))
         {
-            MenuItem *entry=menu->addItem(button->getText());
+            MenuItem *entry=menu->addItem(button->getText(), imageNameOf(button));
 
             entry->setCheckable(button->isToggle());
             addMenuEntry(entry, button, button);
         }
         else if(SplitButton *split=gweni_cast<SplitButton>(item))
         {
-            MenuItem *parent=menu->addItem(split->getText());
+            MenuItem *parent=menu->addItem(split->getText(), imageNameOf(split->getMainPart()));
             Menu *submenu=parent->getMenu();
             MenuItem *main=submenu->addItem(split->getText());
 
             main->setCheckable(split->isToggle());
-            addMenuEntry(main, split->getMainPart(), split);
-            submenu->addDivider();
-            copyMenu(split->getMenu(), submenu, split);
-            addMenuEntry(parent, nullptr, split);
+            addMenuEntry(main, split->getMainPart(), split, true);
+            // a divider between it and its menu's items, if it has any
+            copyMenu(split->getMenu(), submenu, split, true);
+            addMenuEntry(parent, nullptr, split, true);
         }
         else if(DropDownButton *dropDown=gweni_cast<DropDownButton>(item))
         {
-            MenuItem *parent=menu->addItem(dropDown->getText());
+            MenuItem *parent=menu->addItem(dropDown->getText(), imageNameOf(dropDown));
 
-            copyMenu(dropDown->getMenu(), parent->getMenu(), dropDown);
-            addMenuEntry(parent, nullptr, dropDown);
+            copyMenu(dropDown->getMenu(), parent->getMenu(), dropDown, false);
+            addMenuEntry(parent, nullptr, dropDown, true);
         }
         else
         {
@@ -886,12 +919,23 @@ void ToolBar::prepareOverflowMenu(Menu *menu)
         }
         else if((source == item) && (indexOf(item) >= 0) && m_info[indexOf(item)].control)
             entry->setText(m_info[indexOf(item)].overflowText);
-        else if(Button *button=gweni_cast<Button>(source))
+        else
         {
-            if(gweni_cast<ToolButton>(button))
-                entry->setText(button->getText());
-            if(button->isToggle())
-                entry->setChecked(button->getToggleState());
+            // a drop-down's or a SplitButton's own entry, and its main action's
+            if(e.itemText)
+            {
+                if(SplitButton *split=gweni_cast<SplitButton>(item))
+                    entry->setText(split->getText());
+                else if(Button *button=gweni_cast<Button>(item))
+                    entry->setText(button->getText());
+            }
+            if(Button *button=gweni_cast<Button>(source))
+            {
+                if(gweni_cast<ToolButton>(button))
+                    entry->setText(button->getText());
+                if(button->isToggle())
+                    entry->setChecked(button->getToggleState());
+            }
         }
     }
 }

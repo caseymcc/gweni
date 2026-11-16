@@ -45,6 +45,7 @@ public:
     controls::SplitButton *pasteButton() const { return m_paste; }
     controls::TextBox *searchBox() const { return m_search; }
     controls::Label *actionLabel() const { return m_action; }
+    controls::HorizontalSlider *widthSlider() const { return m_width; }
 
     //! Whether an action sets the label's text (on by default): a test
     //! weighing the toolbar's own cost turns it off, since the label's new
@@ -52,6 +53,9 @@ public:
     void setLabelUpdates(bool updates);
 
     static constexpr int DefaultWidth=600;
+    //! The width slider's least value: the editor toolbar's minimumWidth()
+    //! or more, so the slider never takes the bar below it.
+    static constexpr int LeastWidth=360;
 
 private:
     void onAction(event::Info info);

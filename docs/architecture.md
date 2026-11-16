@@ -738,8 +738,13 @@ between two shown items with no shown separator since the first, so the row neve
 or ends with one nor shows two together. The preferred width is every item's
 (`fullWidth()`) and the height the tallest item's, whatever is shown, so no overflow
 changes a preferred size; `minimumWidth()` is the AlwaysShow items' and the button's.
-When even the AlwaysShow items do not fit they are placed at their widths all the same,
-past the bar's right edge, the button after them.
+Below that, when even the AlwaysShow items do not fit, the overflow button stays at the
+bar's right edge, inside it, so the menu stays in reach of the mouse (the hit test enters
+no point outside a control's bounds); the AlwaysShow items are placed at their widths all
+the same, those that do not fit running on under the button (the last child, drawn and hit
+in front of them) and past the bar's edge, drawn there but out of the mouse's reach.
+ToolBarDemo's width slider never takes its toolbar there: its least value is above the
+toolbar's `minimumWidth()`, and its handler clamps to it.
 
 **Decided in the X arrange.** Which items show needs only the toolbar's width (final in
 its X arrange) and its items' preferred widths, so `ToolBar::arrange` decides it there
@@ -765,12 +770,13 @@ toolbar itself.
 `openMenu()` calls after closing the other menus and before opening it. It is built from
 the overflowed items in order, and built again only when the overflowed set changed since
 (`getOverflowSerial()`, raised by the arrange and by an item removed;
-`getMenuBuildCount()`): a tool button an entry with its text, a toggle a checkable entry,
+`getMenuBuildCount()`): a tool button an entry with its text and icon, a toggle a checkable entry,
 an overflowed separator a `MenuDivider` (never first, last or doubled), a drop-down a
 submenu of copies of its menu's items (`MenuItem::hasMenu()` tells a submenu without
-making one; submenus are copied whole), a SplitButton a submenu with its main action, a
-divider and its menu's items, and an addControl item its overflow text. The entries are
-mapped to their items by control ids. Each open brings every entry's text, disabled state
+making one; submenus are copied whole), a SplitButton a submenu with its main action, then
+a divider and its menu's items if it has any, and an addControl item its overflow text. The entries are
+mapped to their items by control ids. Each open brings every entry's text (a drop-down's and a
+SplitButton's submenu entry and the main action's included), disabled state
 and check up to date with its item, so a toggle the app turned while it was overflowed
 shows in the next open, and a disabled item's entry is disabled. Choosing an entry closes
 the menus, flips a checkable entry's check (`MenuItem::onPress`), then fires what pressing

@@ -300,6 +300,9 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
         if(verify_scenario STREQUAL "markdown" OR verify_scenario STREQUAL "markdown-images")
             list(APPEND verify_flags --size 865x545)
         endif()
+        if(verify_scenario STREQUAL "toolbar")
+            list(APPEND verify_flags --size 800x400)
+        endif()
         add_test(NAME controltest_verify_layout_${verify_name}
             COMMAND $<TARGET_FILE:ControlTest> --headless --scenario ${verify_scenario}
                 --verify-layout ${verify_flags}
@@ -845,9 +848,12 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     # back gives each frame back; a tool button's hover writes its slot alone;
     # Bold chosen from the menu shows checked on the next open and on in the
     # wide bar; settled frames write nothing, the menu open or closed; Right
-    # and Left move the focus over the shown items to the overflow button
+    # and Left move the focus over the shown items to the overflow button;
+    # the width slider stays at or above the bar's minimumWidth(), and below
+    # it the overflow button is at the bar's right edge, hit by the mouse. At
+    # 800x400, which holds the whole bar
     gweni_whole_app_test(controltest_toolbar 60
-        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario toolbar --require-one-pass
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario toolbar --require-one-pass --size 800x400
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/toolbar@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 

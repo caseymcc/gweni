@@ -1686,6 +1686,7 @@
 #include <gweni/controls/popup.h>
 #include <gweni/controls/toast.h>
 #include <gweni/controls/slider.h>
+#include <gweni/controls/horizontalSlider.h>
 #include <gweni/controls/tabControl.h>
 #include <gweni/controls/scrollBarButton.h>
 #include <gweni/controls/comboBox.h>
@@ -16038,6 +16039,33 @@ static bool runToolBarScenario(Session &s, const std::string &shotDir, bool &pas
     renderFrames(s, 1);
     idleWork+=settleCodeEditor(s, pixels);
     checks.check("settled", idleWork == 0, "settled frames wrote or changed "+std::to_string(idleWork));
+
+    // (7) the width slider at its least value leaves the bar at its
+    // minimumWidth() or wider, and below it the overflow button is still at
+    // the bar's right edge, where the mouse reaches it
+    gweni::controls::HorizontalSlider *slider=demo->widthSlider();
+
+    slider->setFloatValue(slider->getMin());
+    renderFrames(s, 1);
+
+    const int sliderLeast=demo->getBarWidth();
+    const int least=bar->minimumWidth();
+
+    demo->setBarWidth(least/2);
+    renderFrames(s, 1);
+
+    const gweni::Point at=centre(more);
+    gweni::controls::Base *hit=s.canvas->getControlAt(at.x, at.y);
+    const gweni::Rect barRect=bar->getCanvasBounds();
+
+    checks.check("narrow", slider->getMin() >= least && sliderLeast >= least && !more->hidden() && hit == more
+        && more->getCanvasBounds().x+more->getWidth() <= barRect.x+barRect.w,
+        "the slider's least value is "+std::to_string(slider->getMin())+", its least width "
+        +std::to_string(sliderLeast)+" (minimumWidth "+std::to_string(least)
+        +"), and at "+std::to_string(least/2)+" the overflow button is "+(more->hidden() ? "hidden" : "shown")
+        +(hit == more ? ", hit" : ", not hit")+" at "+std::to_string(at.x)+","+std::to_string(at.y));
+    demo->setBarWidth(gweni::ToolBarDemo::DefaultWidth);
+    renderFrames(s, 1);
 
     dropControl(s, control);
     renderFrames(s, 1);

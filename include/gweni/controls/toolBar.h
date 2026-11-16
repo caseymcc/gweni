@@ -89,10 +89,13 @@ protected:
     int imageWidth() const;
     int imageHeight() const;
     int contentWidth() const;
-    //! The text's tooltip in IconOnly, none otherwise.
+    //! The text's tooltip in IconOnly; otherwise none, unless the app set
+    //! one of its own.
     void updateToolTip();
 
     ToolBarDisplay m_display=ToolBarDisplay::IconAndText;
+    //! Whether the tooltip is the text, set by updateToolTip().
+    bool m_textToolTip=false;
 };
 
 namespace internal
@@ -173,10 +176,13 @@ public:
 //! from the end, one at a time, until the rest fits. The overflowed items are
 //! hidden. A separator never starts or ends the shown row, nor follows another
 //! shown separator. An addControl item with no overflow text has no menu form
-//! and is never overflowed, as an AlwaysShow item; when the AlwaysShow items
-//! alone do not fit, they are placed at their widths all the same, past the
-//! toolbar's right edge (it does not clip, shouldClip(): an ancestor that
-//! does cuts them), the overflow button after them.
+//! and is never overflowed, as an AlwaysShow item. Below minimumWidth(),
+//! when the AlwaysShow items alone do not fit, the overflow button stays at
+//! the toolbar's right edge, inside it, so the menu is still in reach, and
+//! the AlwaysShow items are placed at their widths all the same, those that
+//! do not fit running on under the button (which is drawn and hit in front
+//! of them) and past the toolbar's right edge, where they are drawn (it does
+//! not clip, shouldClip(); an ancestor that does cuts them) but cannot be hit.
 class GWENI_EXPORT ToolBar: public Base
 {
 public:
@@ -230,7 +236,8 @@ public:
     //! Raised each time the overflowed set changes.
     size_t getOverflowSerial() const { return m_overflowSerial; }
 
-    //! What the tool buttons (and the drop-downs) show.
+    //! What the tool buttons show; drop-downs, split buttons and addControl
+    //! items always show what they were made with.
     void setDisplay(ToolBarDisplay display);
     ToolBarDisplay getDisplay() const { return m_display; }
 
@@ -239,11 +246,12 @@ public:
     //! \name The overflow menu
     //! The overflow button's Menu, built from getOverflowedItems() as it
     //! opens, again only when the overflowed set changed since it was last
-    //! built: a tool button is a MenuItem with its text (and icon), a toggle a
+    //! built: a tool button is a MenuItem with its text and icon, a toggle a
     //! checkable one, an overflowed separator a MenuDivider (never first,
     //! last or after another), a drop-down a submenu holding copies of its
     //! menu's items (a SplitButton's with its main action first, then a
-    //! divider), an addControl item a MenuItem with its overflow text. Each
+    //! divider if its menu has items), an addControl item a MenuItem with its
+    //! overflow text. Each
     //! open brings every entry's text, disabled state and check up to date
     //! with its item. Choosing an entry fires what pressing its item would:
     //! a tool button's onPress (a toggle flipping its state, which the entry's
@@ -340,17 +348,22 @@ protected:
         size_t entry=0;
         size_t source=0;
         size_t item=0;
+        //! A drop-down's or a SplitButton's own entry, its text the item's.
+        bool itemText=false;
     };
     //! The tool items in focus order: the shown items that are no separator
     //! nor addControl one, then the overflow button.
     std::vector<Base *> toolItems() const;
     void buildMenu(Menu *menu);
-    //! Copies \p from's items (recursively) into \p to, under \p item.
-    void copyMenu(Menu *from, Menu *to, Base *item);
-    void addMenuEntry(MenuItem *entry, Base *source, Base *item);
+    //! Copies \p from's items (recursively) into \p to, under \p item, a
+    //! divider before them with \p dividerFirst (none if it has no item).
+    void copyMenu(Menu *from, Menu *to, Base *item, bool dividerFirst);
+    void addMenuEntry(MenuItem *entry, Base *source, Base *item, bool itemText=false);
     void onMenuEntryChosen(event::Info info);
     //! A control's id, or 0.
     static size_t idOf(const Base *control);
+    //! A button's image name, empty for none or no button.
+    static String imageNameOf(const Button *button);
 
     std::vector<Base *> m_items;
     std::vector<ItemInfo> m_info;
