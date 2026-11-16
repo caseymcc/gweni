@@ -35,7 +35,11 @@
  *  whole (shown at no width) takes no focus from Tab, the arrows or End,
  *  and a narrowing that clips the focused part, or the ellipsis whose open
  *  menu has the focus, that far hands the focus to a part still drawn, in
- *  one pass, the menu closed in the next update.
+ *  one pass, the menu closed in the next update: a clipped item to the last
+ *  drawn part, and none drawn drops it. An app edit while the menu holds
+ *  the focus keeps it in the path, and an open menu whose collapsed range
+ *  or labels an edit (at once) or a layout (in the next update) changed is
+ *  closed, while an edit that keeps them leaves it open and focused.
  */
 #include "headlessFixture.h"
 
@@ -1023,15 +1027,20 @@ TEST_CASE("Breadcrumb: a widening that hides the ellipsis with its menu focused 
     scene.key(keys::Right);
     CHECK(KeyboardFocus == path->getItemControl(2));
 
-    // a narrowing that keeps the ellipsis but closes nothing leaves the
-    // menu's focus alone
+    // a widening that keeps the ellipsis leaves the menu's focus alone in
+    // its pass; the menu, which lists "source" no more collapsed, is closed
+    // in the next update, its focus back on the ellipsis
     scene.setWidth(neededWidth(path, 1, 4));
     ellipsis->focus();
     scene.key(keys::Return);
     REQUIRE(KeyboardFocus == menu);
     scene.setWidth(neededWidth(path, 1, 3));
+    CHECK(scene.canvas->getLayoutStats().passes == 1);
     REQUIRE(shown(path) == std::vector<int>{0, -1, 3, 4, 5});
     CHECK(KeyboardFocus == menu);
+    scene.frame();
+    CHECK(menu->hidden());
+    CHECK(KeyboardFocus == ellipsis);
 }
 
 TEST_CASE("Breadcrumb: a part clipped to no width takes no keyboard focus")
@@ -1064,8 +1073,9 @@ TEST_CASE("Breadcrumb: a part clipped to no width takes no keyboard focus")
     REQUIRE(KeyboardFocus);
     CHECK(KeyboardFocus->getWidth() > 0);
 
-    // a narrowing that clips the focused part whole hands the focus to a
-    // part still drawn, in one pass
+    // a narrowing that collapses the focused item while the ellipsis is
+    // past the edge hands the focus to a part still drawn, in one pass (an
+    // item clipped, not collapsed: the next cases)
     scene.setWidth(fits);
     path->getItemControl(3)->focus();
     scene.setWidth(narrow);
@@ -1088,4 +1098,166 @@ TEST_CASE("Breadcrumb: a part clipped to no width takes no keyboard focus")
     scene.frame();
     CHECK(!ellipsis->isMenuOpen());
     CHECK(KeyboardFocus == home);
+}
+
+TEST_CASE("Breadcrumb: an app edit while the ellipsis menu is open keeps the focus and the menu true")
+{
+    const std::vector<String> items={"Home", "Projects", "gweni", "source", "controls", "base.cpp"};
+    const auto inPath=[](controls::Breadcrumb *path)
+        {
+            return KeyboardFocus && (KeyboardFocus->getParent() == path) && !KeyboardFocus->hidden()
+                && (KeyboardFocus->getWidth() > 0);
+        };
+
+    SUBCASE("a pop that hides the ellipsis gives the menu's focus to the path")
+    {
+        Scene scene;
+        auto *path=scene.path;
+        auto *ellipsis=path->getEllipsisControl();
+
+        path->setItems(items);
+        scene.frame();
+        scene.setWidth(neededWidth(path, 1, 5));
+        ellipsis->focus();
+        scene.key(keys::Return);
+        REQUIRE(KeyboardFocus == ellipsis->getMenu());
+        path->popTo(1);
+        CHECK(KeyboardFocus == path->getItemControl(0));
+        scene.frame();
+        scene.frame();
+        CHECK(!ellipsis->isMenuOpen());
+        CHECK(KeyboardFocus == path->getItemControl(0));
+    }
+    SUBCASE("so does a shorter setItems")
+    {
+        Scene scene;
+        auto *path=scene.path;
+        auto *ellipsis=path->getEllipsisControl();
+
+        path->setItems(items);
+        scene.frame();
+        scene.setWidth(neededWidth(path, 1, 5));
+        ellipsis->focus();
+        scene.key(keys::Return);
+        REQUIRE(KeyboardFocus == ellipsis->getMenu());
+        path->setItems({"Home", "Docs"});
+        scene.frame();
+        CHECK(!ellipsis->isMenuOpen());
+        CHECK(KeyboardFocus == path->getItemControl(0));
+    }
+    SUBCASE("a pop that keeps a smaller range closes the menu, its focus back on the ellipsis")
+    {
+        Scene scene;
+        auto *path=scene.path;
+        auto *ellipsis=path->getEllipsisControl();
+
+        path->setItems(items);
+        scene.frame();
+        scene.setWidth(neededWidth(path, 1, 5));
+        ellipsis->focus();
+        scene.key(keys::Return);
+        REQUIRE(KeyboardFocus == ellipsis->getMenu());
+        path->popTo(3);
+        REQUIRE(path->getCollapsedEnd() == 3);
+        CHECK(!ellipsis->isMenuOpen());
+        CHECK(KeyboardFocus == ellipsis);
+        scene.frame();
+        CHECK(inPath(path));
+    }
+    SUBCASE("a relabel of a collapsed item closes the menu listing the old label")
+    {
+        Scene scene;
+        auto *path=scene.path;
+        auto *ellipsis=path->getEllipsisControl();
+        std::vector<size_t> clicked;
+
+        path->onItemClicked.addCallback(path, [&](event::Handler &, event::Info info) { clicked.push_back(info.integer); });
+        path->setItems(items);
+        scene.frame();
+        scene.setWidth(neededWidth(path, 1, 3));
+        ellipsis->focus();
+        scene.key(keys::Return);
+        REQUIRE(menuLabels(path) == std::vector<String>{"Projects", "gweni"});
+        path->setItems({"Home", "Work", "gweni", "source", "controls", "base.cpp"});
+        CHECK(!ellipsis->isMenuOpen());
+        scene.frame();
+        scene.frame();
+        CHECK(!ellipsis->isMenuOpen());
+        CHECK(inPath(path));
+        CHECK(clicked.empty());
+        // opened again it lists the new label
+        if(!ellipsis->hidden())
+        {
+            ellipsis->openMenu();
+            scene.frame();
+            CHECK(menuLabels(path).front() == "Work");
+        }
+    }
+    SUBCASE("an edit that keeps the collapsed set keeps the menu and its focus")
+    {
+        Scene scene;
+        auto *path=scene.path;
+        auto *ellipsis=path->getEllipsisControl();
+
+        path->setItems(items);
+        scene.frame();
+        scene.setWidth(neededWidth(path, 1, 3));
+        ellipsis->focus();
+        scene.key(keys::Return);
+        REQUIRE(KeyboardFocus == ellipsis->getMenu());
+        path->setItemData(1, "projects-id");
+        path->popTo(4);
+        REQUIRE(path->getCollapsedEnd() == 3);
+        CHECK(ellipsis->isMenuOpen());
+        CHECK(KeyboardFocus == ellipsis->getMenu());
+    }
+}
+
+TEST_CASE("Breadcrumb: a focused item clipped to no width hands the focus to the last drawn part")
+{
+    Scene scene;
+    auto *path=scene.path;
+    auto *ellipsis=path->getEllipsisControl();
+
+    path->setItems({"Home", "Projects", "gweni", "source", "controls", "base.cpp"});
+    path->setItemsAfterCollapse(2);
+    path->setLastItemClickable(true);
+    scene.frame();
+    scene.setWidth(neededWidth(path, 0, 0));
+    auto *last=path->getItemControl(5);
+    auto *controlsItem=path->getItemControl(4);
+
+    last->focus();
+    // the least collapse, cut inside "controls": the last item is shown at no width
+    const int least=neededWidth(path, 1, 4);
+    const int w=least-last->getPreferredSize().width-path->getSeparatorControl(5)->getPreferredSize().width-5;
+
+    scene.setWidth(w);
+    CHECK(scene.canvas->getLayoutStats().passes == 1);
+    REQUIRE(!last->hidden());
+    REQUIRE(last->getWidth() == 0);
+    REQUIRE(controlsItem->getWidth() > 0);
+    REQUIRE(ellipsis->getWidth() > 0);
+    CHECK(KeyboardFocus == controlsItem);
+}
+
+TEST_CASE("Breadcrumb: a path squeezed to no width drops the menu's focus")
+{
+    Scene scene;
+    auto *path=scene.path;
+    auto *ellipsis=path->getEllipsisControl();
+
+    path->setItems({"Home", "Projects", "gweni", "source", "controls", "base.cpp"});
+    scene.frame();
+    scene.setWidth(neededWidth(path, 1, 5));
+    ellipsis->focus();
+    scene.key(keys::Return);
+    REQUIRE(KeyboardFocus == ellipsis->getMenu());
+    scene.setWidth(0);
+    scene.frame();
+    scene.frame();
+    CHECK(!ellipsis->isMenuOpen());
+    CHECK(KeyboardFocus == nullptr);
+    scene.key(keys::Return);
+    CHECK(!ellipsis->isMenuOpen());
 }

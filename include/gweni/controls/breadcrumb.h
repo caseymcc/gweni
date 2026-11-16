@@ -204,8 +204,13 @@ private:
     void removeTail(size_t count);
     //! Whether the keyboard focus is on one of the path's parts.
     bool partFocused() const;
+    //! Whether the ellipsis's open menu holds the keyboard focus.
+    bool menuFocused();
+    //! partFocused() or menuFocused(): the focus is the path's.
+    bool pathFocused();
     //! After an edit, gives the focus the path had (\p focused) to its last
-    //! shown focusable part if the edit took it away.
+    //! drawn focusable part if the edit took it away (the open menu's focus
+    //! counting as the ellipsis's); dropped when no part is drawn.
     void keepFocus(bool focused);
     //! Decides the collapsed range from the width and places the parts in X.
     void handleOverflow();
@@ -213,14 +218,18 @@ private:
     //! whole at the right edge (shown at no width, so not drawn): a
     //! collapsed item gives it to the ellipsis, the ellipsis to the first item
     //! it revealed of [\p begin, \p end), the range collapsed before (each
-    //! only if drawn; else the last drawn part, keepFocus()). The
-    //! focus the ellipsis's open menu held before (\p menuFocused) is handed
-    //! on as the ellipsis's, the menu left to the canvas (or to
-    //! closeUndrawnMenu()) to close.
+    //! only if drawn); anything else (an item cut at the edge) the last
+    //! drawn part, keepFocus(). The focus the ellipsis's open menu held
+    //! before (\p menuFocused) is handed on as the ellipsis's, the menu left
+    //! to the canvas (or to postMenuCheck()) to close.
     void passFocusOn(Base *focused, bool menuFocused, size_t begin, size_t end);
-    //! Closes, in the next update, the open menu of an ellipsis the right
-    //! edge took whole (shown at no width).
-    void closeUndrawnMenu();
+    //! Whether the open menu no longer lists the collapsed items (range or
+    //! labels changed since it was filled) or its ellipsis is not drawn.
+    bool menuStale();
+    //! Closes the menu if menuStale().
+    void closeStaleMenu();
+    //! closeStaleMenu() in the next update, for a layout's change.
+    void postMenuCheck();
     //! Fills the ellipsis's menu if the collapsed labels changed.
     void updateMenu();
     void menuItemPicked(event::Info info);

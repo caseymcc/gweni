@@ -246,10 +246,11 @@ void Breadcrumb::popTo(size_t index)
     if(index >= m_items.size() || index+1 == m_items.size())
         return;
 
-    const bool focused=partFocused();
+    const bool focused=pathFocused();
 
     removeTail(index+1);
     updateCurrent();
+    closeStaleMenu();
     keepFocus(focused);
     invalidate();
 }
@@ -257,7 +258,7 @@ void Breadcrumb::popTo(size_t index)
 void Breadcrumb::setItems(std::vector<String> items)
 {
     const size_t shared=std::min(items.size(), m_items.size());
-    const bool focused=partFocused();
+    const bool focused=pathFocused();
 
     for(size_t i=0; i < shared; ++i)
     {
@@ -269,11 +270,12 @@ void Breadcrumb::setItems(std::vector<String> items)
     {
         removeTail(items.size());
         updateCurrent();
-        keepFocus(focused);
         invalidate();
     }
     for(size_t i=shared; i < items.size(); ++i)
         push(items[i]);
+    closeStaleMenu();
+    keepFocus(focused);
 }
 
 void Breadcrumb::setItemData(size_t index, const String &name)
@@ -309,7 +311,7 @@ void Breadcrumb::setLastItemClickable(bool clickable)
     if(clickable == m_lastClickable)
         return;
 
-    const bool focused=partFocused();
+    const bool focused=pathFocused();
 
     m_lastClickable=clickable;
     updateCurrent();
@@ -321,22 +323,35 @@ bool Breadcrumb::partFocused() const
     return KeyboardFocus && (KeyboardFocus->getParent() == this);
 }
 
+bool Breadcrumb::menuFocused()
+{
+    return KeyboardFocus && m_ellipsis->isMenuOpen() && (KeyboardFocus == m_ellipsis->getMenu());
+}
+
+bool Breadcrumb::pathFocused()
+{
+    return partFocused() || menuFocused();
+}
+
 // A pop from an item's or a menu pick's handler makes the focused item the
 // current one (which takes no focus) or hides the focused ellipsis or item;
 // the keyboard stays in the path, on the nearest part before the current
 // item (WinUI's BreadcrumbBar), and is dropped only when no part is left.
+// The focus the ellipsis's open menu holds is the ellipsis's.
 void Breadcrumb::keepFocus(bool focused)
 {
     if(!focused)
         return;
 
     const std::vector<Base *> parts=focusOrder();
+    const bool inMenu=menuFocused();
+    Base *current=inMenu?m_ellipsis:KeyboardFocus;
 
-    if(std::find(parts.begin(), parts.end(), KeyboardFocus) != parts.end())
+    if(std::find(parts.begin(), parts.end(), current) != parts.end())
         return;
     if(!parts.empty())
         parts.back()->focus();
-    else if(partFocused())
+    else if(inMenu || partFocused())
         KeyboardFocus->unfocus();
 }
 
@@ -599,16 +614,47 @@ void Breadcrumb::arrange(skin::Base *skin, Dim dim)
     // the focus moves outside the placement, which it changes nothing of
     passFocusOn(focused, menuFocused, begin, end);
     if(dim == Dim::X)
-        closeUndrawnMenu();
+        postMenuCheck();
     ParentClass::arrange(skin, dim);
 }
 
-// An ellipsis the right edge took whole keeps its menu open, anchored to
-// nothing drawn; it is closed in the next update (a close in the pass would
-// re-dirty it), after the focus it held has been handed on.
-void Breadcrumb::closeUndrawnMenu()
+// The open menu lists the collapsed items as they were when it opened; one
+// that no longer does (an edit, or a layout, changed the collapsed range or
+// a collapsed label) or whose ellipsis the right edge took whole is stale.
+bool Breadcrumb::menuStale()
 {
-    if(m_ellipsis->hidden() || drawn(m_ellipsis) || !m_ellipsis->isMenuOpen())
+    if(!m_ellipsis->isMenuOpen())
+        return false;
+    if(!m_ellipsis->hidden() && !drawn(m_ellipsis))
+        return true;
+    if(!m_menuBuilt || (m_menuBegin != m_collapseBegin))
+        return true;
+
+    const size_t end=std::min(m_collapseEnd, m_items.size());
+
+    if(end-std::min(m_collapseBegin, end) != m_menuLabels.size())
+        return true;
+    for(size_t i=m_collapseBegin; i < end; ++i)
+    {
+        if(m_items[i].label != m_menuLabels[i-m_collapseBegin])
+            return true;
+    }
+    return false;
+}
+
+// Closed, not refilled: its rows and highlight would change under the user.
+// Its focus goes back to the ellipsis if still shown (Menu's hand-back).
+void Breadcrumb::closeStaleMenu()
+{
+    if(menuStale())
+        m_ellipsis->closeMenu();
+}
+
+// After a layout, a stale menu is closed in the next update (a close in the
+// pass would re-dirty it), after the focus it held has been handed on.
+void Breadcrumb::postMenuCheck()
+{
+    if(!menuStale())
         return;
 
     Canvas *canvas=getCanvas();
@@ -616,14 +662,12 @@ void Breadcrumb::closeUndrawnMenu()
     if(!canvas)
         return;
 
-    const size_t id=m_ellipsis->getControlId();
+    const size_t id=getControlId();
 
     canvas->post([id]()
         {
-            auto *ellipsis=gweni_cast<internal::BreadcrumbEllipsis>(Base::getControlById(id));
-
-            if(ellipsis && !ellipsis->hidden() && !drawn(ellipsis) && ellipsis->isMenuOpen())
-                ellipsis->closeMenu();
+            if(auto *path=gweni_cast<Breadcrumb>(Base::getControlById(id)))
+                path->closeStaleMenu();
         });
 }
 
@@ -644,7 +688,9 @@ void Breadcrumb::passFocusOn(Base *focused, bool menuFocused, size_t begin, size
         return;
     if(focused != m_ellipsis)
     {
-        if(drawn(m_ellipsis))
+        // only a collapsed item is in the ellipsis; one cut at the edge goes
+        // to the last drawn part
+        if(focused->hidden() && drawn(m_ellipsis))
         {
             m_ellipsis->focus();
             return;

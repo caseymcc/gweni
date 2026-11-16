@@ -681,9 +681,17 @@ edge takes whole (shown, but placed at no width past the cut last item) is not d
 so it takes no focus either: Tab, the arrows and End pass over it (so Return cannot
 open the menu of an ellipsis that is not there), and a narrowing that clips the
 focused part that far, or the ellipsis whose open menu has the focus, hands the focus
-on as a hide does, to a part still drawn (the last one before it, `keepFocus`); the
-menu of such an ellipsis is closed in the next update (`closeUndrawnMenu`, a
-`Canvas::post`, since its anchor is still shown). Disabling the path closes
+on to a part still drawn: a clipped item, which is not in the ellipsis, to the last
+drawn focusable part (`keepFocus`), the ellipsis as a hidden one does; a path too
+narrow to draw any part drops it. The open menu's focus is the path's for its edits
+too (`pathFocused`): a `popTo` or `setItems` while the menu holds it keeps it in the
+path as above. The menu lists the collapsed items as they were when it was filled,
+so one that no longer does (an edit or a layout changed the collapsed range or a
+collapsed label) or whose ellipsis the right edge took whole is stale (`menuStale`)
+and is closed, not refilled under the user: at once after an edit (`closeStaleMenu`,
+its focus handed back to the ellipsis if it still shows), and in the next update
+after a layout (`postMenuCheck`, a `Canvas::post`, since a close in the pass would
+re-dirty it and the anchor may still be shown). Disabling the path closes
 the menu, releases focus and turns off its items' keyboard and mouse input; enabling
 it restores input according to each item's click policy, including items pushed
 while disabled.
