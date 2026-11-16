@@ -57,8 +57,9 @@ HERO_OUT=demo.png
 # is the one page of a single control, the text sizes side by side.
 #
 # Every other page of one control is left out (ControlTest --control still
-# shows each). Left off the showcase pages because they do not look right on
-# one today:
+# shows each); NodeGraphDemo and ZoomPanelDemo, whose controls the Canvas &
+# graphs page (ShowcaseGraphsDemo) shows, are in the shell's Canvas category.
+# Left off the showcase pages because they do not look right on one today:
 #   Popup (PopupDemo) - the canvas shows one popup at a time, and the Windows &
 #     menus page's capture opens its context menu
 SAMPLES=(
@@ -66,11 +67,11 @@ SAMPLES=(
     ShowcaseInputDemo
     ShowcaseDisplayDemo
     ShowcaseWindowsDemo
+    ShowcaseGraphsDemo
     TextDemo
     CodeEditorDemo
     CodeViewDemo
     MarkdownDemo
-    NodeGraphDemo
     KnobDemo
     LogViewDemo
     ChartTimeBarsDemo

@@ -66,6 +66,17 @@ vertical), a VirtualList of 100 000 items scrolled to the middle, and a StatusBa
 right-click (accelerators, a divider, a disabled item, one hovered), and two WindowControls over the
 page's content, one with no close button.
 
+[![Canvas & graphs showcase page: a node graph of five nodes and a zoomed panel of ordinary controls](docs/images/ShowcaseGraphsDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=ShowcaseGraphsDemo)
+
+**Canvas & graphs**: a NodeGraph, the node editor built on a ZoomPanel: nodes with a coloured title
+bar and a body of ordinary controls (a Label, DragNumbers, a ComboBox, a TextBox), circle and
+triangle pins, filled when linked and open when not, joined by Bezier, orthogonal and straight links over a
+grid that follows the zoom. Drag a title to move a node, a pin to make a link, empty space to
+box-select, and right-click for the Add node, node and link menus; dragging one node rewrites its own
+slots and its links' segments, nothing else. Beside it, a ZoomPanel at 1.5x holding a Button, a
+ComboBox, a DragNumber and a ScrollControl, with a zoom field that drives it and follows the wheel:
+the text is drawn at the zoomed size, so it stays sharp, and a zoom lays nothing out.
+
 [![Text](docs/images/TextDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=TextDemo)
 
 **Text**: OpenSans from 8 to 16 px, on the pixel grid.
@@ -90,14 +101,6 @@ strikethrough, parsed by md4c): headings, bold, italic, struck-through and inlin
 nested lists, a code block, an aligned table, nested quotes and rules. Each block is a control kept
 across `setMarkdown`, so a live preview's keystroke lays out and redraws only the block it changed,
 and a selection dragged across the blocks copies them as plain text.
-
-[![A small shader-like node graph](docs/images/NodeGraphDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=NodeGraphDemo)
-
-**Node graph**: a NodeGraph, the node editor built on a ZoomPanel: nodes with a coloured title bar
-and a body of ordinary controls (a Label, DragNumbers, a ComboBox, a TextBox), pins of three shapes
-and four colours on their sides, joined by orthogonal, Bezier and straight links, over a grid that
-follows the zoom. Drag a title to move a node, a pin to make a link, empty space to box-select, and
-right-click for menus; dragging one node rewrites its own slots and its links' segments, nothing else.
 
 [![Five knobs: vertical and angular drags, a bipolar one, an integer one and a disabled one](docs/images/KnobDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=KnobDemo)
 
@@ -184,9 +187,10 @@ tree's size, the most the last frames did (controls rendered, layout passes, slo
 plots of the cpu time and the slots per frame. Hover a row and `rendered` and `prim slots` blip and
 drop back to 0, while the frame time stays flat. The mouse passes through it to the app under it.
 
-The showcase pages, the hero's *Containers & data* among them, are in the demo shell's "Showcase"
-category and in `ControlTest --control`, which also still shows every control on a page of its own
-(`ControlTest --list`). All of these images are rendered
+The six showcase pages, from the hero's *Containers & data* to *Canvas & graphs*, are in the demo
+shell's "Showcase" category and in `ControlTest --control`, which also still shows every control on a
+page of its own (`ControlTest --list`); the node graph and zoom panel demos of their own are in the
+shell's "Canvas" category ([`demo.html?demo=NodeGraphDemo`](https://caseymcc.github.io/gweni/demo.html?demo=NodeGraphDemo)). All of these images are rendered
 offscreen by `tools/capture_samples.sh` (see `AGENTS.md`).
 
 ## Running the examples
