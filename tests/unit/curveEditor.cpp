@@ -57,6 +57,7 @@
  *  otherwise be a double-click.
  */
 #include "headlessFixture.h"
+#include "curveEditorFixture.h"
 
 #include <gweni/gweni.h>
 #include <gweni/controls/curveEditor.h>
@@ -96,7 +97,7 @@ struct Scene
 {
     Scene()
     {
-        platform::setTimeSource([this]() { return clock; });
+        platform::setTimeSource([]() { return test::curveEditorClock; });
         canvas=new controls::Canvas(&skin);
         canvas->setSize(800, 600);
         editor=canvas->newChild<controls::CurveEditor>();
@@ -147,7 +148,7 @@ struct Scene
     //! pressed would be a double-click.
     void press(const Point &to, int button=0)
     {
-        clock+=1.0;
+        test::curveEditorClock+=1.0;
         pressNow(to, button);
     }
 
@@ -206,7 +207,6 @@ struct Scene
         controls::CurveKeyRef last;
     };
 
-    double clock=10.0;
     test::StubRenderer renderer;
     test::StubSkin skin{&renderer};
     controls::Canvas *canvas=nullptr;
@@ -226,6 +226,131 @@ std::vector<controls::CurveKeyRef> refs(std::initializer_list<std::pair<size_t, 
 }
 
 }//namespace
+
+namespace
+{
+void nestedEditStopsOuter(const std::function<void(controls::CurveEditor *)> &nested)
+{
+    Scene scene;
+    auto *editor=scene.editor;
+    editor->setSelection(refs({{0, 1}, {0, 2}, {0, 3}}));
+    struct App: event::Handler
+    {
+        void changed(event::Info)
+        {
+            if(called)
+                return;
+            called=true;
+            const int before=scene->events.changes;
+            nested(editor);
+            CHECK(scene->events.changes > before);
+            after=*editor->getCurve(0);
+            selection=editor->getSelection();
+            changes=scene->events.changes;
+        }
+        Scene *scene;
+        controls::CurveEditor *editor;
+        std::function<void(controls::CurveEditor *)> nested;
+        bool called=false;
+        Curve after;
+        std::vector<controls::CurveKeyRef> selection;
+        int changes=0;
+    } app;
+    app.scene=&scene;
+    app.editor=editor;
+    app.nested=nested;
+    editor->onChanged.add(&app, &App::changed);
+
+    SUBCASE("nudge") { editor->nudgeSelection(0.1, 0.1); }
+    SUBCASE("delete") { CHECK(editor->deleteSelection()); }
+    SUBCASE("mode") { editor->setSelectionMode(Mode::Constant); }
+    SUBCASE("broken") { editor->setSelectionBroken(true); }
+    REQUIRE(app.called);
+    CHECK(bool(scene.a.keys() == app.after.keys()));
+    CHECK(editor->getSelection() == app.selection);
+    CHECK(scene.events.changes == app.changes);
+}
+}
+
+TEST_CASE("CurveEditor: a nested delete stops the outer edit")
+{
+    nestedEditStopsOuter([](auto *editor) { CHECK(editor->deleteSelection()); });
+}
+
+TEST_CASE("CurveEditor: a nested add stops the outer edit")
+{
+    nestedEditStopsOuter([](auto *editor) { editor->addKeyAt(0, 1.25); });
+}
+
+TEST_CASE("CurveEditor: a nested nudge stops the outer edit")
+{
+    nestedEditStopsOuter([](auto *editor) { editor->nudgeSelection(0.2, 0.2); });
+}
+
+TEST_CASE("CurveEditor: a nested mode change stops the outer edit")
+{
+    nestedEditStopsOuter([](auto *editor) { editor->setSelectionMode(Mode::Free); });
+}
+
+TEST_CASE("CurveEditor: a nested broken change stops the outer edit")
+{
+    nestedEditStopsOuter([](auto *editor)
+    {
+        const auto ref=editor->getSelection().front();
+        editor->setSelectionBroken(!editor->getCurve(ref.curve)->key(ref.key).broken);
+    });
+}
+
+TEST_CASE("CurveEditor: a nested time field edit stops the outer edit")
+{
+    nestedEditStopsOuter([](auto *editor)
+    {
+        editor->setSelection({{0, 0}});
+        editor->setSelectedTime(0.25);
+    });
+}
+
+TEST_CASE("CurveEditor: a nested value field edit stops the outer edit")
+{
+    nestedEditStopsOuter([](auto *editor)
+    {
+        editor->setSelection({{0, 0}});
+        editor->setSelectedValue(0.25);
+    });
+}
+
+TEST_CASE("CurveEditor: a selection handler editing keys stops a press")
+{
+    Scene scene;
+    auto *editor=scene.editor;
+    struct App: event::Handler
+    {
+        void selection(event::Info)
+        {
+            if(called)
+                return;
+            called=true;
+            if(add)
+                editor->addKeyAt(0, 0.25);
+            else
+                editor->deleteSelection();
+        }
+        controls::CurveEditor *editor;
+        bool called=false;
+        bool add=false;
+    } app;
+    app.editor=editor;
+    editor->onSelectionChanged.add(&app, &App::selection);
+    SUBCASE("delete on left press") { editor->pressAt(scene.at(300, 50)); }
+    SUBCASE("delete on right press") { editor->rightPressAt(scene.at(300, 50)); }
+    SUBCASE("add on left press") { app.add=true; editor->pressAt(scene.at(300, 50)); }
+    SUBCASE("add on right press") { app.add=true; editor->rightPressAt(scene.at(300, 50)); }
+    REQUIRE(app.called);
+    CHECK(!editor->draggingKeys());
+    CHECK(editor->getKeyMenu() == nullptr);
+    CHECK(scene.a.keyCount() == (app.add?5:3));
+    CHECK(scene.events.changes == 1);
+}
 
 TEST_CASE("CurveEditor: the view maps curve points onto the plot, the plot over the fields")
 {

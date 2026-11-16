@@ -139,10 +139,14 @@ struct CurveEditorEdit
 //! removed key's before it). onSelectionChanged fires once per user action
 //! that changed the selection. The app's own calls (setSelection(),
 //! clearSelection(), curveChanged()) fire nothing; after editing a curve
-//! itself the app calls curveChanged(). If an onChanged handler reports an
-//! app edit, the current gesture and any remaining edits in that user action
-//! stop, because their key indices may no longer identify the same keys; a
-//! nudge stops too when a handler sets the selection. A wheel zoom during a
+//! itself the app calls curveChanged(). An event handler may call a user-edit
+//! command (addKeyAt(), deleteSelection(), nudgeSelection(), setSelectionMode(),
+//! setSelectionBroken(), setSelectedTime()/Value()); that nested command runs
+//! and stops the outer action's remaining edits and gesture. Reporting an app
+//! edit or replacing the curves also stops the outer action: its indices may
+//! no longer identify the same keys. Changing the selection stops a loop over
+//! that selection and prevents a press from starting a drag or key menu.
+//! A wheel zoom during a
 //! drag or a marquee keeps its press on the same point of the curve, so the
 //! dragged keys stay under the cursor.
 class GWENI_EXPORT CurveEditor: public Base
@@ -383,7 +387,7 @@ protected:
     void wheelAt(int delta, bool horizontal, const gweni::Point &mouse, bool ctrl, bool shift);
 
     std::vector<CurveEntry> m_curves;
-    //! App edits invalidate the key indices a user action is iterating over.
+    //! App edits and user-edit entry points invalidate an outer action's indices.
     uint64_t m_modelSerial=0;
     //! Moved by every change of the selection (the user's or the app's), so
     //! a loop over the selection's ranks stops when a handler changes it.

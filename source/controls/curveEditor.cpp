@@ -1090,9 +1090,13 @@ void CurveEditor::keyInserted(size_t curve, size_t index)
 void CurveEditor::fireChanged(size_t curve, size_t key)
 {
     event::Info info(this);
+    const uint64_t serial=m_modelSerial;
+    const uint64_t selectionSerial=m_selectionSerial;
 
     info.point=Point(int(curve), int(key));
     onChanged.call(this, info);
+    if((m_modelSerial != serial) || (m_selectionSerial != selectionSerial))
+        endGesture();
 }
 
 void CurveEditor::fireSelectionChanged()
@@ -1143,6 +1147,7 @@ static void sortForMotion(std::vector<size_t> &order, const std::vector<CurveKey
 
 void CurveEditor::nudgeSelection(double dt, double dv)
 {
+    ++m_modelSerial;
     if(isDisabled() || (m_gesture != Gesture::None) || (selectionSize() == 0))
         return;
 
@@ -1187,6 +1192,7 @@ void CurveEditor::nudgeSelection(double dt, double dv)
 
 size_t CurveEditor::addKeyAt(size_t curve, double time)
 {
+    ++m_modelSerial;
     if(curve >= m_curves.size())
         return 0;
 
@@ -1211,7 +1217,11 @@ size_t CurveEditor::addKeyAt(size_t curve, double time)
     const std::vector<std::vector<size_t>> before=snapshotSelection();
 
     setSelection({CurveKeyRef{curve, index}});
+    const uint64_t serial=m_modelSerial;
+    const uint64_t selectionSerial=m_selectionSerial;
     fireChanged(curve, index);
+    if((m_modelSerial != serial) || (m_selectionSerial != selectionSerial))
+        return index;
     if(snapshotSelection() != before)
         fireSelectionChanged();
     return index;
@@ -1219,10 +1229,12 @@ size_t CurveEditor::addKeyAt(size_t curve, double time)
 
 bool CurveEditor::deleteSelection()
 {
+    ++m_modelSerial;
     if(isDisabled() || (m_gesture != Gesture::None) || (selectionSize() == 0))
         return false;
 
     const uint64_t serial=m_modelSerial;
+    const uint64_t selectionSerial=m_selectionSerial;
     bool stop=false;
     for(size_t curve=0; curve < m_curves.size() && !stop; ++curve)
     {
@@ -1250,7 +1262,7 @@ bool CurveEditor::deleteSelection()
             logEdit(curve, spans);
             logEdit(curve, keys);
             fireChanged(curve, key);
-            if(m_modelSerial != serial)
+            if((m_modelSerial != serial) || (m_selectionSerial != selectionSerial))
             {
                 stop=true;
                 break;
@@ -1264,7 +1276,9 @@ bool CurveEditor::deleteSelection()
 
 void CurveEditor::setSelectionMode(Curve::TangentMode mode)
 {
+    ++m_modelSerial;
     const uint64_t serial=m_modelSerial;
+    const uint64_t selectionSerial=m_selectionSerial;
     for(const CurveKeyRef &ref : getSelection())
     {
         Curve *c=m_curves[ref.curve].curve;
@@ -1284,14 +1298,16 @@ void CurveEditor::setSelectionMode(Curve::TangentMode mode)
         // the handles come or go with Free
         logLook(ref.curve, ref.key);
         fireChanged(ref.curve, ref.key);
-        if(m_modelSerial != serial)
+        if((m_modelSerial != serial) || (m_selectionSerial != selectionSerial))
             break;
     }
 }
 
 void CurveEditor::setSelectionBroken(bool broken)
 {
+    ++m_modelSerial;
     const uint64_t serial=m_modelSerial;
+    const uint64_t selectionSerial=m_selectionSerial;
     for(const CurveKeyRef &ref : getSelection())
     {
         Curve *c=m_curves[ref.curve].curve;
@@ -1310,13 +1326,14 @@ void CurveEditor::setSelectionBroken(bool broken)
         logEdit(ref.curve, spans);
         logLook(ref.curve, ref.key);
         fireChanged(ref.curve, ref.key);
-        if(m_modelSerial != serial)
+        if((m_modelSerial != serial) || (m_selectionSerial != selectionSerial))
             break;
     }
 }
 
 void CurveEditor::setSelectedTime(double time)
 {
+    ++m_modelSerial;
     if(selectionSize() != 1)
         return;
 
@@ -1333,6 +1350,7 @@ void CurveEditor::setSelectedTime(double time)
 
 void CurveEditor::setSelectedValue(double value)
 {
+    ++m_modelSerial;
     if(selectionSize() != 1)
         return;
 
@@ -1408,6 +1426,7 @@ bool CurveEditor::panning() const
 
 void CurveEditor::pressAt(const Point &canvasPoint)
 {
+    ++m_modelSerial;
     if(isDisabled())
         return;
     endGesture();
@@ -1452,8 +1471,9 @@ void CurveEditor::pressAt(const Point &canvasPoint)
         if(snapshotSelection() != m_snapshot)
         {
             const uint64_t serial=m_modelSerial;
+            const uint64_t selectionSerial=m_selectionSerial;
             fireSelectionChanged();
-            if(m_modelSerial != serial)
+            if((m_modelSerial != serial) || (m_selectionSerial != selectionSerial))
                 return;
             // the release fires again only for a change it makes itself
             m_snapshot=snapshotSelection();
@@ -1735,6 +1755,7 @@ Menu *CurveEditor::getKeyMenu() const
 
 void CurveEditor::rightPressAt(const Point &canvasPoint)
 {
+    ++m_modelSerial;
     CurveKeyRef ref;
 
     if(isDisabled() || (m_gesture != Gesture::None) || !keyAt(plotPoint(canvasPoint), ref))
@@ -1748,8 +1769,9 @@ void CurveEditor::rightPressAt(const Point &canvasPoint)
     {
         setSelection({ref});
         const uint64_t serial=m_modelSerial;
+        const uint64_t selectionSerial=m_selectionSerial;
         fireSelectionChanged();
-        if(m_modelSerial != serial)
+        if((m_modelSerial != serial) || (m_selectionSerial != selectionSerial))
         {
             m_plot->setContextMenu(nullptr);
             return;

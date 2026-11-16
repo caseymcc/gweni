@@ -32,6 +32,7 @@
  *  - a reorder reassigning tangent handle sets when the pool is full.
  */
 #include "headlessFixture.h"
+#include "curveEditorFixture.h"
 
 #include <gweni/gweni.h>
 #include <gweni/controls/chartAxis.h>
@@ -137,7 +138,7 @@ struct Scene
     explicit Scene(std::vector<Key> keys={makeKey(0, 0.5, Mode::Linear), makeKey(1, 1.5, Mode::Constant),
         makeKey(2, 0.5), makeKey(3, 1.5)})
     {
-        platform::setTimeSource([this]() { return clock; });
+        platform::setTimeSource([]() { return test::curveEditorClock; });
         canvas=new controls::Canvas(&skin);
         canvas->setSize(800, 600);
         editor=canvas->newChild<controls::CurveEditor>();
@@ -213,7 +214,7 @@ struct Scene
     //! where a test before pressed would otherwise be a double-click.
     void press(const Point &to)
     {
-        clock+=1.0;
+        test::curveEditorClock+=1.0;
         move(to);
         canvas->inputMouseButton(0, true);
         frame();
@@ -272,7 +273,6 @@ struct Scene
         return ids;
     }
 
-    double clock=10.0;
     DrawRecorder renderer;
     CurveSkin skin{&renderer};
     controls::Canvas *canvas=nullptr;
@@ -683,4 +683,28 @@ TEST_CASE("CurvePlot: keys added and removed, and the editor deleted, give every
 
     CHECK(after.livePrimitives() == before.livePrimitives());
     CHECK(after.liveTexts() == before.liveTexts());
+}
+
+TEST_CASE("CurvePlot: a key added and deleted before a frame never recycles an unallocated slot")
+{
+    Scene scene;
+    const auto owned=scene.plotIds();
+    const size_t live=scene.renderer.livePrimitives.size();
+    const size_t takes=scene.plotRenderer()->takeCount();
+    scene.renderer.hiddenSlots.clear();
+    scene.editor->addKeyAt(0, 2.5);
+    REQUIRE(scene.editor->deleteSelection());
+    scene.frame();
+    for(size_t id : scene.renderer.hiddenSlots)
+        CHECK(owned.count(id) == 1);
+    const size_t key=scene.editor->addKeyAt(0, 2.5);
+    scene.frame();
+    CHECK(owned.count(scene.plotRenderer()->keyPrimitive(0, key)) == 1);
+    CHECK(scene.renderer.livePrimitives.size() == live);
+    CHECK(scene.plotRenderer()->takeCount() == takes);
+    // A later look change keeps this key's slot instead of draining spares.
+    const size_t id=scene.plotRenderer()->keyPrimitive(0, key);
+    scene.editor->clearSelection();
+    scene.frame();
+    CHECK(scene.plotRenderer()->keyPrimitive(0, key) == id);
 }

@@ -7387,9 +7387,12 @@ the keys near it, not the curve's. `onChanged` fires once per key a user's edit 
 (`info.point` the curve and key), `onSelectionChanged` once per user action that changed
 the selection; the app's own calls fire nothing, and after editing a curve itself the
 app calls `curveChanged()` (`tests/unit/curveEditor.cpp`). If an event handler reports an
-app edit or replaces the curves, the remaining edits in that user action stop: the
-indices they were using may no longer identify the same keys; a nudge, which takes
-its keys by their rank in the selection, stops too when a handler sets the selection.
+app edit, replaces the curves, or calls a user-edit command, the remaining edits in
+the outer action stop: the indices they were using may no longer identify the same
+keys. Nested user-edit commands run normally, and end the outer gesture. Each command
+advances the model serial on entry, before taking its own serial snapshot, including
+commands that change nothing. A selection change also stops an action iterating the
+selection and prevents a press from starting a drag or key menu after its event.
 A drag or a marquee keeps its press in curve units, so a wheel zoom during it leaves the
 dragged keys under the cursor and the marquee's corner on its point. Reordering a dragged key
 also renumbers the selection saved at its press, so changing indices alone fires no

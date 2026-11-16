@@ -5305,9 +5305,13 @@ bool CurvePlot::replay(renderer::Base *renderer, const controls::CurveEditor *ed
             {
                 Key &key=slots.keys[k];
 
-                if(key.drawn.shown || !key.drawn.valid)
-                    renderer->hidePrimitive(key.id);
-                slots.keySpare.push_back(key.id);
+                // A key inserted and removed in this log never took a slot.
+                if(key.id != 0)
+                {
+                    if(key.drawn.shown || !key.drawn.valid)
+                        renderer->hidePrimitive(key.id);
+                    slots.keySpare.push_back(key.id);
+                }
                 if(key.handles < m_handles.size())
                 {
                     HandleSet &set=m_handles[key.handles];
