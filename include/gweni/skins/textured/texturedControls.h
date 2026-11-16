@@ -576,6 +576,46 @@ public:
     inline static const std::string_view name="DropDownButton";
 };
 
+// A ToolBar's background: the ToolBar surface over its bounds.
+class ToolBar:public textured::ControlRegister<ToolBar>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="ToolBar";
+};
+
+// A flat tool button: toolButtonSurface() of its state in its one slot, its
+// image and text drawing themselves.
+class ToolButton:public textured::ControlRegister<ToolButton>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="ToolButton";
+};
+
+// A toolbar's overflow button: [0] toolButtonSurface() of its state (pressed
+// while its menu is open), [1] the down chevron (icon kind 1) centred in it in
+// its text colour at getZIndex()+1.
+class ToolBarOverflowButton:public textured::ControlRegister<ToolBarOverflowButton>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+    // the chevron is drawn at getZIndex()+1, over the surface
+    size_t depthLayers() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="ToolBarOverflowButton";
+};
+
 // A SplitButton draws the Divider-unit column between its parts in its one
 // slot, the SplitButtonDivider surface's top colour (flat, square).
 class SplitButton:public textured::ControlRegister<SplitButton>

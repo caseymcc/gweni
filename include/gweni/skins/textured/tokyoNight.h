@@ -147,6 +147,15 @@ inline Surface Menu           { Color(0x1f,0x22,0x33), Bg,                    Li
 inline Surface MenuStrip      { Color(0x1f,0x22,0x33), Bg,                    BgHighlight, 0.0f, BorderW };
 inline Surface MenuHover      { SurfHi,                SurfHi,                Blue,  RadiusSm, BorderW };
 
+// A ToolBar's background (flat and square, like a MenuStrip's) and its flat
+// tool buttons: at rest the bar's own fill with a border of the same colour,
+// so a button shows only while hovered, pressed or on (a toggle).
+inline Surface ToolBar        { Color(0x1f,0x22,0x33), Color(0x1f,0x22,0x33), BgHighlight, 0.0f, BorderW };
+inline Surface ToolButton     { Color(0x1f,0x22,0x33), Color(0x1f,0x22,0x33), Color(0x1f,0x22,0x33), Radius, BorderW };
+inline Surface ToolButtonHover{ SurfHover,             SurfHi,                Line,  Radius, BorderW };
+inline Surface ToolButtonDown { Surf,                  BgStorm,               Blue,  Radius, BorderW };
+inline Surface ToolButtonOn   { Color(0x33,0x46,0x7a), Color(0x28,0x34,0x57), Blue,  Radius, BorderW };
+
 // Tabs, drawn as a notebook's: the page frame (TabControl, painted by the
 // TabControlInner panel; the TabControl itself draws nothing, so the strip shows
 // its parent's background) is one flat fill, and the selected tab is that fill
@@ -585,6 +594,8 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"DiffAdded",&DiffAdded},{"DiffRemoved",&DiffRemoved},{"DiffHunk",&DiffHunk},
         {"LogView",&LogView},{"LogViewFocus",&LogViewFocus},{"LogViewSelection",&LogViewSelection},
         {"Menu",&Menu},{"MenuStrip",&MenuStrip},{"MenuHover",&MenuHover},
+        {"ToolBar",&ToolBar},{"ToolButton",&ToolButton},{"ToolButtonHover",&ToolButtonHover},
+        {"ToolButtonDown",&ToolButtonDown},{"ToolButtonOn",&ToolButtonOn},
         {"TabActive",&TabActive},{"TabInactive",&TabInactive},{"TabHover",&TabHover},{"TabControl",&TabControl},
         {"CategoryList",&CategoryList},{"CategoryInner",&CategoryInner},{"CategoryHeader",&CategoryHeader},
         {"ListItem",&ListItem},{"ListItemSel",&ListItemSel},{"ListItemHover",&ListItemHover},

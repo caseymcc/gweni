@@ -758,6 +758,72 @@ void DropDownButton::update(renderer::Base *renderer, controls::Base *baseContro
 }
 
 ///////////////////////////////////////////////////////////////////////////
+//ToolBar, ToolButton, ToolBarOverflowButton
+void ToolBar::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::ToolBar);
+}
+
+namespace
+{
+// A tool button's look: Down pressed (or with its menu open), On a toggle
+// that is on, Hover hovered, else the flat rest look (disabled too, its text
+// dimmed); focused, ButtonFocus's border on it.
+tokyonight::Surface toolButtonSurface(controls::Button *button)
+{
+    tokyonight::Surface surface=tokyonight::ToolButton;
+
+    if(!button->isDisabled())
+    {
+        if(button->isDepressed())
+            surface=tokyonight::ToolButtonDown;
+        else if(button->isToggle() && button->getToggleState())
+            surface=tokyonight::ToolButtonOn;
+        else if(button->isHovered())
+            surface=tokyonight::ToolButtonHover;
+    }
+    if(button->isFocussed())
+        surface.border=tokyonight::ButtonFocus.border;
+    return surface;
+}
+}
+
+void ToolButton::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl,
+        toolButtonSurface(static_cast<controls::Button *>(baseControl)));
+}
+
+void ToolBarOverflowButton::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.size() < 2)
+        return;
+
+    controls::Button *button=static_cast<controls::Button *>(baseControl);
+    const gweni::Rect r=baseControl->getRenderBounds();
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, toolButtonSurface(button));
+
+    if(!baseControl->visible())
+    {
+        renderer->hidePrimitive(m_primitives[1]);
+        return;
+    }
+
+    // kind 1, direction 0: down, the DropDownButton's chevron size
+    const int sz=controls::DropDownButton::ChevronSize;
+
+    renderer->drawIcon(m_primitives[1], gweni::Rect(r.x+(r.w-sz)/2, r.y+(r.h-sz)/2, sz, sz), 1, 0,
+        button->getTextColor(), baseControl->getZIndex()+1);
+}
+
+///////////////////////////////////////////////////////////////////////////
 //SplitButton
 void SplitButton::update(renderer::Base *renderer, controls::Base *baseControl)
 {
@@ -6331,6 +6397,9 @@ template class ControlRegister<BreadcrumbItem>;
 template class ControlRegister<BreadcrumbSeparator>;
 template class ControlRegister<BreadcrumbEllipsis>;
 template class ControlRegister<DropDownButton>;
+template class ControlRegister<ToolBar>;
+template class ControlRegister<ToolButton>;
+template class ControlRegister<ToolBarOverflowButton>;
 template class ControlRegister<SplitButton>;
 template class ControlRegister<SplitButtonMain>;
 template class ControlRegister<SplitButtonArrow>;
