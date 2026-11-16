@@ -654,9 +654,9 @@ pressed look). Its menu lists the collapsed items in path order, and a pick fire
 `onItemClicked` with that item's index. It is filled as it opens: `DropDownButton::openMenu`
 is virtual, and every open goes through it. It is filled again only when the collapsed
 range's start or its labels differ from what it was last filled with
-(`getMenuBuildCount()`); the old items are hidden and `delayedDelete()`d. A menu left
-open across a resize is not filled again until its next open, and its items still fire
-their own indices.
+(`getMenuBuildCount()`); the old items are hidden and `delayedDelete()`d. An open menu
+is never filled again: one left open across an edit or a resize that keeps the
+collapsed set stays as it is, and one whose set changed is closed (`menuStale`, below).
 
 **The keyboard** is WinUI's. The path is one Tab stop (`getTabStop()`): the focused
 part, else the first shown clickable item or the ellipsis. Left and Right move between
