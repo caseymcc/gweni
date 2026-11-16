@@ -12,6 +12,7 @@
 #include <gweni/controls/base.h>
 #include <gweni/controls/board.h>
 #include <gweni/controls/boardColumn.h>
+#include <gweni/controls/breadcrumb.h>
 #include <gweni/controls/bullet.h>
 #include <gweni/controls/button.h>
 #include <gweni/controls/calendar.h>

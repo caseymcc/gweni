@@ -209,6 +209,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/boardColumn.cpp
     include/gweni/controls/button.h
     source/controls/button.cpp
+    include/gweni/controls/breadcrumb.h
+    source/controls/breadcrumb.cpp
     include/gweni/controls/calendar.h
     source/controls/calendar.cpp
     include/gweni/controls/canvas.h

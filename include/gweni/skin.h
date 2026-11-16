@@ -344,6 +344,12 @@ public:
 
         } Button;
 
+        struct Breadcrumb_t
+        {
+            gweni::Color Text;
+            gweni::Color CurrentText;
+            gweni::Color Separator;
+        } Breadcrumb;
 
         struct Tab_t
         {

@@ -2,6 +2,7 @@
 #include "gweni/skins/textured/texturedSkin.h"
 
 #include "gweni/controls/canvas.h"
+#include "gweni/controls/breadcrumb.h"
 #include "gweni/controls/progressBar.h"
 #include "gweni/controls/comboBox.h"
 #include "gweni/controls/searchComboBox.h"
@@ -654,6 +655,50 @@ gweni::Rect MenuItem::checkRect(controls::MenuItem *item)
         return gweni::Rect(0, 0, 0, 0);
 
     return gweni::Rect(r.x+(column-sz)/2, r.y+(r.h-sz)/2, sz, sz);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//BreadcrumbItem
+void BreadcrumbItem::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    controls::internal::BreadcrumbItem *item=static_cast<controls::internal::BreadcrumbItem *>(baseControl);
+
+    if(!item->isClickable())
+    {
+        renderer->hidePrimitive(m_primitives[0]);
+        return;
+    }
+    const tokyonight::Surface &surface=(item->isDepressed() && !item->isDisabled())?tokyonight::BreadcrumbItemDown:
+        ((item->isHovered() && !item->isDisabled())?tokyonight::BreadcrumbItemHover:tokyonight::BreadcrumbItem);
+
+    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, surface);
+}
+
+///////////////////////////////////////////////////////////////////////////
+//BreadcrumbSeparator
+void BreadcrumbSeparator::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    controls::internal::BreadcrumbSeparator *separator=
+        static_cast<controls::internal::BreadcrumbSeparator *>(baseControl);
+
+    if(!separator->visible() || !separator->getText().empty())
+    {
+        renderer->hidePrimitive(m_primitives[0]);
+        return;
+    }
+    const gweni::Rect bounds=baseControl->getRenderBounds();
+    const int size=controls::internal::BreadcrumbSeparator::ChevronSize;
+    const gweni::Rect icon(bounds.x+(bounds.w-size)/2, bounds.y+(bounds.h-size)/2, size, size);
+
+    // No backdrop on this part, so its icon needs only its own depth layer.
+    renderer->drawIcon(m_primitives[0], icon, 1, 3, separator->getSkin()->Colors.Breadcrumb.Separator,
+        baseControl->getZIndex());
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -6040,6 +6085,8 @@ template class ControlRegister<ListBoxRow>;
 template class ControlRegister<Menu>;
 template class ControlRegister<MenuStrip>;
 template class ControlRegister<MenuItem>;
+template class ControlRegister<BreadcrumbItem>;
+template class ControlRegister<BreadcrumbSeparator>;
 template class ControlRegister<DropDownButton>;
 template class ControlRegister<SplitButton>;
 template class ControlRegister<SplitButtonMain>;

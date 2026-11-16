@@ -526,6 +526,27 @@ public:
     inline static const std::string_view name="MenuItem";
 };
 
+//! Flat path links: one surface slot. The current, nonclickable item draws
+//! no surface; Label's child Text supplies its caption.
+class BreadcrumbItem:public textured::ControlRegister<BreadcrumbItem>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+    size_t requiredPrimitives() override { return 1; }
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    inline static const std::string_view name="BreadcrumbItem";
+};
+
+//! One right-chevron slot, hidden when the separator shows Label's text.
+class BreadcrumbSeparator:public textured::ControlRegister<BreadcrumbSeparator>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+    size_t requiredPrimitives() override { return 1; }
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    inline static const std::string_view name="BreadcrumbSeparator";
+};
+
 // A DropDownButton: the Button surface of its state in slot [0]
 // (buttonSurface: its open menu is its pressed look), and in slot [1] the down
 // chevron (style 5, kind 1, direction 0) in its text colour at

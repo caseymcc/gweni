@@ -550,6 +550,8 @@ std::unordered_map<std::string, gweni::Color*> TexturedSkin::textColorRegistry()
         {"LabelDark",&Colors.Label.Dark},{"LabelHighlight",&Colors.Label.Highlight},
         {"ButtonNormal",&Colors.Button.Normal},{"ButtonHover",&Colors.Button.Hover},
         {"ButtonDown",&Colors.Button.Down},{"ButtonDisabled",&Colors.Button.Disabled},
+        {"BreadcrumbText",&Colors.Breadcrumb.Text},{"BreadcrumbCurrentText",&Colors.Breadcrumb.CurrentText},
+        {"BreadcrumbSeparator",&Colors.Breadcrumb.Separator},
         {"TooltipText",&Colors.TooltipText},
         {"PlaceholderText",&Colors.PlaceholderText},
         {"ErrorText",&Colors.ErrorText},{"HelperText",&Colors.HelperText},
@@ -1397,6 +1399,10 @@ void TexturedSkin::setThemeColors()
     Colors.Button.Hover=White;
     Colors.Button.Down=Fg;
     Colors.Button.Disabled=Muted;
+
+    Colors.Breadcrumb.Text=Blue;
+    Colors.Breadcrumb.CurrentText=Fg;
+    Colors.Breadcrumb.Separator=Muted;
 
     Colors.Tab.Active.Normal=Fg;
     Colors.Tab.Active.Hover=Fg;
