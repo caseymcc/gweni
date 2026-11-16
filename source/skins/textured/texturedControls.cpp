@@ -22,6 +22,7 @@
 #include "gweni/controls/calendar.h"
 #include "gweni/controls/plotHistogram.h"
 #include "gweni/controls/plotLines.h"
+#include "gweni/controls/knob.h"
 #include "gweni/controls/chart.h"
 #include "gweni/controls/richText.h"
 #include "gweni/controls/markdownDocument.h"
@@ -3139,6 +3140,204 @@ void PlotLines::update(renderer::Base *renderer, controls::Base *baseControl)
 
 
 ///////////////////////////////////////////////////////////////////////////
+//Knob
+void Knob::hide(renderer::Base *renderer, size_t index, bool all)
+{
+    LineSlot &drawn=m_lines[index];
+
+    if(all || !drawn.valid || drawn.shown)
+        renderer->hidePrimitive(m_primitives[1+index]);
+    drawn.valid=true;
+    drawn.shown=false;
+}
+
+void Knob::drawLine(renderer::Base *renderer, size_t index, bool all, const PointF &p0,
+    const PointF &p1, const PointF *prev, const PointF *next, float thickness, const Color &color,
+    int z)
+{
+    LineSlot &drawn=m_lines[index];
+    const PointF none;
+
+    if(!all && drawn.valid && drawn.shown && (drawn.p0 == p0) && (drawn.p1 == p1)
+        && (drawn.hasPrev == (prev != nullptr)) && (drawn.prev == (prev?*prev:none))
+        && (drawn.hasNext == (next != nullptr)) && (drawn.next == (next?*next:none))
+        && (drawn.thickness == thickness) && (drawn.color == color) && (drawn.zIndex == z))
+        return;
+
+    renderer->setDrawColor(color);
+    renderer->drawLine(m_primitives[1+index], p0, p1, thickness, z, prev, next);
+    drawn.valid=true;
+    drawn.shown=true;
+    drawn.p0=p0;
+    drawn.p1=p1;
+    drawn.hasPrev=(prev != nullptr);
+    drawn.prev=prev?*prev:none;
+    drawn.hasNext=(next != nullptr);
+    drawn.next=next?*next:none;
+    drawn.thickness=thickness;
+    drawn.color=color;
+    drawn.zIndex=z;
+}
+
+void Knob::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    controls::Knob *knob=static_cast<controls::Knob *>(baseControl);
+    constexpr size_t segments=controls::Knob::ArcSegments;
+    const size_t ticks=static_cast<size_t>(knob->getTickCount());
+    // the track's segments, the value's, the indicator, the ticks
+    const size_t valueFirst=segments;
+    const size_t indicator=2*segments;
+    const size_t tickFirst=indicator+1;
+    const size_t lines=tickFirst+ticks;
+
+    resizePlotPrimitives(renderer, m_primitives, 1+lines);
+    // a slot new to the list holds nothing known
+    m_lines.resize(lines);
+
+    // As PlotLines': a new rect, z, clip region or visibility reaches every
+    // slot, and such a frame marks the control's geometry, its visibility or
+    // its creation. Any other draws only what differs.
+    const unsigned int sc=baseControl->getStateChange();
+    const bool levelsMoved=m_drawnOpacity.moved(renderer);
+    const bool all=levelsMoved || (sc&(controls::StateChange_Created|controls::StateChange_Visibility
+        |controls::StateChange_Geometry)) != 0;
+
+    if(!baseControl->visible())
+    {
+        if(all)
+        {
+            for(size_t id : m_primitives)
+                renderer->hidePrimitive(id);
+            m_body.valid=true;
+            m_body.shown=false;
+            for(LineSlot &line : m_lines)
+            {
+                line.valid=true;
+                line.shown=false;
+            }
+        }
+        else
+        {
+            // drawn again once shown, which marks the visibility
+            m_body.valid=false;
+            for(LineSlot &line : m_lines)
+                line.valid=false;
+        }
+        return;
+    }
+
+    const int z=baseControl->getZIndex();
+    const gweni::Rect &bounds=baseControl->getRenderBounds();
+    const controls::Knob::Geometry geometry=knob->getGeometry();
+    // the parts are in the knob's own coordinates, drawn at its render origin
+    const PointF centre(bounds.x+geometry.centre.x, bounds.y+geometry.centre.y);
+    const bool disabled=knob->isDisabled();
+
+    // the body
+    const tokyonight::Surface *surface=&tokyonight::KnobBody;
+
+    if(disabled)
+        surface=&tokyonight::KnobBodyDisabled;
+    else if(knob->isDepressed())
+        surface=&tokyonight::KnobBodyPressed;
+    else if(knob->isFocussed())
+        surface=&tokyonight::KnobBodyFocus;
+    else if(knob->isHovered())
+        surface=&tokyonight::KnobBodyHover;
+
+    const int side=std::max(0, int(std::lround(geometry.bodyRadius*2.0f)));
+    const Rect body(int(std::lround(centre.x-side*0.5f)), int(std::lround(centre.y-side*0.5f)), side,
+        side);
+
+    if(all || !m_body.valid || !m_body.shown || !(m_body.rect == body) || (m_body.zIndex != z)
+        || !sameSurface(m_body.surface, *surface))
+    {
+        renderer->drawRoundedRect(m_primitives[0], body, side*0.5f, surface->borderWidth,
+            surface->top, surface->bottom, surface->border, z);
+        m_body.valid=true;
+        m_body.shown=true;
+        m_body.rect=body;
+        m_body.surface=*surface;
+        m_body.zIndex=z;
+    }
+
+    // the arcs' grid: point i of segments+1 along the sweep
+    const double start=knob->getStartAngle();
+    const double sweep=knob->getEndAngle()-start;
+    const float radius=geometry.arcRadius;
+    const float thickness=geometry.arcThickness;
+    auto at=[&](double share) { return controls::Knob::pointAt(centre, start+share*sweep, radius); };
+    std::vector<PointF> grid(segments+1);
+
+    for(size_t i=0; i <= segments; ++i)
+        grid[i]=at(double(i)/segments);
+
+    const Color &track=tokyonight::KnobTrack.top;
+
+    for(size_t i=0; i < segments; ++i)
+        drawLine(renderer, i, all, grid[i], grid[i+1], i > 0?&grid[i-1]:nullptr,
+            i+1 < segments?&grid[i+2]:nullptr, thickness, track, z+1);
+
+    // the value arc: each segment's part between the origin and the value
+    const double origin=knob->sweepShare(knob->getArcOrigin());
+    const double value=knob->sweepShare(knob->getNumber());
+    const double low=std::min(origin, value);
+    const double high=std::max(origin, value);
+    const Color &valueColor=(disabled?tokyonight::KnobValueDisabled:tokyonight::KnobValue).top;
+    auto covered=[&](size_t i, double &from, double &to)
+    {
+        from=std::max(double(i)/segments, low);
+        to=std::min(double(i+1)/segments, high);
+        return to > from;
+    };
+
+    for(size_t i=0; i < segments; ++i)
+    {
+        double from, to;
+
+        if(!covered(i, from, to))
+        {
+            hide(renderer, valueFirst+i, all);
+            continue;
+        }
+
+        // a neighbour that draws anything is joined at its grid point, so a
+        // whole segment's line stays as drawn while the partial one moves
+        double otherFrom, otherTo;
+        const bool fromGrid=(from == double(i)/segments);
+        const bool toGrid=(to == double(i+1)/segments);
+        const bool hasPrev=fromGrid && (i > 0) && covered(i-1, otherFrom, otherTo);
+        const bool hasNext=toGrid && (i+1 < segments) && covered(i+1, otherFrom, otherTo);
+
+        drawLine(renderer, valueFirst+i, all, fromGrid?grid[i]:at(from), toGrid?grid[i+1]:at(to),
+            hasPrev?&grid[i-1]:nullptr, hasNext?&grid[i+2]:nullptr, thickness, valueColor, z+2);
+    }
+
+    // the indicator, across the body at the value's angle
+    {
+        const double angle=knob->angleForValue(knob->getNumber());
+        const Color &color=(disabled?tokyonight::KnobValueDisabled:tokyonight::KnobIndicator).top;
+
+        drawLine(renderer, indicator, all, controls::Knob::pointAt(centre, angle, geometry.indicatorInner),
+            controls::Knob::pointAt(centre, angle, geometry.indicatorOuter), nullptr, nullptr,
+            geometry.indicatorThickness, color, z+1);
+    }
+
+    // the ticks, at both ends and evenly between
+    const Color &tick=tokyonight::KnobTick.top;
+
+    for(size_t i=0; i < ticks; ++i)
+    {
+        const double angle=start+sweep*double(i)/double(ticks-1);
+
+        drawLine(renderer, tickFirst+i, all, controls::Knob::pointAt(centre, angle, geometry.tickInner),
+            controls::Knob::pointAt(centre, angle, geometry.tickOuter), nullptr, nullptr,
+            geometry.tickThickness, tick, z+1);
+    }
+}
+
+
+///////////////////////////////////////////////////////////////////////////
 //NodeGraph
 void NodeGraph::update(renderer::Base *renderer, controls::Base *baseControl)
 {
@@ -6172,6 +6371,7 @@ template class ControlRegister<RangeSlider>;
 template class ControlRegister<RangeSliderThumb>;
 template class ControlRegister<PlotHistogram>;
 template class ControlRegister<PlotLines>;
+template class ControlRegister<Knob>;
 template class ControlRegister<Chart>;
 template class ControlRegister<ChartLegendRow>;
 template class ControlRegister<Timeline>;

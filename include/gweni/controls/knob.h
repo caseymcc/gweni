@@ -74,6 +74,9 @@ public:
     static constexpr double FineFactor=0.1;
     //! PageUp's and PageDown's step, in key steps.
     static constexpr double PageFactor=10.0;
+    //! The line segments of the track arc and of the value arc over it, the
+    //! sweep cut into equal parts (the textured renderer's polylines).
+    static constexpr int ArcSegments=32;
     //! The dial's side when none is set.
     static constexpr int DefaultDiameter=48;
     //! The gap between the dial and its caption or value text.
@@ -164,6 +167,30 @@ public:
     //! The dial, in this control's coordinates: getDiameter() square (less
     //! if the control is smaller), centred across it, under the caption.
     Rect getDialRect() const;
+
+    //! Where the textured renderer draws the dial's parts, in this control's
+    //! coordinates (units, fractional), from getDialRect(): the ticks (if
+    //! any) in an outer ring, the track and value arcs inside it, the body
+    //! disc inside them with a gap, and the indicator across the body.
+    struct Geometry
+    {
+        PointF centre;
+        float arcRadius=0.0f;      //!< the arcs' centre line
+        float arcThickness=0.0f;
+        float bodyRadius=0.0f;
+        float indicatorInner=0.0f; //!< the indicator from this far from the centre
+        float indicatorOuter=0.0f; //!< to this far
+        float indicatorThickness=0.0f;
+        float tickInner=0.0f;      //!< a tick from this far (no ticks: 0)
+        float tickOuter=0.0f;
+        float tickThickness=0.0f;
+    };
+    Geometry getGeometry() const;
+    //! The point \p radius from \p centre at \p degrees (y up), as the
+    //! renderer places the arcs' points.
+    static PointF pointAt(const PointF &centre, double degrees, float radius);
+    //! The share of the sweep \p value lies at, in [0, 1].
+    double sweepShare(double value) const;
 
     //! Shows the edit box over the dial, focused, its text selected.
     void beginEdit();

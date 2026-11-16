@@ -7101,12 +7101,12 @@ set by its bare name and one with some of them as `Name.field` per missing field
 the shipped theme with `"strict": true` added):
 
 ```
-theme strict: 239 of 243 surfaces not set: Badge, BreadcrumbItem, BreadcrumbItemDown, ...
-theme strict: 92 of 94 text colors not set: AxisTagText, BadgeText, BreadcrumbCurrentText, ...
+theme strict: 249 of 253 surfaces not set: Badge, BreadcrumbItem, BreadcrumbItemDown, ...
+theme strict: 94 of 96 text colors not set: AxisTagText, BadgeText, BreadcrumbCurrentText, ...
 ```
 
-(`theme strict: all 243 surfaces set` for a kind with no gaps, and a single
-`theme strict: all 243 surfaces and 94 text colors set` when there are none at all). A
+(`theme strict: all 253 surfaces set` for a kind with no gaps, and a single
+`theme strict: all 253 surfaces and 96 text colors set` when there are none at all). A
 rejected value counts as not set. A surface that is transparent at rest on purpose
 (`WindowButton`, `SelectableHover`: a transparent fill hides the slot) is magenta too
 until the theme sets it to `[0,0,0,0]`; the theme has not said what it looks like. The

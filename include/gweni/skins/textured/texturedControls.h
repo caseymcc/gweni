@@ -870,6 +870,76 @@ private:
     std::vector<Segment> m_segments;
 };
 
+// A Knob: [0] its body, a disc of KnobBody (KnobBodyHover, KnobBodyFocus,
+// KnobBodyPressed or KnobBodyDisabled by state) at getZIndex(); then
+// controls::Knob::ArcSegments slots of the track arc (KnobTrack's top) at z+1,
+// as many of the value arc over it (KnobValue's top, KnobValueDisabled's
+// while disabled) at z+2, the indicator (KnobIndicator's top) on the body at
+// z+1, and last one slot per tick (KnobTick's top) at z+1, so a new tick
+// count resizes the list's tail alone. Every line is a drawLine with its
+// neighbours, so a joint is blended once; the parts are placed by
+// controls::Knob::getGeometry().
+//
+// The arcs are the sweep cut into equal parts. A value arc segment draws the
+// part of its own that lies between the arc's origin and the value (none:
+// hidden), its neighbours the grid points of the segments next to it while
+// those draw anything: a segment wholly covered or wholly not keeps its slot
+// as drawn when the value moves, so a value change writes the indicator, the
+// segment the value ends in and the ones it crossed. Each slot keeps what it
+// last drew: a frame that marks the control's geometry, visibility or
+// creation, or draws at other opacity levels, draws every slot, any other
+// only one whose line or look is not the one drawn, so hover, press and focus
+// rewrite the body alone.
+class Knob:public textured::ControlRegister<Knob>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 1; }
+    // the arcs, the ticks and the indicator at z+1, the value arc at z+2
+    size_t depthLayers() override { return 3; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="Knob";
+
+    //! What a line slot holds, as last drawn.
+    struct LineSlot
+    {
+        bool valid=false;   //!< false for a new slot, which holds nothing known
+        bool shown=false;
+        PointF p0;
+        PointF p1;
+        bool hasPrev=false;
+        bool hasNext=false;
+        PointF prev;
+        PointF next;
+        float thickness=0.0f;
+        Color color;
+        int zIndex=0;
+    };
+
+private:
+    //! Draws \p slot's line unless it holds it already (\p all: draws it).
+    void drawLine(renderer::Base *renderer, size_t index, bool all, const PointF &p0,
+        const PointF &p1, const PointF *prev, const PointF *next, float thickness,
+        const Color &color, int z);
+    void hide(renderer::Base *renderer, size_t index, bool all);
+
+    DrawnOpacity m_drawnOpacity;
+    struct Body
+    {
+        bool valid=false;
+        bool shown=false;
+        Rect rect;
+        tokyonight::Surface surface{};
+        int zIndex=0;
+    };
+    Body m_body;
+    //! [i] slot [1+i]'s line
+    std::vector<LineSlot> m_lines;
+};
+
 // A RichText: one text run per piece of its layout (text::RichLayout), in its
 // span's font and colour, at getZIndex()+1, and a list of primitive slots that
 // follows the pieces: each Code piece's background (RichTextCode over the

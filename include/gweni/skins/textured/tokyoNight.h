@@ -465,6 +465,23 @@ inline Surface DragNumberFocus   { Surf,                  Surf,                 
 inline Surface DragNumberDown    { SurfHi,                SurfHi,                Cyan,        RadiusSm, BorderW };
 inline Surface DragNumberDisabled{ Color(0x1f,0x22,0x33), Color(0x1f,0x22,0x33), BgHighlight, RadiusSm, BorderW };
 
+// A Knob: its body a disc filled like a DragNumber field (radius and border
+// width the disc's own, half its side and the border width given here), lit
+// while hovered, ringed blue with the focus and cyan while it is dragged; the
+// track arc, the value arc over it, the indicator on the body and the ticks
+// outside the arc are lines in their surface's top colour.
+inline Surface KnobBody          { Surf,                  Surf,                  Line,        RadiusSm, BorderW };
+inline Surface KnobBodyHover     { SurfHi,                SurfHi,                Line,        RadiusSm, BorderW };
+inline Surface KnobBodyFocus     { Surf,                  Surf,                  Blue,        RadiusSm, BorderW };
+inline Surface KnobBodyPressed   { SurfHi,                SurfHi,                Cyan,        RadiusSm, BorderW };
+inline Surface KnobBodyDisabled  { Color(0x1f,0x22,0x33), Color(0x1f,0x22,0x33), BgHighlight, RadiusSm, BorderW };
+inline Surface KnobTrack         { BgHighlight,           BgHighlight,           BgHighlight, 0.0f,     0.0f };
+inline Surface KnobValue         { Blue,                  Blue,                  Blue,        0.0f,     0.0f };
+inline Surface KnobIndicator     { Fg,                    Fg,                    Fg,          0.0f,     0.0f };
+inline Surface KnobTick          { Muted,                 Muted,                 Muted,       0.0f,     0.0f };
+// A disabled knob's value arc and indicator.
+inline Surface KnobValueDisabled { Muted,                 Muted,                 Muted,       0.0f,     0.0f };
+
 // A VectorField component's axis tag, a block of the axis's colour before its
 // field (its letter in the skin's AxisTagText): X red, Y green, Z blue and W
 // grey; a disabled row's tags are filled as a disabled field.
@@ -635,6 +652,10 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"ModalScrim",&ModalScrim},{"DropIndicator",&DropIndicator},{"DragSource",&DragSource},
         {"DragNumber",&DragNumber},{"DragNumberHover",&DragNumberHover},{"DragNumberFocus",&DragNumberFocus},
         {"DragNumberDown",&DragNumberDown},{"DragNumberDisabled",&DragNumberDisabled},
+        {"KnobBody",&KnobBody},{"KnobBodyHover",&KnobBodyHover},{"KnobBodyFocus",&KnobBodyFocus},
+        {"KnobBodyPressed",&KnobBodyPressed},{"KnobBodyDisabled",&KnobBodyDisabled},
+        {"KnobTrack",&KnobTrack},{"KnobValue",&KnobValue},{"KnobIndicator",&KnobIndicator},
+        {"KnobTick",&KnobTick},{"KnobValueDisabled",&KnobValueDisabled},
         {"VectorTagX",&VectorTagX},{"VectorTagY",&VectorTagY},{"VectorTagZ",&VectorTagZ},
         {"VectorTagW",&VectorTagW},
         {"Badge",&Badge},

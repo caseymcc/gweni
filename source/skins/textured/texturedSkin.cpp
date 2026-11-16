@@ -588,6 +588,7 @@ std::unordered_map<std::string, gweni::Color*> TexturedSkin::textColorRegistry()
         {"CodeHunk",&Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Hunk)]},
         {"CodeMeta",&Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Meta)]},
         {"TimelineAxisText",&Colors.Timeline.AxisText},{"TimelineCaptionText",&Colors.Timeline.CaptionText},
+        {"KnobValueText",&Colors.Knob.ValueText},{"KnobCaptionText",&Colors.Knob.CaptionText},
         {"SelectableNormal",&Colors.Selectable.Normal},{"SelectableHover",&Colors.Selectable.Hover},
         {"SelectableSelected",&Colors.Selectable.Selected},{"SelectableDisabled",&Colors.Selectable.Disabled},
         {"NavItemText",&Colors.NavigationItem.Normal},
@@ -1520,6 +1521,8 @@ void TexturedSkin::setThemeColors()
     // a Timeline's tick labels as a Chart's, its captions primary
     Colors.Timeline.AxisText=FgDark;
     Colors.Timeline.CaptionText=Fg;
+    Colors.Knob.ValueText=Fg;
+    Colors.Knob.CaptionText=FgDark;
     // the hover is the background alone, so hovering writes no glyph slot
     Colors.Selectable.Normal=Fg;
     Colors.Selectable.Hover=Fg;

@@ -188,11 +188,7 @@ void Knob::setAngles(double startDegrees, double endDegrees)
 
 double Knob::angleForValue(double value) const
 {
-    const double range=m_max-m_min;
-    double t=range > 0.0?(value-m_min)/range:0.0;
-
-    t=std::min(std::max(t, 0.0), 1.0);
-    return m_startAngle+t*(m_endAngle-m_startAngle);
+    return m_startAngle+sweepShare(value)*(m_endAngle-m_startAngle);
 }
 
 // The angle's distance from the start in the sweep's direction, a turn at
@@ -356,10 +352,21 @@ void Knob::setDisabled(bool active)
     updateColors();
 }
 
+// The skin's Knob colours, the disabled button colour while disabled; read
+// again here, so a theme changed at run time reaches them.
 void Knob::updateColors()
 {
-    Slider::updateValueTextColor(m_valueText, this);
-    Slider::updateValueTextColor(m_caption, this);
+    skin::Base *skin=getSkin();
+
+    if(!skin)
+        return;
+
+    const Color &disabled=skin->Colors.Button.Disabled;
+
+    if(m_valueText)
+        m_valueText->setTextColor(isDisabled()?disabled:skin->Colors.Knob.ValueText);
+    if(m_caption)
+        m_caption->setTextColor(isDisabled()?disabled:skin->Colors.Knob.CaptionText);
 }
 
 Rect Knob::getDialRect() const
@@ -369,6 +376,53 @@ Rect Knob::getDialRect() const
     const int side=std::max(0, std::min({m_diameter, getWidth(), getHeight()-top-below}));
 
     return Rect((getWidth()-side)/2, top, side, side);
+}
+
+// A tick ring a tenth of the side wide (3 units at least) with a unit's gap
+// inside it, the arcs a twelfth of the side thick (2 at least), the body a
+// sixteenth of the side (2 at least) inside them, the indicator from a
+// quarter of the body's radius to 0.85 of it, half the arcs' thickness.
+Knob::Geometry Knob::getGeometry() const
+{
+    const Rect dial=getDialRect();
+    const float side=float(dial.w);
+    const float half=side*0.5f;
+    Geometry geometry;
+
+    geometry.centre=PointF(dial.x+half, dial.y+half);
+    geometry.arcThickness=std::max(2.0f, side/12.0f);
+
+    float outer=half;
+
+    if(m_tickCount > 0)
+    {
+        geometry.tickOuter=half;
+        geometry.tickInner=half-std::max(3.0f, side/10.0f);
+        geometry.tickThickness=1.0f;
+        outer=geometry.tickInner-1.0f;
+    }
+    geometry.arcRadius=std::max(0.0f, outer-geometry.arcThickness*0.5f);
+    geometry.bodyRadius=std::max(0.0f,
+        geometry.arcRadius-geometry.arcThickness*0.5f-std::max(2.0f, side/16.0f));
+    geometry.indicatorInner=geometry.bodyRadius*0.25f;
+    geometry.indicatorOuter=geometry.bodyRadius*0.85f;
+    geometry.indicatorThickness=std::max(1.5f, geometry.arcThickness*0.5f);
+    return geometry;
+}
+
+PointF Knob::pointAt(const PointF &centre, double degrees, float radius)
+{
+    const double rad=degrees*Pi/180.0;
+
+    return PointF(float(centre.x+radius*std::cos(rad)), float(centre.y-radius*std::sin(rad)));
+}
+
+double Knob::sweepShare(double value) const
+{
+    const double range=m_max-m_min;
+    const double t=range > 0.0?(value-m_min)/range:0.0;
+
+    return std::min(std::max(t, 0.0), 1.0);
 }
 
 bool Knob::mouseAngle(int x, int y, double &degrees)

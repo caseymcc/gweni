@@ -470,6 +470,13 @@ public:
             gweni::Color CaptionText{0xc0, 0xc0, 0xc0};
         } Timeline;
 
+        //! A Knob's value text under its dial and its caption above it.
+        struct Knob_t
+        {
+            gweni::Color ValueText{0xc0, 0xc0, 0xc0};
+            gweni::Color CaptionText{0xa0, 0xa0, 0xa0};
+        } Knob;
+
         //! A Selectable row's text, by its state.
         struct Selectable_t
         {
