@@ -97,7 +97,7 @@ struct Scene
     double clock=10.0;
     std::vector<std::tuple<size_t, uint8_t>> writes;
 
-    explicit Scene(size_t size, size_t bytesPerRow=16, bool gotoBox=false): sourceSize(size)
+    explicit Scene(size_t size, size_t bytesPerRow=16, bool gotoBox=false, bool preview=false): sourceSize(size)
     {
         platform::setTimeSource([this]() { return clock; });
         skin.setDefaultMonoFont("test-mono", 11.f);
@@ -107,6 +107,7 @@ struct Scene
         view->setBounds(11, 13, 1300, 180);
         view->setBytesPerRow(bytesPerRow);
         view->setGotoVisible(gotoBox);
+        view->setPreviewVisible(preview);
         view->setSource(size, reader());
         frame();
     }
@@ -791,7 +792,8 @@ TEST_CASE("HexView: addresses parse as hex or decimal and goto moves the cursor"
     CHECK(s.view->isGotoVisible());
     TextBox *box=s.view->getGotoBox();
     // the box above the rows, in the view's top padding
-    CHECK(box->getY() == 0);
+    CHECK(box->getY() == HexView::GotoGap);
+    CHECK(box->getX() == s.view->getAddressX());
     CHECK(box->getHeight() > 0);
     CHECK(s.view->getViewport().y >= box->bottom()+HexView::GotoGap);
     s.view->setBaseAddress(0x1000);
@@ -936,8 +938,9 @@ TEST_CASE("HexView: cursor selection and highlight marks touch only rows they ch
         };
 
     CHECK(s.row(1)->getMarks().cursor == 4);
-    CHECK(s.row(1)->getMarks().selectionBegin == 4);
-    CHECK(s.row(1)->getMarks().selectionEnd == 5);
+    // a one-byte selection is the cursor's box alone
+    CHECK(s.row(1)->getMarks().selectionBegin == 0);
+    CHECK(s.row(1)->getMarks().selectionEnd == 0);
 
     // within a row: that row alone
     s.view->setCursor(22);
@@ -985,5 +988,153 @@ TEST_CASE("HexView: cursor selection and highlight marks touch only rows they ch
     CHECK(marked() == std::set<size_t>{1, 2, 3});
     s.frame();
     CHECK(s.row(3)->getMarks().highlightCount == 0);
+    s.checkOnePass();
+}
+
+TEST_CASE("HexView: preview values read every type in both byte orders")
+{
+    using T=HexView::PreviewType;
+    const uint8_t bytes[8]={0xff, 0x01, 0x80, 0x3f, 0x00, 0x00, 0xf0, 0xbf};
+    const auto value=[&bytes](T type, bool big, size_t available=8)
+        {
+            return HexView::previewValue(type, bytes, available, big);
+        };
+
+    CHECK(value(T::Int8, false) == "-1");
+    CHECK(value(T::UInt8, false) == "255");
+    CHECK(value(T::Int8, true) == "-1");
+    CHECK(value(T::Int16, false) == "511");
+    CHECK(value(T::UInt16, false) == "511");
+    CHECK(value(T::Int16, true) == "-255");
+    CHECK(value(T::UInt16, true) == "65281");
+    CHECK(value(T::Int32, false) == "1065353727");
+    CHECK(value(T::UInt32, true) == "4278288447");
+    CHECK(value(T::Int32, true) == "-16678849");
+    CHECK(value(T::UInt64, false) == "13830554456720146943");
+    CHECK(value(T::Int64, false) == "-4616189616989404673");
+    CHECK(value(T::UInt64, true) == "18375108962719690943");
+    CHECK(value(T::Int64, true) == "-71635110989860673");
+    // 0x3f8001ff little endian is 1.00005996, 0xbff00000_3f8001ff a double
+    CHECK(value(T::Float, false) == "1.00006092");
+    CHECK(value(T::Double, false) == "-1.0000002365560474");
+    const uint8_t one[8]={0x3f, 0xf0, 0, 0, 0, 0, 0, 0};
+    CHECK(HexView::previewValue(T::Double, one, 8, true) == "1");
+    CHECK(HexView::previewValue(T::Float, one, 8, true) == "1.875");
+    // the data ends first
+    CHECK(value(T::Int8, false, 0) == "n/a");
+    CHECK(value(T::UInt8, false, 1) == "255");
+    CHECK(value(T::Int16, false, 1) == "n/a");
+    CHECK(value(T::Float, true, 3) == "n/a");
+    CHECK(value(T::Int64, false, 7) == "n/a");
+    CHECK(value(T::Double, true, 7) == "n/a");
+    CHECK(std::string(HexView::previewName(T::UInt32)) == "uint32");
+    CHECK(HexView::previewSize(T::Double) == 8);
+}
+
+TEST_CASE("HexView: the preview follows the cursor, the data's end and the endian toggle")
+{
+    using T=HexView::PreviewType;
+    Scene s(20, 16, false, true);
+    s.overrides={{16, 0x34}, {17, 0x12}, {18, 0xff}, {19, 0x7f}};
+    s.view->dataChanged(16, 20);
+    s.frame();
+    CHECK(s.view->isPreviewVisible());
+    controls::internal::HexViewPreview *preview=s.view->getPreview();
+    // in the view's bottom padding, under the rows
+    CHECK(preview->getY() >= s.view->getViewport().y+s.view->getViewport().h);
+    CHECK(preview->bottom() == s.view->getHeight()-HexView::PreviewGap);
+    CHECK(preview->getX() == s.view->getAddressX());
+    CHECK(s.view->getPreviewText(T::UInt8) == "0");
+    CHECK(s.view->getPreviewText(T::UInt32) == "50462976");
+
+    s.view->setCursor(16);
+    s.frame();
+    CHECK(s.view->getPreviewText(T::UInt16) == "4660");
+    CHECK(s.view->getPreviewText(T::Int32) == "2147422772");
+    CHECK(s.view->getPreviewText(T::Int64) == "n/a");
+    CHECK(s.view->getPreviewText(T::Double) == "n/a");
+    // a move whose values keep their strings marks none of them
+    s.view->setCursor(18);
+    s.frame();
+    CHECK(s.view->getPreviewText(T::Int8) == "-1");
+    s.view->setCursor(19);
+    s.frame();
+    CHECK(s.view->getPreviewText(T::Int16) == "n/a");
+    s.view->setCursor(18);
+    s.frame();
+    s.overrides[19]=0x7f;
+    s.view->dataChanged(0, 1);
+    for(size_t i=0; i < HexView::PreviewTypes; ++i)
+        CHECK(preview->getValueControl(i)->getStateChange() == controls::StateChange_Nothing);
+    s.view->setCursor(16);
+    // only the values whose strings changed are marked: int64 stays n/a
+    CHECK(preview->getValueControl(size_t(T::Int64))->getStateChange() == controls::StateChange_Nothing);
+    CHECK(preview->getValueControl(size_t(T::UInt16))->getStateChange() != controls::StateChange_Nothing);
+    s.frame();
+
+    // the toggle reads big endian; an edit of the cursor's bytes reads again
+    s.click(preview->getEndianButton()->localPosToCanvas(Point(3, 3)));
+    CHECK(s.view->isBigEndian());
+    CHECK(preview->getEndianButton()->getText() == "Big endian");
+    CHECK(s.view->getPreviewText(T::UInt16) == "13330");
+    CHECK(s.view->getPreviewText(T::UInt32) == "873660287");
+    s.overrides[17]=0x00;
+    s.view->dataChanged(17, 18);
+    s.frame();
+    CHECK(s.view->getPreviewText(T::UInt16) == "13312");
+    s.click(preview->getEndianButton()->localPosToCanvas(Point(3, 3)));
+    CHECK_FALSE(s.view->isBigEndian());
+    CHECK(s.view->getPreviewText(T::UInt16) == "52");
+
+    // hidden, its room goes and it reads nothing; shown, it reads again
+    s.view->setPreviewVisible(false);
+    s.frame();
+    CHECK(s.view->getPadding().bottom == 0);
+    s.clearReads();
+    s.view->setCursor(0);
+    CHECK(s.reads.empty());
+    s.view->setPreviewVisible(true);
+    CHECK(s.view->getPreviewText(T::UInt8) == "0");
+    s.frame();
+    s.checkOnePass();
+}
+
+TEST_CASE("HexView: the hovered byte marks its row in both columns and follows a scroll")
+{
+    Scene s(4096);
+    s.move(s.bytePoint(0x23, HexView::Column::Ascii));
+    s.frame();
+    CHECK(s.view->getHoveredByte() == 0x23);
+    CHECK(s.row(2)->getMarks().hover == 3);
+    CHECK(s.row(1)->getMarks().hover == -1);
+    // a gap hovers nothing
+    Point gap=s.bytePoint(0x23, HexView::Column::Hex);
+    gap.x+=static_cast<int>(2*s.view->getCellWidth());
+    s.move(gap);
+    CHECK(s.view->getHoveredByte() == HexView::NoByte);
+    CHECK((s.row(2)->getStateChange() & controls::StateChange_Background) != 0);
+    s.frame();
+    // another row's byte: only those two rows marked
+    s.move(s.bytePoint(0x23, HexView::Column::Hex));
+    s.frame();
+    s.move(s.bytePoint(0x45, HexView::Column::Hex));
+    std::set<size_t> marked;
+    for(auto *row : s.view->getRows())
+    {
+        if(!row->hidden() && (row->getStateChange() & controls::StateChange_Background))
+            marked.insert(s.view->itemForRow(row));
+    }
+    CHECK(marked == std::set<size_t>{2, 4});
+    s.frame();
+    // a scroll under the resting mouse: the byte under it now
+    s.view->scrollByRows(1);
+    s.frame();
+    CHECK(s.view->getHoveredByte() == 0x55);
+    CHECK(s.row(5)->getMarks().hover == 5);
+    // leaving clears it
+    s.move(Point(1399, 599));
+    s.frame();
+    CHECK(s.view->getHoveredByte() == HexView::NoByte);
+    CHECK(s.row(5)->getMarks().hover == -1);
     s.checkOnePass();
 }

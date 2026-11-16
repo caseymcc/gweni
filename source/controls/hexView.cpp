@@ -11,6 +11,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <initializer_list>
 #include <limits>
 #include <utility>
 
@@ -50,9 +53,98 @@ int hexDigit(gweni::UnicodeChar c)
 
 }//namespace
 
+namespace internal
+{
+
+GWENI_CONTROL_CONSTRUCTOR(HexViewText)
+{
+}
+
+void HexViewText::setColorSpans(std::vector<renderer::ColorSpan> &spans)
+{
+    if(spans == m_spans)
+        return;
+
+    m_spans.swap(spans);
+    addStateChange(StateChange_Text);
+}
+
+GWENI_CONTROL_CONSTRUCTOR(HexViewPreview)
+{
+    m_endian=newChild<Button>();
+    m_endian->setPlacement(Placement::Owner);
+    m_endian->setIsToggle(true);
+    m_endian->setText("Little endian");
+    m_endian->setTabable(false);
+    for(size_t i=0; i < m_names.size(); ++i)
+    {
+        m_names[i]=newChild<Text>();
+        m_values[i]=newChild<Text>();
+        m_names[i]->setText(HexView::previewName(static_cast<HexView::PreviewType>(i)));
+        for(Text *text : {m_names[i], m_values[i]})
+        {
+            text->setPlacement(Placement::Owner);
+            text->setSameSizeKeepsLayout(true);
+            text->setPadding(Padding(0, 0, 0, 0));
+        }
+    }
+}
+
+// The toggle on the first line, then two name/value pairs a line: a name in
+// NameCells, a value in ValueCells, a gap between the pairs; whole cells.
+namespace
+{
+constexpr size_t NameCells=7;
+constexpr size_t ValueCells=24;
+constexpr size_t PairGap=3;
+constexpr size_t ToggleCells=14;
+}
+
+void HexViewPreview::arrangeHorizontal(skin::Base *skin)
+{
+    ParentClass::arrangeHorizontal(skin);
+
+    if(!m_view)
+        return;
+
+    placeChild(m_endian, 0, m_endian->getY(),
+        m_view->cellX(ToggleCells)+2*HexView::PreviewButtonPad, m_endian->getHeight());
+    for(size_t i=0; i < m_names.size(); ++i)
+    {
+        const size_t column=(i%2)*(NameCells+1+ValueCells+PairGap);
+
+        placeChild(m_names[i], m_view->cellX(column), m_names[i]->getY(),
+            m_view->cellX(NameCells), m_names[i]->getHeight());
+        placeChild(m_values[i], m_view->cellX(column+NameCells+1), m_values[i]->getY(),
+            m_view->cellX(ValueCells), m_values[i]->getHeight());
+    }
+}
+
+void HexViewPreview::arrangeVertical(skin::Base *skin)
+{
+    ParentClass::arrangeVertical(skin);
+
+    if(!m_view)
+        return;
+
+    const int line=std::max(1, m_view->m_gotoLineHeight);
+    const int top=line+HexView::PreviewButtonPad+HexView::PreviewGap;
+
+    placeChild(m_endian, m_endian->getX(), 0, m_endian->getWidth(), line+HexView::PreviewButtonPad);
+    for(size_t i=0; i < m_names.size(); ++i)
+    {
+        const int y=top+static_cast<int>(i/2)*line;
+
+        placeChild(m_names[i], m_names[i]->getX(), y, m_names[i]->getWidth(), line);
+        placeChild(m_values[i], m_values[i]->getX(), y, m_values[i]->getWidth(), line);
+    }
+}
+
+}//namespace internal
+
 bool HexRowMarks::operator==(const HexRowMarks &o) const
 {
-    if(cursor != o.cursor || selectionBegin != o.selectionBegin || selectionEnd != o.selectionEnd
+    if(cursor != o.cursor || hover != o.hover || selectionBegin != o.selectionBegin || selectionEnd != o.selectionEnd
         || highlightCount != o.highlightCount)
         return false;
     // where the box is only matters for a row holding the cursor
@@ -70,9 +162,9 @@ GWENI_CONTROL_CONSTRUCTOR(HexViewRow)
 {
     setMouseInputEnabled(false);
     m_address=newChild<internal::Text>();
-    m_hex=newChild<internal::Text>();
-    m_ascii=newChild<internal::Text>();
-    for(internal::Text *text : {m_address, m_hex, m_ascii})
+    m_hex=newChild<internal::HexViewText>();
+    m_ascii=newChild<internal::HexViewText>();
+    for(internal::Text *text : std::initializer_list<internal::Text *>{m_address, m_hex, m_ascii})
     {
         text->setPlacement(Placement::Owner);
         text->setSameSizeKeepsLayout(true);
@@ -118,7 +210,63 @@ void HexViewRow::bind(size_t offset)
         m_hex->setText(hex);
     if(m_ascii->getText() != ascii)
         m_ascii->setText(ascii);
+    updateSpans();
     updateMarks();
+}
+
+// The zero bytes' digits and the non-printable bytes' dots in their colours,
+// each run of them one span; the rest in the run's own colour.
+void HexViewRow::updateSpans()
+{
+    skin::Base *skin=getSkin();
+
+    if(!skin || m_offset == VirtualList::NoItem)
+        return;
+
+    const auto &colors=skin->Colors.HexView;
+    std::vector<renderer::ColorSpan> hex;
+    std::vector<renderer::ColorSpan> ascii;
+
+    for(size_t i=0; i < m_count; ++i)
+    {
+        const uint8_t byte=m_bytes[i];
+
+        if(byte == 0 && !(m_view->m_pendingNibble >= 0 && m_offset+i == m_view->m_cursor))
+        {
+            const size_t begin=3*i+i/8;
+
+            if(!hex.empty() && hex.back().end+1+(i%8 == 0) == begin)
+                hex.back().end=begin+2;
+            else
+                hex.push_back({begin, begin+2, colors.ZeroByte});
+        }
+        if(byte < 0x20 || byte > 0x7e)
+        {
+            if(!ascii.empty() && ascii.back().end == i)
+                ascii.back().end=i+1;
+            else
+                ascii.push_back({i, i+1, colors.NonPrintable});
+        }
+    }
+    m_hex->setColorSpans(hex);
+    m_ascii->setColorSpans(ascii);
+}
+
+void HexViewRow::updateColors()
+{
+    ParentClass::updateColors();
+
+    skin::Base *skin=getSkin();
+
+    if(!skin)
+        return;
+
+    const auto &colors=skin->Colors.HexView;
+
+    m_address->setTextColor(colors.Address);
+    m_hex->setTextColor(colors.Byte);
+    m_ascii->setTextColor(colors.Ascii);
+    updateSpans();
 }
 
 // The row's part of the cursor, the selection and the highlights, compared
@@ -138,11 +286,16 @@ void HexViewRow::updateMarks()
             marks.cursorInAscii=view.m_cursorColumn == HexView::Column::Ascii;
             marks.pendingNibble=view.m_pendingNibble >= 0;
         }
+        if(view.m_hover != HexView::NoByte && view.m_hover >= m_offset && view.m_hover < end)
+            marks.hover=static_cast<int>(view.m_hover-m_offset);
 
         const size_t selBegin=std::max(view.getSelectionBegin(), m_offset);
         const size_t selEnd=std::min(view.getSelectionEnd(), end);
 
-        if(view.m_cursor != HexView::NoByte && selBegin < selEnd)
+        // a one-byte selection is the cursor's byte, which its box shows: no
+        // piece, so a plain cursor move writes the cursor's slots alone
+        if(view.m_cursor != HexView::NoByte && selBegin < selEnd
+            && view.getSelectionEnd()-view.getSelectionBegin() > 1)
         {
             marks.selectionBegin=static_cast<uint8_t>(selBegin-m_offset);
             marks.selectionEnd=static_cast<uint8_t>(selEnd-m_offset);
@@ -195,7 +348,7 @@ void HexViewRow::arrangeVertical(skin::Base *skin)
 
     const int height=std::max(1, getHeight()-2*HexView::RowPadY);
 
-    for(internal::Text *text : {m_address, m_hex, m_ascii})
+    for(internal::Text *text : std::initializer_list<internal::Text *>{m_address, m_hex, m_ascii})
         placeChild(text, text->getX(), HexView::RowPadY, text->getWidth(), height);
 }
 
@@ -208,8 +361,9 @@ GWENI_CONTROL_CONSTRUCTOR(HexView)
             HexViewRow *row=parent->newChild<HexViewRow>();
 
             row->m_view=this;
-            for(internal::Text *text : {row->m_address, row->m_hex, row->m_ascii})
+            for(internal::Text *text : std::initializer_list<internal::Text *>{row->m_address, row->m_hex, row->m_ascii})
                 text->setFont(getFont());
+            row->updateColors();
             return row;
         });
     setRowBinder([](Base *row, size_t item)
@@ -224,10 +378,27 @@ GWENI_CONTROL_CONSTRUCTOR(HexView)
     setTabable(true);
     addAccelerator("Ctrl + C", &HexView::onCopy);
 
-    m_goto=newChild<TextBox>();
+    // the goto box and the preview are the view's own children, beside the
+    // inner panel (which a new child would otherwise go into, and scroll and
+    // clip to the viewport with the rows)
+    Base *inner=m_innerPanel;
+
+    m_innerPanel=nullptr;
+    {
+        PartScope part;
+
+        m_goto=newChild<TextBox>();
+        m_preview=newChild<internal::HexViewPreview>();
+    }
+    m_innerPanel=inner;
     m_goto->setPlacement(Placement::Owner);
     m_goto->setPlaceholder("Go to address");
     m_goto->onReturnPressedCaller.add(this, &HexView::onGotoReturn);
+
+    m_preview->m_view=this;
+    m_preview->setPlacement(Placement::Owner);
+    m_preview->getEndianButton()->onToggleCaller.add(this, &HexView::onEndianToggled);
+    updatePreview();
 }
 
 const Font &HexView::getFont() const
@@ -251,6 +422,7 @@ void HexView::setSource(size_t size, Read read, Write write)
     }
     // the highlights are clipped to the data as they are drawn
     updateRows();
+    updatePreview();
 }
 
 void HexView::setBaseAddress(uint64_t address)
@@ -318,6 +490,10 @@ void HexView::dataChanged(size_t begin, size_t end)
 
     const size_t first=begin/m_bytesPerRow;
     const size_t last=(end-1)/m_bytesPerRow;
+
+    // the preview reads up to 8 bytes from the cursor
+    if(m_cursor != NoByte && begin < m_cursor+8 && end > m_cursor)
+        updatePreview();
 
     for(size_t i=0; i < poolSize(); ++i)
     {
@@ -417,11 +593,20 @@ void HexView::calculateSize(skin::Base *skin, Dim dim)
         m_gotoLineHeight=std::max(1, measureLineHeight(font));
         setRowHeight(m_gotoLineHeight+2*RowPadY);
         m_goto->setFont(font);
+        for(size_t i=0; i < PreviewTypes; ++i)
+        {
+            for(internal::Text *text : {m_preview->m_names[i], m_preview->m_values[i]})
+            {
+                text->setFont(font);
+                text->invalidate();
+            }
+        }
+        m_preview->invalidate();
         for(size_t i=0; i < poolSize(); ++i)
         {
             auto *row=static_cast<HexViewRow *>(poolRow(i));
 
-            for(internal::Text *text : {row->m_address, row->m_hex, row->m_ascii})
+            for(internal::Text *text : std::initializer_list<internal::Text *>{row->m_address, row->m_hex, row->m_ascii})
             {
                 text->setFont(font);
                 text->textChanged();
@@ -434,14 +619,16 @@ void HexView::calculateSize(skin::Base *skin, Dim dim)
     // the goto box's room above the rows, for this pass
     if(dim == Dim::X)
     {
-        const int top=m_goto->hidden()?0:gotoHeight()+GotoGap;
+        const int top=m_goto->hidden()?0:gotoHeight()+2*GotoGap;
+        const int bottom=m_preview->hidden()?0:previewHeight()+2*PreviewGap;
 
-        if(getPadding().top != top)
+        if(getPadding().top != top || getPadding().bottom != bottom)
         {
             PlacementScope placement;
             Padding padding=getPadding();
 
             padding.top=top;
+            padding.bottom=bottom;
             setPadding(padding);
         }
     }
@@ -474,6 +661,7 @@ void HexView::setCursor(size_t offset, bool extend)
         return;
 
     updateMarks();
+    updatePreview();
     onCursorChanged.call(this);
 }
 
@@ -780,10 +968,14 @@ void HexView::onMouseMoved(int x, int y, int deltaX, int deltaY)
 {
     ParentClass::onMouseMoved(x, y, deltaX, deltaY);
 
+    m_hoverPoint=canvasPosToLocal(Point(x, y));
+    m_hoverKnown=true;
+    updateHover(m_hoverPoint);
+
     if(MouseFocus != this)
         return;
 
-    const ByteHit hit=byteNear(canvasPosToLocal(Point(x, y)));
+    const ByteHit hit=byteNear(m_hoverPoint);
 
     if(hit)
         setCursor(hit.offset, true);
@@ -903,13 +1095,234 @@ void HexView::contentsPlaced(skin::Base *skin)
 {
     ParentClass::contentsPlaced(skin);
 
+    // a gap in from the frame, the preview a cell in, as the address column
+    if(!m_preview->hidden())
+        placeChild(m_preview, getAddressX(), getHeight()-PreviewGap-previewHeight(),
+            std::max(0, getWidth()-2*getAddressX()), previewHeight());
+
+    // the rows moved under a resting mouse: the byte under it now
+    if(m_hoverKnown)
+        updateHover(m_hoverPoint);
+
     if(m_goto->hidden())
         return;
 
     const Padding &padding=m_goto->getPadding();
-    const int width=std::min(getWidth(), cellX(20)+padding.left+padding.right);
+    const int width=std::min(std::max(0, getWidth()-2*getAddressX()), cellX(20)+padding.left+padding.right);
 
-    placeChild(m_goto, 0, 0, width, gotoHeight());
+    placeChild(m_goto, getAddressX(), GotoGap, width, gotoHeight());
+}
+
+void HexView::onMouseLeave()
+{
+    ParentClass::onMouseLeave();
+    m_hoverKnown=false;
+    setHover(NoByte);
+}
+
+void HexView::updateHover(Point local)
+{
+    const ByteHit hit=hitTestByte(local);
+
+    setHover(hit?hit.offset:NoByte);
+}
+
+void HexView::setHover(size_t byte)
+{
+    if(m_hover == byte)
+        return;
+
+    m_hover=byte;
+    updateMarks();
+}
+
+void HexView::setPreviewVisible(bool visible)
+{
+    if(visible == !m_preview->hidden())
+        return;
+
+    m_preview->setHidden(!visible);
+    updatePreview();
+    invalidate();
+}
+
+int HexView::previewHeight() const
+{
+    if(m_preview->hidden())
+        return 0;
+
+    const int line=std::max(1, m_gotoLineHeight);
+
+    return line+PreviewButtonPad+PreviewGap+PreviewLines*line;
+}
+
+void HexView::setBigEndian(bool big)
+{
+    if(m_bigEndian == big)
+        return;
+
+    m_bigEndian=big;
+    if(m_preview->getEndianButton()->getToggleState() != big)
+        m_preview->getEndianButton()->setToggleState(big);
+    m_preview->getEndianButton()->setText(big?"Big endian":"Little endian");
+    updatePreview();
+}
+
+void HexView::onEndianToggled(event::Info)
+{
+    setBigEndian(m_preview->getEndianButton()->getToggleState());
+}
+
+const char *HexView::previewName(PreviewType type)
+{
+    static const char *const names[PreviewTypes]={
+        "int8", "uint8", "int16", "uint16", "int32", "uint32", "int64", "uint64", "float", "double"};
+
+    return names[static_cast<size_t>(type)];
+}
+
+size_t HexView::previewSize(PreviewType type)
+{
+    static const size_t sizes[PreviewTypes]={1, 1, 2, 2, 4, 4, 8, 8, 4, 8};
+
+    return sizes[static_cast<size_t>(type)];
+}
+
+String HexView::previewValue(PreviewType type, const uint8_t *bytes, size_t available, bool bigEndian)
+{
+    const size_t size=previewSize(type);
+
+    if(available < size)
+        return "n/a";
+
+    uint64_t bits=0;
+
+    for(size_t i=0; i < size; ++i)
+    {
+        const uint8_t byte=bigEndian?bytes[i]:bytes[size-1-i];
+
+        bits=(bits << 8) | byte;
+    }
+
+    char text[40];
+
+    switch(type)
+    {
+    case PreviewType::Int8:
+        std::snprintf(text, sizeof(text), "%d", static_cast<int>(static_cast<int8_t>(bits)));
+        break;
+    case PreviewType::Int16:
+        std::snprintf(text, sizeof(text), "%d", static_cast<int>(static_cast<int16_t>(bits)));
+        break;
+    case PreviewType::Int32:
+        std::snprintf(text, sizeof(text), "%ld", static_cast<long>(static_cast<int32_t>(bits)));
+        break;
+    case PreviewType::Int64:
+        std::snprintf(text, sizeof(text), "%lld", static_cast<long long>(static_cast<int64_t>(bits)));
+        break;
+    case PreviewType::UInt8:
+    case PreviewType::UInt16:
+    case PreviewType::UInt32:
+    case PreviewType::UInt64:
+        std::snprintf(text, sizeof(text), "%llu", static_cast<unsigned long long>(bits));
+        break;
+    case PreviewType::Float:
+    {
+        const uint32_t word=static_cast<uint32_t>(bits);
+        float value;
+
+        std::memcpy(&value, &word, sizeof(value));
+        std::snprintf(text, sizeof(text), "%.9g", static_cast<double>(value));
+        break;
+    }
+    case PreviewType::Double:
+    {
+        double value;
+
+        std::memcpy(&value, &bits, sizeof(value));
+        std::snprintf(text, sizeof(text), "%.17g", value);
+        break;
+    }
+    case PreviewType::Count:
+        return String();
+    }
+    return text;
+}
+
+// Each value read again, its Text set only when its string changed.
+void HexView::updatePreview()
+{
+    // read again as it is shown (setPreviewVisible)
+    if(m_preview->hidden())
+        return;
+
+    uint8_t bytes[8]={};
+    size_t available=0;
+
+    if(m_cursor != NoByte && m_read)
+    {
+        available=std::min<size_t>(8, m_size-m_cursor);
+        m_read(m_cursor, bytes, available);
+    }
+
+    for(size_t i=0; i < PreviewTypes; ++i)
+    {
+        const String value=previewValue(static_cast<PreviewType>(i), bytes, available, m_bigEndian);
+        internal::Text *text=m_preview->m_values[i];
+
+        if(text->getText() != value)
+            text->setText(value);
+    }
+}
+
+const String &HexView::getPreviewText(PreviewType type) const
+{
+    return m_preview->m_values[static_cast<size_t>(type)]->getText();
+}
+
+void HexView::updateColors()
+{
+    ParentClass::updateColors();
+
+    skin::Base *skin=getSkin();
+
+    if(!skin)
+        return;
+
+    for(size_t i=0; i < PreviewTypes; ++i)
+    {
+        m_preview->m_names[i]->setTextColor(skin->Colors.HexView.PreviewName);
+        m_preview->m_values[i]->setTextColor(skin->Colors.HexView.Preview);
+    }
+}
+
+void HexView::byteSpan(size_t begin, size_t end, Column column, int &x, int &width) const
+{
+    if(column == Column::Hex)
+    {
+        const size_t last=end-1;
+
+        x=byteX(begin, column);
+        width=getHexX()+cellX(3*last+last/8+2)-x;
+    }
+    else
+    {
+        x=byteX(begin, column);
+        width=getAsciiX()+cellX(end)-x;
+    }
+}
+
+void HexView::cursorSpan(size_t byte, Column column, bool pending, int &x, int &width) const
+{
+    if(column == Column::Hex && pending)
+    {
+        const size_t cell=3*byte+byte/8;
+
+        x=getHexX()+cellX(cell+1);
+        width=getHexX()+cellX(cell+2)-x;
+        return;
+    }
+    byteSpan(byte, byte+1, column, x, width);
 }
 
 Size HexView::contentSize() const

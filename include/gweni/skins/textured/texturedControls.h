@@ -6,6 +6,7 @@
 #include "gweni/skins/textured/tokyoNight.h"
 
 #include "gweni/controls/button.h"
+#include "gweni/controls/hexView.h"
 #include "gweni/controls/nodeGraph.h"
 #include "gweni/controls/timeline.h"
 
@@ -1719,6 +1720,26 @@ private:
     std::vector<gweni::Rect> m_rects;
 };
 
+// A HexView's row: per column (hex, then ASCII) a slot for each of its
+// HexRowMarks pieces, behind the row's Texts: the highlights (at most
+// HexRowMarks::MaxHighlights, at the row's z), the selection (z+1), the
+// hovered byte (z+2) and the cursor's box (z+3), so the cursor shows over the
+// hover over the selection over a highlight where they meet whatever the
+// slots' ids; a piece the row has not is a hidden slot. A fixed count a row.
+class HexViewRow:public textured::ControlRegister<HexViewRow>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    static constexpr size_t SlotsPerColumn=3+controls::HexRowMarks::MaxHighlights;
+    size_t requiredPrimitives() override { return 2*SlotsPerColumn; }
+    size_t depthLayers() override { return 4; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="HexViewRow";
+};
+
 // A Selectable's row: hidden while idle (or disabled and unselected), a
 // surface for hover, press and selection; the label's Text draws the string.
 class Selectable:public textured::ControlRegister<Selectable>
@@ -2643,6 +2664,26 @@ public:
     }
 
     inline static const std::string_view name="CodeLineText";
+};
+
+//! A HexView row's hex or ASCII run (controls::internal::HexViewText):
+//! Text's, drawn with its colour spans (zero bytes, non-printable bytes).
+class HexViewText:public textured::ControlRegister<HexViewText>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 1; }
+
+    void generate(renderer::Base *renderer, controls::Base *baseControl) override;
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
+    void appendIds(std::vector<size_t> &, std::vector<size_t> &textIds) const override
+    {
+        textIds.insert(textIds.end(), m_primitives.begin(), m_primitives.end());
+    }
+
+    inline static const std::string_view name="HexViewText";
 };
 
 class TextBox:public textured::ControlRegister<TextBox>

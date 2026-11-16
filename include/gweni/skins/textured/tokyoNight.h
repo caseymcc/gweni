@@ -142,6 +142,18 @@ inline Surface LogViewFocus    { BgDark,                BgDark,                B
 // square).
 inline Surface LogViewSelection{ Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), 0.0f, 0.0f };
 
+// A HexView's row pieces, under the bytes' glyphs in both columns (flat and
+// square, opaque): the cursor's box (a selection's fill, a blue border), the
+// hovered byte, the selection (a TextBox's), and four dark highlight tints
+// for marking structures (blue, green, orange, magenta).
+inline Surface HexViewCursor   { Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), Blue,  0.0f, BorderW };
+inline Surface HexViewHover    { Color(0x29,0x2e,0x42), Color(0x29,0x2e,0x42), Color(0x29,0x2e,0x42), 0.0f, 0.0f };
+inline Surface HexViewSelection{ Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), Color(0x28,0x34,0x57), 0.0f, 0.0f };
+inline Surface HexViewHighlight0{ Color(0x1e,0x2a,0x44), Color(0x1e,0x2a,0x44), Color(0x1e,0x2a,0x44), 0.0f, 0.0f };
+inline Surface HexViewHighlight1{ Color(0x20,0x30,0x2b), Color(0x20,0x30,0x2b), Color(0x20,0x30,0x2b), 0.0f, 0.0f };
+inline Surface HexViewHighlight2{ Color(0x36,0x2a,0x22), Color(0x36,0x2a,0x22), Color(0x36,0x2a,0x22), 0.0f, 0.0f };
+inline Surface HexViewHighlight3{ Color(0x2e,0x24,0x3e), Color(0x2e,0x24,0x3e), Color(0x2e,0x24,0x3e), 0.0f, 0.0f };
+
 // Menus
 inline Surface Menu           { Color(0x1f,0x22,0x33), Bg,                    Line,  Radius,   BorderW };
 inline Surface MenuStrip      { Color(0x1f,0x22,0x33), Bg,                    BgHighlight, 0.0f, BorderW };
@@ -593,6 +605,9 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"CodeCurrentLine",&CodeCurrentLine},{"CodeSelection",&CodeSelection},
         {"DiffAdded",&DiffAdded},{"DiffRemoved",&DiffRemoved},{"DiffHunk",&DiffHunk},
         {"LogView",&LogView},{"LogViewFocus",&LogViewFocus},{"LogViewSelection",&LogViewSelection},
+        {"HexViewCursor",&HexViewCursor},{"HexViewHover",&HexViewHover},{"HexViewSelection",&HexViewSelection},
+        {"HexViewHighlight0",&HexViewHighlight0},{"HexViewHighlight1",&HexViewHighlight1},
+        {"HexViewHighlight2",&HexViewHighlight2},{"HexViewHighlight3",&HexViewHighlight3},
         {"Menu",&Menu},{"MenuStrip",&MenuStrip},{"MenuHover",&MenuHover},
         {"ToolBar",&ToolBar},{"ToolButton",&ToolButton},{"ToolButtonHover",&ToolButtonHover},
         {"ToolButtonDown",&ToolButtonDown},{"ToolButtonOn",&ToolButtonOn},

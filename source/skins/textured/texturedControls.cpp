@@ -1267,6 +1267,82 @@ void CodeLine::update(renderer::Base *renderer, controls::Base *baseControl)
 }
 
 ///////////////////////////////////////////////////////////////////////////
+//HexViewRow
+// Every piece of the row's marks, drawn from the view's cell arithmetic at the
+// row's place; an absent one hidden (a transparent rect would still write
+// depth). The slots of a piece whose rect and look stay are rewritten with the
+// same bytes, which the renderer's per-slot diff does not upload.
+void HexViewRow::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.size() < 2*SlotsPerColumn)
+        return;
+
+    auto *row=static_cast<controls::HexViewRow *>(baseControl);
+    controls::HexView *view=row->getView();
+    const controls::HexRowMarks &marks=row->getMarks();
+    const bool shown=row->visible() && view;
+    const Rect &bounds=row->getRenderBounds();
+    const int z=row->getZIndex();
+    static const tokyonight::Surface *const highlights[4]={&tokyonight::HexViewHighlight0,
+        &tokyonight::HexViewHighlight1, &tokyonight::HexViewHighlight2, &tokyonight::HexViewHighlight3};
+
+    for(size_t c=0; c < 2; ++c)
+    {
+        const auto column=(c == 0)?controls::HexView::Column::Hex:controls::HexView::Column::Ascii;
+        size_t *ids=m_primitives.data()+c*SlotsPerColumn;
+        const auto draw=[&](size_t id, int x, int width, const tokyonight::Surface &surface, int depth)
+            {
+                renderer->drawRoundedRect(id, Rect(bounds.x+x, bounds.y, width, bounds.h), surface.radius,
+                    surface.borderWidth, surface.top, surface.bottom, surface.border, z+depth);
+            };
+        int x=0;
+        int width=0;
+
+        // [0] the cursor
+        if(shown && marks.cursor >= 0)
+        {
+            view->cursorSpan(static_cast<size_t>(marks.cursor), column,
+                marks.pendingNibble && !marks.cursorInAscii, x, width);
+            draw(ids[0], x, width, tokyonight::HexViewCursor, 3);
+        }
+        else
+            renderer->hidePrimitive(ids[0]);
+
+        // [1] the hovered byte
+        if(shown && marks.hover >= 0)
+        {
+            view->byteSpan(static_cast<size_t>(marks.hover), static_cast<size_t>(marks.hover)+1, column, x, width);
+            draw(ids[1], x, width, tokyonight::HexViewHover, 2);
+        }
+        else
+            renderer->hidePrimitive(ids[1]);
+
+        // [2] the selection, past the cursor's byte alone
+        if(shown && marks.selectionEnd > marks.selectionBegin)
+        {
+            view->byteSpan(marks.selectionBegin, marks.selectionEnd, column, x, width);
+            draw(ids[2], x, width, tokyonight::HexViewSelection, 1);
+        }
+        else
+            renderer->hidePrimitive(ids[2]);
+
+        // [3..] the highlights
+        for(size_t i=0; i < controls::HexRowMarks::MaxHighlights; ++i)
+        {
+            if(shown && i < marks.highlightCount)
+            {
+                const controls::HexRowMarks::Piece &piece=marks.highlights[i];
+
+                view->byteSpan(piece.begin, piece.end, column, x, width);
+                draw(ids[3+i], x, width, *highlights[piece.surface%4], 0);
+            }
+            else
+                renderer->hidePrimitive(ids[3+i]);
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////
 //Selectable
 void Selectable::update(renderer::Base *renderer, controls::Base *baseControl)
 {
@@ -5683,6 +5759,48 @@ void CodeLineText::remove(renderer::Base *renderer, controls::Base *baseControl)
 
 
 
+
+///////////////////////////////////////////////////////////////////////////
+//HexViewText: a HexView row's hex or ASCII run with its colour spans, as a
+//CodeEditor line's (CodeLineText).
+void HexViewText::generate(renderer::Base *renderer, controls::Base *)
+{
+    m_primitives.resize(1);
+
+    renderer->generateTextPrimitive(m_primitives[0]);
+}
+
+void HexViewText::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(baseControl->getStateChange() == controls::StateChange_Nothing)
+        return;
+
+    auto *control=dynamic_cast<controls::internal::HexViewText *>(baseControl);
+
+    if(!control)
+        return;
+
+    const gweni::Color &colorOverride=control->getTextColorOverride();
+
+    renderer->setDrawColor((colorOverride.a == 0)?control->getTextColor():colorOverride);
+    renderer->renderText(m_primitives[0], control->getFont(), control->textOrigin(), control->getZIndex(),
+        control->getText(), control->getColorSpans());
+
+    if((baseControl->getStateChange() & controls::StateChange_Visibility) ||
+        (baseControl->getStateChange() & controls::StateChange_Created))
+    {
+        if(!baseControl->visible())
+            renderer->hideText(m_primitives[0]);
+        else
+            renderer->showText(m_primitives[0]);
+    }
+}
+
+void HexViewText::remove(renderer::Base *renderer, controls::Base *)
+{
+    if(!m_primitives.empty())
+        renderer->releaseTextPrimitive(m_primitives[0]);
+}
 
 ///////////////////////////////////////////////////////////////////////////
 //TextBox

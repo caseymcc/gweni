@@ -589,6 +589,10 @@ std::unordered_map<std::string, gweni::Color*> TexturedSkin::textColorRegistry()
         {"CodeMeta",&Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Meta)]},
         {"TimelineAxisText",&Colors.Timeline.AxisText},{"TimelineCaptionText",&Colors.Timeline.CaptionText},
         {"KnobValueText",&Colors.Knob.ValueText},{"KnobCaptionText",&Colors.Knob.CaptionText},
+        {"HexViewAddress",&Colors.HexView.Address},{"HexViewByte",&Colors.HexView.Byte},
+        {"HexViewZeroByte",&Colors.HexView.ZeroByte},{"HexViewAscii",&Colors.HexView.Ascii},
+        {"HexViewNonPrintable",&Colors.HexView.NonPrintable},{"HexViewPreviewName",&Colors.HexView.PreviewName},
+        {"HexViewPreview",&Colors.HexView.Preview},
         {"SelectableNormal",&Colors.Selectable.Normal},{"SelectableHover",&Colors.Selectable.Hover},
         {"SelectableSelected",&Colors.Selectable.Selected},{"SelectableDisabled",&Colors.Selectable.Disabled},
         {"NavItemText",&Colors.NavigationItem.Normal},
@@ -1523,6 +1527,17 @@ void TexturedSkin::setThemeColors()
     Colors.Timeline.CaptionText=Fg;
     Colors.Knob.ValueText=Fg;
     Colors.Knob.CaptionText=FgDark;
+
+    // a HexView: the bytes primary, the zero bytes and the non-printable dots
+    // dimmed as imgui_memory_editor dims them, the addresses and the preview's
+    // names a comment's, the ASCII and the values secondary
+    Colors.HexView.Address=Muted;
+    Colors.HexView.Byte=Fg;
+    Colors.HexView.ZeroByte=Muted;
+    Colors.HexView.Ascii=FgDark;
+    Colors.HexView.NonPrintable=Muted;
+    Colors.HexView.PreviewName=Muted;
+    Colors.HexView.Preview=Fg;
     // the hover is the background alone, so hovering writes no glyph slot
     Colors.Selectable.Normal=Fg;
     Colors.Selectable.Hover=Fg;

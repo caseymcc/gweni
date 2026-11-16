@@ -476,6 +476,19 @@ public:
             gweni::Color ValueText{0xc0, 0xc0, 0xc0};
             gweni::Color CaptionText{0xa0, 0xa0, 0xa0};
         } Knob;
+        //! A HexView's address column, its bytes, its zero bytes (dimmed),
+        //! its ASCII column, the dots of its non-printable bytes, and its data
+        //! preview's names and values.
+        struct HexView_t
+        {
+            gweni::Color Address{0x80, 0x80, 0x80};
+            gweni::Color Byte{0x00, 0x00, 0x00};
+            gweni::Color ZeroByte{0xa0, 0xa0, 0xa0};
+            gweni::Color Ascii{0x00, 0x00, 0x00};
+            gweni::Color NonPrintable{0xa0, 0xa0, 0xa0};
+            gweni::Color PreviewName{0x80, 0x80, 0x80};
+            gweni::Color Preview{0x00, 0x00, 0x00};
+        } HexView;
 
         //! A Selectable row's text, by its state.
         struct Selectable_t

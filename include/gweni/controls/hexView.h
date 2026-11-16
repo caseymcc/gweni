@@ -7,6 +7,7 @@
 #ifndef _gweni_controls_hexview_h_
 #define _gweni_controls_hexview_h_
 
+#include <gweni/controls/button.h>
 #include <gweni/controls/text.h>
 #include <gweni/controls/textBox.h>
 #include <gweni/controls/virtualList.h>
@@ -24,6 +25,57 @@ namespace controls
 {
 
 class HexView;
+
+namespace internal
+{
+
+//! A HexView row's hex or ASCII run: one Text drawn with colour spans (the
+//! zero bytes' and the non-printable bytes' colours) over the run's colour,
+//! by a skin renderer of its own (the textured skin's HexViewText).
+class GWENI_EXPORT HexViewText: public Text
+{
+public:
+    GWENI_CONTROL(HexViewText, Text);
+
+public:
+    const std::vector<renderer::ColorSpan> &getColorSpans() const { return m_spans; }
+    //! Takes \p spans (swapped in), marking StateChange_Text only when they
+    //! differ from the ones it had: the string is not laid out again.
+    void setColorSpans(std::vector<renderer::ColorSpan> &spans);
+
+private:
+    std::vector<renderer::ColorSpan> m_spans;
+};
+
+//! The panel under a HexView's rows: an endian toggle and the value at the
+//! cursor read as each type (HexView::PreviewType), a name and a value per
+//! type in the mono face, two pairs a line. Made by the view.
+class GWENI_EXPORT HexViewPreview: public Base
+{
+public:
+    GWENI_CONTROL(HexViewPreview, Base);
+
+public:
+    GWENI_DRAWS_NOTHING
+
+    Button *getEndianButton() const { return m_endian; }
+    Text *getValueControl(size_t type) const { return m_values[type]; }
+    Text *getNameControl(size_t type) const { return m_names[type]; }
+
+private:
+    friend class controls::HexView;
+
+    HexView *m_view=nullptr;
+    Button *m_endian=nullptr;
+    std::array<Text *, 10> m_names{};
+    std::array<Text *, 10> m_values{};
+
+protected:
+    void arrangeHorizontal(skin::Base *skin) override;
+    void arrangeVertical(skin::Base *skin) override;
+};
+
+}//namespace internal
 
 //! What a shown row draws under its bytes (the textured renderer's slots):
 //! the cursor's byte, the selection's bytes and up to MaxHighlights
@@ -47,9 +99,12 @@ struct GWENI_EXPORT HexRowMarks
     };
 
     int cursor=-1;              //!< the cursor's byte in the row, or -1
+    int hover=-1;               //!< the hovered byte in the row, or -1
     bool cursorInAscii=false;   //!< the column typing goes to
     bool pendingNibble=false;   //!< a hex digit typed: the box is on the low digit
-    uint8_t selectionBegin=0;   //!< the selected bytes, empty when equal
+    //! the selected bytes, empty when equal, and while only the cursor's byte
+    //! is selected (its box shows it)
+    uint8_t selectionBegin=0;
     uint8_t selectionEnd=0;
     uint8_t highlightCount=0;
     std::array<Piece, MaxHighlights> highlights{};
@@ -66,8 +121,6 @@ public:
     GWENI_CONTROL(HexViewRow, Base);
 
 public:
-    GWENI_DRAWS_NOTHING
-
     size_t getOffset() const { return m_offset; }
     size_t getByteCount() const { return m_count; }
     const String &getAddressText() const { return m_address->getText(); }
@@ -77,20 +130,25 @@ public:
     internal::Text *getHexControl() const { return m_hex; }
     internal::Text *getAsciiControl() const { return m_ascii; }
     const HexRowMarks &getMarks() const { return m_marks; }
+    HexView *getView() const { return m_view; }
+    //! Its hex and ASCII runs' colour spans and the three runs' colours from
+    //! the skin's (Colors.HexView), so a theme edit reaches them.
+    void updateColors() override;
 
 private:
     friend class HexView;
 
     void bind(size_t offset);
     void updateMarks();
+    void updateSpans();
 
     HexView *m_view=nullptr;
     size_t m_offset=VirtualList::NoItem;
     size_t m_count=0;
     std::array<uint8_t, 32> m_bytes{};
     internal::Text *m_address=nullptr;
-    internal::Text *m_hex=nullptr;
-    internal::Text *m_ascii=nullptr;
+    internal::HexViewText *m_hex=nullptr;
+    internal::HexViewText *m_ascii=nullptr;
     HexRowMarks m_marks;
 
 protected:
@@ -119,8 +177,27 @@ public:
 
     static constexpr size_t NoByte=VirtualList::NoItem;
     static constexpr int RowPadY=2;
-    //! Units between the goto box and the rows.
+    //! Units between the frame, the goto box and the rows, and the rows, the
+    //! preview and the frame (each box is a gap in from the frame).
     static constexpr int GotoGap=4;
+    static constexpr int PreviewGap=4;
+    //! The endian toggle's height past the mono line height.
+    static constexpr int PreviewButtonPad=6;
+    //! The preview's lines of name/value pairs (two pairs a line).
+    static constexpr int PreviewLines=5;
+
+    //! The types the preview reads at the cursor, in its order.
+    enum class PreviewType
+    {
+        Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64, Float, Double, Count
+    };
+    static constexpr size_t PreviewTypes=static_cast<size_t>(PreviewType::Count);
+    static const char *previewName(PreviewType type);
+    static size_t previewSize(PreviewType type);
+    //! The value of \p type in \p bytes (\p available of them from the cursor),
+    //! in decimal ("%.9g" for float, "%.17g" for double), or "n/a" when fewer
+    //! than its size are there.
+    static String previewValue(PreviewType type, const uint8_t *bytes, size_t available, bool bigEndian);
 
     enum class Column { Hex, Ascii };
     struct ByteHit
@@ -232,7 +309,28 @@ public:
     //! The cursor or the selection moved (never from setSource's clamping).
     gweni::event::Caller onCursorChanged;
 
+    //! The data preview under the rows (shown by default), read at the cursor.
+    internal::HexViewPreview *getPreview() const { return m_preview; }
+    void setPreviewVisible(bool visible);
+    bool isPreviewVisible() const { return !m_preview->hidden(); }
+    void setBigEndian(bool big);
+    bool isBigEndian() const { return m_bigEndian; }
+    //! The preview's value shown for \p type.
+    const String &getPreviewText(PreviewType type) const;
+
+    //! The hovered byte (both columns draw it), or NoByte.
+    size_t getHoveredByte() const { return m_hover; }
+
+    //! A row's span of bytes [begin, end) in \p column, in the row's units:
+    //! x and width (the hex column from the first byte's first digit to the
+    //! last one's second, the gaps between them included).
+    void byteSpan(size_t begin, size_t end, Column column, int &x, int &width) const;
+    //! The cursor box in a row, for its byte in \p column: the byte's cells,
+    //! or only the low digit's while a nibble is pending.
+    void cursorSpan(size_t byte, Column column, bool pending, int &x, int &width) const;
+
     bool AccelOnlyFocus() override { return true; }
+    void updateColors() override;
 
 protected:
     Size contentSize() const override;
@@ -240,6 +338,7 @@ protected:
 
     void onMouseClickLeft(int x, int y, bool down) override;
     void onMouseMoved(int x, int y, int deltaX, int deltaY) override;
+    void onMouseLeave() override;
     bool onChar(gweni::UnicodeChar c) override;
     bool onKeyLeft(bool down) override;
     bool onKeyRight(bool down) override;
@@ -253,6 +352,7 @@ protected:
 
 private:
     friend class HexViewRow;
+    friend class internal::HexViewPreview;
 
     void onCopy(event::Info);
     void onGotoReturn(event::Info);
@@ -263,6 +363,11 @@ private:
     void dropPendingNibble();
     ByteHit byteNear(Point local) const;
     int gotoHeight() const;
+    int previewHeight() const;
+    void updatePreview();
+    void updateHover(Point local);
+    void setHover(size_t byte);
+    void onEndianToggled(event::Info);
 
     void updateRows();
     void updateAddressDigits();
@@ -288,6 +393,11 @@ private:
     Edit m_lastEdit;
     TextBox *m_goto=nullptr;
     int m_gotoLineHeight=0;
+    internal::HexViewPreview *m_preview=nullptr;
+    bool m_bigEndian=false;
+    size_t m_hover=NoByte;
+    bool m_hoverKnown=false;
+    Point m_hoverPoint;
 };
 
 }//namespace controls
