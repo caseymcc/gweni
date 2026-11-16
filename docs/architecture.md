@@ -663,7 +663,13 @@ the shown clickable items and the ellipsis, and Home and End go to the first and
 last of them; the keys bubble up from the focused part. Return and Space activate an
 item. On the ellipsis they open its menu with its first item highlighted, as Alt+Down
 and F4 do (`MenuFocus::FirstItem`). The menu gives the focus back to the ellipsis when
-it closes. A focused item that collapses loses the focus. Disabling the path closes
+it closes. The path's own edits keep the keyboard in it: when `popTo`, `setItems` or
+`setLastItemClickable` takes the focus from its part (the item activated becomes the
+current one, which takes none, or a pick's pop empties the collapse and hides the
+focused ellipsis), the focus goes to the last shown focusable part, the nearest one
+before the current item, and is dropped only when none is left (`keepFocus`), so Tab
+and the arrows go on working after an `onItemClicked` handler navigates. A focused
+item that collapses in a layout loses the focus. Disabling the path closes
 the menu, releases focus and turns off its items' keyboard and mouse input; enabling
 it restores input according to each item's click policy, including items pushed
 while disabled.

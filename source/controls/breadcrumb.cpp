@@ -246,14 +246,18 @@ void Breadcrumb::popTo(size_t index)
     if(index >= m_items.size() || index+1 == m_items.size())
         return;
 
+    const bool focused=partFocused();
+
     removeTail(index+1);
     updateCurrent();
+    keepFocus(focused);
     invalidate();
 }
 
 void Breadcrumb::setItems(std::vector<String> items)
 {
     const size_t shared=std::min(items.size(), m_items.size());
+    const bool focused=partFocused();
 
     for(size_t i=0; i < shared; ++i)
     {
@@ -265,6 +269,7 @@ void Breadcrumb::setItems(std::vector<String> items)
     {
         removeTail(items.size());
         updateCurrent();
+        keepFocus(focused);
         invalidate();
     }
     for(size_t i=shared; i < items.size(); ++i)
@@ -304,8 +309,35 @@ void Breadcrumb::setLastItemClickable(bool clickable)
     if(clickable == m_lastClickable)
         return;
 
+    const bool focused=partFocused();
+
     m_lastClickable=clickable;
     updateCurrent();
+    keepFocus(focused);
+}
+
+bool Breadcrumb::partFocused() const
+{
+    return KeyboardFocus && (KeyboardFocus->getParent() == this);
+}
+
+// A pop from an item's or a menu pick's handler makes the focused item the
+// current one (which takes no focus) or hides the focused ellipsis or item;
+// the keyboard stays in the path, on the nearest part before the current
+// item (WinUI's BreadcrumbBar), and is dropped only when no part is left.
+void Breadcrumb::keepFocus(bool focused)
+{
+    if(!focused)
+        return;
+
+    const std::vector<Base *> parts=focusOrder();
+
+    if(std::find(parts.begin(), parts.end(), KeyboardFocus) != parts.end())
+        return;
+    if(!parts.empty())
+        parts.back()->focus();
+    else if(partFocused())
+        KeyboardFocus->unfocus();
 }
 
 void Breadcrumb::setSeparatorText(const String &text)

@@ -202,6 +202,11 @@ private:
     void itemClicked(size_t index);
     void updateCurrent();
     void removeTail(size_t count);
+    //! Whether the keyboard focus is on one of the path's parts.
+    bool partFocused() const;
+    //! After an edit, gives the focus the path had (\p focused) to its last
+    //! shown focusable part if the edit took it away.
+    void keepFocus(bool focused);
     //! Decides the collapsed range from the width and places the parts in X.
     void handleOverflow();
     //! Fills the ellipsis's menu if the collapsed labels changed.

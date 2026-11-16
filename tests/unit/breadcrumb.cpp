@@ -26,7 +26,9 @@
  *  alpha, so a ring round the transparent rest look would not show).
  *  A shortened path bounds its collapsed range before another input event
  *  can reopen the menu. Disabled paths release focus, take no keys or
- *  clicks, and use the registered disabled text colour.
+ *  clicks, and use the registered disabled text colour. A handler that pops
+ *  the path from a Return or a menu pick leaves the focus on a shown part,
+ *  so Tab and the arrows still work.
  */
 #include "headlessFixture.h"
 
@@ -815,3 +817,68 @@ TEST_CASE("Breadcrumb: disabled links and ellipsis use the registered theme colo
     CHECK((path->getEllipsisControl()->getTextColor() == scene.skin.Colors.Breadcrumb.Text));
 }
 
+
+TEST_CASE("Breadcrumb: navigating from the keyboard keeps the focus in the path")
+{
+    Scene scene;
+    auto *path=scene.path;
+    controls::Button *before=scene.canvas->newChild<controls::Button>();
+
+    before->setTabable(true);
+    before->setKeyboardInputEnabled(true);
+    before->setDock(DockPosition::Bottom);
+    // the app navigates: a click pops the path to the clicked item
+    path->onItemClicked.addCallback(path, [path](event::Handler &, event::Info info)
+    {
+        path->popTo(info.integer);
+    });
+    path->setItems({"Home", "Projects", "gweni", "source", "base.cpp"});
+    scene.frame();
+
+    // Return on an item makes it the current one, which takes no focus: the
+    // focus goes to the nearest part before it
+    before->focus();
+    scene.key(keys::Tab);
+    scene.key(keys::Right);
+    scene.key(keys::Right);
+    REQUIRE(KeyboardFocus == path->getItemControl(2));
+    scene.key(keys::Return);
+    CHECK(path->getItemCount() == 3);
+    CHECK(KeyboardFocus == path->getItemControl(1));
+    scene.key(keys::Left);
+    CHECK(KeyboardFocus == path->getItemControl(0));
+    scene.key(keys::Tab);
+    CHECK(KeyboardFocus == before);
+    scene.key(keys::Tab);
+    CHECK(KeyboardFocus == path->getItemControl(0));
+
+    // a menu pick whose pop empties the collapse hides the focused ellipsis:
+    // the focus goes to a shown part
+    path->setItems({"Home", "Projects", "gweni", "source", "base.cpp"});
+    scene.frame();
+    scene.setWidth(neededWidth(path, 1, 4));
+    REQUIRE(shown(path) == std::vector<int>{0, -1, 4});
+    auto *ellipsis=path->getEllipsisControl();
+
+    scene.key(keys::Right);
+    REQUIRE(KeyboardFocus == ellipsis);
+    scene.key(keys::Return);
+    REQUIRE(ellipsis->isMenuOpen());
+    scene.key(keys::Return);
+    CHECK(path->getItemCount() == 2);
+    CHECK(ellipsis->hidden());
+    CHECK(KeyboardFocus == path->getItemControl(0));
+    scene.key(keys::Tab);
+    CHECK(KeyboardFocus == before);
+    scene.key(keys::Tab);
+    CHECK(KeyboardFocus == path->getItemControl(0));
+
+    // a pop with no part left to take it drops the focus
+    path->setLastItemClickable(true);
+    path->getItemControl(1)->focus();
+    REQUIRE(KeyboardFocus == path->getItemControl(1));
+    path->setItems({"Home"});
+    CHECK(KeyboardFocus == path->getItemControl(0));
+    path->setLastItemClickable(false);
+    CHECK(KeyboardFocus == nullptr);
+}
