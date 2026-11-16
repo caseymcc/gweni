@@ -23,6 +23,12 @@ int main()
 | Tables | aligned | 3 |
 | Cells | **styled** | 12 |
 
+![The pipeline: setMarkdown, parse, diff, blocks, layout, draw](attachment:1)
+
+![Dusk over the hills](attachment:2)
+
+![An attachment that did not arrive](attachment:3)
+
 > A block quote, drawn with a bar.
 > > And one nested in it.
 

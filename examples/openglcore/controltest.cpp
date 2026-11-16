@@ -179,7 +179,8 @@
  *                       chip-badge | navigation-rail | flow | board |
  *                       switch | spinner | image-grid | segmented |
  *                       split-button | range-slider | stepper |
- *                       code-view | rich-text | markdown | search-combo |
+ *                       code-view | rich-text | markdown | markdown-images |
+ *                       search-combo |
  *                       reorder |
  *                       calendar | date-time | translucency (see below)
  *    --dump-bounds [<path>]
@@ -1258,6 +1259,23 @@
  *                 every settled frame writing nothing and the demo giving
  *                 its ids back. One line per step, then
  *                   markdown idle_work=0 ids_left=0 passed=yes|no
+ *                 Exits non-zero if any check fails, naming it on stderr.
+ *    markdown-images
+ *                 MarkdownDemo's images (attachment:1..3), their delivery
+ *                 paused and made one step a frame, the clock frozen:
+ *                 attachment:1's size (its box, scaled down to the
+ *                 document's width) and then its bytes (the image in that
+ *                 box), each frame laying out in one pass entering no more
+ *                 than the image block's subtree, its ancestors and the
+ *                 blocks below it, writing their slots and the view's scroll
+ *                 bar's alone and changing no pixel above it but the bar's; attachment:3
+ *                 failing, which writes and changes nothing (its alt text
+ *                 stays); attachment:2's bytes with no size before them, held
+ *                 to the same bounds; one texture per image shown; every
+ *                 settled frame writing nothing; and the demo giving its ids
+ *                 and textures back (markdown-images.png). One line per
+ *                 step, then
+ *                   markdown-images idle_work=0 ids_left=0 textures_left=0 passed=yes|no
  *                 Exits non-zero if any check fails, naming it on stderr.
  *    search-combo SearchComboDemo, the clock frozen (search-combo.png): the
  *                 searchable box's references at 30 and then 3 000, "-001"
@@ -3005,7 +3023,7 @@ enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typ
     ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, TreeTable, TreeTableLive, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
     ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented, SplitButton,
-    RangeSlider, Stepper, CodeView, RichText, Markdown, SearchCombo, Reorder, Calendar, DateTime, Translucency,
+    RangeSlider, Stepper, CodeView, RichText, Markdown, MarkdownImages, SearchCombo, Reorder, Calendar, DateTime, Translucency,
     OpacityRoundTrip, Opacity };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
@@ -3062,6 +3080,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "code-view") scenario=Scenario::CodeView;
     else if(name == "rich-text") scenario=Scenario::RichText;
     else if(name == "markdown") scenario=Scenario::Markdown;
+    else if(name == "markdown-images") scenario=Scenario::MarkdownImages;
     else if(name == "search-combo") scenario=Scenario::SearchCombo;
     else if(name == "calendar") scenario=Scenario::Calendar;
     else if(name == "date-time") scenario=Scenario::DateTime;
@@ -19111,6 +19130,31 @@ std::set<size_t> markdownControlIds(gweni::controls::Base *control)
 
 }//namespace
 
+namespace
+{
+
+// The ids subtreeIds() gives, and those of the ImagePanels in the subtree,
+// which draw in render() and hold no skin Control
+void imageSubtreeIds(gweni::controls::Base *control, std::set<size_t> &primitives, std::set<size_t> &texts)
+{
+    subtreeIds(control, primitives, texts);
+
+    std::vector<gweni::controls::Base *> pending(1, control);
+
+    while(!pending.empty())
+    {
+        gweni::controls::Base *at=pending.back();
+
+        pending.pop_back();
+        if(auto *panel=dynamic_cast<gweni::controls::ImagePanel *>(at))
+            primitives.insert(panel->primitiveId());
+        for(gweni::controls::Base *child:at->getActualChildren())
+            pending.push_back(child);
+    }
+}
+
+}//namespace
+
 // The plain text the scenario's drag selects: from "hard break" on the first
 // paragraph's second line, over the lists and the code block, to "ali" of the
 // table's "aligned" (resources/MarkdownDemo.md)
@@ -19273,9 +19317,10 @@ static bool runMarkdownScenario(Session &s, const std::string &shotDir, bool &pa
         size_t below=0;
 
         subtreeIds(paragraph, primitives, texts);
+        // (an image's ImagePanel too, which a move draws again)
         for(size_t i=2; i < document->getBlockCount(); ++i)
         {
-            subtreeIds(document->getBlockControl(i), primitives, texts);
+            imageSubtreeIds(document->getBlockControl(i), primitives, texts);
             ++below;
         }
         // and the view's scroll bar, whose thumb follows the document's height
@@ -19500,6 +19545,212 @@ static bool runMarkdownScenario(Session &s, const std::string &shotDir, bool &pa
     std::cout<<"markdown idle_work="<<idleWork<<" ids_left="<<idsLeft<<" passed="<<(passed?"yes":"no")<<"\n";
     if(!passed)
         std::cerr<<"ControlTest: markdown:"<<failures.substr(1)<<"\n";
+    return shot;
+}
+
+//-----------------------------------------------------------------------------
+// --scenario markdown-images: MarkdownDemo's three images, attachment:1..3,
+// their delivery paused before the first frame and made one step a frame by
+// the scenario, the clock frozen and the mouse off the canvas. Each image is
+// an image paragraph (internal::MarkdownImage) showing its alt text until its
+// handle says more:
+// - attachment:1's size (setSize) turns its block into the image's box scaled
+//   down to the document's width, and its bytes (setBytes) into the image in
+//   that box, the same height: each frame lays out in one pass entering no
+//   more than the block's subtree, its ancestors and the blocks below it
+//   (moved), writes only those blocks' and the view's scroll bar's slots, and
+//   changes no pixel above the block but the bar's;
+// - attachment:3 failing writes nothing and changes no pixel: the alt text it
+//   showed is what a failed handle shows;
+// - attachment:2's bytes with no size before them, its alt text turning into
+//   the image at once, held to the same bounds;
+// - the textures loaded are one per image shown, every settled frame writes
+//   nothing, and the demo deleted gives its ids and textures back.
+//-----------------------------------------------------------------------------
+
+
+static bool runMarkdownImagesScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    using gweni::MarkdownDemo;
+    using gweni::controls::MarkdownDocument;
+    using gweni::controls::internal::MarkdownImage;
+    using Delivery=MarkdownDemo::Delivery;
+    using Look=MarkdownImage::Look;
+
+    s.freezeClock=true;
+
+    const size_t idsBefore=livePrimitiveIds();
+    const size_t texturesBefore=s.renderer->loadedTextureCount();
+    gweni::controls::Base *control=addControl(s, "MarkdownDemo");
+    auto *demo=gweni::gweni_cast<MarkdownDemo>(control);
+
+    if(!demo || !demo->view())
+    {
+        std::cerr<<"ControlTest: markdown-images: MarkdownDemo was not built\n";
+        return false;
+    }
+    demo->pauseDelivery();
+
+    MarkdownDocument *document=demo->view()->getDocument();
+    MarkdownImage *images[3]={ nullptr, nullptr, nullptr };
+
+    s.label="markdown-images";
+    renderFrames(s, s.frames);
+    for(size_t i=0; i < document->getBlockCount(); ++i)
+    {
+        auto *image=dynamic_cast<MarkdownImage *>(document->getBlockControl(i));
+
+        for(int n=0; n < 3; ++n)
+        {
+            if(image && (image->getSource() == "attachment:"+std::to_string(n+1)))
+                images[n]=image;
+        }
+    }
+    if(!images[0] || !images[1] || !images[2])
+    {
+        std::cerr<<"ControlTest: markdown-images: the reference document has no image paragraphs "
+                   "attachment:1, attachment:2 and attachment:3\n";
+        return false;
+    }
+
+    std::string failures;
+    size_t idleWork=0;
+    auto fail=[&](const std::string &step, const std::string &why) { failures+="; "+step+": "+why; };
+    auto settle=[&](const char *step)
+    {
+        std::vector<uint8_t> pixels;
+
+        for(int i=0; i < 2; ++i)
+        {
+            RichFrame frame=richFrame(s);
+
+            if(frame.primSlots+frame.textSlots+frame.changed != 0)
+                std::cout<<"markdown-images unsettled "<<step<<" prim_slots="<<frame.primSlots
+                         <<" text_slots="<<frame.textSlots<<" changed="<<frame.changed<<"\n";
+            idleWork+=frame.primSlots+frame.textSlots+frame.changed;
+            pixels=std::move(frame.pixels);
+        }
+        return pixels;
+    };
+    auto ancestorsOf=[](gweni::controls::Base *at)
+    {
+        size_t ancestors=0;
+
+        for(at=at->getActualParent(); at; at=at->getActualParent())
+            ++ancestors;
+        return ancestors;
+    };
+    auto lookName=[](Look look) { return (look == Look::Alt)?"alt":((look == Look::Box)?"box":"image"); };
+
+    for(MarkdownImage *image:images)
+    {
+        if(image->getLook() != Look::Alt)
+            fail("start", "an image shows more than its alt text before its handle was filled in");
+    }
+
+    std::vector<uint8_t> rest=settle("start");
+
+    // one delivery: the frame held to the image block, its ancestors and the
+    // blocks below it, and the look it gives
+    auto deliver=[&](const char *step, Delivery delivery, MarkdownImage *image, Look look)
+    {
+        std::set<size_t> primitives, texts;
+        size_t index=0;
+        size_t moved=0;
+        size_t entries=0;
+
+        while(document->getBlockControl(index) != image)
+            ++index;
+        for(size_t i=index; i < document->getBlockCount(); ++i)
+        {
+            imageSubtreeIds(document->getBlockControl(i), primitives, texts);
+            if(i > index)
+                ++moved;
+        }
+        // the view's scroll bar, whose thumb follows the document's height
+        imageSubtreeIds(demo->view()->getScrollBar(), primitives, texts);
+
+        const gweni::Rect bounds=image->getCanvasBounds();
+        const size_t texturesThen=s.renderer->loadedTextureCount();
+
+        demo->deliver(delivery);
+
+        RichFrame frame=richFrame(s);
+
+        // ImagePanels made by the delivery draw from this frame on
+        imageSubtreeIds(image, primitives, texts);
+        entries=subtreeControls(image);
+
+        // the block's subtree and its ancestors in the four steps, the inner
+        // panel and the document once more (the view measures its content
+        // again), and the blocks below, each entered to be moved
+        const size_t bound=4*(entries+ancestorsOf(image)+1)+2+4*moved;
+        const gweni::Rect view=demo->view()->getCanvasBounds();
+        // everything from the block's top down, and the bar
+        const gweni::Rect below(view.x, bounds.y, view.w, std::max(0, view.y+view.h-bounds.y));
+
+        std::cout<<"markdown-images "<<step<<" look="<<lookName(image->getLook())<<" box="
+                 <<image->getBoxSize().width<<"x"<<image->getBoxSize().height<<" prim_slots="<<frame.primSlots
+                 <<" text_slots="<<frame.textSlots<<" changed="<<frame.changed<<" passes="<<frame.passes
+                 <<" layout_visited="<<frame.visited<<" textures="<<s.renderer->loadedTextureCount()-texturesBefore<<"\n";
+        if(image->getLook() != look)
+            fail(step, std::string("the image shows its ")+lookName(image->getLook())+", not its "+lookName(look));
+        if((look == Look::Alt) && (frame.primSlots+frame.textSlots+frame.changed+frame.passes != 0))
+            fail(step, "the frame wrote, changed or laid out something: the alt text should stay as it was");
+        if(look != Look::Alt)
+        {
+            if(frame.passes != 1 || frame.renderLayout || frame.visited > bound)
+                fail(step, std::to_string(frame.passes)+" update-phase passes"
+                    +(frame.renderLayout?" and a render-phase one":"")+", "+std::to_string(frame.visited)
+                    +" entries (at most "+std::to_string(bound)+": the block, its ancestors and the blocks moved)");
+            if(frame.primSlots+frame.textSlots == 0 || !idsWithin(frame.primitives, primitives)
+                || !idsWithin(frame.texts, texts))
+                fail(step, "wrote no slot, or slots outside the image block, the blocks below it and the scroll bar");
+        }
+        if(differencesOutsideRects(s, rest, frame.pixels, { below, demo->view()->getScrollBar()->getCanvasBounds() }) != 0)
+            fail(step, "pixels changed above the image block, outside the scroll bar");
+        if((look == Look::Alt) && (frame.pixels != rest))
+            fail(step, "pixels changed: the alt text should stay as it was");
+        if((look == Look::Image) && (s.renderer->loadedTextureCount() != texturesThen+1))
+            fail(step, "the bytes did not load one texture");
+        rest=settle(step);
+    };
+
+    deliver("size", Delivery::FirstSize, images[0], Look::Box);
+
+    const int boxHeight=images[0]->getHeight();
+    const int documentWidth=images[0]->getWidth();
+
+    if(images[0]->getBoxSize().width != std::min(1600, documentWidth))
+        fail("size", "the box is "+std::to_string(images[0]->getBoxSize().width)+" wide, not the document's "
+            +std::to_string(documentWidth)+" units");
+    deliver("failed", Delivery::ThirdFailed, images[2], Look::Alt);
+    deliver("bytes", Delivery::FirstBytes, images[0], Look::Image);
+    if(images[0]->getHeight() != boxHeight)
+        fail("bytes", "the image is not drawn in the box its size gave it");
+    deliver("bytes_unsized", Delivery::SecondBytes, images[1], Look::Image);
+
+    const bool shot=shoot(s, shotDir+"/markdown-images.png");
+
+    if(idleWork != 0)
+        fail("settled", "settled frames wrote "+std::to_string(idleWork)+" slots and changed controls");
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()-idsBefore;
+    const size_t texturesLeft=s.renderer->loadedTextureCount()-texturesBefore;
+
+    if(idsLeft != 0)
+        fail("drop", "the demo did not give "+std::to_string(idsLeft)+" primitive ids back");
+    if(texturesLeft != 0)
+        fail("drop", "the demo did not give "+std::to_string(texturesLeft)+" textures back");
+
+    passed=failures.empty();
+    std::cout<<"markdown-images idle_work="<<idleWork<<" ids_left="<<idsLeft<<" textures_left="<<texturesLeft
+             <<" passed="<<(passed?"yes":"no")<<"\n";
+    if(!passed)
+        std::cerr<<"ControlTest: markdown-images:"<<failures.substr(1)<<"\n";
     return shot;
 }
 
@@ -23685,6 +23936,15 @@ int main(int argc, char *argv[])
             ok=runMarkdownScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // an edit, a re-render, a selection, a link or the code block failed its check
+            break;
+        }
+
+        case Scenario::MarkdownImages:
+        {
+            bool passed=false;
+            ok=runMarkdownImagesScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a delivery laid out or wrote outside its block, or a texture was kept
             break;
         }
 

@@ -15,7 +15,7 @@
  *    px a unit) or, wider than the block, scaled down to its width keeping the
  *    aspect, the alt text in it without its placeholder; with the bytes, an
  *    ImagePanel given exactly the handle's bytes in that box, the alt text
- *    hidden; failed after that, the alt text again and the texture freed;
+ *    emptied (shown, no spans); failed after that, the alt text again and the texture freed;
  *  - each notification lays out in one pass entering, besides one entry for
  *    each block below it (moved, as a paragraph that grows moves them, their
  *    subtrees not entered), as many controls with 3 blocks below the image as
@@ -27,7 +27,9 @@
  *  - setMarkdown keeps an unchanged image block, its handle and its look,
  *    asking the resolver nothing; a changed alt text keeps the block and the
  *    handle; a new source asks again; a paragraph turned from an image into
- *    text (and back) is built anew, the old block's watch gone with it;
+ *    text (and back) is built anew, the old block's watch gone with it; a
+ *    source changed from one filled handle to another keeps the alt text
+ *    empty, and an alt text changed over a filled one too;
  *  - setImageResolver resolves the images already shown, and with a null
  *    one they show their alt text again;
  *  - deleting the document gives every texture back.
@@ -231,7 +233,7 @@ TEST_CASE("Markdown image: none, size known, bytes and failed")
     CHECK((image->getLook() == Look::Image));
     REQUIRE(image->getImage());
     CHECK(image->getImage()->visible());
-    CHECK_FALSE(image->getAltText()->visible());
+    CHECK(image->getAltText()->getText().empty());
     CHECK(image->getImage()->getWidth() == 300);
     CHECK(image->getImage()->getHeight() == 150);
     CHECK(image->getHeight() == 150);
@@ -434,4 +436,34 @@ TEST_CASE("Markdown image: setImageResolver resolves the images shown")
     scene.settle();
     CHECK((image->getLook() == Look::Alt));
     CHECK(resolver.handles["a.png"]->watchCount() == 0);
+}
+
+TEST_CASE("Markdown image: over the image the alt text stays empty across edits")
+{
+    Scene scene;
+    Resolver resolver;
+
+    scene.document->setImageResolver(resolver.function());
+    resolver.handles["a.png"]=ImageHandle::create();
+    resolver.handles["b.png"]=ImageHandle::create();
+    resolver.handles["a.png"]->setBytes(pngHeader(40, 20));
+    resolver.handles["b.png"]->setBytes(pngHeader(60, 30));
+    scene.show("![first](a.png)\n");
+
+    MarkdownImage *image=scene.block<MarkdownImage>(0);
+
+    CHECK((image->getLook() == Look::Image));
+    CHECK(image->getAltText()->getText().empty());
+    CHECK(image->getHeight() == 20);
+
+    // another source, filled too: the same look, the alt text still empty
+    scene.show("![second](b.png)\n");
+    CHECK(scene.block<MarkdownImage>(0) == image);
+    CHECK((image->getLook() == Look::Image));
+    CHECK(image->getAltText()->getText().empty());
+    CHECK(image->getHeight() == 30);
+
+    // another alt text over it
+    scene.show("![third](b.png)\n");
+    CHECK(image->getAltText()->getText().empty());
 }

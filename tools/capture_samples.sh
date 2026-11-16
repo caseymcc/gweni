@@ -83,10 +83,12 @@ SAMPLES=(
 # Each sample's canvas size: a showcase page at the size of the hero's centre
 # pane (DemoCenter, from ControlTest --control Demo --size 1024x768
 # --dump-bounds), so it lays out as it does in the shell; a page of one
-# control at its own size.
+# control at its own size; MarkdownDemo 75 units taller than the pane, so its
+# three images (two delivered late, one failed) show below the table.
 PANE_SIZE=865x545
 declare -A SAMPLE_SIZE=(
     [TextDemo]=640x480
+    [MarkdownDemo]=865x620
 )
 
 # Scripted input a sample is captured after, in place of the plain capture's

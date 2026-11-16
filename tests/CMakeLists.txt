@@ -283,19 +283,20 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # SearchComboBox's keystrokes, picks and chip wrap, the reorder drags'
     # looks and drops, the calendar's months and views, the date and time
     # fields' steps, commits and calendar popup, and a MarkdownView's
-    # edits, selection and code block, the translucency scenario's panel,
+    # edits, selection and code block, its images' late deliveries, the
+    # translucency scenario's panel,
     # scrim and overlay, and the opacity scenario's level changes and fade
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
             dialog toast flow switch spinner navigation-rail board field-validation segmented
             tree-table tree-table-live split-button range-slider stepper code-view rich-text markdown
-            search-combo reorder calendar date-time translucency opacity)
+            markdown-images search-combo reorder calendar date-time translucency opacity)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail")
             list(APPEND verify_flags --require-one-pass)
         endif()
-        if(verify_scenario STREQUAL "markdown")
+        if(verify_scenario STREQUAL "markdown" OR verify_scenario STREQUAL "markdown-images")
             list(APPEND verify_flags --size 865x545)
         endif()
         add_test(NAME controltest_verify_layout_${verify_name}
@@ -599,6 +600,20 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_markdown 120
         COMMAND $<TARGET_FILE:ControlTest> --headless --size 865x545 --scenario markdown --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/markdown@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # MarkdownDemo's images filled in a frame at a time: a size and then the
+    # bytes, and bytes with no size, each laying out and writing only the
+    # image's block and those below it in one pass, a failed handle writing
+    # nothing, a texture per image shown and every one given back (and at
+    # scale 2, where the image is drawn twice its texels)
+    gweni_whole_app_test(controltest_markdown_images 120
+        COMMAND $<TARGET_FILE:ControlTest> --headless --size 865x545 --scenario markdown-images --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/markdown_images@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    gweni_whole_app_test(controltest_markdown_images_scale200 120
+        COMMAND $<TARGET_FILE:ControlTest> --headless --size 865x545 --scale 2 --scenario markdown-images
+            --require-one-pass --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/markdown_images_scale200@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # PlotHistogramDemo's series: a sample with a new height writes its bar's

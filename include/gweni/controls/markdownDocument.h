@@ -197,8 +197,9 @@ protected:
 //!   in it AltInset units in, in italics on no placeholder of its own;
 //! - the bytes (ImageHandle::setBytes): an ImagePanel (getImage) given them
 //!   (ImagePanel::setImageData, the renderer decoding them) drawn in that box,
-//!   the alt text hidden (still copied with a selection through it). Bytes the
-//!   renderer cannot decode draw its missing image there.
+//!   the alt text emptied (shown and laid out, with no spans, so a selection
+//!   through it copies nothing of it). Bytes the renderer cannot decode draw
+//!   its missing image there.
 //! Each change of what it shows (a notification, the app filling the handle in
 //! between frames) marks this block alone: invalidate() and its background,
 //! so a layout enters it, its ancestors and moves the blocks below it.

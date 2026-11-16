@@ -6267,9 +6267,10 @@ order, so an insert renumbers the z of the inserted block alone. The same text a
 nothing at all, and a text parsing to the same blocks lays out nothing. The blocks:
 
 - a paragraph, a heading, a table cell and raw HTML are an `internal::MarkdownText`, a
-  `RichText` of the block's spans (an image's alt text, or "image", on a
-  `RichSpan::Placeholder` span, drawn on the `MarkdownImagePlaceholder` surface, until the
-  image itself is shown by the next task); a heading is bold at `headingSize(level)`, the
+  `RichText` of the block's spans (an image among a paragraph's text is its alt text, or
+  "image", on a `RichSpan::Placeholder` span, drawn on the `MarkdownImagePlaceholder`
+  surface); a paragraph that is one image is an `internal::MarkdownImage` ("Images whose
+  bytes arrive later", below); a heading is bold at `headingSize(level)`, the
   skin's `MarkdownHeading1..6` (24 to 12) scaled by the body font's size over 11, so the
   large ones are SDF text and the body coverage; inline code is drawn on `MarkdownCode`;
 - a rule an `internal::MarkdownRule` (an icon kind 6 rule, `MarkdownRule`'s colour);
@@ -6328,6 +6329,62 @@ a theme's `"metrics"` sets (`MarkdownBlockSpacing`, `MarkdownTightSpacing`,
 `MarkdownListIndent`, `MarkdownHeading1..6`): spacing is read as a column lays out, and a
 list item's indent and a heading's size are applied again in `updateColors()`, so
 `ThemeEditor::applyToCanvas(canvas, true)` shows a change (`tests/unit/markdownView.cpp`).
+
+**Images whose bytes arrive later.** An app shows a document long before its images'
+bytes are there (the dashboard fetches `attachment:N` over HTTP after laying the text
+out), so an image is a `gweni::ImageHandle` (`include/gweni/imageHandle.h`) the app fills
+in, shared (`std::shared_ptr`) by every block and document showing it.
+- *Its life:* `None` (made by the app, nothing known), optionally `Sized` (`setSize(w, h)`:
+  the dimensions, from the app's metadata), then `Bytes` (`setBytes`: an encoded PNG or
+  JPEG, its header read by `imglib::probeImage`, whose width and height replace the size;
+  bytes that are neither fail the handle) or `Failed` (`setFailed`: the bytes dropped).
+  A failed handle may be filled in again. A call that changes nothing notifies nothing.
+  The handle holds the bytes and decodes nothing: each block's renderer decodes them as
+  its `ImagePanel` loads them (`setImageData`, the image pages of "Images from memory"),
+  so a handle needs no renderer and outlives any canvas.
+- *Its watchers:* an `ImageHandle::Watch` (a function and the handle, held) is called
+  after every change. A deleted or reset watch unregisters itself, from inside a
+  notification too, where a watch deleted by an earlier one is not called and one made is
+  first called on the next change; a notification keeps the handle alive even when a call
+  deletes every watch holding it (`tests/unit/imageHandle.cpp`).
+- *The resolver:* `MarkdownDocument::setImageResolver((url) -> handle)` (and
+  `MarkdownView`'s) is asked for a paragraph that is one image (`![alt](src)`, spaces
+  aside; `internal::MarkdownImage::isImageParagraph`) when its block is built or its source
+  changes, and for every image shown when a new resolver is set. No resolver, or a null
+  handle, keeps the alt text. A block the diff keeps keeps its handle, its look and its
+  texture; one Changed with the same source keeps its handle (only its alt text set); a
+  paragraph turned from an image into text or back is built anew
+  (`MarkdownBlockControl::shows`).
+- *The block's looks:* `Alt` (no handle, nothing known, failed: the alt text on its
+  placeholder, as a paragraph draws it, so a failure writes nothing), `Box` (the size: a
+  box of the image's size, one image px a unit, scaled down to the block's width keeping
+  its aspect, `MarkdownImage::boxSize`, on `MarkdownImagePlaceholder`, the alt text inside
+  `AltInset` in on no placeholder of its own), `Image` (the bytes: an `ImagePanel` in that
+  box, Stretch, the alt text emptied, so a selection through it copies nothing of it:
+  shown with no spans, it holds no slot and lays out the same whether the block was shown
+  all along or shown after it was filled in while hidden (`controltest_hide_show_each`);
+  bytes the renderer cannot decode draw its missing image there).
+  A notification that changes the look or the box calls `invalidate()` and marks the
+  background of that block alone, so the next layout enters it, its ancestors and the
+  blocks below it (moved, their subtrees not entered) in one pass
+  (`tests/unit/markdownImage.cpp`, `--scenario markdown-images`).
+- *Between frames:* the app fills a handle in from the UI thread outside
+  `renderCanvas()` (a fetch's completion posted with `Canvas::post`, an animation, input):
+  the notification marks layout, which belongs to the update phase. A fill made while a
+  `RenderWalkScope` is open is still applied, but `controls::noteRenderWalkCall` reports it
+  as a tree change in the walk is (one stderr line, `ImageHandle <operation> (rendering
+  <Type>)` in `renderWalkMutations()`), and ControlTest exits non-zero on it.
+- *v1's limits:* an image among a paragraph's text keeps its alt text (drawing it inline
+  needs inline boxes in `text::RichLayout`), and an image link's url is on its alt text
+  only.
+
+MarkdownDemo's reference document has three: attachment:1 (a 1600x120 PNG, scaled down
+to the view) given its size in the demo's second frame and its bytes in the third,
+attachment:2 (a JPEG) its bytes in the third with no size first, attachment:3 failed in
+the second. The schedule counts the demo's update phases in an animation, never time, so
+every capture, a `--stats` run's frozen clock included, sees the same frames, and each
+capture's three settle frames show the settled images (`pauseDelivery()` and `deliver()`
+let the scenario make the steps one a frame).
 
 **Selection across blocks.** The document holds one `text::SelectionModel` and gives every
 text it shows the model and its path in reading order (`getSelectables()`): a block's path

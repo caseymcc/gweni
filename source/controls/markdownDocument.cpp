@@ -533,9 +533,8 @@ void MarkdownImage::setBlock(const text::MarkdownBlock &block)
     {
         m_source=source;
         resolve();
-        return;
     }
-    // the same source: the look as it was, its alt text's spans again
+    // the alt text's spans for the look (the same source: the look as it was)
     showAlt();
 }
 
@@ -600,7 +599,6 @@ void MarkdownImage::applyHandle(bool mark)
     m_imageWidth=width;
     m_imageHeight=height;
     m_shownSerial=serial;
-    m_alt->setHidden(look == Look::Image);
     if(lookChanged)
         showAlt();
 
@@ -613,6 +611,14 @@ void MarkdownImage::applyHandle(bool mark)
 
 void MarkdownImage::showAlt()
 {
+    // over the image the alt text shows nothing, and holds no slot: it stays
+    // shown (and laid out), so the block looks the same however it got here
+    if(m_look == Look::Image)
+    {
+        m_alt->setSpans({});
+        return;
+    }
+
     std::vector<RichSpan> spans=MarkdownText::richSpans(m_spans);
 
     // in its box the alt text is on no placeholder of its own
@@ -651,6 +657,8 @@ void MarkdownImage::arrange(skin::Base *skin, Dim dim)
     {
         if(m_look == Look::Alt)
             placeChild(m_alt, 0, 0, getWidth(), m_alt->getHeight());
+        else if(m_look == Look::Image)
+            placeChild(m_alt, 0, 0, box.width, m_alt->getHeight());
         else
             placeChild(m_alt, AltInset, AltInset, std::max(0, box.width-2*AltInset), m_alt->getHeight());
         if(m_image && (m_look == Look::Image))
@@ -658,7 +666,7 @@ void MarkdownImage::arrange(skin::Base *skin, Dim dim)
     }
     else
     {
-        if(m_look == Look::Alt)
+        if(m_look != Look::Box)
             placeChild(m_alt, m_alt->getX(), 0, m_alt->getWidth(), m_alt->getPreferredSize().height);
         else
             placeChild(m_alt, m_alt->getX(), AltInset, m_alt->getWidth(),
