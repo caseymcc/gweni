@@ -137,6 +137,8 @@ set(GWENI_SOURCES
     include/gweni/events.h
     source/events.cpp
     include/gweni/export.h
+    include/gweni/gradient.h
+    source/gradient.cpp
     include/gweni/gweni.h
     source/gweni.cpp
     include/gweni/hook.h
