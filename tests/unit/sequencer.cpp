@@ -1,0 +1,625 @@
+/*
+ *  Gweni
+ *  Copyright (c) 2010 Facepunch Studios
+ *  MIT License, see LICENSE
+ *
+ *  controls::Sequencer's model, hit test and editing, on the headless
+ *  fixture (a StubControl for every type, so no renderer), driven through the
+ *  canvas's input. It pins: time and x through the view at two zooms (a
+ *  zoom about a point keeps that point's time where it was, Ctrl+wheel zooms
+ *  about the cursor, Shift+wheel and a middle drag pan, the plain wheel does
+ *  not move time); the hit test (a key in front of a clip, the later of two
+ *  overlapping clips and of two keys at one instant, a clip's edge grips, the
+ *  ruler, nothing in a gap); a body drag snapping the pressed clip's edges to
+ *  another track's clip edge, a key and the playhead within SnapDistance
+ *  (the snap guide at the target), else its start to a whole frame, and Alt
+ *  snapping to nothing; a key dragged snapping to a clip edge; a resize past
+ *  the other edge keeping one frame; selection by click, Shift, Ctrl (an item
+ *  toggled off not dragged), a plain press on a selected item keeping the
+ *  group for a drag and its release selecting it alone, and a marquee
+ *  (plain, Shift, Ctrl, Escape restoring, a click on empty space clearing),
+ *  onSelectionChanged once per change; Escape putting a drag back with no
+ *  event; onItemsMoved once per release that moved something (none for a
+ *  drag back to where it began), a whole group moving together; Delete
+ *  through the veto; and the playhead's keys (Left and Right a frame, Home
+ *  and End the range's ends, held to the range), a scrub in the ruler on
+ *  whole frames, Escape giving it back, Space firing onPlayToggled.
+ */
+#include "headlessFixture.h"
+
+#include <gweni/controls/canvas.h>
+#include <gweni/controls/sequencer.h>
+#include <gweni/inputHandler.h>
+
+#include <doctest/doctest.h>
+
+#include <cmath>
+#include <vector>
+
+using namespace gweni;
+using controls::Sequencer;
+using controls::SequencerItem;
+
+namespace
+{
+
+typedef SequencerItem::Kind Kind;
+
+struct Scene: event::Handler
+{
+    Scene()
+    {
+        canvas=new controls::Canvas(&skin);
+        canvas->setSize(1400, 800);
+        seq=canvas->newChild<Sequencer>();
+        seq->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+        seq->setBounds(10, 20, 1000, 300);
+        seq->setFrameRate(10);
+        seq->setTimeRange(0, 10);
+        seq->onSelectionChanged.add(this, &Scene::selectionChanged);
+        seq->onItemsMoved.add(this, &Scene::itemsMoved);
+        seq->onPlayheadChanged.add(this, &Scene::playheadChanged);
+        seq->onPlayToggled.add(this, &Scene::playToggled);
+        seq->onRemoveRequested.add(this, &Scene::removeRequested);
+        seq->onRemoved.add(this, &Scene::removed);
+        for(int i=0; i < 4; ++i)
+            seq->addTrack("Track "+std::to_string(i), 100+i);
+    }
+
+    Scene(const Scene &)=delete;
+    Scene &operator=(const Scene &)=delete;
+
+    ~Scene()
+    {
+        for(int key : {keys::Shift, keys::Control, keys::Alt})
+            canvas->inputModifierKey(key, false);
+        HoveredControl=nullptr;
+        delete canvas;
+    }
+
+    void frame()
+    {
+        canvas->updateCanvas();
+        canvas->renderCanvas();
+    }
+
+    void selectionChanged(event::Info) { ++selectionCalls; }
+    void itemsMoved(event::Info) { ++movedCalls; }
+    void playheadChanged(event::Info) { ++playheadCalls; }
+    void playToggled(event::Info) { ++toggleCalls; }
+    void removeRequested(event::Info info)
+    {
+        requested.push_back(info.integer);
+        if(info.integer == vetoId)
+            seq->vetoRemove();
+    }
+    void removed(event::Info info) { removedIds.push_back(info.integer); }
+
+    double perSecond() const
+    {
+        return seq->getBarArea().w/(seq->getViewEnd()-seq->getViewStart());
+    }
+
+    int laneMiddle(size_t track) const
+    {
+        Rect rect;
+
+        REQUIRE(seq->getLaneRect(track, rect));
+        return rect.y+rect.h/2;
+    }
+
+    //! The local point at time \p t (rounded to a unit) on \p track's middle row.
+    Point at(size_t track, double t) const
+    {
+        return Point(int(std::lround(seq->xPosition(t))), laneMiddle(track));
+    }
+
+    Point canvasAt(const Point &local) const { return seq->localPosToCanvas(local); }
+
+    void move(const Point &local)
+    {
+        const Point p=canvasAt(local);
+
+        canvas->inputMouseMoved(p.x, p.y, 0, 0);
+    }
+
+    void press(const Point &local)
+    {
+        move(local);
+        canvas->inputMouseButton(0, true);
+    }
+
+    void release() { canvas->inputMouseButton(0, false); }
+
+    void key(int which)
+    {
+        canvas->inputModifierKey(which, true);
+        canvas->inputModifierKey(which, false);
+    }
+
+    //! A drag from \p from by \p dx units along x, in steps, not let go.
+    void drag(const Point &from, int dx)
+    {
+        press(from);
+        move(Point(from.x+dx/2, from.y));
+        move(Point(from.x+dx, from.y));
+    }
+
+    test::StubRenderer renderer;
+    test::StubSkin skin{&renderer};
+    controls::Canvas *canvas=nullptr;
+    Sequencer *seq=nullptr;
+    int selectionCalls=0;
+    int movedCalls=0;
+    int playheadCalls=0;
+    int toggleCalls=0;
+    size_t vetoId=static_cast<size_t>(-1);
+    std::vector<size_t> requested;
+    std::vector<size_t> removedIds;
+};
+
+}//namespace
+
+TEST_CASE("Sequencer: time and x through the view at two zooms, zoom about the cursor, pan")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    scene.frame();
+
+    const Rect area=seq->getBarArea();
+
+    REQUIRE(area.w > 500);
+    CHECK(seq->xPosition(0) == doctest::Approx(area.x));
+    CHECK(seq->xPosition(10) == doctest::Approx(area.x+area.w));
+    CHECK(seq->xPosition(2.5) == doctest::Approx(area.x+area.w/4.0));
+    CHECK(seq->timeAt(area.x+area.w/2.0) == doctest::Approx(5.0));
+
+    // twice the zoom about 4: the view 2..6, 4 where it was
+    const double x4=seq->xPosition(4);
+
+    seq->zoomAt(2.5, 4);
+    CHECK(seq->getViewStart() == doctest::Approx(2.4));
+    CHECK(seq->getViewEnd() == doctest::Approx(6.4));
+    CHECK(seq->xPosition(4) == doctest::Approx(x4));
+    CHECK(seq->xPosition(2.4) == doctest::Approx(area.x));
+    CHECK(seq->xPosition(6.4) == doctest::Approx(area.x+area.w));
+    CHECK(seq->timeAt(area.x+area.w/4.0) == doctest::Approx(3.4));
+
+    // no layout: the ticks follow the view at once
+    REQUIRE(!seq->getTicks().empty());
+    CHECK(seq->getTicks().front().value >= 2.4-1e-9);
+
+    seq->setViewRange(0, 10);
+
+    // Ctrl+wheel about the cursor: the time under it stays under it
+    const Point cursor(area.x+area.w*3/10, scene.laneMiddle(1));
+    const double before=seq->timeAt(cursor.x);
+
+    scene.move(cursor);
+    scene.canvas->inputModifierKey(keys::Control, true);
+    CHECK(scene.canvas->inputMouseWheel(60));
+    scene.canvas->inputModifierKey(keys::Control, false);
+    CHECK(seq->getViewEnd()-seq->getViewStart() == doctest::Approx(10/Sequencer::WheelZoomStep));
+    CHECK(seq->timeAt(cursor.x) == doctest::Approx(before));
+
+    // the plain wheel scrolls the tracks, never time
+    const double start=seq->getViewStart();
+
+    scene.canvas->inputMouseWheel(-60);
+    CHECK(seq->getViewStart() == start);
+
+    // Shift+wheel (the canvas's horizontal wheel) pans
+    const double span=seq->getViewEnd()-seq->getViewStart();
+
+    scene.canvas->inputModifierKey(keys::Shift, true);
+    scene.canvas->inputMouseWheel(-60);
+    scene.canvas->inputModifierKey(keys::Shift, false);
+    CHECK(seq->getViewStart() == doctest::Approx(start+Sequencer::WheelPanFraction*span));
+    CHECK(seq->getViewEnd()-seq->getViewStart() == doctest::Approx(span));
+
+    // a middle drag pans by the mouse's motion
+    const double panned=seq->getViewStart();
+
+    scene.move(cursor);
+    scene.canvas->inputMouseButton(2, true);
+    scene.move(Point(cursor.x-100, cursor.y));
+    scene.canvas->inputMouseButton(2, false);
+    CHECK(seq->getViewStart() == doctest::Approx(panned+100/scene.perSecond()));
+    CHECK(scene.canvas->inputCapture() == nullptr);
+}
+
+TEST_CASE("Sequencer: the hit test finds keys before clips, the later overlap, the edge grips and the ruler")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    seq->addClip(0, 1, 3, "", 1);
+    seq->addClip(0, 2, 4, "", 2);   // over the first from 2 to 3
+    seq->addClip(1, 5, 7, "", 3);
+    seq->addKey(2, 6, 10);
+    seq->addKey(2, 6, 11);          // at the same instant: the later is found
+    seq->addKey(0, 2.5, 12);        // in front of both clips
+    scene.frame();
+
+    SequencerItem item;
+
+    CHECK(seq->hitTest(scene.at(0, 1.5), item) == Sequencer::Part::ClipBody);
+    CHECK(item == SequencerItem(Kind::Clip, 0, 0));
+    CHECK(seq->hitTest(scene.at(0, 2.8), item) == Sequencer::Part::ClipBody);
+    CHECK(item == SequencerItem(Kind::Clip, 0, 1));
+    CHECK(seq->getOverlapLevel(0, 1) == 1);
+    CHECK(seq->hitTest(scene.at(0, 2.5), item) == Sequencer::Part::Key);
+    CHECK(item == SequencerItem(Kind::Key, 0, 0));
+    CHECK(seq->hitTest(scene.at(2, 6), item) == Sequencer::Part::Key);
+    CHECK(item == SequencerItem(Kind::Key, 2, 1));
+
+    Rect rect;
+
+    REQUIRE(seq->getClipRect(1, 0, rect));
+
+    const int middle=scene.laneMiddle(1);
+
+    CHECK(seq->hitTest(Point(rect.x, middle), item) == Sequencer::Part::ClipLeftEdge);
+    CHECK(seq->hitTest(Point(rect.x+Sequencer::GripWidth-1, middle), item) == Sequencer::Part::ClipLeftEdge);
+    CHECK(seq->hitTest(Point(rect.x+Sequencer::GripWidth, middle), item) == Sequencer::Part::ClipBody);
+    CHECK(seq->hitTest(Point(rect.x+rect.w-1, middle), item) == Sequencer::Part::ClipRightEdge);
+    CHECK(item == SequencerItem(Kind::Clip, 1, 0));
+    CHECK(seq->hitTest(Point(rect.x-1, middle), item) == Sequencer::Part::None);
+    CHECK(seq->hitTest(scene.at(1, 8), item) == Sequencer::Part::None);
+    CHECK(seq->hitTest(scene.at(3, 5), item) == Sequencer::Part::None);
+    CHECK(seq->hitTest(Point(rect.x+10, seq->getAxisRow().y+2), item) == Sequencer::Part::Ruler);
+}
+
+TEST_CASE("Sequencer: a drag snaps to a neighbour's edge, a key, the playhead, else a frame, and Alt snaps to nothing")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    seq->addClip(0, 1, 2, "", 1);   // the dragged clip
+    seq->addClip(1, 3, 4, "", 2);   // a neighbour on another track
+    seq->addKey(1, 5.55, 3);
+    seq->setPlayhead(7.25);
+    scene.frame();
+
+    const double pps=scene.perSecond();
+    const Point grab=scene.at(0, 1.5);
+    double guide=0.0;
+
+    SUBCASE("its end to the neighbour's start, from 3 units short")
+    {
+        scene.drag(grab, int(std::lround(1.0*pps))-3);
+        CHECK(seq->getClip(0, 0).end == 3.0);
+        CHECK(seq->getClip(0, 0).start == 2.0);
+        REQUIRE(seq->getSnapGuide(guide));
+        CHECK(guide == 3.0);
+    }
+    SUBCASE("its start to a key, from 2 units past")
+    {
+        scene.drag(grab, int(std::lround(4.55*pps))+2);
+        CHECK(seq->getClip(0, 0).start == 5.55);
+        REQUIRE(seq->getSnapGuide(guide));
+        CHECK(guide == 5.55);
+    }
+    SUBCASE("its start to the playhead")
+    {
+        scene.drag(grab, int(std::lround(6.25*pps))-4);
+        CHECK(seq->getClip(0, 0).start == 7.25);
+        REQUIRE(seq->getSnapGuide(guide));
+        CHECK(guide == 7.25);
+    }
+    SUBCASE("nothing near: its start on a whole frame, no guide")
+    {
+        const int dx=int(std::lround(0.5*pps))+1;
+
+        scene.drag(grab, dx);
+
+        const double raw=1.0+(seq->timeAt(grab.x+dx)-seq->timeAt(grab.x));
+
+        CHECK(raw != doctest::Approx(seq->snapToFrame(raw)));
+        CHECK(seq->getClip(0, 0).start == seq->snapToFrame(raw));
+        CHECK(seq->getClip(0, 0).end-seq->getClip(0, 0).start == doctest::Approx(1.0));
+        CHECK(!seq->getSnapGuide(guide));
+    }
+    SUBCASE("Alt held: exactly the mouse's motion, near the neighbour too")
+    {
+        const int dx=int(std::lround(1.0*pps))-3;
+
+        scene.canvas->inputModifierKey(keys::Alt, true);
+        scene.drag(grab, dx);
+        CHECK(seq->getClip(0, 0).start == doctest::Approx(1.0+(seq->timeAt(grab.x+dx)-seq->timeAt(grab.x))));
+        CHECK(seq->getClip(0, 0).end != 3.0);
+        CHECK(!seq->getSnapGuide(guide));
+    }
+    SUBCASE("setSnapping(false) too")
+    {
+        seq->setSnapping(false);
+        scene.drag(grab, int(std::lround(1.0*pps))-3);
+        CHECK(seq->getClip(0, 0).end != 3.0);
+        CHECK(!seq->getSnapGuide(guide));
+    }
+    SUBCASE("a key dragged snaps to a clip's edge")
+    {
+        scene.drag(scene.at(1, 5.55), -int(std::lround(1.55*pps))+2);
+        CHECK(seq->getKey(1, 0).time == 4.0);
+        REQUIRE(seq->getSnapGuide(guide));
+        CHECK(guide == 4.0);
+    }
+    scene.release();
+    CHECK(!seq->getSnapGuide(guide));
+}
+
+TEST_CASE("Sequencer: a resize keeps one frame, and Escape puts a drag back with no event")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    seq->addClip(0, 1, 3, "", 1);
+    scene.frame();
+
+    Rect rect;
+
+    REQUIRE(seq->getClipRect(0, 0, rect));
+
+    const int middle=scene.laneMiddle(0);
+    const Point right(rect.x+rect.w-1, middle);
+
+    SUBCASE("the right edge dragged past the left keeps a frame")
+    {
+        scene.drag(right, -int(std::lround(5*scene.perSecond())));
+        CHECK(seq->getClip(0, 0).start == 1.0);
+        CHECK(seq->getClip(0, 0).end == doctest::Approx(1.0+seq->frameLength()));
+        scene.release();
+        CHECK(scene.movedCalls == 1);
+        CHECK(seq->getMovedItems() == std::vector<SequencerItem>{SequencerItem(Kind::Clip, 0, 0)});
+    }
+    SUBCASE("the left edge dragged past the right keeps a frame")
+    {
+        scene.drag(Point(rect.x, middle), int(std::lround(5*scene.perSecond())));
+        CHECK(seq->getClip(0, 0).end == 3.0);
+        CHECK(seq->getClip(0, 0).start == doctest::Approx(3.0-seq->frameLength()));
+        scene.release();
+    }
+    SUBCASE("the right edge to 2 s, then Escape")
+    {
+        scene.drag(right, -int(std::lround(1*scene.perSecond())));
+        CHECK(seq->getClip(0, 0).end == doctest::Approx(2.0));
+        scene.key(keys::Escape);
+        CHECK(seq->getClip(0, 0).start == 1.0);
+        CHECK(seq->getClip(0, 0).end == 3.0);
+        CHECK(!seq->dragging());
+        // the rest of the drag does nothing
+        scene.move(Point(right.x-200, middle));
+        CHECK(seq->getClip(0, 0).end == 3.0);
+        scene.release();
+        CHECK(scene.movedCalls == 0);
+    }
+}
+
+TEST_CASE("Sequencer: onItemsMoved once per release, a group moving together")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    seq->addClip(0, 1, 2, "", 1);
+    seq->addClip(2, 1.5, 2.5, "", 2);
+    seq->addKey(1, 1.2, 3);
+    scene.frame();
+
+    // Shift adds: the three selected, one onSelectionChanged per press
+    scene.press(scene.at(0, 1.5));
+    scene.release();
+    scene.canvas->inputModifierKey(keys::Shift, true);
+    scene.press(scene.at(2, 2.0));
+    scene.release();
+    scene.press(scene.at(1, 1.2));
+    scene.release();
+    scene.canvas->inputModifierKey(keys::Shift, false);
+    CHECK(scene.selectionCalls == 3);
+    CHECK(seq->getSelection().size() == 3);
+    CHECK(scene.movedCalls == 0);
+
+    // a plain press on a selected item drags the group
+    const int dx=int(std::lround(2.0*scene.perSecond()));
+
+    scene.drag(scene.at(0, 1.5), dx);
+    scene.move(Point(scene.at(0, 1.5).x+dx+1, scene.laneMiddle(0)));
+    CHECK(scene.movedCalls == 0);
+    scene.release();
+    CHECK(scene.movedCalls == 1);
+    CHECK(scene.selectionCalls == 3);
+    CHECK(seq->getMovedItems().size() == 3);
+
+    const double dt=seq->getClip(0, 0).start-1.0;
+
+    CHECK(dt == doctest::Approx(2.0).epsilon(0.05));
+    CHECK(seq->getClip(2, 0).start == doctest::Approx(1.5+dt));
+    CHECK(seq->getKey(1, 0).time == doctest::Approx(1.2+dt));
+
+    // a press and release with no drag moves nothing and selects it alone
+    scene.press(scene.at(0, 1.5+dt));
+    scene.release();
+    CHECK(scene.movedCalls == 1);
+    CHECK(scene.selectionCalls == 4);
+    CHECK(seq->getSelection() == std::vector<SequencerItem>{SequencerItem(Kind::Clip, 0, 0)});
+
+    // a drag that comes back to where it began moves nothing: no event
+    scene.drag(scene.at(0, 1.5+dt), 60);
+    scene.move(scene.at(0, 1.5+dt));
+    scene.release();
+    CHECK(scene.movedCalls == 1);
+    CHECK(seq->getClip(0, 0).start == doctest::Approx(1.0+dt));
+
+    // an app's edits fire nothing
+    seq->setClip(0, 0, 0, 1);
+    seq->clearSelection();
+    seq->select(SequencerItem(Kind::Key, 1, 0));
+    CHECK(scene.selectionCalls == 4);
+    CHECK(scene.movedCalls == 1);
+}
+
+TEST_CASE("Sequencer: selection by click, Ctrl and a marquee, Escape restoring")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    seq->addClip(0, 1, 2, "", 1);
+    seq->addClip(1, 1, 2, "", 2);
+    seq->addClip(2, 6, 7, "", 3);
+    seq->addKey(3, 1.5, 4);
+    scene.frame();
+
+    const SequencerItem a(Kind::Clip, 0, 0);
+    const SequencerItem b(Kind::Clip, 1, 0);
+    const SequencerItem c(Kind::Clip, 2, 0);
+    const SequencerItem k(Kind::Key, 3, 0);
+
+    // a click selects the one item
+    scene.press(scene.at(2, 6.5));
+    scene.release();
+    CHECK(seq->getSelection() == std::vector<SequencerItem>{c});
+    CHECK(scene.selectionCalls == 1);
+
+    // Ctrl toggles; toggled off it is not dragged
+    scene.canvas->inputModifierKey(keys::Control, true);
+    scene.press(scene.at(0, 1.5));
+    scene.release();
+    CHECK(seq->getSelection() == std::vector<SequencerItem>{a, c});
+    scene.drag(scene.at(0, 1.5), 80);
+    scene.release();
+    scene.canvas->inputModifierKey(keys::Control, false);
+    CHECK(seq->getSelection() == std::vector<SequencerItem>{c});
+    CHECK(seq->getClip(0, 0).start == 1.0);
+    CHECK(scene.selectionCalls == 3);
+    CHECK(scene.movedCalls == 0);
+
+    // a plain marquee from empty space over tracks 0..3 at 1..2 s
+    const Point from(int(std::lround(seq->xPosition(0.5))), scene.laneMiddle(0)-6);
+    const Point to(int(std::lround(seq->xPosition(2.5))), scene.laneMiddle(3)+2);
+
+    scene.press(from);
+    scene.move(Point(from.x+40, from.y+40));
+    scene.move(to);
+    CHECK(seq->marqueeActive());
+    CHECK(seq->getSelection() == std::vector<SequencerItem>{a, b, k});
+    CHECK(scene.selectionCalls == 3);
+    scene.release();
+    CHECK(scene.selectionCalls == 4);
+    CHECK(!seq->marqueeActive());
+
+    // Escape gives the selection at the press back
+    scene.press(from);
+    scene.move(Point(to.x, scene.laneMiddle(1)));
+    CHECK(seq->getSelection() == std::vector<SequencerItem>{a, b});
+    scene.key(keys::Escape);
+    CHECK(seq->getSelection() == std::vector<SequencerItem>{a, b, k});
+    scene.release();
+    CHECK(scene.selectionCalls == 4);
+
+    // Shift adds to the selection at the press, Ctrl toggles it
+    seq->clearSelection();
+    seq->select(c);
+    scene.canvas->inputModifierKey(keys::Shift, true);
+    scene.press(from);
+    scene.move(Point(to.x, scene.laneMiddle(0)+2));
+    scene.release();
+    scene.canvas->inputModifierKey(keys::Shift, false);
+    CHECK(seq->getSelection() == std::vector<SequencerItem>{a, c});
+    scene.canvas->inputModifierKey(keys::Control, true);
+    scene.press(from);
+    scene.move(Point(to.x, scene.laneMiddle(1)+2));
+    scene.release();
+    scene.canvas->inputModifierKey(keys::Control, false);
+    CHECK(seq->getSelection() == std::vector<SequencerItem>{b, c});
+
+    // a click on empty lane space clears it
+    const int calls=scene.selectionCalls;
+
+    scene.press(scene.at(1, 9));
+    scene.release();
+    CHECK(seq->getSelection().empty());
+    CHECK(scene.selectionCalls == calls+1);
+}
+
+TEST_CASE("Sequencer: Delete removes the selection through the veto")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    seq->addClip(0, 1, 2, "", 1);
+    seq->addClip(0, 3, 4, "", 2);
+    seq->addKey(1, 1.5, 3);
+    scene.frame();
+    seq->select(SequencerItem(Kind::Clip, 0, 0));
+    seq->select(SequencerItem(Kind::Clip, 0, 1));
+    seq->select(SequencerItem(Kind::Key, 1, 0));
+    scene.vetoId=2;
+
+    // focused by a press in the ruler (which only scrubs)
+    scene.press(Point(seq->getBarArea().x+5, seq->getAxisRow().y+2));
+    scene.release();
+    scene.key(keys::Delete);
+    CHECK(scene.requested == std::vector<size_t>{3, 2, 1});
+    CHECK(scene.removedIds == std::vector<size_t>{3, 1});
+    REQUIRE(seq->getClipCount(0) == 1);
+    CHECK(seq->getClip(0, 0).id == 2);
+    CHECK(seq->getKeyCount(1) == 0);
+    CHECK(seq->getTotalItemCount() == 1);
+    CHECK(seq->getSelection() == std::vector<SequencerItem>{SequencerItem(Kind::Clip, 0, 0)});
+    CHECK(scene.selectionCalls == 1);
+
+    // all vetoed: nothing goes, nothing fires but the requests
+    scene.vetoId=2;
+    scene.key(keys::Delete);
+    CHECK(seq->getClipCount(0) == 1);
+    CHECK(scene.removedIds.size() == 2);
+    CHECK(scene.selectionCalls == 1);
+}
+
+TEST_CASE("Sequencer: the playhead's keys, the scrub and Space")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    scene.frame();
+
+    const Rect row=seq->getAxisRow();
+
+    // a scrub in the ruler on whole frames, focusing the sequencer
+    const Point ruler(int(std::lround(seq->xPosition(3.33))), row.y+2);
+
+    scene.press(ruler);
+    CHECK(seq->scrubbing());
+    CHECK(seq->getPlayhead() == seq->snapToFrame(seq->timeAt(ruler.x)));
+    scene.move(Point(int(std::lround(seq->xPosition(4.47))), row.y+2));
+    CHECK(seq->getPlayhead() == doctest::Approx(4.5));
+    scene.release();
+    CHECK(scene.playheadCalls == 2);
+
+    const double at=seq->getPlayhead();
+
+    scene.key(keys::Right);
+    CHECK(seq->getPlayhead() == doctest::Approx(at+0.1));
+    scene.key(keys::Left);
+    scene.key(keys::Left);
+    CHECK(seq->getPlayhead() == doctest::Approx(at-0.1));
+    scene.key(keys::End);
+    CHECK(seq->getPlayhead() == 10.0);
+    scene.key(keys::Right);
+    CHECK(seq->getPlayhead() == 10.0);
+    scene.key(keys::Home);
+    CHECK(seq->getPlayhead() == 0.0);
+    scene.key(keys::Left);
+    CHECK(seq->getPlayhead() == 0.0);
+    CHECK(scene.playheadCalls == 7);
+
+    scene.key(keys::Space);
+    CHECK(scene.toggleCalls == 1);
+
+    // Escape mid-scrub gives the playhead back
+    scene.press(ruler);
+    CHECK(seq->getPlayhead() != 0.0);
+    scene.key(keys::Escape);
+    CHECK(seq->getPlayhead() == 0.0);
+    scene.release();
+}

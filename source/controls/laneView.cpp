@@ -416,6 +416,37 @@ void LaneView::layout(skin::Base *skin)
     placeChild(m_captions, innerLeft, bodyTop, m_captionWidth, bodyHeight);
 }
 
+void LaneView::computeTicks()
+{
+    const double min=getXMin();
+    const double max=getXMax();
+
+    m_ticks.clear();
+    if(!(max > min) || m_area.w <= 0)
+        return;
+
+    std::vector<axis::Tick> ticks=chooseTicks(min, max, m_area.w);
+    std::vector<double> positions;
+    std::vector<double> widths;
+
+    positions.reserve(ticks.size());
+    widths.reserve(ticks.size());
+    for(const axis::Tick &tick : ticks)
+    {
+        positions.push_back(tick.position);
+        widths.push_back(labelWidth(tick.label));
+    }
+
+    // every stride-th label, so none overlaps the next
+    const size_t stride=axis::thinLabels(positions, widths, XLabelGap);
+
+    for(size_t i=0; i < ticks.size(); i+=stride)
+    {
+        ticks[i].position+=m_area.x;
+        m_ticks.push_back(std::move(ticks[i]));
+    }
+}
+
 void LaneView::placeAxis()
 {
     // the labels are children laid out next: what is written to them is
@@ -432,32 +463,12 @@ void LaneView::placeAxis()
 
     m_area=Rect(m_viewport.x+captionWidth, m_viewport.y, m_viewport.w-captionWidth, m_viewport.h);
 
-    const double min=getXMin();
-    const double max=getXMax();
+    computeTicks();
 
-    m_ticks.clear();
-    if(max > min && m_area.w > 0)
+    if(!tickLabelsAreControls())
     {
-        std::vector<axis::Tick> ticks=chooseTicks(min, max, m_area.w);
-        std::vector<double> positions;
-        std::vector<double> widths;
-
-        positions.reserve(ticks.size());
-        widths.reserve(ticks.size());
-        for(const axis::Tick &tick : ticks)
-        {
-            positions.push_back(tick.position);
-            widths.push_back(labelWidth(tick.label));
-        }
-
-        // every stride-th label, so none overlaps the next
-        const size_t stride=axis::thinLabels(positions, widths, XLabelGap);
-
-        for(size_t i=0; i < ticks.size(); i+=stride)
-        {
-            ticks[i].position+=m_area.x;
-            m_ticks.push_back(std::move(ticks[i]));
-        }
+        laneContentMoved();
+        return;
     }
 
     // the labels centred on their ticks inside the control

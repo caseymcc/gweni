@@ -333,6 +333,14 @@ protected:
 
     //! The lane area, the ticks and the tick labels, for the body's viewport.
     void placeAxis();
+    //! The ticks (getTicks()) for the lane area as last laid out and the x
+    //! range now: chooseTicks(), thinned so no label overlaps the next.
+    void computeTicks();
+    //! Whether the tick labels are Text children placed by placeAxis() (the
+    //! Timeline's), or only getTicks(), drawn by the renderer as text runs of
+    //! its own (the Sequencer's, whose zoom and pan move them and must lay
+    //! nothing out).
+    virtual bool tickLabelsAreControls() const { return true; }
     //! The captions of the lanes in view shown and placed in the caption
     //! column at the scroll offset, from a pool of rows (see the .cpp).
     void placeCaptions(skin::Base *skin);

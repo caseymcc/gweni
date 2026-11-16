@@ -105,6 +105,7 @@
 #include <gweni/controls/sectionedEdit.h>
 #include <gweni/controls/segmentedButtons.h>
 #include <gweni/controls/selectable.h>
+#include <gweni/controls/sequencer.h>
 #include <gweni/controls/separator.h>
 #include <gweni/controls/slider.h>
 #include <gweni/controls/spinner.h>

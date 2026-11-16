@@ -296,6 +296,8 @@ set(GWENI_CONTROL_SOURCES
     include/gweni/controls/bullet.h
     source/controls/bullet.cpp
     include/gweni/controls/laneView.h
+    source/controls/sequencer.cpp
+    include/gweni/controls/sequencer.h
     source/controls/laneView.cpp
     include/gweni/controls/labelClickable.h
     source/controls/labelClickable.cpp
