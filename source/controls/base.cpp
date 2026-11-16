@@ -149,9 +149,9 @@ std::map<std::pair<std::string, std::string>, std::string> &renderWalkMutationRe
     return record;
 }
 
-void reportRenderWalkMutation(Base *control, const char *operation)
+// control is null for a call on something that is no control (an ImageHandle)
+void reportRenderWalkMutation(Base *control, const char *type, const char *operation)
 {
-    const char *type=control->getTypeName();
     std::string &entry=renderWalkMutationRecord()[{operation, type}];
     if(!entry.empty())
         return;
@@ -159,8 +159,10 @@ void reportRenderWalkMutation(Base *control, const char *operation)
     const char *renderingType=g_renderingControl?g_renderingControl->getTypeName():"none";
     entry=std::string(type)+" "+operation+" (rendering "+renderingType+")";
 
-    std::cerr<<"gweni: "<<type<<"#"<<control->getControlId()<<" "<<operation
-        <<" during the render walk (rendering "<<renderingType;
+    std::cerr<<"gweni: "<<type;
+    if(control)
+        std::cerr<<"#"<<control->getControlId();
+    std::cerr<<" "<<operation<<" during the render walk (rendering "<<renderingType;
     if(g_renderingControl)
         std::cerr<<"#"<<g_renderingControl->getControlId();
     std::cerr<<")\n";
@@ -172,10 +174,16 @@ inline void noteRenderWalkMutation(Base *control, const char *operation)
     if(g_renderWalkDepth != 0)
     {
         ++g_renderWalkTreeChanges;
-        reportRenderWalkMutation(control, operation);
+        reportRenderWalkMutation(control, control->getTypeName(), operation);
     }
 }
 }//namespace
+
+void noteRenderWalkCall(const char *type, const char *operation)
+{
+    if(g_renderWalkDepth != 0)
+        reportRenderWalkMutation(nullptr, type, operation);
+}
 
 RenderWalkScope::RenderWalkScope()
 {

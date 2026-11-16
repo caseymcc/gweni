@@ -145,6 +145,8 @@ set(GWENI_SOURCES
     source/inputHandler.cpp
     include/gweni/utils/json.h
     include/gweni/objectIdBank.h
+    include/gweni/imageHandle.h
+    source/imageHandle.cpp
     include/gweni/postQueue.h
     source/postQueue.cpp
     include/gweni/primitiveIds.h

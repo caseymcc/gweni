@@ -164,6 +164,12 @@ private:
 //! the moved controls is undefined. This is the set of the reported pairs, sorted, each
 //! "<Type> <operation> (rendering <Type>)", for a harness to fail on.
 GWENI_EXPORT std::vector<std::string> renderWalkMutations();
+//! Reports a call on something that is no control but must not be made during
+//! a render walk either (ImageHandle's fills): while a RenderWalkScope is open,
+//! the first call of each (operation, type) prints "gweni: <type> <operation>
+//! during the render walk (rendering <Type>#<id>)" and is recorded in
+//! renderWalkMutations() as a control's tree change is. Outside one, nothing.
+GWENI_EXPORT void noteRenderWalkCall(const char *type, const char *operation);
 //! Forgets the reported pairs, so the next of each is printed and recorded
 //! again (for tests).
 GWENI_EXPORT void resetRenderWalkMutations();
