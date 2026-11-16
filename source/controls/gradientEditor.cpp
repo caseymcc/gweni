@@ -515,6 +515,9 @@ bool GradientEditor::deleteStop(size_t index)
     internal::GradientStopHandle *handle=m_handles[index];
     const bool focused=handle->isFocussed();
 
+    // a drag another control took the mouse from still names its handle
+    if(m_drag.handle == handle)
+        endDrag();
     m_handles.erase(m_handles.begin()+(std::ptrdiff_t)index);
     // the next stop, or the one before when it was the last
     m_selected=m_handles.size();

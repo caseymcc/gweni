@@ -7152,7 +7152,10 @@ to 0..1 and past other stops, the dragged handle's own stop whatever a Tab selec
 meanwhile; Escape mid-drag (the focused handle's) gives back every stop and handle as
 the press saved them, order included (two stops at one position are a Linear ramp's hard
 edge, which a move back alone would swap), and the mouse moves nothing more until the
-release; Left/Right nudge the focused handle's own stop by 0.01 (Shift 0.1), selecting
+release; a drag ends with its release (on the handle, or on the strip for a press and
+release that came in one batch), when the editor is hidden (`onVisibleChanged()`), when
+another control takes `MouseFocus` from its handle (`isDragging()` asks for it) and when
+its handle is deleted; Left/Right nudge the focused handle's own stop by 0.01 (Shift 0.1), selecting
 it, Delete removes it (not the last, nor during a drag) and focuses the next, a
 double-click opens the ColorEdit's picker, and the row's fields recolour and move the
 selected stop. Every change that places the handles calls `Canvas::hoverMayHaveMoved()`,

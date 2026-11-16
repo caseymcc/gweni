@@ -29,7 +29,13 @@
  *  two at one position in their order; a drag moves its own handle's stop
  *  after a Tab moved the selection, and Left/Right/Delete the focused handle's
  *  own stop after the app moved it; a disabled editor's handles take no focus
- *  or Tab, lose one they had, and a press changes no selection.
+ *  or Tab, lose one they had, and a press changes no selection. Review 2's
+ *  and 3's: a drag ends with a release on its handle or on the strip (a
+ *  press and its release in one batch, the second press then pressing with
+ *  no move), with the editor hidden (no move or Delete acts on it after), and
+ *  as another control takes the mouse from its handle; a handle deleted
+ *  after that is forgotten by the drag, so a later hide redraws no freed
+ *  handle (a heap-use-after-free only the ASAN tree reports).
  */
 #include "headlessFixture.h"
 
@@ -762,4 +768,32 @@ TEST_CASE("GradientEditor: a drag whose handle another control took the mouse fr
     CHECK(editor->getDraggedHandle() == nullptr);
     scene.release();
     CHECK_FALSE(editor->isDragging());
+}
+
+TEST_CASE("GradientEditor: a handle deleted after another control took the mouse from its drag is no longer dragged")
+{
+    Scene scene;
+    Gradient gradient=threeStops();
+    GradientEditor *editor=scene.editor(&gradient);
+    GradientStopHandle *handle=editor->getHandle(1);
+
+    scene.press(centreOf(handle));
+    REQUIRE(editor->isDragging());
+
+    // another capture takes the mouse and its release; Delete on the
+    // focused handle then goes through
+    MouseFocus=editor;
+    scene.release();
+    handle->focus();
+    REQUIRE(handle->isFocussed());
+    scene.key(keys::Delete);
+    REQUIRE(gradient.stopCount() == 2);
+
+    // the delete forgot the drag: the next update frees the handle, and a
+    // hide, which ends a drag, must not redraw it (ASAN's heap-use-after-free
+    // in endDrag() otherwise; a plain build may not notice)
+    scene.frame();
+    editor->hide();
+    CHECK_FALSE(editor->isDragging());
+    CHECK(gradient.stopCount() == 2);
 }
