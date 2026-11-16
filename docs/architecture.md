@@ -711,6 +711,95 @@ BreadcrumbDemo has a deep path in a box a slider resizes, a `/`-separated path, 
 path whose clicks `popTo` the item, with a "Push folder" button; `tests/unit/breadcrumb.cpp`
 and `--scenario breadcrumb` hold it to its slots.
 
+#### The toolbar and its overflow
+
+`controls::ToolBar` (`include/gweni/controls/toolBar.h`, Qt's QToolBar, WinUI's
+CommandBar) is one row of items, each made through it: `addButton(text, icon)` (a
+`ToolButton`, a flat Button laid out as its icon and its text, which the toolbar's
+`setDisplay(IconOnly | TextOnly | IconAndText)` picks from, Qt's `toolButtonStyle`; in
+IconOnly the text is its tooltip), `addToggle` (one with `setIsToggle`), `addSeparator`
+(a vertical `Separator`), `addDropDown` and `addSplitButton` (an
+`internal::ToolBarDropDown` and `internal::ToolBarSplitButton`, the #632 controls with
+the toolbar's Tab stop rule below) and `addControl(control, overflowText)` (anything, a
+search box). The items are its children in item order, the overflow button
+(`internal::ToolBarOverflowButton`, a `DropDownButton` showing the chevron alone) its last
+child, and all of them owner-placed: the toolbar sets their bounds and their visibility.
+They go left to right `Spacing` apart inside its padding, each its preferred width; a
+separator takes `SeparatorSlot` units with its rule in the middle, `SeparatorInset` short
+of the content's top and bottom; every item is the content height but an addControl one,
+centred at its preferred height.
+
+**What overflows.** Each item has an `OverflowPriority` (`setOverflowPriority`; WinUI's
+`IsDynamicOverflowEnabled` and `DynamicOverflowOrder`): `AlwaysShow` never goes, `Normal`
+goes when the bar is too narrow, from the end one at a time, `AlwaysOverflow` is always in
+the menu (so its button shows at any width). An addControl item with no overflow text has
+no menu form and stays as an AlwaysShow one. A separator has no priority: it shows only
+between two shown items with no shown separator since the first, so the row never starts
+or ends with one nor shows two together. The preferred width is every item's
+(`fullWidth()`) and the height the tallest item's, whatever is shown, so no overflow
+changes a preferred size; `minimumWidth()` is the AlwaysShow items' and the button's.
+When even the AlwaysShow items do not fit they are placed at their widths all the same,
+past the bar's right edge, the button after them.
+
+**Decided in the X arrange.** Which items show needs only the toolbar's width (final in
+its X arrange) and its items' preferred widths, so `ToolBar::arrange` decides it there
+before Base's arrange enters the items, as `TabControl::handleOverflow` does: under a
+`PlacementScope`, it hides the overflowed items, shows the others and the button, and
+places them. `setHidden` inside an arrange does re-dirty layout without the scope (the
+pass runs twice, the toolbar named as having re-dirtied it); with it, the visibility is
+placement and a width change is one pass that `--verify-layout` finds nothing in. The
+toolbar measures its hidden items in its `calculateSize` too (Base measures only the
+shown ones), so an item whose text changed while it was in the menu comes back at its new
+width. Their y and heights wait for the Y arrange.
+
+**It does not clip.** `ToolBar::shouldClip()` is false, as a Label's is. A toolbar that
+clipped would give every item a clip box of its bounds, so each width change would give
+every shown item a new clip box and rewrite its slot; not clipping, a width change writes
+the slots of the items it hid or showed, the overflow button's and the bar's own (its
+surface) alone. A clipping container narrowed around a toolbar still re-stamps everything
+under it: that is the resize's cost, not the toolbar's. ToolBarDemo therefore narrows the
+toolbar itself.
+
+**The overflow menu** is the overflow button's Menu, filled by
+`ToolBar::prepareOverflowMenu` from `DropDownButton::aboutToOpenMenu`, a protected hook
+`openMenu()` calls after closing the other menus and before opening it. It is built from
+the overflowed items in order, and built again only when the overflowed set changed since
+(`getOverflowSerial()`, raised by the arrange and by an item removed;
+`getMenuBuildCount()`): a tool button an entry with its text, a toggle a checkable entry,
+an overflowed separator a `MenuDivider` (never first, last or doubled), a drop-down a
+submenu of copies of its menu's items (`MenuItem::hasMenu()` tells a submenu without
+making one; submenus are copied whole), a SplitButton a submenu with its main action, a
+divider and its menu's items, and an addControl item its overflow text. The entries are
+mapped to their items by control ids. Each open brings every entry's text, disabled state
+and check up to date with its item, so a toggle the app turned while it was overflowed
+shows in the next open, and a disabled item's entry is disabled. Choosing an entry closes
+the menus, flips a checkable entry's check (`MenuItem::onPress`), then fires what pressing
+the item fires: a tool button's own `onPress` (a toggle flipping its state, which its
+entry's check is set from again), the SplitButton main part's, a drop-down item's
+`onPress` (so its `onMenuItemSelected`), and then the toolbar's `onOverflowItemChosen`
+with the toolbar item in `info.control`, an addControl item's only event. So the app wires
+each action once. Not yet: entries are brought up to date as the menu opens, not while it
+stays open, and a drop-down's own menu edits show only once the overflowed set changes.
+
+**The keyboard.** The tool items (tool buttons, drop-downs, split buttons and the overflow
+button) are one Tab stop, `getTabStop()`: the last focused while it is shown and enabled
+(each item's `onKeyboardFocus` tells the toolbar), else the first that is; each one's
+`isTabable()` is whether it is that stop. Left, Right, Home and End bubble from the
+focused item to the toolbar, which moves the focus over the shown, enabled tool items in
+order, the overflow button last, stopping at the ends, and passing over separators,
+disabled items and addControl items (a search box keeps its own arrows and Tab stop).
+Space and Return press a tool button; on the overflow button they open its menu with the
+first entry highlighted, Menu's keyboard navigation.
+
+**The renderers** draw the bar on the `ToolBar` surface and a tool button in one slot:
+`ToolButton` at rest (the bar's fill, its border that colour too, so a button shows only
+while it is hovered, pressed or on), `ToolButtonHover`, `ToolButtonDown`, and `ToolButtonOn`
+for a toggle that is on, with `ButtonFocus`'s border while it is focused. The overflow
+button draws the same surfaces (Down while its menu is open) and the down chevron at
+z+1. Separators, drop-downs and split buttons keep their own renderers. ToolBarDemo
+shows an editor's toolbar whose width a slider sets and an icon-only one, and
+`--scenario toolbar` holds a width step to its moved item's slots.
+
 #### The modal stack: what a dialog blocks
 
 A canvas keeps a stack of modals (`Canvas::pushModal`, `popModal`, `topModal`,
@@ -7167,12 +7256,12 @@ set by its bare name and one with some of them as `Name.field` per missing field
 the shipped theme with `"strict": true` added):
 
 ```
-theme strict: 249 of 253 surfaces not set: Badge, BreadcrumbItem, BreadcrumbItemDown, ...
+theme strict: 254 of 258 surfaces not set: Badge, BreadcrumbItem, BreadcrumbItemDown, ...
 theme strict: 94 of 96 text colors not set: AxisTagText, BadgeText, BreadcrumbCurrentText, ...
 ```
 
-(`theme strict: all 253 surfaces set` for a kind with no gaps, and a single
-`theme strict: all 253 surfaces and 96 text colors set` when there are none at all). A
+(`theme strict: all 258 surfaces set` for a kind with no gaps, and a single
+`theme strict: all 258 surfaces and 96 text colors set` when there are none at all). A
 rejected value counts as not set. A surface that is transparent at rest on purpose
 (`WindowButton`, `SelectableHover`: a transparent fill hides the slot) is magenta too
 until the theme sets it to `[0,0,0,0]`; the theme has not said what it looks like. The
