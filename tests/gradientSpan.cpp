@@ -3,8 +3,10 @@
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
  *
- *  A GradientEditor's span drawn as its bar draws it (drawBilinearRect with
- *  the left corners one stop's colour and the right ones the next's), read
+ *  A GradientEditor's span drawn as its bar draws a span's interior
+ *  (drawBilinearRect with the left corners one stop's colour and the right
+ *  ones the next's; the bar's spans also draw the frame's border rows, through
+ *  the edge-mask overload, which leaves the interior as it is), read
  *  back pixel by pixel and held to gweni::Gradient::evaluate(t) at each pixel
  *  centre, t = (x - left + 0.5)/width: what the app samples is what the bar
  *  shows. Opaque stops are compared with evaluate() directly; translucent

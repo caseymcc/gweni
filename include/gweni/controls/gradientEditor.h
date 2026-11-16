@@ -196,8 +196,10 @@ public:
     void dragTo(int x);
     void endDrag();
     bool cancelDrag();
-    bool isDragging() const { return m_drag.handle != nullptr; }
-    internal::GradientStopHandle *getDraggedHandle() const { return m_drag.handle; }
+    //! A drag lasts while its handle holds the mouse (gweni::MouseFocus): one
+    //! the canvas took it from (the editor hidden, another capture) has ended.
+    bool isDragging() const;
+    internal::GradientStopHandle *getDraggedHandle() const { return isDragging()?m_drag.handle:nullptr; }
 
     //! The t a strip-local x stands for (a handle's centre), clamped to 0..1,
     //! and a handle's left edge in the strip for a t.
@@ -214,6 +216,8 @@ public:
     DragNumber *getPositionField() const { return m_position; }
 
     void setDisabled(bool active) override;
+    //! Hidden, the editor's drag ends (the canvas takes the mouse from it).
+    void onVisibleChanged() override;
 
     void calculateSize(skin::Base *skin, Dim dim) override;
     void layout(skin::Base *skin) override;

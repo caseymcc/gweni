@@ -62,7 +62,19 @@ void GradientStopStrip::onMouseClickLeft(int x, int y, bool down)
 {
     GradientEditor *editor=getEditor();
 
-    if(!down || !editor || editor->isDisabled())
+    if(!editor)
+        return;
+
+    // a release with no hit test since the press (one event batch: a tap)
+    // reaches the strip, not the new handle, and ends the drag all the same
+    if(!down)
+    {
+        if(editor->isDragging())
+            editor->endDrag();
+        return;
+    }
+
+    if(editor->isDisabled())
         return;
 
     const Point at=canvasPosToLocal(Point(x, y));
@@ -554,12 +566,29 @@ void GradientEditor::beginDrag(internal::GradientStopHandle *handle, int grab)
 
 void GradientEditor::dragTo(int x)
 {
-    if(!m_drag.handle || m_drag.cancelled)
+    // a handle the mouse was taken from drags nothing more
+    if(!isDragging())
+    {
+        endDrag();
+        return;
+    }
+    if(m_drag.cancelled)
         return;
 
     const Point at=m_strip->canvasPosToLocal(Point(x, 0));
 
     userMove(indexOf(m_drag.handle), stripPosition(at.x-m_drag.grab+HandleWidth/2));
+}
+
+bool GradientEditor::isDragging() const
+{
+    return m_drag.handle && (gweni::MouseFocus == m_drag.handle);
+}
+
+void GradientEditor::onVisibleChanged()
+{
+    if(!visible())
+        endDrag();
 }
 
 void GradientEditor::endDrag()
@@ -577,7 +606,7 @@ void GradientEditor::endDrag()
 
 bool GradientEditor::cancelDrag()
 {
-    if(!m_drag.handle || m_drag.cancelled)
+    if(!isDragging() || m_drag.cancelled)
         return false;
 
     // the release still ends it; until then the mouse moves nothing

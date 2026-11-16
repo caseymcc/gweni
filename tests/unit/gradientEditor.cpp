@@ -591,15 +591,21 @@ TEST_CASE("GradientEditor: a second press where a strip press added a stop is th
     GradientEditor *editor=scene.editor(&gradient);
     const Point at=stripAt(editor, 0.25f);
 
-    // no move between the presses: the hover is taken again once the new
-    // handle is laid out under the mouse
+    // the release reaches the strip (no hit test since the press, as in one
+    // event batch) and ends the drag all the same
     scene.press(at);
     scene.release();
     REQUIRE(gradient.stopCount() == 4);
     GradientStopHandle *added=editor->getHandle(1);
 
+    CHECK_FALSE(editor->isDragging());
+    CHECK(MouseFocus == nullptr);
+
+    // the second press with no move: the hover was taken again once the new
+    // handle was laid out under the mouse
     CHECK(HoveredControl == added);
-    scene.press(at);
+    scene.clock+=1.0f;
+    input::onMouseClicked(scene.canvas, 0, true);
     CHECK(gradient.stopCount() == 4);
     CHECK(editor->getDraggedHandle() == added);
     scene.release();
@@ -701,4 +707,59 @@ TEST_CASE("GradientEditor: a disabled editor's handles take no focus and keep th
 
     editor->setDisabled(false);
     CHECK(editor->getHandle(1)->isTabable());
+}
+
+TEST_CASE("GradientEditor: an editor hidden during a drag ends it")
+{
+    Scene scene;
+    Gradient gradient=threeStops();
+    GradientEditor *editor=scene.editor(&gradient);
+    GradientStopHandle *handle=editor->getHandle(1);
+    const Point at=centreOf(handle);
+
+    scene.press(at);
+    scene.move(at.x+10, at.y);
+    REQUIRE(editor->isDragging());
+    const float moved=gradient.stop(1).position;
+
+    CHECK(moved != doctest::Approx(0.5f));
+    editor->hide();
+    scene.release();
+    editor->show();
+    scene.frame();
+    CHECK_FALSE(editor->isDragging());
+    CHECK(editor->getDraggedHandle() == nullptr);
+
+    // with the button up a move over the handle moves no stop
+    const Point now=centreOf(handle);
+
+    scene.move(now.x, now.y);
+    scene.move(now.x+5, now.y);
+    CHECK(gradient.stop(1).position == doctest::Approx(moved));
+
+    // and Delete, refused during a drag, removes the focused handle's stop
+    // (the hide took the focus)
+    handle->focus();
+    REQUIRE(handle->isFocussed());
+    scene.key(keys::Delete);
+    CHECK(gradient.stopCount() == 2);
+}
+
+TEST_CASE("GradientEditor: a drag whose handle another control took the mouse from has ended")
+{
+    Scene scene;
+    Gradient gradient=threeStops();
+    GradientEditor *editor=scene.editor(&gradient);
+    GradientStopHandle *handle=editor->getHandle(1);
+    const Point at=centreOf(handle);
+
+    scene.press(at);
+    REQUIRE(editor->isDragging());
+
+    // another capture takes the mouse, and the release is its
+    MouseFocus=editor;
+    CHECK_FALSE(editor->isDragging());
+    CHECK(editor->getDraggedHandle() == nullptr);
+    scene.release();
+    CHECK_FALSE(editor->isDragging());
 }
