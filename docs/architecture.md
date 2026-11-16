@@ -7112,6 +7112,74 @@ and every device px hits the same control (`controltest_zoom_panel`).
   shell) holds a Button with a tooltip, a ComboBox, a DragNumber, a TextBox and a
   ScrollControl at 1.25x.
 
+## The gradient editor
+
+`gweni::Gradient` (`include/gweni/gradient.h`) is a colour ramp as a value type with no
+control behind it: stops of a position (clamped to 0..1, NaN 0) and a straight-alpha
+RGBA `Color`, kept sorted (stably, so stops at one position keep the order they came
+in) and never fewer than one (a gradient of none has one black stop at 0, and
+`removeStop` refuses the last). `evaluate(t)` is the first stop's colour before it and
+the last's from it on; between two stops it is each 8-bit channel, alpha included, at
+`a + (b-a)*u` rounded to the nearest level, u being t's place between them, and at a
+position two stops share it is the later one's. That is the arithmetic of the bilinear
+fill (style 6): a span drawn with its left corners one stop's colour and its right ones
+the next's has, at each pixel centre, the colour `evaluate()` gives there, exactly on
+llvmpipe and lavapipe (`tests/gradientSpan.cpp`; a translucent span over black is one
+level off at most in the browser, whose blend rounds `c*a/255` otherwise). In Constant
+mode a stop's colour holds to the next one (Blender's). `addStop(t)` takes evaluate(t)'s
+colour, so the ramp looks the same; `moveStop` keeps the index while the stop stays
+between its neighbours and otherwise passes as few stops as it must (moved right it goes
+before a stop at its new position, moved left after one). `tests/unit/gradient.cpp`
+pins it.
+
+`controls::GradientEditor` (`include/gweni/controls/gradientEditor.h`, Blender's
+ColorRamp, Unity's Gradient editor) edits a gradient the app owns (`setGradient`, its
+own black-to-white one without). **Composition:** four Owner children placed in its
+`layout()`: an `internal::GradientBar` (the ramp, taking no mouse) half a handle in from
+each side, an `internal::GradientStopStrip` the whole width right under it, holding an
+`internal::GradientStopHandle` per stop, and under the strip the selected stop's row, a
+`ColorEdit` and a `DragNumber` of its position (0..1, `%.3f`). The editor is Fixed in X
+(320 by default) and Elastic in Y, its parts' height. The strip places the handles in
+its own `layout()`, each `HandleWidth` wide centred on its stop's column (the bar's left
+plus `round(t*width)`), so a moved stop lays out the strip alone. **The handles are the
+strip's children in stop order**: a stop that passes another has its handle moved with
+`bringNextToControl` (gapped z relabels that one handle), so Tab and Shift+Tab step
+through the stops in order with no tab code of the editor's own, and a handle taking
+the focus selects its stop. **Input:** a press on the strip away from a handle adds a
+stop there of `evaluate(t)`'s colour, selects it, focuses its handle and drags it; a
+press on a handle selects and drags it (`MouseFocus` held, as a `Dragger` does), clamped
+to 0..1 and past other stops; Escape mid-drag (the focused handle's) puts the stop back
+and the mouse moves nothing more until the release; Left/Right nudge the focused stop by
+0.01 (Shift 0.1), Delete removes it (not the last) and focuses the next, a double-click
+opens the ColorEdit's picker, and the row's fields recolour and move the selected stop.
+`onChanged` fires once per real change by the user, the selected index in
+`info.integer`; the app's own edits fire nothing, and the app calls `gradientChanged()`
+after editing the gradient itself (`tests/unit/gradientEditor.cpp`).
+
+**Drawing and what a change writes.** The textured `GradientBar` renderer keeps a slot
+list of three plus one per pair of stops (resized with the stop count, as the plots'
+are): [0] a checker of a transparent fill under the whole bar (`ColorChecker`'s cells,
+in `GradientBarFrame`'s border), then at z+1 (`depthLayers()` 2), a border width in,
+[1] a flat span of the first stop's colour up to its column, [2] one of the last stop's
+from its column (each hidden at no width) and [3+i] a bilinear span from stop i to stop
+i+1 (flat in stop i's colour in Constant mode, hidden for two stops in one column), so a
+translucent ramp shows the checker through it. A `GradientStopHandle` is a filled
+triangle (icon kind 7) pointing up over its top `MarkerHeight` units and a checker
+swatch of its stop's colour, in `GradientStop`, `GradientStopHover`,
+`GradientStopSelected` (or dragged), `GradientStopFocus` or `GradientStopDisabled`. Both
+renderers draw every slot each time their control is marked, and a slot whose bytes stay
+is not written, so the work is local with no cache of what was drawn (a few stops): a
+moved stop writes its handle and the spans beside it (its flat end when it is the first
+or the last), a reorder the spans whose ends changed, a new
+colour its swatch and the spans beside it, a hover the handle alone, a settled frame
+nothing (`tests/unit/gradientEditorRenderer.cpp`, on a recorder that counts a slot only
+when what it was drawn with changes). `--scenario gradient-editor` holds each drag,
+typed-colour, add and delete frame of GradientEditorDemo's Constant ramp to the ids of
+what it touched and the drag to no pixel outside the editor. GradientEditorDemo (the
+shell's "Gradient editor", the README gallery) shows an opaque, a translucent and a
+Constant ramp and a strip of 32 swatches sampling the first one's `evaluate()`, set again
+on its `onChanged`.
+
 ## The node graph
 
 `controls::NodeGraph` (`include/gweni/controls/nodeGraph.h`) is a node editor's view:
@@ -7383,12 +7451,12 @@ set by its bare name and one with some of them as `Name.field` per missing field
 the shipped theme with `"strict": true` added):
 
 ```
-theme strict: 261 of 265 surfaces not set: Badge, BreadcrumbItem, BreadcrumbItemDown, ...
+theme strict: 267 of 271 surfaces not set: Badge, BreadcrumbItem, BreadcrumbItemDown, ...
 theme strict: 101 of 103 text colors not set: AxisTagText, BadgeText, BreadcrumbCurrentText, ...
 ```
 
-(`theme strict: all 265 surfaces set` for a kind with no gaps, and a single
-`theme strict: all 265 surfaces and 103 text colors set` when there are none at all). A
+(`theme strict: all 271 surfaces set` for a kind with no gaps, and a single
+`theme strict: all 271 surfaces and 103 text colors set` when there are none at all). A
 rejected value counts as not set. A surface that is transparent at rest on purpose
 (`WindowButton`, `SelectableHover`: a transparent fill hides the slot) is magenta too
 until the theme sets it to `[0,0,0,0]`; the theme has not said what it looks like. The

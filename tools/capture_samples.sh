@@ -78,6 +78,7 @@ SAMPLES=(
     ChartAreasDemo
     TimelineDemo
     HexViewDemo
+    GradientEditorDemo
     InspectorDemo
     ThemeEditorDemo
 )
@@ -86,12 +87,15 @@ SAMPLES=(
 # pane (DemoCenter, from ControlTest --control Demo --size 1024x768
 # --dump-bounds), so it lays out as it does in the shell; a page of one
 # control at its own size; MarkdownDemo 75 units taller than the pane, so its
-# three images (two delivered late, one failed) show below the table.
+# three images (two delivered late, one failed) show below the table;
+# GradientEditorDemo, a column of three 420-unit editors and its preview
+# strip, at the size of that column.
 PANE_SIZE=865x545
 declare -A SAMPLE_SIZE=(
     [TextDemo]=640x480
     [MarkdownDemo]=865x620
     [KnobDemo]=430x350
+    [GradientEditorDemo]=440x394
 )
 
 # Scripted input a sample is captured after, in place of the plain capture's

@@ -154,6 +154,14 @@ type, little or big endian, over a 256-byte view the keyboard edits a nibble at 
 on screen are controls, and a byte's place is arithmetic on the mono cell, so a one-row scroll binds
 one row and a cursor move writes the cursor's two slots, the same at 4 KiB as at 16 MiB.
 
+[![Three gradient editors, an opaque ramp, a translucent one over the checkerboard and a Constant one, above a strip of swatches sampling the first](docs/images/GradientEditorDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=GradientEditorDemo)
+
+**Gradient editor**: colour ramps as in Blender's ColorRamp and Unity's Gradient editor, each a bar of
+stops over a checkerboard, a handle per stop under it and a ColorEdit and position field for the
+selected one. A span between two stops is one bilinear primitive slot, so what `evaluate(t)` gives the
+app (the swatches below sample it) is what the bar draws, pixel for pixel: dragging a stop rewrites its
+handle and the spans beside it, a recoloured stop its swatch and those spans, and nothing else.
+
 [![The inspector beside a few controls](docs/images/InspectorDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=InspectorDemo)
 
 **Inspector**: `gweni::tools::Inspector`, the library's live view of the change tracking (F12 in the
