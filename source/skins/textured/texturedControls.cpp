@@ -659,6 +659,22 @@ gweni::Rect MenuItem::checkRect(controls::MenuItem *item)
 
 ///////////////////////////////////////////////////////////////////////////
 //BreadcrumbItem
+// A path item's or the ellipsis's one slot: the state's fill, with
+// BreadcrumbItemFocus's ring while it has the keyboard focus.
+static void paintBreadcrumbItem(renderer::Base *renderer, size_t *primitives, controls::Button *button)
+{
+    const bool enabled=!button->isDisabled();
+    tokyonight::Surface surface=(button->isDepressed() && enabled)?tokyonight::BreadcrumbItemDown:
+        ((button->isHovered() && enabled)?tokyonight::BreadcrumbItemHover:tokyonight::BreadcrumbItem);
+
+    if((KeyboardFocus == button) && enabled)
+    {
+        surface.border=tokyonight::BreadcrumbItemFocus.border;
+        surface.borderWidth=tokyonight::BreadcrumbItemFocus.borderWidth;
+    }
+    tokyonight::paintSurface(renderer, primitives, button, surface);
+}
+
 void BreadcrumbItem::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     if(m_primitives.empty())
@@ -671,10 +687,17 @@ void BreadcrumbItem::update(renderer::Base *renderer, controls::Base *baseContro
         renderer->hidePrimitive(m_primitives[0]);
         return;
     }
-    const tokyonight::Surface &surface=(item->isDepressed() && !item->isDisabled())?tokyonight::BreadcrumbItemDown:
-        ((item->isHovered() && !item->isDisabled())?tokyonight::BreadcrumbItemHover:tokyonight::BreadcrumbItem);
+    paintBreadcrumbItem(renderer, m_primitives.data(), item);
+}
 
-    tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, surface);
+///////////////////////////////////////////////////////////////////////////
+//BreadcrumbEllipsis
+void BreadcrumbEllipsis::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    paintBreadcrumbItem(renderer, m_primitives.data(), static_cast<controls::Button *>(baseControl));
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -6087,6 +6110,7 @@ template class ControlRegister<MenuStrip>;
 template class ControlRegister<MenuItem>;
 template class ControlRegister<BreadcrumbItem>;
 template class ControlRegister<BreadcrumbSeparator>;
+template class ControlRegister<BreadcrumbEllipsis>;
 template class ControlRegister<DropDownButton>;
 template class ControlRegister<SplitButton>;
 template class ControlRegister<SplitButtonMain>;

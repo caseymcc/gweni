@@ -57,7 +57,9 @@ public:
     bool isMenuOpen() const;
     //! Opens the menu below it (closing the other open menus first) with
     //! \p focus's keyboard navigation; nothing while it is disabled or hidden.
-    void openMenu(MenuFocus focus=MenuFocus::FirstItem);
+    //! Every open goes through it, so a subclass may fill the menu first (a
+    //! Breadcrumb's ellipsis).
+    virtual void openMenu(MenuFocus focus=MenuFocus::FirstItem);
     //! Closes the menu, with every submenu open under it.
     void closeMenu();
 

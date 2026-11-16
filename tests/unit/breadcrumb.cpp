@@ -10,10 +10,24 @@
  *  text separators share the registered theme colour, while a hover or
  *  press writes the affected item's surface alone. Settled frames do no
  *  layout or rendering work.
+ *
+ *  Collapsing: at a series of widths, from the whole path down, each step
+ *  of the width collapses one more item after the first ones (default 1,
+ *  or setItemsBeforeCollapse) into the ellipsis, keeping the last ones
+ *  (default 1, or setItemsAfterCollapse), in one layout pass, and growing
+ *  back gives each layout back; below the least collapse the last item is
+ *  cut at the right edge. The ellipsis's menu lists the collapsed items in
+ *  path order, is filled again only when that set changed since it was
+ *  last opened, and a pick fires onItemClicked with its index. The keys:
+ *  one Tab stop at the first shown item, Left/Right/Home/End over the
+ *  shown items and the ellipsis, Return and Space activate, the ellipsis
+ *  opening its menu with its first item highlighted.
  */
 #include "headlessFixture.h"
 
 #include <gweni/controls/breadcrumb.h>
+#include <gweni/controls/menu.h>
+#include <gweni/controls/menuItem.h>
 #include <gweni/gweni.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/platform.h>
@@ -33,6 +47,7 @@ public:
         Color border, int z) override
     {
         fills[id]=top;
+        borders[id]={width, border};
         StubRenderer::drawRoundedRect(id, rect, radius, width, top, bottom, border, z);
     }
 
@@ -44,6 +59,7 @@ public:
     }
 
     std::map<size_t, Color> fills;
+    std::map<size_t, std::pair<float, Color>> borders;
     std::map<size_t, std::pair<int, int>> icons;
     std::map<size_t, Color> iconColors;
 };
@@ -69,11 +85,16 @@ struct Scene
         canvas->setSize(640, 200);
         path=canvas->newChild<controls::Breadcrumb>();
         path->setItems({"Home", "Projects", "gweni"});
+        // the mouse position is process-global: start clear of the path, not
+        // where an earlier case left it
+        canvas->inputMouseMoved(639, 199, 0, 0);
     }
 
     ~Scene()
     {
         input::onMouseClicked(canvas, 0, false);
+        for(int key : {keys::Shift, keys::Tab, keys::Alt})
+            input::onKeyEvent(canvas, key, false);
         HoveredControl=nullptr;
         MouseFocus=nullptr;
         KeyboardFocus=nullptr;
@@ -95,6 +116,20 @@ struct Scene
         canvas->inputMouseMoved(at.x+item->getWidth()/2, at.y+item->getHeight()/2, 1, 0);
     }
 
+    void key(int key)
+    {
+        input::onKeyEvent(canvas, key, true);
+        input::onKeyEvent(canvas, key, false);
+        frame();
+    }
+
+    //! Lays the path out \p width wide (the Breadcrumb's own width).
+    void setWidth(int width)
+    {
+        canvas->setSize(width+canvas->getWidth()-path->getWidth(), canvas->getHeight());
+        frame();
+    }
+
     void click(size_t index)
     {
         clock+=1;
@@ -103,6 +138,88 @@ struct Scene
         canvas->inputMouseButton(0, false);
     }
 };
+
+//! The shown items, by index, and -1 for the ellipsis, left to right.
+std::vector<int> shown(controls::Breadcrumb *path)
+{
+    std::vector<int> parts;
+
+    for(size_t i=0; i < path->getItemCount(); ++i)
+    {
+        if(i == path->getCollapsedBegin() && path->getCollapsedEnd() > i)
+        {
+            CHECK(!path->getEllipsisControl()->hidden());
+            parts.push_back(-1);
+        }
+        if(!path->getItemControl(i)->hidden())
+            parts.push_back(static_cast<int>(i));
+    }
+    return parts;
+}
+
+//! The width the path needs with [1, 1+k) collapsed (k 0: nothing).
+int neededWidth(controls::Breadcrumb *path, size_t begin, size_t end)
+{
+    const auto width=[&](size_t i)
+        {
+            auto *separator=path->getSeparatorControl(i);
+
+            return path->getItemControl(i)->getPreferredSize().width+(separator?separator->getPreferredSize().width:0);
+        };
+    int total=0;
+
+    for(size_t i=0; i < path->getItemCount(); ++i)
+    {
+        if(i < begin || i >= end)
+            total+=width(i);
+    }
+    if(end > begin)
+    {
+        auto *separator=path->getSeparatorControl(begin);
+
+        total+=path->getEllipsisControl()->getPreferredSize().width+(separator?separator->getPreferredSize().width:0);
+    }
+    return total;
+}
+
+//! The menu's shown items, in order.
+void collectItems(controls::Base *control, std::vector<controls::MenuItem *> &items)
+{
+    for(controls::Base *child : control->getChildren())
+    {
+        if(auto *item=gweni_cast<controls::MenuItem>(child))
+        {
+            if(!item->hidden())
+                items.push_back(item);
+        }
+        else
+            collectItems(child, items);
+    }
+}
+
+std::vector<String> menuLabels(controls::Breadcrumb *path)
+{
+    std::vector<controls::MenuItem *> items;
+    std::vector<String> labels;
+
+    collectItems(path->getEllipsisControl()->getMenu(), items);
+    for(auto *item : items)
+        labels.push_back(item->getText());
+    return labels;
+}
+
+controls::MenuItem *menuItem(controls::Breadcrumb *path, const String &label)
+{
+    std::vector<controls::MenuItem *> items;
+
+    collectItems(path->getEllipsisControl()->getMenu(), items);
+    for(auto *item : items)
+    {
+        if(item->getText() == label)
+            return item;
+    }
+    return nullptr;
+}
 
 size_t acquisitions(const test::StubRenderer &renderer, test::StubRenderer::Op op)
 {
@@ -274,4 +391,259 @@ TEST_CASE("Breadcrumb: theme separators and hover write only the affected parts"
     CHECK(scene.renderer.writtenPrimitiveIds().empty());
     CHECK(scene.renderer.writtenTextIds().empty());
     CHECK(scene.canvas->getLayoutStats().passes == 0);
+}
+
+TEST_CASE("Breadcrumb: the middle collapses one item per step and grows back")
+{
+    Scene scene;
+    auto *path=scene.path;
+
+    path->setItems({"Home", "Projects", "gweni", "source", "controls", "base.cpp"});
+    scene.frame();
+    const int whole=path->getPreferredSize().width;
+
+    scene.setWidth(whole);
+    CHECK(shown(path) == std::vector<int>{0, 1, 2, 3, 4, 5});
+    CHECK(path->getEllipsisControl()->hidden());
+    CHECK(!path->isLastItemCut());
+
+    std::vector<std::vector<Rect>> layouts;
+    const auto bounds=[&]()
+        {
+            // the shown parts' bounds; a hidden one keeps where it was
+            const auto of=[](controls::Base *part) { return part->hidden()?Rect():part->getBounds(); };
+            std::vector<Rect> rects{of(path->getEllipsisControl())};
+
+            for(size_t i=0; i < path->getItemCount(); ++i)
+            {
+                rects.push_back(of(path->getItemControl(i)));
+                if(auto *separator=path->getSeparatorControl(i))
+                    rects.push_back(of(separator));
+            }
+            return rects;
+        };
+
+    layouts.push_back(bounds());
+    // each width is the least that fits with k items collapsed; one unit less
+    // takes the next
+    for(size_t k=1; k <= 4; ++k)
+    {
+        const int needed=neededWidth(path, 1, 1+k);
+
+        scene.setWidth(needed);
+        CHECK(scene.canvas->getLayoutStats().passes == 1);
+        CHECK(path->getCollapsedBegin() == 1);
+        CHECK(path->getCollapsedEnd() == 1+k);
+        CHECK(!path->isLastItemCut());
+        CHECK(path->getItemControl(5)->right() <= path->getWidth());
+        if(k < 4)
+        {
+            scene.setWidth(needed-1);
+            CHECK(path->getCollapsedEnd() == 2+k);
+        }
+        scene.setWidth(needed);
+        layouts.push_back(bounds());
+    }
+    CHECK(shown(path) == std::vector<int>{0, -1, 5});
+    // the ellipsis sits after the first collapsed item's separator
+    CHECK(path->getSeparatorControl(1)->visible());
+    CHECK(path->getEllipsisControl()->getX() == path->getSeparatorControl(1)->right());
+    CHECK(path->getSeparatorControl(5)->getX() == path->getEllipsisControl()->right());
+    for(size_t i=2; i < 5; ++i)
+        CHECK(path->getSeparatorControl(i)->hidden());
+
+    // growing back gives each earlier layout back
+    for(size_t k=4; k-- > 0;)
+    {
+        scene.setWidth(k == 0?whole:neededWidth(path, 1, 1+k));
+        CHECK(scene.canvas->getLayoutStats().passes == 1);
+        CHECK((bounds() == layouts[k]));
+    }
+    CHECK(shown(path) == std::vector<int>{0, 1, 2, 3, 4, 5});
+    CHECK(path->getEllipsisControl()->hidden());
+
+    // two before and two after
+    path->setItemsBeforeCollapse(2);
+    path->setItemsAfterCollapse(2);
+    scene.setWidth(whole-1);
+    CHECK(shown(path) == std::vector<int>{0, 1, -1, 3, 4, 5});
+    scene.setWidth(neededWidth(path, 2, 4)-1);
+    CHECK(shown(path) == std::vector<int>{0, 1, -1, 4, 5});
+    scene.setWidth(10);
+    CHECK(shown(path) == std::vector<int>{0, 1, -1, 4, 5});
+    // none before: the ellipsis comes first, with no separator
+    path->setItemsBeforeCollapse(0);
+    path->setItemsAfterCollapse(0);
+    CHECK(path->getItemsAfterCollapse() == 1);
+    scene.setWidth(neededWidth(path, 0, 5));
+    CHECK(shown(path) == std::vector<int>{-1, 5});
+    CHECK(path->getEllipsisControl()->getX() == 0);
+    CHECK(!path->isLastItemCut());
+}
+
+TEST_CASE("Breadcrumb: the last item is cut when the least collapse does not fit")
+{
+    Scene scene;
+    auto *path=scene.path;
+
+    path->setItems({"Home", "Projects", "gweni", "a much longer current item"});
+    scene.frame();
+    const int least=neededWidth(path, 1, 3);
+    auto *last=path->getItemControl(3);
+
+    scene.setWidth(least-10);
+    CHECK(shown(path) == std::vector<int>{0, -1, 3});
+    CHECK(path->isLastItemCut());
+    CHECK(last->right() == path->getWidth());
+    CHECK(last->getWidth() == last->getPreferredSize().width-10);
+    // narrower than everything before it: no width at all
+    scene.setWidth(5);
+    CHECK(last->getWidth() == 0);
+    CHECK(path->isLastItemCut());
+    // two items cannot collapse: the last is cut
+    path->setItems({"Home", "a much longer current item"});
+    scene.frame();
+    scene.setWidth(path->getPreferredSize().width-4);
+    CHECK(path->getEllipsisControl()->hidden());
+    CHECK(path->isLastItemCut());
+    CHECK(path->getItemControl(1)->getWidth() == path->getItemControl(1)->getPreferredSize().width-4);
+    scene.setWidth(path->getPreferredSize().width);
+    CHECK(!path->isLastItemCut());
+}
+
+TEST_CASE("Breadcrumb: the ellipsis menu lists the collapsed items and is filled only on a change")
+{
+    Scene scene;
+    auto *path=scene.path;
+    std::vector<size_t> clicked;
+
+    path->setItems({"Home", "Projects", "gweni", "source", "controls", "base.cpp"});
+    path->onItemClicked.addCallback(path, [&](event::Handler &, event::Info info) { clicked.push_back(info.integer); });
+    scene.frame();
+    scene.setWidth(neededWidth(path, 1, 4));
+    REQUIRE(path->getCollapsedEnd() == 4);
+    auto *ellipsis=path->getEllipsisControl();
+
+    CHECK(path->getMenuBuildCount() == 0);
+    ellipsis->doAction();
+    scene.frame();
+    CHECK(ellipsis->isMenuOpen());
+    CHECK(path->getMenuBuildCount() == 1);
+    CHECK(menuLabels(path) == std::vector<String>{"Projects", "gweni", "source"});
+    // a settled frame with the menu open writes nothing
+    scene.frame();
+    CHECK(scene.renderer.writtenPrimitiveIds().empty());
+    CHECK(scene.renderer.writtenTextIds().empty());
+    ellipsis->closeMenu();
+    scene.frame();
+    ellipsis->openMenu();
+    scene.frame();
+    CHECK(path->getMenuBuildCount() == 1);
+    ellipsis->closeMenu();
+
+    // a narrower path collapses one more: filled again at the next open
+    scene.setWidth(neededWidth(path, 1, 5));
+    ellipsis->openMenu();
+    scene.frame();
+    CHECK(path->getMenuBuildCount() == 2);
+    CHECK(menuLabels(path) == std::vector<String>{"Projects", "gweni", "source", "controls"});
+    ellipsis->closeMenu();
+    // a collapsed item's new label is a change too
+    path->setItems({"Home", "Work", "gweni", "source", "controls", "base.cpp"});
+    scene.frame();
+    ellipsis->openMenu();
+    scene.frame();
+    CHECK(path->getMenuBuildCount() == 3);
+    CHECK(menuLabels(path) == std::vector<String>{"Work", "gweni", "source", "controls"});
+
+    // a pick fires its path index and closes the menu
+    REQUIRE(menuItem(path, "source"));
+    menuItem(path, "source")->doAction();
+    scene.frame();
+    CHECK(clicked == std::vector<size_t>{3});
+    CHECK(!ellipsis->isMenuOpen());
+    scene.click(0);
+    CHECK(clicked == std::vector<size_t>{3, 0});
+}
+
+TEST_CASE("Breadcrumb: one Tab stop and the arrows over the shown items and the ellipsis")
+{
+    Scene scene;
+    auto *path=scene.path;
+    std::vector<size_t> clicked;
+    controls::Button *before=scene.canvas->newChild<controls::Button>();
+
+    before->setTabable(true);
+    before->setKeyboardInputEnabled(true);
+    before->setDock(DockPosition::Bottom);
+    path->setItems({"Home", "Projects", "gweni", "source", "base.cpp"});
+    path->onItemClicked.addCallback(path, [&](event::Handler &, event::Info info) { clicked.push_back(info.integer); });
+    scene.frame();
+    scene.setWidth(neededWidth(path, 1, 3));
+    REQUIRE(shown(path) == std::vector<int>{0, -1, 3, 4});
+    auto *ellipsis=path->getEllipsisControl();
+    auto *home=path->getItemControl(0);
+    auto *source=path->getItemControl(3);
+
+    before->focus();
+    scene.key(keys::Tab);
+    CHECK(KeyboardFocus == home);
+    CHECK(path->getTabStop() == home);
+    // the current item takes no focus: Right stops at source
+    scene.key(keys::Right);
+    CHECK(KeyboardFocus == ellipsis);
+    scene.key(keys::Right);
+    CHECK(KeyboardFocus == source);
+    scene.key(keys::Right);
+    CHECK(KeyboardFocus == source);
+    scene.key(keys::Left);
+    CHECK(KeyboardFocus == ellipsis);
+    scene.key(keys::Home);
+    CHECK(KeyboardFocus == home);
+    scene.key(keys::End);
+    CHECK(KeyboardFocus == source);
+    // one Tab stop: Tab leaves the path
+    scene.key(keys::Tab);
+    CHECK(KeyboardFocus == before);
+    scene.key(keys::Tab);
+    CHECK(KeyboardFocus == home);
+
+    scene.key(keys::Return);
+    CHECK(clicked == std::vector<size_t>{0});
+    scene.key(keys::Space);
+    CHECK(clicked == std::vector<size_t>{0, 0});
+    scene.key(keys::Right);
+    scene.key(keys::Return);
+    CHECK(ellipsis->isMenuOpen());
+    REQUIRE(ellipsis->getMenu()->getHighlightedItem());
+    CHECK(ellipsis->getMenu()->getHighlightedItem()->getText() == "Projects");
+    scene.key(keys::Down);
+    scene.key(keys::Return);
+    CHECK(clicked == std::vector<size_t>{0, 0, 2});
+    CHECK(!ellipsis->isMenuOpen());
+    CHECK(KeyboardFocus == ellipsis);
+    scene.key(keys::Space);
+    CHECK(ellipsis->isMenuOpen());
+    scene.key(keys::Escape);
+    CHECK(!ellipsis->isMenuOpen());
+    input::onKeyEvent(scene.canvas, keys::Alt, true);
+    scene.key(keys::Down);
+    input::onKeyEvent(scene.canvas, keys::Alt, false);
+    CHECK(ellipsis->isMenuOpen());
+    scene.key(keys::Escape);
+
+    // a focused item draws the focus ring in its slot
+    scene.key(keys::Left);
+    CHECK(KeyboardFocus == home);
+    scene.frame();
+    const size_t homeId=home->getSkinControl()->getPrimitives().at(0);
+
+    CHECK(scene.renderer.writtenPrimitiveIds().empty());
+    scene.key(keys::Right);
+    CHECK(scene.renderer.borders.at(homeId).first == 0.0f);
+    CHECK(scene.renderer.borders.at(ellipsis->getSkinControl()->getPrimitives().at(0)).first > 0.0f);
+
+    // disabled: no Tab stop
+    path->setDisabled(true);
+    CHECK(path->getTabStop() == nullptr);
 }

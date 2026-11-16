@@ -94,6 +94,8 @@ inline Surface SplitButtonDivider{ Line,                 Line,                  
 inline Surface BreadcrumbItem     { Color(0,0,0,0), Color(0,0,0,0), Color(0,0,0,0), RadiusSm, 0.0f };
 inline Surface BreadcrumbItemHover{ SurfHi,          SurfHi,          SurfHi,          RadiusSm, 0.0f };
 inline Surface BreadcrumbItemDown { SurfHover,       SurfHover,       SurfHover,       RadiusSm, 0.0f };
+// The keyboard focus: the state's fill with this ring round it.
+inline Surface BreadcrumbItemFocus{ Color(0,0,0,0), Color(0,0,0,0), Blue,            RadiusSm, BorderW };
 // A toggle Button that is on: an accent-tinted fill, so it reads unlike a
 // momentary press (ButtonDown); disabled, it stays on, dimmed
 inline Surface ButtonOn         { Color(0x33,0x46,0x7a), Color(0x28,0x34,0x57), Blue,  Radius, BorderW };
@@ -556,7 +558,7 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"GroupBox",&GroupBox},{"Tooltip",&Tooltip},{"StatusBar",&StatusBar},{"Canvas",&Canvas},
         {"ButtonNormal",&ButtonNormal},{"ButtonHover",&ButtonHover},{"ButtonDown",&ButtonDown},{"ButtonDisabled",&ButtonDisabled},{"ButtonFocus",&ButtonFocus},
         {"SplitButtonDivider",&SplitButtonDivider},
-        {"BreadcrumbItem",&BreadcrumbItem},{"BreadcrumbItemHover",&BreadcrumbItemHover},{"BreadcrumbItemDown",&BreadcrumbItemDown},
+        {"BreadcrumbItem",&BreadcrumbItem},{"BreadcrumbItemHover",&BreadcrumbItemHover},{"BreadcrumbItemDown",&BreadcrumbItemDown},{"BreadcrumbItemFocus",&BreadcrumbItemFocus},
         {"ButtonOn",&ButtonOn},{"ButtonOnHover",&ButtonOnHover},{"ButtonOnDisabled",&ButtonOnDisabled},
         {"TextBox",&TextBox},{"TextBoxFocus",&TextBoxFocus},{"TextBoxDisabled",&TextBoxDisabled},{"TextSelection",&TextSelection},
         {"TextBoxError",&TextBoxError},{"TextBoxErrorFocus",&TextBoxErrorFocus},{"TextBoxErrorDisabled",&TextBoxErrorDisabled},

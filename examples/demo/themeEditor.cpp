@@ -92,7 +92,7 @@ GWENI_CONTROL_CONSTRUCTOR(ThemeEditorDemo)
 
     // Keep the gallery's recorded ButtonNormal view stable as the registry
     // grows. Breadcrumb surfaces remain available in the canvas's F11 editor.
-    for(const char *name : {"BreadcrumbItem", "BreadcrumbItemHover", "BreadcrumbItemDown"})
+    for(const char *name : {"BreadcrumbItem", "BreadcrumbItemDown", "BreadcrumbItemFocus", "BreadcrumbItemHover"})
     {
         if(tools::ThemeEditorNode *node=m_editor->surfaceNode(name))
             node->setHidden(true);

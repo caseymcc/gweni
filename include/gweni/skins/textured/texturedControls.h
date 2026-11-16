@@ -538,6 +538,17 @@ public:
 };
 
 //! One right-chevron slot, hidden when the separator shows Label's text.
+//! The ellipsis in place of collapsed items: drawn as a path item (one
+//! surface slot, BreadcrumbItemDown while its menu is open), no chevron.
+class BreadcrumbEllipsis:public textured::ControlRegister<BreadcrumbEllipsis>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+    size_t requiredPrimitives() override { return 1; }
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    inline static const std::string_view name="BreadcrumbEllipsis";
+};
+
 class BreadcrumbSeparator:public textured::ControlRegister<BreadcrumbSeparator>
 {
 public:
