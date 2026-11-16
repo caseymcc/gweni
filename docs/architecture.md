@@ -634,7 +634,8 @@ its separator are hidden; the first collapsed item's separator stays, before the
 ellipsis. With no items before (0), the ellipsis comes first. If even the least collapse
 does not fit, the last item is cut at the right edge: gweni's `Text` has no ellipsis
 truncation, so the item is placed narrower and its `Label` clips its text to its bounds
-(`isLastItemCut()`). Every part is cut at that edge the same way, so none draws past
+(`isLastItemCut()`). Every part is narrowed at that edge; a separator suppresses its
+8×8 chevron when its allocated width or height is below 8, so none draws past
 it. That is why the Breadcrumb clips nothing (`shouldClip()` false): a clipping control
 whose width changes re-stamps the clip box of every slot under it
 (`Base::childRegionChanged`), and a resize would rewrite every part's slots. With no

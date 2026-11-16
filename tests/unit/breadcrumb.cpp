@@ -16,9 +16,10 @@
  *  or setItemsBeforeCollapse) into the ellipsis, keeping the last ones
  *  (default 1, or setItemsAfterCollapse), in one layout pass, and growing
  *  back gives each layout back; below the least collapse the last item is
- *  cut at the right edge. The ellipsis's menu lists the collapsed items in
- *  path order, is filled again only when that set changed since it was
- *  last opened, and a pick fires onItemClicked with its index. The keys:
+ *  cut at the right edge. Chevrons are suppressed when their separator's
+ *  width or height cannot contain the icon. The ellipsis's menu lists the
+ *  collapsed items in path order, is filled again only when that set changed
+ *  since it was last opened, and a pick fires onItemClicked with its index. The keys:
  *  one Tab stop at the first shown item, Left/Right/Home/End over the
  *  shown items and the ellipsis, Return and Space activate, the ellipsis
  *  opening its menu with its first item highlighted; a focused part draws
@@ -43,6 +44,7 @@
 #include <gweni/skins/textured/texturedSkin.h>
 
 #include <doctest/doctest.h>
+#include <set>
 
 using namespace gweni;
 
@@ -62,11 +64,19 @@ public:
 
     void drawIcon(size_t id, Rect rect, int kind, int direction, Color color, int z) override
     {
+        hiddenIcons.erase(id);
         icons[id]={kind, direction};
         iconColors[id]=color;
         StubRenderer::drawIcon(id, rect, kind, direction, color, z);
     }
 
+    void hidePrimitive(size_t id) override
+    {
+        hiddenIcons.insert(id);
+        StubRenderer::hidePrimitive(id);
+    }
+
+    std::set<size_t> hiddenIcons;
     std::map<size_t, Color> fills;
     std::map<size_t, std::pair<float, Color>> borders;
     std::map<size_t, std::pair<int, int>> icons;
@@ -339,6 +349,34 @@ TEST_CASE("Breadcrumb: clicks report the index and the current item is opt in")
     scene.frame();
     CHECK(scene.path->getItemCount() == 2);
     CHECK(clicked.back() == 1);
+}
+
+TEST_CASE("Breadcrumb: chevrons stay inside narrow separator bounds")
+{
+    Scene scene;
+    auto *separator=scene.canvas->newChild<controls::internal::BreadcrumbSeparator>();
+    separator->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    separator->setBounds(400, 100, 16, 16);
+    scene.frame();
+    const size_t id=separator->getSkinControl()->getPrimitives().at(0);
+    const int size=controls::internal::BreadcrumbSeparator::ChevronSize;
+    CHECK(scene.renderer.hiddenIcons.count(id) == 0);
+    for(int axis=0; axis<2; ++axis)
+    {
+        for(int extent=0; extent<=size; ++extent)
+        {
+            CAPTURE(axis);
+            CAPTURE(extent);
+            separator->setSize(axis==0?extent:16, axis==1?extent:16);
+            scene.frame();
+            CHECK(scene.renderer.hiddenIcons.count(id) == (extent<size?1:0));
+            CHECK(scene.renderer.writtenPrimitiveIds() == std::vector<size_t>{id});
+            CHECK(scene.renderer.writtenTextIds().empty());
+            scene.frame();
+            CHECK(scene.renderer.writtenPrimitiveIds().empty());
+            CHECK(scene.renderer.writtenTextIds().empty());
+        }
+    }
 }
 
 TEST_CASE("Breadcrumb: theme separators and hover write only the affected parts")

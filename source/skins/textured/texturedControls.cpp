@@ -720,6 +720,13 @@ void BreadcrumbSeparator::update(renderer::Base *renderer, controls::Base *baseC
     }
     const gweni::Rect bounds=baseControl->getRenderBounds();
     const int size=controls::internal::BreadcrumbSeparator::ChevronSize;
+    // Overflow can narrow a separator to zero. Keep the fixed-size icon
+    // inside this part without changing the clip of the rest of the path.
+    if(bounds.w<size || bounds.h<size)
+    {
+        renderer->hidePrimitive(m_primitives[0]);
+        return;
+    }
     const gweni::Rect icon(bounds.x+(bounds.w-size)/2, bounds.y+(bounds.h-size)/2, size, size);
 
     // No backdrop on this part, so its icon needs only its own depth layer.
