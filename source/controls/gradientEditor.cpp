@@ -6,6 +6,7 @@
 
 
 #include <gweni/controls/gradientEditor.h>
+#include <gweni/controls/canvas.h>
 #include <gweni/controls/colorEdit.h>
 #include <gweni/controls/dragNumber.h>
 #include <gweni/inputHandler.h>
@@ -173,7 +174,9 @@ void GradientStopHandle::onKeyboardFocus()
 {
     ParentClass::onKeyboardFocus();
 
-    if(GradientEditor *editor=getEditor())
+    GradientEditor *editor=getEditor();
+
+    if(editor && !editor->isDisabled())
     {
         const size_t index=editor->indexOf(this);
 
@@ -186,8 +189,9 @@ bool GradientStopHandle::onKeyLeft(bool down)
 {
     GradientEditor *editor=getEditor();
 
-    if(down && editor && !editor->isDisabled() && !editor->isDragging())
-        editor->nudgeSelected(-(input::isShiftDown()?GradientEditor::NudgeShiftStep:GradientEditor::NudgeStep));
+    if(down && editor && !editor->isDisabled())
+        editor->nudgeStop(editor->indexOf(this),
+            -(input::isShiftDown()?GradientEditor::NudgeShiftStep:GradientEditor::NudgeStep));
     return true;
 }
 
@@ -195,8 +199,9 @@ bool GradientStopHandle::onKeyRight(bool down)
 {
     GradientEditor *editor=getEditor();
 
-    if(down && editor && !editor->isDisabled() && !editor->isDragging())
-        editor->nudgeSelected(input::isShiftDown()?GradientEditor::NudgeShiftStep:GradientEditor::NudgeStep);
+    if(down && editor && !editor->isDisabled())
+        editor->nudgeStop(editor->indexOf(this),
+            input::isShiftDown()?GradientEditor::NudgeShiftStep:GradientEditor::NudgeStep);
     return true;
 }
 
@@ -205,7 +210,7 @@ bool GradientStopHandle::onKeyDelete(bool down)
     GradientEditor *editor=getEditor();
 
     if(down && editor && !editor->isDisabled())
-        editor->deleteSelected();
+        editor->deleteStop(editor->indexOf(this));
     return true;
 }
 
@@ -266,6 +271,9 @@ void GradientEditor::setGradient(Gradient *gradient)
 
 void GradientEditor::gradientChanged()
 {
+    // the stops the press found are not the gradient's now
+    if(isDragging())
+        endDrag();
     m_selected=std::min(m_selected, m_gradient->stopCount()-1);
     syncHandles();
     syncRow();
@@ -278,6 +286,7 @@ void GradientEditor::syncHandles()
     {
         internal::GradientStopHandle *handle=m_strip->newChild<internal::GradientStopHandle>();
 
+        applyHandleInput(handle);
         m_handles.push_back(handle);
     }
     while(m_handles.size() > m_gradient->stopCount())
@@ -312,6 +321,16 @@ void GradientEditor::stopsMoved()
 {
     m_bar->addStateChange(StateChange_Background);
     m_strip->invalidate();
+    // a handle placed under the resting mouse (an add, a nudge, a delete) is
+    // the hovered one once laid out, so a second press there is the handle's
+    if(Canvas *canvas=getCanvas())
+        canvas->hoverMayHaveMoved();
+}
+
+void GradientEditor::applyHandleInput(internal::GradientStopHandle *handle)
+{
+    handle->setKeyboardInputEnabled(!isDisabled());
+    handle->setTabable(!isDisabled());
 }
 
 void GradientEditor::setSelectedStop(size_t index, bool doEvents)
@@ -372,15 +391,15 @@ int GradientEditor::handleLeft(float t) const
     return (int)std::lround(t*(float)span);
 }
 
-void GradientEditor::fireChanged()
+void GradientEditor::fireChanged(size_t index)
 {
     event::Info info(this);
 
-    info.integer=m_selected;
+    info.integer=index;
     onChanged.call(this, info);
 }
 
-bool GradientEditor::moveStop(size_t index, float t)
+bool GradientEditor::moveStop(size_t &index, float t)
 {
     t=Gradient::clampPosition(t);
     if(index >= m_gradient->stopCount() || m_gradient->stop(index).position == t)
@@ -399,9 +418,6 @@ bool GradientEditor::moveStop(size_t index, float t)
             handle->bringNextToControl(m_handles[to+1], false);
         else
             handle->bringToFront();
-        // the handles between the two places are other stops now
-        for(size_t i=std::min(index, to); i <= std::max(index, to); ++i)
-            m_handles[i]->redraw();
     }
     if(m_selected == index)
         m_selected=to;
@@ -409,15 +425,35 @@ bool GradientEditor::moveStop(size_t index, float t)
         --m_selected;
     else if((index > m_selected) && (to <= m_selected))
         ++m_selected;
+    index=to;
     stopsMoved();
     return true;
 }
 
+void GradientEditor::userMove(size_t index, float t)
+{
+    if(!moveStop(index, t))
+        return;
+
+    if(index == m_selected)
+    {
+        m_syncing=true;
+        m_position->setNumber(m_gradient->stop(index).position, false);
+        m_syncing=false;
+    }
+    fireChanged(index);
+}
+
 size_t GradientEditor::addStopAt(float t)
 {
+    // the stops a drag's press found are not the gradient's now
+    if(isDragging())
+        endDrag();
+
     const size_t index=m_gradient->addStop(t);
     internal::GradientStopHandle *handle=m_strip->newChild<internal::GradientStopHandle>();
 
+    applyHandleInput(handle);
     m_handles.insert(m_handles.begin()+(std::ptrdiff_t)index, handle);
     if(index+1 < m_handles.size())
         handle->bringNextToControl(m_handles[index+1], false);
@@ -426,39 +462,47 @@ size_t GradientEditor::addStopAt(float t)
         ++m_selected;
     select(index, true);
     stopsMoved();
-    fireChanged();
+    fireChanged(index);
     return index;
 }
 
 void GradientEditor::moveSelectedTo(float t)
 {
-    if(!moveStop(m_selected, t))
-        return;
-
-    m_syncing=true;
-    m_position->setNumber(m_gradient->stop(m_selected).position, false);
-    m_syncing=false;
-    fireChanged();
+    userMove(m_selected, t);
 }
 
 void GradientEditor::nudgeSelected(float delta)
 {
-    moveSelectedTo(m_gradient->stop(m_selected).position+delta);
+    nudgeStop(m_selected, delta);
+}
+
+void GradientEditor::nudgeStop(size_t index, float delta)
+{
+    // a drag has the stop it moves
+    if(isDragging() || (index >= m_gradient->stopCount()))
+        return;
+
+    select(index, true);
+    userMove(index, m_gradient->stop(index).position+delta);
 }
 
 bool GradientEditor::deleteSelected()
 {
-    const size_t index=m_selected;
+    return deleteStop(m_selected);
+}
 
-    // the gradient keeps its last stop
-    if(!m_gradient->removeStop(index))
+bool GradientEditor::deleteStop(size_t index)
+{
+    // the gradient keeps its last stop, and a drag the stops it found
+    if(isDragging() || (index >= m_gradient->stopCount()) || (m_gradient->stopCount() < 2))
         return false;
+
+    select(index, true);
+    m_gradient->removeStop(index);
 
     internal::GradientStopHandle *handle=m_handles[index];
     const bool focused=handle->isFocussed();
 
-    if(m_drag.handle == handle)
-        endDrag();
     m_handles.erase(m_handles.begin()+(std::ptrdiff_t)index);
     // the next stop, or the one before when it was the last
     m_selected=m_handles.size();
@@ -468,7 +512,7 @@ bool GradientEditor::deleteSelected()
     handle->setHidden(true);
     handle->delayedDelete();
     stopsMoved();
-    fireChanged();
+    fireChanged(m_selected);
     return true;
 }
 
@@ -486,7 +530,7 @@ void GradientEditor::setSelectedColor(const gweni::Color &color)
         m_colorEdit->setColor(color, false);
         m_syncing=false;
     }
-    fireChanged();
+    fireChanged(m_selected);
 }
 
 void GradientEditor::beginDrag(internal::GradientStopHandle *handle, int grab)
@@ -500,7 +544,8 @@ void GradientEditor::beginDrag(internal::GradientStopHandle *handle, int grab)
         endDrag();
     select(index, true);
     m_drag.handle=handle;
-    m_drag.start=m_gradient->stop(index).position;
+    m_drag.stops=m_gradient->stops();
+    m_drag.handles=m_handles;
     m_drag.grab=grab;
     m_drag.cancelled=false;
     gweni::MouseFocus=handle;
@@ -514,7 +559,7 @@ void GradientEditor::dragTo(int x)
 
     const Point at=m_strip->canvasPosToLocal(Point(x, 0));
 
-    moveSelectedTo(stripPosition(at.x-m_drag.grab+HandleWidth/2));
+    userMove(indexOf(m_drag.handle), stripPosition(at.x-m_drag.grab+HandleWidth/2));
 }
 
 void GradientEditor::endDrag()
@@ -537,7 +582,28 @@ bool GradientEditor::cancelDrag()
 
     // the release still ends it; until then the mouse moves nothing
     m_drag.cancelled=true;
-    moveSelectedTo(m_drag.start);
+    if((m_gradient->stops() == m_drag.stops) && (m_handles == m_drag.handles))
+        return true;
+
+    // the stops and handles as the press found them, so two stops at one
+    // position keep their order; the selection stays on its handle
+    internal::GradientStopHandle *selected=m_handles[m_selected];
+    const bool reordered=(m_handles != m_drag.handles);
+
+    m_gradient->setStops(m_drag.stops);
+    m_handles=m_drag.handles;
+    if(reordered)
+    {
+        // the strip's children back in stop order, the order Tab goes in
+        for(internal::GradientStopHandle *handle : m_handles)
+            handle->bringToFront();
+    }
+    m_selected=indexOf(selected);
+    for(size_t i=0; i < m_handles.size(); ++i)
+        m_handles[i]->setStopColor(m_gradient->stop(i).color);
+    syncRow();
+    stopsMoved();
+    fireChanged(indexOf(m_drag.handle));
     return true;
 }
 
@@ -552,8 +618,10 @@ void GradientEditor::onPositionChanged(event::Info /*info*/)
 {
     if(m_syncing)
         return;
-    if(moveStop(m_selected, (float)m_position->getNumber()))
-        fireChanged();
+    size_t index=m_selected;
+
+    if(moveStop(index, (float)m_position->getNumber()))
+        fireChanged(index);
 }
 
 void GradientEditor::setDisabled(bool active)
@@ -567,7 +635,13 @@ void GradientEditor::setDisabled(bool active)
     m_colorEdit->setDisabled(active);
     m_position->setDisabled(active);
     for(internal::GradientStopHandle *handle : m_handles)
+    {
+        // disabled, a handle takes no focus or Tab, and loses one it had
+        applyHandleInput(handle);
+        if(active && handle->isFocussed())
+            handle->unfocus();
         handle->redraw();
+    }
 }
 
 void GradientEditor::calculateSize(skin::Base *skin, Dim dim)

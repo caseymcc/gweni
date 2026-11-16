@@ -7148,13 +7148,21 @@ through the stops in order with no tab code of the editor's own, and a handle ta
 the focus selects its stop. **Input:** a press on the strip away from a handle adds a
 stop there of `evaluate(t)`'s colour, selects it, focuses its handle and drags it; a
 press on a handle selects and drags it (`MouseFocus` held, as a `Dragger` does), clamped
-to 0..1 and past other stops; Escape mid-drag (the focused handle's) puts the stop back
-and the mouse moves nothing more until the release; Left/Right nudge the focused stop by
-0.01 (Shift 0.1), Delete removes it (not the last) and focuses the next, a double-click
-opens the ColorEdit's picker, and the row's fields recolour and move the selected stop.
-`onChanged` fires once per real change by the user, the selected index in
-`info.integer`; the app's own edits fire nothing, and the app calls `gradientChanged()`
-after editing the gradient itself (`tests/unit/gradientEditor.cpp`).
+to 0..1 and past other stops, the dragged handle's own stop whatever a Tab selects
+meanwhile; Escape mid-drag (the focused handle's) gives back every stop and handle as
+the press saved them, order included (two stops at one position are a Linear ramp's hard
+edge, which a move back alone would swap), and the mouse moves nothing more until the
+release; Left/Right nudge the focused handle's own stop by 0.01 (Shift 0.1), selecting
+it, Delete removes it (not the last, nor during a drag) and focuses the next, a
+double-click opens the ColorEdit's picker, and the row's fields recolour and move the
+selected stop. Every change that places the handles calls `Canvas::hoverMayHaveMoved()`,
+so a handle added or nudged under the resting mouse is the hovered one (a second press
+where a strip press added a stop is its handle's, not the strip's) and one moved from
+under it loses its hover. Disabled, the handles take no keyboard input or Tab (a focused
+one loses the focus), so a press changes no selection. `onChanged` fires once per real
+change by the user, the changed stop's index in `info.integer`; the app's own edits fire
+nothing, and the app calls `gradientChanged()` (which ends a drag) after editing the
+gradient itself (`tests/unit/gradientEditor.cpp`).
 
 **Drawing and what a change writes.** The textured `GradientBar` renderer keeps a slot
 list of three plus one per pair of stops (resized with the stop count, as the plots'

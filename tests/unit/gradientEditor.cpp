@@ -22,7 +22,14 @@
  *  and edit it; a double-click on a handle opens the picker. onChanged fires
  *  once per real change by the user (a drag frame that moves the stop, an
  *  add, a delete, a nudge, a colour, a position) and never for the app's own
- *  edits (gradientChanged(), setSelectedStop()).
+ *  edits (gradientChanged(), setSelectedStop()). Review 1's fixes: a second
+ *  press where a strip press just added a stop is the new handle's, and a
+ *  nudge that moves a handle from under the mouse takes its hover (the hover
+ *  is hit-tested again); Escape gives back every stop as the press found it,
+ *  two at one position in their order; a drag moves its own handle's stop
+ *  after a Tab moved the selection, and Left/Right/Delete the focused handle's
+ *  own stop after the app moved it; a disabled editor's handles take no focus
+ *  or Tab, lose one they had, and a press changes no selection.
  */
 #include "headlessFixture.h"
 
@@ -66,6 +73,9 @@ struct Scene
         platform::setTimeSource([this]() { return clock; });
         canvas=new controls::Canvas(&skin);
         canvas->setSize(640, 480);
+        // the mouse's place is the input handler's, kept across cases: off
+        // the editor, so a re-hit-tested hover finds nothing there
+        canvas->inputMouseMoved(630, 470, 0, 0);
     }
 
     Scene(const Scene &)=delete;
@@ -572,4 +582,123 @@ TEST_CASE("GradientEditor: a double-click on a handle opens the picker")
     CHECK(editor->getColorEdit()->isPickerOpen());
     CHECK(editor->getSelectedStop() == 2);
     CHECK((gradient == threeStops()));
+}
+
+TEST_CASE("GradientEditor: a second press where a strip press added a stop is the new handle's")
+{
+    Scene scene;
+    Gradient gradient=threeStops();
+    GradientEditor *editor=scene.editor(&gradient);
+    const Point at=stripAt(editor, 0.25f);
+
+    // no move between the presses: the hover is taken again once the new
+    // handle is laid out under the mouse
+    scene.press(at);
+    scene.release();
+    REQUIRE(gradient.stopCount() == 4);
+    GradientStopHandle *added=editor->getHandle(1);
+
+    CHECK(HoveredControl == added);
+    scene.press(at);
+    CHECK(gradient.stopCount() == 4);
+    CHECK(editor->getDraggedHandle() == added);
+    scene.release();
+    CHECK(gradient.stopCount() == 4);
+
+    // a nudge that takes the handle from under the mouse takes its hover
+    scene.hold(keys::Shift, true);
+    scene.key(keys::Right);
+    scene.hold(keys::Shift, false);
+    CHECK(added->isFocussed());
+    CHECK(HoveredControl != added);
+    CHECK(HoveredControl == editor->getStrip());
+}
+
+TEST_CASE("GradientEditor: Escape gives back two stops at one position in their order")
+{
+    Scene scene;
+    Gradient gradient({{0.0f, red(1)}, {0.5f, red(2)}, {0.5f, red(3)}, {1.0f, red(4)}});
+    GradientEditor *editor=scene.editor(&gradient);
+    const Gradient before=gradient;
+    const Point at=stripAt(editor, 0.5f);
+
+    // the later handle is on top: the press takes stop 2 (red 3)
+    scene.press(at);
+    REQUIRE(editor->getDraggedHandle() == editor->getHandle(2));
+    scene.move(stripAt(editor, 0.2f).x, at.y);
+    REQUIRE(reds(gradient) == "1 3 2 4 ");
+    scene.key(keys::Escape);
+    CHECK(reds(gradient) == "1 2 3 4 ");
+    CHECK((gradient == before));
+    CHECK(childrenInStopOrder(editor));
+    CHECK(editor->getSelectedStop() == 2);
+    CHECK((editor->getHandle(2)->getStopColor() == red(3)));
+    scene.release();
+}
+
+TEST_CASE("GradientEditor: a drag and the keys move their handle's own stop, not the selection")
+{
+    Scene scene;
+    Gradient gradient({{0.0f, red(1)}, {0.3f, red(2)}, {0.6f, red(3)}, {1.0f, red(4)}});
+    GradientEditor *editor=scene.editor(&gradient);
+    const Gradient before=gradient;
+    GradientStopHandle *dragged=editor->getHandle(1);
+    const Point at=centreOf(dragged);
+
+    scene.press(at);
+    scene.move(stripAt(editor, 0.4f).x, at.y);
+    // Tab with the button held: the next stop is selected, the drag is still
+    // stop 1's
+    scene.key(keys::Tab);
+    CHECK(editor->getSelectedStop() == 2);
+    scene.move(stripAt(editor, 0.45f).x, at.y);
+    CHECK(reds(gradient) == "1 2 3 4 ");
+    CHECK(gradient.stop(1).position == doctest::Approx(0.45f).epsilon(0.01));
+    CHECK(gradient.stop(2).position == 0.6f);
+    scene.key(keys::Escape);
+    CHECK((gradient == before));
+    scene.release();
+
+    // the app selects another stop: Right moves the focused handle's own stop
+    editor->getHandle(2)->focus();
+    scene.frame();
+    editor->setSelectedStop(0);
+    scene.key(keys::Right);
+    CHECK(gradient.stop(0).position == 0.0f);
+    CHECK(gradient.stop(2).position == doctest::Approx(0.61f));
+    CHECK(editor->getSelectedStop() == 2);
+
+    // and Delete removes it
+    editor->setSelectedStop(0);
+    scene.key(keys::Delete);
+    CHECK(reds(gradient) == "1 2 4 ");
+}
+
+TEST_CASE("GradientEditor: a disabled editor's handles take no focus and keep the selection")
+{
+    Scene scene;
+    Gradient gradient=threeStops();
+    GradientEditor *editor=scene.editor(&gradient);
+    Counter selection;
+
+    editor->onSelectionChange.add(&selection, &Counter::changed);
+    editor->getHandle(2)->focus();
+    scene.frame();
+    REQUIRE(selection.count == 1);
+    editor->setSelectedStop(0);
+
+    // the focus a handle had is dropped
+    editor->setDisabled(true);
+    scene.frame();
+    CHECK_FALSE(editor->getHandle(2)->isFocussed());
+
+    scene.press(centreOf(editor->getHandle(1)));
+    scene.release();
+    CHECK_FALSE(editor->getHandle(1)->isFocussed());
+    CHECK(editor->getSelectedStop() == 0);
+    CHECK(selection.count == 1);
+    CHECK_FALSE(editor->getHandle(1)->isTabable());
+
+    editor->setDisabled(false);
+    CHECK(editor->getHandle(1)->isTabable());
 }

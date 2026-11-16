@@ -147,6 +147,9 @@ struct Scene
         platform::setTimeSource([this]() { return clock; });
         canvas=new controls::Canvas(&skin);
         canvas->setSize(640, 480);
+        // the mouse's place is the input handler's, kept across cases: off
+        // the editor, so a re-hit-tested hover finds nothing there
+        canvas->inputMouseMoved(630, 470, 0, 0);
     }
 
     Scene(const Scene &)=delete;

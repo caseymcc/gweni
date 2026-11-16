@@ -113,14 +113,17 @@ private:
 //! - a press on a handle selects its stop and drags it, clamped to 0..1, past
 //!   other stops too (they are reordered); Escape during the drag puts it back;
 //! - Tab and Shift+Tab move through the stops in order (each handle takes the
-//!   focus), Left/Right nudge the selected stop by NudgeStep (Shift:
-//!   NudgeShiftStep), Delete removes it unless it is the last;
+//!   focus, and selects its stop), Left/Right nudge the focused handle's stop
+//!   by NudgeStep (Shift: NudgeShiftStep), Delete removes it unless it is the
+//!   last;
+//! - disabled, the handles take no press, focus or Tab;
 //! - a double-click on a handle opens the ColorEdit's picker;
 //! - the ColorEdit recolours the selected stop and the DragNumber moves it.
 //!
 //! onChanged fires once per real change of the gradient by the user (a drag
 //! frame that moves the stop, an add, a delete, a colour, a position), with
-//! the selected stop's index in info.integer; the app's own edits fire
+//! the changed stop's index in info.integer (after a delete, the stop then
+//! selected; after an Escape, the dragged stop); the app's own edits fire
 //! nothing, and after editing the gradient itself the app calls
 //! gradientChanged(). onSelectionChange fires when the selected stop becomes
 //! another (not when it is reordered).
@@ -176,12 +179,19 @@ public:
     void moveSelectedTo(float t);
     void nudgeSelected(float delta);
     bool deleteSelected();
+    //! nudgeSelected() and deleteSelected() for stop \p index (a focused
+    //! handle's own stop, which an app's setSelectedStop() can have moved the
+    //! selection away from): the stop is selected first. A delete is refused
+    //! during a drag.
+    void nudgeStop(size_t index, float delta);
+    bool deleteStop(size_t index);
     void setSelectedColor(const gweni::Color &color);
 
-    //! A drag of the selected stop's handle, from a press at canvas x \p x
-    //! (grabbed \p grab units from the handle's left edge): dragTo() follows
-    //! the mouse, endDrag() is the release, cancelDrag() Escape (the stop back
-    //! where the press found it).
+    //! A drag of \p handle's stop (selected by the press), grabbed \p grab
+    //! units from the handle's left edge: dragTo() follows the mouse with that
+    //! handle's stop whatever is selected meanwhile, endDrag() is the release,
+    //! cancelDrag() Escape (every stop back as the press found it, order
+    //! included, so two stops at one position keep their hard edge).
     void beginDrag(internal::GradientStopHandle *handle, int grab);
     void dragTo(int x);
     void endDrag();
@@ -221,9 +231,14 @@ protected:
     void stopsMoved();
     void select(size_t index, bool doEvents);
     //! Moves stop \p index to \p t, keeping its handle with it (reordered in
-    //! the strip when it passes another); false when nothing changed.
-    bool moveStop(size_t index, float t);
-    void fireChanged();
+    //! the strip when it passes another), \p index its new place; false when
+    //! nothing changed.
+    bool moveStop(size_t &index, float t);
+    //! moveStop() as the user's edit: the row follows, onChanged fires.
+    void userMove(size_t index, float t);
+    //! A handle takes the keyboard (and Tab) only while the editor is enabled.
+    void applyHandleInput(internal::GradientStopHandle *handle);
+    void fireChanged(size_t index);
 
     void onColorEditChanged(event::Info info);
     void onPositionChanged(event::Info info);
@@ -237,8 +252,9 @@ protected:
     struct Drag
     {
         internal::GradientStopHandle *handle=nullptr;
-        //! The stop's position at the press, which Escape gives back.
-        float start=0.0f;
+        //! The stops and their handles at the press, which Escape gives back.
+        std::vector<GradientStop> stops;
+        std::vector<internal::GradientStopHandle *> handles;
         int grab=0;
         bool cancelled=false;
     };
