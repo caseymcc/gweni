@@ -77,6 +77,7 @@ SAMPLES=(
     ChartLinesDemo
     ChartAreasDemo
     TimelineDemo
+    HexViewDemo
     InspectorDemo
     ThemeEditorDemo
 )

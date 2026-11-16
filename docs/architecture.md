@@ -4580,6 +4580,71 @@ two programs and the draws. What follows describes both together:
   sample's `"<index>: <value>"` and writes nothing. PlotLinesDemo has a 64-sample sine
   in the automatic range and 40 frame times in a fixed range with a caption and a
   1.5-unit line; ShowcaseDisplayDemo has the frame times.
+- **The hex view: address, hex and ASCII rows over a callback source.** `controls::HexView`
+  (`include/gweni/controls/hexView.h`, imgui_memory_editor's view) is a `VirtualList` in
+  fixed mode (see "The virtual list") over bytes the app owns: `setSource(size, read,
+  write)`, `read(offset, buffer, count)` asked only for valid ranges of at most a row's
+  bytes (a row's bind, the preview's 8 bytes, a copy a row at a time), a null `write` making
+  it read-only; `setBaseAddress` offsets the address column, whose hex digits are as many as
+  the largest address needs, and `dataChanged(begin, end)` rebinds the rows on screen that
+  show those bytes, nothing else, however large the range. **Rows:** `setBytesPerRow`
+  (8, 16 or 32), each pooled `HexViewRow` holding three Text runs in the skin's mono face
+  (`getDefaultMonoFont()`): the address, the hex bytes (one space between bytes, two
+  every 8) and the ASCII (0x20..0x7e, `.` otherwise), each set only when its string
+  changes, so a one-row scroll binds (and reads) the one row that came into view. The
+  hex and ASCII runs are `internal::HexViewText`s, a Text with colour spans (the zero bytes'
+  digits in `HexViewZeroByte`, the non-printable bytes' dots in `HexViewNonPrintable`,
+  `renderText`'s span overload). **Cells:** every column is whole mono cells, the cell the
+  measured advance of 256 zeros over 256, so `byteX(byte, column)` is `floor(cell*width)`
+  and the hit test (`hitTestByte`) its exact inverse at integer coordinates, in both
+  columns, the gaps between bytes and groups, a partial last row's unused cells and the
+  space below the data hitting nothing; the cell width and row height are read again with
+  the font, the renderer or its `textLayoutSerial()`. **Cursor and selection:** a byte
+  cursor and an anchor, the selection every byte from one to the other (never empty while
+  there is a cursor); a click places it in the column clicked (the one typing goes to),
+  Shift+click and a drag extend it (past the rows too, to the nearest byte, scrolling the
+  cursor into view), and Left/Right, Up/Down, PageUp/PageDown (the viewport's whole rows),
+  Home/End (the row's) and Ctrl+Home/End (the data's) move it, Shift extending; the cursor
+  is scrolled into view both ways. Ctrl+C (`AccelOnlyFocus`: only while the view has the
+  focus) copies the selection as spaced hex (`"41 42 43"`) through
+  `platform::setClipboardText`. A goto `TextBox` in the view's top padding takes `0x1F`,
+  `$1F` or text with a hex letter as hex and plain digits as decimal (`parseAddress`), an
+  address of the data (base included) moving the cursor there on Return. **Editing**
+  (with a write): a hex digit in the hex column is the cursor byte's high nibble, shown
+  in place of its first digit while the box covers only the low digit's cell, the second
+  writes the byte and moves on; a printable character in the ASCII column writes that
+  byte; Escape (or any move) drops a half-typed byte; each write reads the old byte, calls
+  `write`, rebinds its row and fires `onEdited` (`info.integer` the offset, `info.point`
+  (old, new), `getLastEdit()`). **Highlights:** `addHighlight(begin, end, surface)` and
+  `clearHighlights()`, drawn in `HexViewHighlight<surface % 4>`; a row draws at most
+  `HexRowMarks::MaxHighlights` (4), the earliest added, and its bind scans them all, so
+  they are for a few structures. **The preview:** `internal::HexViewPreview` in the
+  bottom padding, an endian toggle (a Button) and int8 to uint64, float (`%.9g`) and double
+  (`%.17g`) at the cursor (`previewValue`), `n/a` where the data ends first, each value's
+  Text set only when its string changes; hidden (`setPreviewVisible(false)`) it reads
+  nothing. The goto box and the preview are the view's own children, made with the inner
+  panel set aside as a CodeEditor's gutter is, so the viewport does not clip them.
+  **Look:** each row keeps its `HexRowMarks` (the cursor's byte and column, a pending
+  nibble, the hovered byte, its piece of the selection and its highlight pieces) and
+  marks itself `StateChange_Background` only when they change, so a cursor move marks the
+  row it leaves and the one it enters; a one-byte selection is the cursor's own box and
+  draws no piece. The textured `HexViewRow` renderer has 14 fixed slots, per column a
+  cursor, a hover, a selection and 4 highlights, the absent ones hidden, behind the row's
+  Texts in four depth layers (`depthLayers()` 4: highlights at the row's z, the selection
+  at z+1, the hover at z+2, the cursor's box at z+3), so where they meet the cursor shows
+  over the hover over the selection over a highlight whatever the slots' ids. The hovered
+  byte (`getHoveredByte()`) is hit-tested again after the rows move under a resting
+  mouse. **Cost:** a settled frame writes nothing; a hover writes 2 slots, a cursor move
+  inside a row 2 and across rows 4, plus the glyphs of the preview's values whose strings
+  changed; a one-row scroll binds one row; a selection extended writes the rows whose
+  pieces changed. A run laid out again writes every glyph slot of it (SlotRenderer
+  compares no glyph bytes, idea #722), so an edit writes its row's whole hex and ASCII runs,
+  not the byte's glyphs alone. The pool, the ids and every per-frame counter are the same
+  at 4 KiB as at 16 MiB (`--scenario hex-view`, the `hex-scroll` bench scene).
+  `tests/unit/hexView.cpp` and `hexViewLook.cpp` pin the model and the look; HexViewDemo
+  (the shell's "Hex view", the README gallery) shows 16 MiB generated at base 0x10000000
+  (8 address digits at any size the test runs) with its header's three structures
+  highlighted, over an editable 256-byte view.
 - **The chart: series of slots over time, value or category axes.** `controls::Chart`
   (`include/gweni/controls/chart.h`, with the axis helper `controls::axis` in
   `chartAxis.h`) draws line, step-line, bar, stacked-bar and (stacked, step) area series
@@ -7308,12 +7373,12 @@ set by its bare name and one with some of them as `Name.field` per missing field
 the shipped theme with `"strict": true` added):
 
 ```
-theme strict: 254 of 258 surfaces not set: Badge, BreadcrumbItem, BreadcrumbItemDown, ...
-theme strict: 94 of 96 text colors not set: AxisTagText, BadgeText, BreadcrumbCurrentText, ...
+theme strict: 261 of 265 surfaces not set: Badge, BreadcrumbItem, BreadcrumbItemDown, ...
+theme strict: 101 of 103 text colors not set: AxisTagText, BadgeText, BreadcrumbCurrentText, ...
 ```
 
-(`theme strict: all 258 surfaces set` for a kind with no gaps, and a single
-`theme strict: all 258 surfaces and 96 text colors set` when there are none at all). A
+(`theme strict: all 265 surfaces set` for a kind with no gaps, and a single
+`theme strict: all 265 surfaces and 103 text colors set` when there are none at all). A
 rejected value counts as not set. A surface that is transparent at rest on purpose
 (`WindowButton`, `SelectableHover`: a transparent fill hides the slot) is magenta too
 until the theme sets it to `[0,0,0,0]`; the theme has not said what it looks like. The
