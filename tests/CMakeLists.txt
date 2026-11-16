@@ -285,15 +285,16 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # fields' steps, commits and calendar popup, and a MarkdownView's
     # edits, selection and code block, its images' late deliveries, the
     # translucency scenario's panel,
-    # scrim and overlay, and the opacity scenario's level changes and fade
+    # scrim and overlay, the opacity scenario's level changes and fade,
+    # and the knobs' drags and typed entry
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
             dialog toast flow switch spinner navigation-rail board field-validation segmented
             tree-table tree-table-live split-button breadcrumb range-slider stepper code-view rich-text markdown
-            markdown-images search-combo reorder calendar date-time translucency opacity)
+            markdown-images search-combo reorder calendar date-time translucency opacity knob)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
-        if(verify_scenario STREQUAL "navigation-rail")
+        if(verify_scenario STREQUAL "navigation-rail" OR verify_scenario STREQUAL "knob")
             list(APPEND verify_flags --require-one-pass)
         endif()
         if(verify_scenario STREQUAL "markdown" OR verify_scenario STREQUAL "markdown-images")
@@ -629,6 +630,14 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_plot_lines 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario plot-lines --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/plot_lines@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # KnobDemo's value drags write only the changed value segments, the
+    # indicator and the new string's glyphs; hover writes the body alone,
+    # typed entry commits/cancels, settled frames write nothing and ids return
+    gweni_whole_app_test(controltest_knob 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario knob --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/knob@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # ChartTimeBarsDemo, ChartLinesDemo and ChartAreasDemo with their ranges

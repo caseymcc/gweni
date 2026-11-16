@@ -110,6 +110,8 @@ set(GWENI_DEMO_SOURCES
     demo/sliderText.h
     demo/dragNumber.cpp
     demo/dragNumber.h
+    demo/knob.cpp
+    demo/knob.h
     demo/vectorField.cpp
     demo/vectorField.h
     demo/chipBadge.cpp

@@ -3301,13 +3301,14 @@ void Knob::update(renderer::Base *renderer, controls::Base *baseControl)
             continue;
         }
 
-        // a neighbour that draws anything is joined at its grid point, so a
-        // whole segment's line stays as drawn while the partial one moves
-        double otherFrom, otherTo;
+        // Whole segments keep their grid neighbours even when the moving
+        // endpoint is exactly on a grid point. Toggling a neighbour there
+        // would rewrite a whole segment whose coverage never changed. The
+        // fixed origin is a cap; a partial endpoint is a cap too.
         const bool fromGrid=(from == double(i)/segments);
         const bool toGrid=(to == double(i+1)/segments);
-        const bool hasPrev=fromGrid && (i > 0) && covered(i-1, otherFrom, otherTo);
-        const bool hasNext=toGrid && (i+1 < segments) && covered(i+1, otherFrom, otherTo);
+        const bool hasPrev=fromGrid && (i > 0) && (from != origin);
+        const bool hasNext=toGrid && (i+1 < segments) && (to != origin);
 
         drawLine(renderer, valueFirst+i, all, fromGrid?grid[i]:at(from), toGrid?grid[i+1]:at(to),
             hasPrev?&grid[i-1]:nullptr, hasNext?&grid[i+2]:nullptr, thickness, valueColor, z+2);

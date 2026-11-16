@@ -301,6 +301,17 @@ TEST_CASE("Knob renderer: a value change writes the indicator and the value segm
     scene.frame();
     CHECK(knob->getValueText() == "0.53");
     CHECK_FALSE(scene.renderer.writtenTextIds().empty());
+
+    // Leave an exact grid boundary in both directions. The adjacent whole
+    // segment keeps its coverage and its slot as the partial segment grows.
+    knob->setNumber(0.5);
+    scene.frame();
+    knob->setNumber(0.51);
+    scene.frame();
+    CHECK(scene.written() == valueWrites(knob, 16, 16));
+    knob->setNumber(0.5);
+    scene.frame();
+    CHECK(scene.written() == valueWrites(knob, 16, 16));
 }
 
 TEST_CASE("Knob renderer: a bipolar arc runs from the range's 0")
@@ -320,7 +331,7 @@ TEST_CASE("Knob renderer: a bipolar arc runs from the range's 0")
     scene.frame();
     CHECK(scene.written() == valueWrites(knob, 16, 23));
     CHECK_FALSE(lineOf(scene, valueSlot(knob, 16))->prev.has_value());
-    CHECK_FALSE(lineOf(scene, valueSlot(knob, 23))->next.has_value());
+    CHECK(lineOf(scene, valueSlot(knob, 23))->next.has_value());
 
     // below 0: the segments under it, those above hidden
     knob->setNumber(-0.5);
@@ -329,6 +340,15 @@ TEST_CASE("Knob renderer: a bipolar arc runs from the range's 0")
     CHECK(lineOf(scene, valueSlot(knob, 8)));
     CHECK(lineOf(scene, valueSlot(knob, 15)));
     CHECK_FALSE(lineOf(scene, valueSlot(knob, 16)));
+
+    // Below zero the moving endpoint is a segment's start. Leaving and
+    // returning to its grid point keeps the next whole segment untouched.
+    knob->setNumber(-0.51);
+    scene.frame();
+    CHECK(scene.written() == valueWrites(knob, 7, 7));
+    knob->setNumber(-0.5);
+    scene.frame();
+    CHECK(scene.written() == valueWrites(knob, 7, 7));
 }
 
 TEST_CASE("Knob renderer: hover, press and focus rewrite the body alone, disabled draws the disabled surfaces")

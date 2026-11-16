@@ -34,6 +34,7 @@
 #include "demo/chartLines.h"
 #include "demo/chartAreas.h"
 #include "demo/dragNumber.h"
+#include "demo/knob.h"
 #include "demo/vectorField.h"
 #include "demo/popup.h"
 #include "demo/chipBadge.h"
@@ -272,6 +273,7 @@ void Demo::init(const String &name)
         addDemo<SliderTextDemo>(cat, "SliderTextDemo", "Slider text");
         addDemo<RangeSliderDemo>(cat, "RangeSliderDemo", "Range slider");
         addDemo<DragNumberDemo>(cat, "DragNumberDemo", "Drag number");
+        addDemo<KnobDemo>(cat, "KnobDemo", "Knob");
         addDemo<VectorFieldDemo>(cat, "VectorFieldDemo", "Vector field");
         addDemo<MenuStripDemo>(cat, "MenuStripDemo", "Menu strip");
     }

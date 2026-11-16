@@ -172,7 +172,7 @@
  *                       virtual-list |
  *                       virtual-list-variable |
  *                       data-table-virtual | hide-show | demo-labels |
- *                       plot-histogram | plot-lines | chart | timeline |
+ *                       plot-histogram | plot-lines | knob | chart | timeline |
  *                       inspector |
  *                       stats-overlay | depth-view | zoom-panel |
  *                       node-graph | code-editor | log-view |
@@ -688,6 +688,17 @@
  *                   zoom-panel zoom=1.37 pixels_match=yes grid_misses=0 ...
  *                   zoom-panel right_pan layout_passes=0 invalidations=0 ...
  *                 Exits non-zero if any check fails, naming it on stderr.
+ *
+ *    knob         KnobDemo, the clock frozen: hover, press and focus write
+ *                 the body alone; every vertical, fine and angular drag
+ *                 writes only the indicator, value segments whose coverage
+ *                 changed and the new value string's glyphs. A kept value
+ *                 writes nothing; no pixel changes outside the knob.
+ *                 Double-click, "7" and Return commit, Escape cancels,
+ *                 settled frames write nothing, and all primitive and text
+ *                 ids come back (knob.png). One line gives each drag frame's
+ *                 counts and the checks as yes/no.
+ *
  *    node-graph   NodeGraphDemo on a 900x560 canvas at scale 1, the clock
  *                 frozen, through the GLFW translator: a title-bar drag of a
  *                 two-node selection (every frame writing the two nodes' and
@@ -1760,6 +1771,8 @@
 #include <demo/sliderText.h>
 #include <demo/dragNumber.h>
 #include <gweni/controls/dragNumber.h>
+#include <demo/knob.h>
+#include <gweni/controls/knob.h>
 #include <demo/vectorField.h>
 #include <demo/zoomPanel.h>
 #include <demo/translucency.h>
@@ -1885,7 +1898,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(ChartAreasDemo) X(TimelineDemo) X(ComboBoxDemo) X(SearchComboDemo) \
     X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(NavigationRailDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(TreeTableDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(CodeViewDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(SegmentedButtonsDemo) X(CalendarDemo) X(DateTimeDemo) X(SplitButtonDemo) X(BreadcrumbDemo) X(StepperDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
-    X(CheckBoxDemo) X(SwitchDemo) X(SpinnerDemo) X(FieldValidationDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(RangeSliderDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
+    X(CheckBoxDemo) X(SwitchDemo) X(SpinnerDemo) X(FieldValidationDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(RangeSliderDemo) X(DragNumberDemo) X(KnobDemo) X(VectorFieldDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
     X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo) X(InspectorDemo) X(ThemeEditorDemo) \
@@ -1982,7 +1995,7 @@ static void printUsage(std::ostream &out)
          "                     | hide-show\n"
          "                     | opacity-round-trip | opacity\n"
          "                     | demo-labels\n"
-         "                     | plot-histogram | plot-lines | chart | timeline\n"
+         "                     | plot-histogram | plot-lines | knob | chart | timeline\n"
          "                     | inspector\n"
          "                     | stats-overlay | depth-view | zoom-panel\n"
          "                     | node-graph | code-editor | log-view | chip-badge\n"
@@ -3048,7 +3061,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 //-----------------------------------------------------------------------------
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, TreeTable, TreeTableLive, HideShow, DemoLabels, PlotHistogram,
-    PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
+    PlotLines, Knob, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
     ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented, SplitButton,
     Breadcrumb, RangeSlider, Stepper, CodeView, RichText, Markdown, MarkdownImages, SearchCombo, Reorder, Calendar, DateTime, Translucency,
     OpacityRoundTrip, Opacity };
@@ -3080,6 +3093,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "demo-labels") scenario=Scenario::DemoLabels;
     else if(name == "plot-histogram") scenario=Scenario::PlotHistogram;
     else if(name == "plot-lines") scenario=Scenario::PlotLines;
+    else if(name == "knob") scenario=Scenario::Knob;
     else if(name == "chart") scenario=Scenario::Chart;
     else if(name == "timeline") scenario=Scenario::Timeline;
     else if(name == "inspector") scenario=Scenario::Inspector;
@@ -9680,6 +9694,247 @@ static void countPending(gweni::controls::Base *control, size_t &count)
         ++count;
     for(auto &&child : control->getActualChildren())
         countPending(child, count);
+}
+
+// KnobDemo: inspect each input frame while the clock stands still. Slot ids
+// pin the locality as well as the count: the track, ticks, body, caption and
+// the other knobs must stay untouched by a value drag.
+static bool runKnobScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    using gweni::controls::Knob;
+    s.freezeClock=true;
+    s.label="knob";
+    InteractionChecks checks;
+    checks.scenario="knob";
+    const size_t primitivesBefore=livePrimitiveIds();
+    const size_t textsBefore=liveTextIds();
+    auto *demo=gweni::gweni_cast<gweni::KnobDemo>(addControl(s, "KnobDemo"));
+    renderFrames(s, s.frames);
+    if(!demo || !demo->vertical() || !demo->angular() || !demo->bipolar()
+        || !demo->integer() || !demo->disabled())
+    {
+        std::cerr<<"ControlTest: knob: KnobDemo has no five knobs\n";
+        dropControl(s, demo);
+        return false;
+    }
+
+    auto *knob=demo->vertical();
+    auto centre=[](Knob *knob)
+    {
+        const gweni::Rect dial=knob->getDialRect();
+        return knob->localPosToCanvas()+gweni::Point(dial.x+dial.w/2, dial.y+dial.h/2);
+    };
+    const gweni::Point grab=centre(knob);
+    const gweni::Point off(s.size.x-1, s.size.y-1);
+    size_t idleSlots=0, idleChanges=0;
+    std::ostringstream frames;
+    auto steady=[&]()
+    {
+        renderFrames(s, 1);
+        const auto &gpu=s.renderer->getFrameStats();
+        idleSlots+=gpu.primitiveSlotsWritten+gpu.textSlotsWritten;
+        idleChanges+=gweni::controls::getChangeStats().controls;
+    };
+    auto bodyOnly=[&](Knob *field, const std::string &name)
+    {
+        renderFrames(s, 1);
+        const auto &slots=field->getSkinControl()->getPrimitives();
+        const auto &written=s.renderer->writtenPrimitiveIds();
+        checks.check(name, written == std::vector<size_t>{slots[0]}
+            && s.renderer->getFrameStats().textSlotsWritten == 0,
+            "expected only body slot "+std::to_string(slots[0])+", got "
+            +std::to_string(written.size())+" primitive slots and "
+            +std::to_string(s.renderer->getFrameStats().textSlotsWritten)+" glyph slots");
+        steady();
+    };
+
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, s.frames);
+    const auto rest=framePixels(s);
+    moveMouse(s, grab.x, grab.y);
+    bodyOnly(knob, "hover_body");
+    const auto hover=framePixels(s);
+    moveMouse(s, off.x, off.y);
+    bodyOnly(knob, "unhover_body");
+    checks.check("hover_pixels", hover != rest && framePixels(s) == rest
+        && differencesOutside(s, rest, hover, knob) == 0,
+        "hover did not change the knob alone or moving off did not restore the frame");
+
+    moveMouse(s, grab.x, grab.y);
+    renderFrames(s, 1);
+    const double pressedValue=knob->getNumber();
+    mouseDown(s, grab.x, grab.y, true);
+    bodyOnly(knob, "press_body");
+    checks.check("press_value", knob->getNumber() == pressedValue,
+        "a press without motion changed the number");
+
+    int kept=0, changed=0, sameText=0;
+    bool alone=true, bounded=true, keptNothing=true, textBounded=true, pixelsLocal=true;
+    auto dragTo=[&](Knob *field, int x, int y)
+    {
+        const auto pixelsBefore=framePixels(s);
+        const double before=field->getNumber();
+        const gweni::String shown=field->getValueText();
+        moveMouse(s, x, y);
+        size_t pendingOutside=0;
+        countPendingBesides(s.canvas, nullptr, field, pendingOutside);
+        renderFrames(s, 1);
+        const auto &gpu=s.renderer->getFrameStats();
+        const auto &slots=field->getSkinControl()->getPrimitives();
+        const double after=field->getNumber();
+        const gweni::String now=field->getValueText();
+        const size_t outside=differencesOutside(s, pixelsBefore, framePixels(s), field);
+        const size_t indicator=slots[1+2*Knob::ArcSegments];
+        std::vector<size_t> allowed;
+        if(after != before)
+        {
+            allowed.push_back(indicator);
+            // Coverage is a length in segment units, independent of the
+            // renderer's polyline cache. Unchanged lengths keep their slots.
+            const double from=(before-field->getMin())/(field->getMax()-field->getMin())
+                *Knob::ArcSegments;
+            const double to=(after-field->getMin())/(field->getMax()-field->getMin())
+                *Knob::ArcSegments;
+            for(int i=0; i < Knob::ArcSegments; ++i)
+            {
+                const double was=std::clamp(from-i, 0.0, 1.0);
+                const double is=std::clamp(to-i, 0.0, 1.0);
+                if(was != is)
+                    allowed.push_back(slots[1+Knob::ArcSegments+i]);
+            }
+        }
+        size_t written=0;
+        const size_t stray=slotsOutside(s, allowed, written);
+        frames<<" "<<field->getCaption()<<":"<<after<<",prim="<<written
+              <<",allowed="<<allowed.size()<<",text="<<gpu.textSlotsWritten
+              <<",strays="<<stray<<",pending="<<pendingOutside<<",outside="<<outside;
+        alone=alone && pendingOutside == 0 && stray == 0;
+        pixelsLocal=pixelsLocal && outside == 0;
+        if(after == before)
+        {
+            ++kept;
+            keptNothing=keptNothing && written == 0 && gpu.textSlotsWritten == 0;
+        }
+        else
+        {
+            ++changed;
+            // Device-pixel snapping can keep the indicator or a short
+            // partial segment in place during a fine step.
+            bounded=bounded && written <= allowed.size();
+        }
+        if(now == shown)
+        {
+            ++sameText;
+            textBounded=textBounded && gpu.textSlotsWritten == 0;
+        }
+        else
+        {
+            std::set<size_t> textPrimitives, texts;
+            subtreeIds(field->getValueTextControl(), textPrimitives, texts);
+            textBounded=textBounded && gpu.textSlotsWritten > 0 && gpu.textSlotsWritten <= now.size();
+            for(const auto &text : s.renderer->writtenTextIds())
+                textBounded=textBounded && texts.count(text.textId) != 0;
+        }
+        steady();
+    };
+
+    // Start exactly on a segment boundary, move by units and cross several
+    // boundaries, then return to the press. Fine steps also keep the string.
+    for(int i=1; i <= 12; ++i)
+        dragTo(knob, grab.x, grab.y-i);
+    dragTo(knob, grab.x, grab.y);
+    checks.check("vertical_return", knob->getNumber() == pressedValue,
+        "returning the mouse to its press did not restore "+std::to_string(pressedValue));
+    glfwKey(s, GLFW_KEY_LEFT_SHIFT, GLFW_PRESS, 0);
+    for(int i=1; i <= 4; ++i)
+        dragTo(knob, grab.x, grab.y-i);
+    checks.check("fine_value", std::fabs(knob->getNumber()-pressedValue-0.02) < 1e-10,
+        "four Shift steps expected "+std::to_string(pressedValue+0.02)
+        +", got "+std::to_string(knob->getNumber()));
+    glfwKey(s, GLFW_KEY_LEFT_SHIFT, GLFW_RELEASE, GLFW_MOD_SHIFT);
+    dragTo(knob, grab.x, grab.y-400);
+    dragTo(knob, grab.x, grab.y-401); // already clamped: writes nothing
+    dragTo(knob, grab.x+1, grab.y-401); // a horizontal move changes nothing
+    checks.check("clamped_value", knob->getNumber() == knob->getMax(),
+        "a drag past the maximum did not clamp");
+    mouseUp(s, s.mouse.x, s.mouse.y);
+    bodyOnly(knob, "release_body");
+
+    // Angular motion crosses the bottom gap and holds at the maximum rather
+    // than wrapping to the minimum.
+    knob->unfocus();
+    renderFrames(s, 1);
+    auto *angular=demo->angular();
+    auto atAngle=[&](double angle)
+    {
+        const auto point=Knob::pointAt(gweni::PointF(), angle, 30.0f);
+        const auto mid=centre(angular);
+        return mid+gweni::Point(int(std::lround(point.x)), int(std::lround(point.y)));
+    };
+    auto at=atAngle(angular->angleForValue(angular->getNumber()));
+    moveMouse(s, at.x, at.y);
+    renderFrames(s, 1);
+    mouseDown(s, at.x, at.y, true);
+    bodyOnly(angular, "angular_press_body");
+    for(double angle : {0.0, -40.0, -70.0, -110.0, -140.0})
+    {
+        at=atAngle(angle);
+        dragTo(angular, at.x, at.y);
+    }
+    checks.check("angular_gap", angular->getNumber() == angular->getMax(),
+        "dragging through the gap expected maximum, got "+std::to_string(angular->getNumber()));
+    mouseUp(s, at.x, at.y);
+    bodyOnly(angular, "angular_release_body");
+    angular->unfocus();
+    moveMouse(s, off.x, off.y);
+    renderFrames(s, s.frames);
+
+    doubleClickMouse(s, grab.x, grab.y);
+    renderFrames(s, 1);
+    const bool opened=knob->isEditing();
+    typeText(s, "7");
+    renderFrames(s, 1);
+    sendKey(s, "return");
+    renderFrames(s, 1);
+    checks.check("typed_commit", opened && !knob->isEditing() && knob->getNumber() == 7.0
+        && knob->getValueText() == "7.0",
+        "double-click, 7 and Return expected 7, got "+std::to_string(knob->getNumber())
+        +", editing="+(knob->isEditing()?"yes":"no"));
+    steady();
+    const auto committed=framePixels(s);
+    sendKey(s, "return");
+    renderFrames(s, 1);
+    const bool reopened=knob->isEditing();
+    typeText(s, "3");
+    renderFrames(s, 1);
+    sendKey(s, "escape");
+    renderFrames(s, 1);
+    checks.check("typed_cancel", reopened && !knob->isEditing() && knob->getNumber() == 7.0
+        && framePixels(s) == committed,
+        "Escape did not keep 7 and restore the committed frame");
+    steady();
+    checks.check("drag_slots", changed > 0 && alone && bounded && textBounded && sameText > 0,
+        "expected indicator, changed value segments and new string's glyphs only:"+frames.str());
+    checks.check("kept_nothing", kept > 0 && keptNothing,
+        "a drag keeping its value wrote slots:"+frames.str());
+    checks.check("drag_pixels", pixelsLocal, "a drag changed pixels outside its knob:"+frames.str());
+    checks.check("settled", idleSlots == 0 && idleChanges == 0,
+        "settled frames wrote "+std::to_string(idleSlots)+" slots, changed "
+        +std::to_string(idleChanges)+" controls");
+
+    const bool shot=shoot(s, shotDir+"/knob.png");
+    forgetMouse(s);
+    dropControl(s, demo);
+    renderFrames(s, 1);
+    checks.check("ids_back", livePrimitiveIds() == primitivesBefore && liveTextIds() == textsBefore,
+        "the demo leaked primitive or text ids");
+    passed=checks.allPassed();
+    std::cout<<"knob"<<frames.str()<<" kept="<<kept<<" changed="<<changed<<" same_text="<<sameText
+             <<" idle_slots="<<idleSlots<<" idle_changed="<<idleChanges;
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<"\n";
+    return shot;
 }
 
 // One frame whose update phase is inspected before it renders: how many
@@ -23983,6 +24238,15 @@ int main(int argc, char *argv[])
             ok=runPlotLinesScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a change wrote more than its segments' slots: a failing assertion
+            break;
+        }
+
+        case Scenario::Knob:
+        {
+            bool passed=false;
+            ok=runKnobScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;
             break;
         }
 
