@@ -88,6 +88,7 @@ GWENI_DEMO_TRANSPARENT(KnobDemo)
 GWENI_DEMO_TRANSPARENT(HexViewDemo)
 GWENI_DEMO_TRANSPARENT(VectorFieldDemo)
 GWENI_DEMO_TRANSPARENT(GradientEditorDemo)
+GWENI_DEMO_TRANSPARENT(CurveEditorDemo)
 GWENI_DEMO_TRANSPARENT(ChipBadgeDemo)
 GWENI_DEMO_TRANSPARENT(SwitchDemo)
 GWENI_DEMO_TRANSPARENT(SpinnerDemo)
@@ -298,6 +299,7 @@ template class ControlRegister<KnobDemo>;
 template class ControlRegister<HexViewDemo>;
 template class ControlRegister<VectorFieldDemo>;
 template class ControlRegister<GradientEditorDemo>;
+template class ControlRegister<CurveEditorDemo>;
 template class ControlRegister<ChipBadgeDemo>;
 template class ControlRegister<SwitchDemo>;
 template class ControlRegister<SpinnerDemo>;
