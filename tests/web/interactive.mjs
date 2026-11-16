@@ -60,8 +60,9 @@
 //               "unknown argument: --bogus" and usage on stderr, shown on the
 //               page's #output panel
 //    opengl     the OpenGLCore demo at 1024x768 CSS: a 1024x768 backing
-//               store, and a click on the demo list's "Label" entry changes
-//               the canvas
+//               store, and a click on the demo list's "Label" entry (found
+//               through gweni_web_demo_entry) shows LabelDemo and changes the
+//               canvas
 //    stats      OpenGLCore.html?stats-overlay at 1024x768 CSS: the overlay is
 //               open and the shell's Stats button on; a click on the button
 //               closes it and turns the button off, changing the canvas, and a
@@ -609,16 +610,28 @@ async function checkOpenGLCore(s)
     await page.mouse.move(1000, 750);
     await s.frames(page);
     const before = await s.shot(page, whole, 'opengl-before');
-    // the demo list's "Label" entry, under "Basic" (the shell's layout at 1024x768)
-    await page.mouse.click(40, 205);
+    // the demo list's "Label" entry, under "Basic", found from the shell
+    // (gweni_web_demo_entry), so a new row above it does not move the click
+    const entry = await page.evaluate(() => Module.ccall('gweni_web_demo_entry', 'string', ['string'], ['LabelDemo']));
+    const [ex, ey, ew, eh] = entry.split(',').map(Number);
+    if(!entry || [ex, ey, ew, eh].some(Number.isNaN))
+    {
+        await context.close();
+        return fail('opengl', `the shell shows no LabelDemo entry (gweni_web_demo_entry gave ${JSON.stringify(entry)})`);
+    }
+    const origin = await page.evaluate(() => { const r = Module.canvas.getBoundingClientRect(); return { x: r.left, y: r.top }; });
+    await page.mouse.click(origin.x + ex + ew/2, origin.y + ey + eh/2);
     await s.frames(page, 5);
     const after = await s.shot(page, whole, 'opengl-after');
+    const shown = /^demo=(\S*)/.exec(await page.evaluate(() => Module.ccall('gweni_web_navigation', 'string', [], [])));
     if(size !== '1024x768')
         fail('opengl', `the canvas's backing store is ${size}, not 1024x768`);
+    else if(!shown || shown[1] !== 'LabelDemo')
+        fail('opengl', `a click on the demo list's Label entry shows ${shown ? shown[1] : 'nothing'}, not LabelDemo`);
     else if(before.equals(after))
         fail('opengl', 'a click on the demo list changed nothing');
     else
-        pass('opengl', 'backing store 1024x768, a click on the demo list changes the canvas');
+        pass('opengl', 'backing store 1024x768, a click on the demo list\'s Label entry shows LabelDemo and changes the canvas');
     if(s.lazyRequests.opengl !== 0)
         fail('nocjk', `the OpenGLCore demo shell asked for resources-lazy/ ${s.lazyRequests.opengl} time(s)`);
     else
