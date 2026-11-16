@@ -104,6 +104,8 @@ set(GWENI_DEMO_SOURCES
     demo/showcaseInput.h
     demo/showcaseWindows.cpp
     demo/showcaseWindows.h
+    demo/showcaseGraphs.cpp
+    demo/showcaseGraphs.h
     demo/slider.cpp
     demo/slider.h
     demo/rangeSlider.cpp

@@ -1881,6 +1881,7 @@
 #include <demo/showcaseInput.h>
 #include <demo/showcaseDisplay.h>
 #include <demo/showcaseWindows.h>
+#include <demo/showcaseGraphs.h>
 #include <demo/slider.h>
 #include <demo/rangeSlider.h>
 #include <demo/sliderText.h>
@@ -2014,7 +2015,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
 
 #define GWENI_CONTROL_DEMOS(X) \
     X(ShowcaseContainersDemo) X(ShowcaseButtonsDemo) X(ShowcaseInputDemo) \
-    X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) \
+    X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) X(ShowcaseGraphsDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(ChartAreasDemo) X(TimelineDemo) X(ComboBoxDemo) X(SearchComboDemo) X(CommandPaletteDemo) \
     X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(NavigationRailDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(TreeTableDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(CodeViewDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(SegmentedButtonsDemo) X(CalendarDemo) X(DateTimeDemo) X(SplitButtonDemo) X(BreadcrumbDemo) X(ToolBarDemo) X(StepperDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
