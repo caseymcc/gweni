@@ -71,6 +71,7 @@ SAMPLES=(
     CodeViewDemo
     MarkdownDemo
     NodeGraphDemo
+    KnobDemo
     LogViewDemo
     ChartTimeBarsDemo
     ChartLinesDemo
@@ -89,6 +90,7 @@ PANE_SIZE=865x545
 declare -A SAMPLE_SIZE=(
     [TextDemo]=640x480
     [MarkdownDemo]=865x620
+    [KnobDemo]=430x350
 )
 
 # Scripted input a sample is captured after, in place of the plain capture's

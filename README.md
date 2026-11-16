@@ -99,6 +99,14 @@ and four colours on their sides, joined by orthogonal, Bezier and straight links
 follows the zoom. Drag a title to move a node, a pin to make a link, empty space to box-select, and
 right-click for menus; dragging one node rewrites its own slots and its links' segments, nothing else.
 
+[![Five knobs: vertical and angular drags, a bipolar one, an integer one and a disabled one](docs/images/KnobDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=KnobDemo)
+
+**Knob**: rotary value controls, as in audio plug-ins and dense tool panels: a disc with a track arc,
+the value arc (from the start, or from 0 for a bipolar range), an indicator and optional ticks, a caption
+above and the value's text below. Drag up to raise a value or round the arc in angular mode, Shift for
+fine steps, the arrows, PageUp/PageDown, Home and End, or double-click to type one. A drag frame rewrites
+the indicator and the arc segments whose covered part changed, nothing else.
+
 [![An agent run's log beside three five-line excerpts](docs/images/LogViewDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=LogViewDemo)
 
 **Log view**: a LogView, an append-only log of wrapped rows on a variable-height VirtualList, as an
