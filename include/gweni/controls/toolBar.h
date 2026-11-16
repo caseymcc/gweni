@@ -276,7 +276,11 @@ public:
     //! up to date with its item (a button no longer toggling loses its check).
     //! A changed text resizes its menu from the contents, growing or
     //! shrinking it without replacing the cached entries; copied submenus
-    //! follow the same rule. Choosing an entry fires what pressing its item would:
+    //! follow the same rule. A menu left open while a layout changes the
+    //! overflowed set (the toolbar narrowed or widened with it open, its
+    //! button still shown) is closed in the next update, not refilled, a
+    //! focus it held going back to the overflow button; the next open lists
+    //! the new set. Choosing an entry fires what pressing its item would:
     //! a tool button's onPress (a toggle flipping its state, which the entry's
     //! check shows), the SplitButton main part's, a drop-down menu item's own
     //! onPress (so its onMenuItemSelected); then onOverflowItemChosen, with
@@ -308,7 +312,8 @@ public:
     //! they open the menu navigating by keyboard (DropDownButton's). A width
     //! change that hides the focused item hands the focus to the overflow
     //! button, and one that hides the overflow button (or its open menu
-    //! holding the focus) to the first item it gave back, in the same pass.
+    //! or a submenu of it holding the focus) to the first item it gave back,
+    //! in the same pass.
     //! \{
     Base *getTabStop() const;
     //! Whether \p item is a tool item that can take the focus now.
@@ -374,6 +379,16 @@ protected:
     //! to the first tool item it gave back (\p wasHidden: each item's hidden()
     //! before), else the first shown one; with none it is dropped as before.
     void passFocusOn(Base *focused, bool menuFocused, const std::vector<bool> &wasHidden);
+    //! Whether the overflow button's open menu, or one of its open
+    //! submenus, holds the keyboard focus.
+    bool overflowMenuFocused() const;
+    //! Whether the open overflow menu lists another overflowed set than the
+    //! last layout's, its button still shown.
+    bool menuStale() const;
+    //! Closes the menu if menuStale().
+    void closeStaleMenu();
+    //! closeStaleMenu() in the next update, for a layout's change.
+    void postMenuCheck();
     //! Whether the item has the bar's content height (not an addControl one).
     bool fillsHeight(size_t i) const;
 

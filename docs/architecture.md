@@ -803,9 +803,16 @@ entry's check is set from again), the SplitButton main part's, a drop-down item'
 `onPress` (so its `onMenuItemSelected`), and then the toolbar's `onOverflowItemChosen`
 with the toolbar item in `info.control`, an addControl item's only event (its control is not pressed, so a Switch
 added that way is not toggled). So the app wires
-each action once. Not yet: entries are brought up to date as the menu opens, not while it
-stays open, and changes to a drop-down's menu structure (adding, removing or reordering
-items) show only once the overflowed set changes.
+each action once. A menu left open while a layout changes the overflowed set (the bar
+narrowed or widened with it open, its button still shown) would list items back in the bar
+or miss ones gone into it, so the arrange posts a check (`ToolBar::postMenuCheck`, as the
+Breadcrumb's: a close inside the pass would re-dirty it) and the next update closes it, not
+refilled, since its rows and highlight would change under the user; a focus it held goes
+back to the overflow button (Menu's hand-back), and the next open lists the new set. A
+width change that keeps the set leaves it open. A hidden button's menu the canvas closes
+itself. Not yet: an entry's text, check and disabled state are brought up to date as the
+menu opens, not while it stays open, and changes to a drop-down's menu structure (adding,
+removing or reordering items) show only once the overflowed set changes.
 
 **The keyboard.** The tool items (tool buttons, drop-downs, split buttons and the overflow
 button) are one Tab stop, `getTabStop()`: the last focused while it is shown and enabled
@@ -826,8 +833,8 @@ layout does: `ToolBar::arrange` notes which item holds the focus (itself or thro
 part, a SplitButton's or a search box's) before `handleOverflow()` and, outside the
 `PlacementScope`, gives it to what now shows that item: an item gone into the menu to
 the overflow button (so the Tab stop is there and Tab comes back in at it), a hidden
-overflow button, or its open menu holding the focus (closed by the canvas in the next
-update), to the first tool item the widening gave back, else the first shown one. The
+overflow button, or its open menu (or a submenu of it, opened by Right) holding the focus
+(closed by the canvas in the next update), to the first tool item the widening gave back, else the first shown one. The
 focus moves change no layout, so the frame stays one pass; without this the hidden
 control kept the focus until the layout ended, when the input code dropped it, and Tab
 came back in at the first item.

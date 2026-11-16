@@ -678,9 +678,9 @@ void ToolBar::calculateSize(skin::Base *skin, Dim dim)
 void ToolBar::arrange(skin::Base *skin, Dim dim)
 {
     Base *focused=(dim == Dim::X)?focusedItem():nullptr;
-    // the overflow button's open menu holds the focus for it
-    const bool menuFocused=(dim == Dim::X) && !focused && m_overflowButton
-        && m_overflowButton->isMenuOpen() && (KeyboardFocus == m_overflowButton->getMenu());
+    // the overflow button's open menu (or a submenu of it) holds the focus
+    // for it
+    const bool menuFocused=(dim == Dim::X) && !focused && overflowMenuFocused();
     std::vector<bool> wasHidden;
 
     if(focused || menuFocused)
@@ -725,8 +725,55 @@ void ToolBar::arrange(skin::Base *skin, Dim dim)
     // the focus moves outside the placement, which it changes nothing of
     if(focused || menuFocused)
         passFocusOn(focused, menuFocused, wasHidden);
+    if(dim == Dim::X)
+        postMenuCheck();
 
     ParentClass::arrange(skin, dim);
+}
+
+// While the overflow menu is open every other menu is closed (opening it
+// closed them), so any focused Menu is it or one of its open submenus.
+bool ToolBar::overflowMenuFocused() const
+{
+    return m_overflowButton && m_overflowButton->isMenuOpen() && gweni_cast<Menu>(KeyboardFocus);
+}
+
+// The open menu lists the overflowed set it was built from; one the layout
+// changed since, while the overflow button still shows, is stale (a hidden
+// button's menu the canvas closes itself).
+bool ToolBar::menuStale() const
+{
+    return m_overflowButton && m_overflowButton->isMenuOpen() && !m_overflowButton->hidden()
+        && (m_menuSerial != m_overflowSerial);
+}
+
+// Closed, not refilled: its rows and highlight would change under the user.
+// A focus it holds goes back to the overflow button (Menu's hand-back).
+void ToolBar::closeStaleMenu()
+{
+    if(menuStale())
+        m_overflowButton->closeMenu();
+}
+
+// After an X arrange, a stale menu is closed in the next update (a close in
+// the pass would re-dirty it).
+void ToolBar::postMenuCheck()
+{
+    if(!menuStale())
+        return;
+
+    Canvas *canvas=getCanvas();
+
+    if(!canvas)
+        return;
+
+    const size_t id=getControlId();
+
+    canvas->post([id]()
+        {
+            if(auto *bar=gweni_cast<ToolBar>(Base::getControlById(id)))
+                bar->closeStaleMenu();
+        });
 }
 
 Base *ToolBar::focusedItem() const
@@ -750,7 +797,7 @@ void ToolBar::passFocusOn(Base *focused, bool menuFocused, const std::vector<boo
     // it holds only if it still does: given on here, it stays in the bar.
     if(menuFocused)
     {
-        if(!m_overflowButton || (KeyboardFocus != m_overflowButton->getMenu()))
+        if(!overflowMenuFocused())
             return;
         focused=m_overflowButton;
     }

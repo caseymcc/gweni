@@ -54,6 +54,10 @@
  *  toggle becomes checkable; one no longer toggling loses its check. Changed
  *  labels grow or shrink their cached menus without replacing entries,
  *  including copied and nested submenus, in one pass verified headless.
+ *  A menu left open while a narrowing or a widening changes the overflowed
+ *  set (its button still shown) is closed in the next update, a keyboard
+ *  focus it held back on the overflow button, and the next open lists the
+ *  new set; a width change that keeps the set leaves it open.
  *
  *  The keys: the tool items are one Tab stop, the last focused; Left, Right,
  *  Home and End move the focus over the shown, enabled tool items, the
@@ -64,8 +68,9 @@
  *  and Return press nothing (a toggle is not flipped); enabled again it
  *  takes them. A narrowing that hides the focused item hands the focus to
  *  the overflow button (so Tab comes back in there), and a widening that
- *  hides the overflow button, or it with its open menu holding the focus,
- *  hands it to the first item it gave back, each in one pass; a focus
+ *  hides the overflow button, or it with its open menu (or a submenu of it,
+ *  entered by Right) holding the focus, hands it to the first item it gave
+ *  back, each in one pass; a focus
  *  outside the toolbar stays where it is. In TextOnly a text set on an icon button after its icon hides
  *  the icon, and taken away shows it again, in one pass.
  */
@@ -1399,4 +1404,97 @@ TEST_CASE("ToolBar: an overflow that hides the focused control hands the focus o
     scene.setWidth(full-1);
     checkOnePass(scene.frame());
     CHECK(KeyboardFocus == outside);
+}
+
+TEST_CASE("ToolBar: an overflow menu left open while a layout changes the overflowed set is closed in the next update")
+{
+    Scene scene;
+
+    fill(scene.bar);
+    scene.settle();
+
+    const size_t failures=controls::layoutVerifyFailures();
+    const int full=scene.bar->getPreferredSize().width;
+    auto *more=scene.bar->getOverflowButton();
+    controls::Menu *menu=more->getMenu();
+
+    scene.setWidth(full-1);
+    scene.settle();
+    REQUIRE(scene.shown() == "a1 b1 | c1 d1 | e1 +");
+    more->focus();
+    scene.frame();
+    scene.key(keys::Space);
+    REQUIRE_FALSE(menu->hidden());
+    REQUIRE(KeyboardFocus == menu);
+    CHECK(entries(menu) == std::vector<std::string>{"f1 button"});
+
+    // a unit narrower, the set kept: it stays open
+    scene.setWidth(full-2);
+    checkOnePass(scene.frame());
+    scene.settle();
+    REQUIRE(scene.shown() == "a1 b1 | c1 d1 | e1 +");
+    CHECK_FALSE(menu->hidden());
+    CHECK(KeyboardFocus == menu);
+
+    // narrowed until e1 goes too: one pass, then the next update closes the
+    // menu (not refilled), the focus back on the overflow button
+    int width=full-2;
+
+    while(width > 0 && scene.shown() == "a1 b1 | c1 d1 | e1 +")
+    {
+        scene.setWidth(--width);
+        checkOnePass(scene.frame());
+    }
+    REQUIRE(scene.shown() == "a1 b1 | c1 d1 +");
+    scene.frame();
+    CHECK(menu->hidden());
+    CHECK(KeyboardFocus == more);
+    CHECK(controls::layoutVerifyFailures() == failures);
+
+    // the next open lists the new set
+    scene.key(keys::Space);
+    REQUIRE_FALSE(menu->hidden());
+    CHECK(entries(menu) == std::vector<std::string>{"e1 button", "f1 button"});
+
+    // widened back with it open, the button still shown: e1 back in the
+    // bar, and the menu that listed it closed
+    scene.setWidth(full-1);
+    checkOnePass(scene.frame());
+    REQUIRE(scene.shown() == "a1 b1 | c1 d1 | e1 +");
+    scene.frame();
+    CHECK(menu->hidden());
+    CHECK(KeyboardFocus == more);
+    CHECK(controls::layoutVerifyFailures() == failures);
+    scene.key(keys::Space);
+    CHECK(entries(menu) == std::vector<std::string>{"f1 button"});
+}
+
+TEST_CASE("ToolBar: a widening that hides the overflow button while a submenu of its menu has the focus hands it on")
+{
+    MenuBar m;
+    ToolBar *bar=m.scene.bar;
+    auto *more=bar->getOverflowButton();
+
+    REQUIRE(m.scene.shown() == "keep +");
+    more->focus();
+    m.scene.frame();
+    // a1 highlighted, then Bold, Export, and into Export's copied submenu
+    m.scene.key(keys::Space);
+    m.scene.key(keys::Down);
+    m.scene.key(keys::Down);
+    m.scene.key(keys::Right);
+
+    controls::Menu *menu=more->getMenu();
+    controls::Menu *exportMenu=entry(menu, "Export")->getMenu();
+
+    REQUIRE(KeyboardFocus == exportMenu);
+
+    m.scene.setWidth(bar->fullWidth());
+    checkOnePass(m.scene.frame());
+    REQUIRE(more->hidden());
+    CHECK(KeyboardFocus == m.a);
+    m.scene.settle();
+    CHECK(menu->hidden());
+    CHECK(exportMenu->hidden());
+    CHECK(KeyboardFocus == m.a);
 }

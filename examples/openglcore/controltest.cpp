@@ -15987,7 +15987,7 @@ static bool runToolBarScenario(Session &s, const std::string &shotDir, bool &pas
         gweni::KeyboardFocus->unfocus();
     renderFrames(s, 1);
     idleWork+=settleCodeEditor(s, pixels);
-    shoot(s, shotDir+"/toolbar-bold.png");
+    ok=shoot(s, shotDir+"/toolbar-bold.png") && ok;
 
     const size_t boldDiff=differencesInsideRect(s, frames.front(), pixels, bold->getCanvasBounds());
     const size_t boldOutside=differencesOutsideRects(s, frames.front(), pixels, {bold->getCanvasBounds()});
