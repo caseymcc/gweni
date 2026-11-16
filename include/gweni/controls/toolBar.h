@@ -221,7 +221,8 @@ public:
     SplitButton *addSplitButton(const String &text, const String &icon=String());
     //! Any control (a search TextBox), made a child of the toolbar. With an
     //! \p overflowText it may overflow and shows in the menu as that text;
-    //! with none it is always in the bar.
+    //! with none it is always in the bar. A control already an item (or the
+    //! overflow button) is left as it is and returned.
     Base *addControl(Base *control, const String &overflowText=String());
 
     //! The items in order (the overflow button is none).
@@ -280,7 +281,7 @@ public:
     //! null for none.
     Base *getMenuEntrySource(const MenuItem *entry) const;
     //! The menu entry standing for \p source (a toolbar item, or one of a
-    //! drop-down's menu items), null while it has none.
+    //! drop-down's menu items), null while it has none (and for null).
     MenuItem *getMenuEntry(const Base *source) const;
     gweni::event::Caller onOverflowItemChosen;
     //! \}
@@ -386,6 +387,8 @@ protected:
     std::vector<MenuEntry> m_menuEntries;
     //! The overflow serial the menu was built at; none yet.
     size_t m_menuSerial=static_cast<size_t>(-1);
+    //! The Menu (by id) the menu was built in.
+    size_t m_menuBuiltFor=0;
     size_t m_menuBuilds=0;
     //! The last tool item focused (by id), 0 for none.
     size_t m_tabStop=0;

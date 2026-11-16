@@ -6,6 +6,7 @@
 
 
 #include <gweni/controls/toolBar.h>
+#include <gweni/controls/canvas.h>
 #include <gweni/controls/imagePanel.h>
 #include <gweni/controls/menuItem.h>
 #include <gweni/controls/separator.h>
@@ -397,6 +398,10 @@ Base *ToolBar::addControl(Base *control, const String &overflowText)
 {
     if(!control)
         return nullptr;
+    // already an item, or the overflow button: one entry per control, so a
+    // deleted control leaves none behind in the list
+    if((indexOf(control) >= 0) || (control == m_overflowButton))
+        return control;
 
     control->setParent(this);
     control->setDock(DockPosition::None);
@@ -767,7 +772,13 @@ void ToolBar::handleOverflow()
     }
 
     if(changed)
+    {
         ++m_overflowSerial;
+        // an item may have gone from under a resting mouse, or the overflow
+        // button come under it
+        if(Canvas *canvas=getCanvas())
+            canvas->hoverMayHaveMoved();
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -822,7 +833,7 @@ void ToolBar::copyMenu(Menu *from, Menu *to, Base *item, bool dividerFirst)
         pendingDivider=false;
         any=true;
 
-        MenuItem *entry=to->addItem(source->getText());
+        MenuItem *entry=to->addItem(source->getText(), source->getImageName());
 
         // a submenu is copied whole, its items chosen as themselves
         if(source->hasMenu())
@@ -909,6 +920,7 @@ void ToolBar::buildMenu(Menu *menu)
     }
 
     m_menuSerial=m_overflowSerial;
+    m_menuBuiltFor=idOf(menu);
     ++m_menuBuilds;
 }
 
@@ -916,7 +928,8 @@ void ToolBar::prepareOverflowMenu(Menu *menu)
 {
     if(!menu)
         return;
-    if(m_menuSerial != m_overflowSerial)
+    // a Menu made again since (the button's menu deleted) is built anew
+    if((m_menuSerial != m_overflowSerial) || (m_menuBuiltFor != idOf(menu)))
         buildMenu(menu);
 
     // every entry as its item is now
@@ -976,6 +989,9 @@ Base *ToolBar::getMenuEntrySource(const MenuItem *entry) const
 
 MenuItem *ToolBar::getMenuEntry(const Base *source) const
 {
+    if(!source)
+        return nullptr;
+
     const size_t id=idOf(source);
 
     for(const MenuEntry &e : m_menuEntries)

@@ -35,7 +35,12 @@
  *  event). A copied submenu's entry follows its original (its text, disabled
  *  state and check), and getMenuEntry finds a drop-down's own entry and an
  *  original menu item's copy. A rebuilt menu is as wide as its entries, not
- *  the widest set it held.
+ *  the widest set it held. A copied menu item keeps its icon, and an
+ *  overflow button's Menu made again (the old one deleted) is built anew.
+ *  getMenuEntry(nullptr) is null. An item overflowed from under a resting
+ *  mouse is no longer the hovered control. addControl of a control that is already an
+ *  item, or of the overflow button, adds nothing, so deleting it leaves no
+ *  item behind.
  *  Choosing an entry fires its item's own press once (a tool button's
  *  onPress, a toggle's onToggle, a drop-down item's onMenuItemSelected, a
  *  SplitButton's onPress) and then the toolbar's onOverflowItemChosen; the
@@ -805,6 +810,94 @@ TEST_CASE("ToolBar: an addControl'd Button or DropDownButton is a plain entry, i
     plain->setDisabled(true);
     menu=scene.openMenu();
     CHECK(entries(menu) == std::vector<std::string>{"(off) Preferences", "Options"});
+}
+
+TEST_CASE("ToolBar: addControl of a control already an item, or of the overflow button, adds nothing")
+{
+    Scene scene;
+    ToolBar *bar=scene.bar;
+
+    controls::TextBox *search=bar->newChild<controls::TextBox>();
+    CHECK(bar->addControl(search) == search);
+    CHECK(bar->addControl(search, "Search") == search);
+    CHECK(bar->itemCount() == 1);
+    // the second call changed nothing: no overflow text, so still no menu form
+    CHECK(bar->getOverflowText(search).empty());
+
+    controls::ToolButton *tool=button(bar, "a1");
+    CHECK(bar->addControl(tool) == tool);
+    CHECK(bar->addControl(bar->getOverflowButton()) == bar->getOverflowButton());
+    CHECK(bar->itemCount() == 2);
+    scene.settle();
+
+    // deleted, each leaves the list: no freed pointer stays behind
+    delete search;
+    delete tool;
+    CHECK(bar->itemCount() == 0);
+    scene.settle();
+    CHECK(scene.shown().empty());
+}
+
+TEST_CASE("ToolBar: an item overflowed from under a resting mouse is no longer hovered")
+{
+    Scene scene;
+    ToolBar *bar=scene.bar;
+
+    fill(bar);
+    scene.settle();
+    controls::Base *last=bar->getItems().back();
+    const Point at=last->localPosToCanvas();
+
+    scene.canvas->inputMouseMoved(at.x+last->getWidth()/2, at.y+last->getHeight()/2, 0, 0);
+    scene.frame();
+    REQUIRE(HoveredControl == last);
+
+    // narrowed until it overflows, the mouse resting where it was
+    for(int width=bar->getWidth(); width > bar->minimumWidth() && !last->hidden(); --width)
+    {
+        scene.setWidth(width);
+        scene.settle();
+    }
+    REQUIRE(last->hidden());
+    scene.frame();
+    CHECK(HoveredControl != last);
+}
+
+TEST_CASE("ToolBar: getMenuEntry of null is null")
+{
+    MenuBar m;
+
+    m.scene.openMenu();
+    CHECK(m.scene.bar->getMenuEntry(nullptr) == nullptr);
+}
+
+TEST_CASE("ToolBar: a drop-down item's icon is copied into its overflow entry")
+{
+    MenuBar m;
+    m.ddSave->setImage("save.png");
+    controls::Menu *menu=m.scene.openMenu();
+    controls::MenuItem *copy=m.scene.bar->getMenuEntry(m.ddSave);
+
+    REQUIRE(menu);
+    REQUIRE(copy);
+    CHECK(copy->getImageName() == "save.png");
+}
+
+TEST_CASE("ToolBar: an overflow button's Menu made again is built anew")
+{
+    MenuBar m;
+    ToolBar *bar=m.scene.bar;
+    controls::Menu *menu=m.scene.openMenu();
+
+    REQUIRE(entry(menu, "a1 button"));
+    m.scene.closeMenu();
+    const size_t builds=bar->getMenuBuildCount();
+    menu->delayedDelete();
+    m.scene.frame();
+
+    menu=m.scene.openMenu();
+    CHECK(bar->getMenuBuildCount() == builds+1);
+    CHECK(entry(menu, "a1 button") != nullptr);
 }
 
 TEST_CASE("ToolBar: the overflow menu is built again only when the overflowed set changed")

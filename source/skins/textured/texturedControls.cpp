@@ -770,21 +770,25 @@ void ToolBar::update(renderer::Base *renderer, controls::Base *baseControl)
 namespace
 {
 // A tool button's look: Down pressed (or with its menu open), On a toggle
-// that is on, Hover hovered, else the flat rest look (disabled too, its text
-// dimmed); focused, ButtonFocus's border on it.
+// that is on (disabled too, as a Button's on look is, so the bar shows what
+// the menu's check does), Hover hovered, else the flat rest look (disabled
+// too); disabled, its text dimmed; focused, ButtonFocus's border on it.
 tokyonight::Surface toolButtonSurface(controls::Button *button)
 {
     tokyonight::Surface surface=tokyonight::ToolButton;
+    const bool on=button->isToggle() && button->getToggleState();
 
-    if(!button->isDisabled())
+    if(button->isDisabled())
     {
-        if(button->isDepressed())
-            surface=tokyonight::ToolButtonDown;
-        else if(button->isToggle() && button->getToggleState())
+        if(on)
             surface=tokyonight::ToolButtonOn;
-        else if(button->isHovered())
-            surface=tokyonight::ToolButtonHover;
     }
+    else if(button->isDepressed())
+        surface=tokyonight::ToolButtonDown;
+    else if(on)
+        surface=tokyonight::ToolButtonOn;
+    else if(button->isHovered())
+        surface=tokyonight::ToolButtonHover;
     if(button->isFocussed())
         surface.border=tokyonight::ButtonFocus.border;
     return surface;

@@ -178,7 +178,8 @@
  *                       node-graph | code-editor | log-view |
  *                       chip-badge | navigation-rail | flow | board |
  *                       switch | spinner | image-grid | segmented |
- *                       split-button | breadcrumb | range-slider | stepper |
+ *                       split-button | breadcrumb | toolbar |
+ *                       range-slider | stepper |
  *                       code-view | rich-text | markdown | markdown-images |
  *                       search-combo |
  *                       reorder |
@@ -2036,7 +2037,8 @@ static void printUsage(std::ostream &out)
          "                     | node-graph | code-editor | log-view | chip-badge\n"
          "                     | navigation-rail | flow | board | switch | spinner\n"
          "                     | image-grid | segmented | split-button | breadcrumb\n"
-         "                     | range-slider | stepper | code-view | rich-text\n"
+         "                     | toolbar | range-slider | stepper | code-view\n"
+         "                     | rich-text\n"
          "                     | search-combo | reorder | calendar | date-time\n"
          "                     | translucency;\n"
          "                     resize prints listing_settled, mirror_settled,\n"

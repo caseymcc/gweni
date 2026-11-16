@@ -6,7 +6,8 @@
  *  The textured ToolBar renderers on a recording StubRenderer. Every toolbar
  *  type has a renderer: the bar paints the ToolBar surface, a tool button its
  *  one slot in ToolButton at rest, ToolButtonHover hovered, ToolButtonDown
- *  pressed and ToolButtonOn as a toggle that is on, with ButtonFocus's border
+ *  pressed and ToolButtonOn as a toggle that is on (disabled too, as a
+ *  Button's on look is), with ButtonFocus's border
  *  while focused; the overflow button the same surfaces (Down while its menu
  *  is open) and the down chevron (icon kind 1) at its z+1. A hover on a tool
  *  button and moving off write that button's slot alone. A width change that
@@ -334,6 +335,23 @@ TEST_CASE("ToolBar look: every toolbar type has a renderer, the bar and its butt
     bold->focus();
     scene.frame();
     CHECK(sameColor(scene.renderer.draws[boldSlot].border, tn::ButtonFocus.border));
+}
+
+TEST_CASE("ToolBar look: a disabled toggle that is on keeps its on look")
+{
+    Scene scene;
+    controls::ToolButton *bold=scene.buttons.back();
+
+    bold->setToggleState(true);
+    bold->setDisabled(true);
+    scene.frame();
+    const size_t boldSlot=Scene::slotsOf(bold)[0];
+    CHECK(sameColor(scene.renderer.draws[boldSlot].top, tn::ToolButtonOn.top));
+
+    // off and disabled, the flat rest look
+    bold->setToggleState(false);
+    scene.frame();
+    CHECK(sameColor(scene.renderer.draws[boldSlot].top, tn::ToolButton.top));
 }
 
 TEST_CASE("ToolBar look: a hover on a tool button writes its slot alone")

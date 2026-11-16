@@ -722,7 +722,8 @@ meanwhile, `ToolButton::setToolTipText`) put aside and given back after), `addTo
 (a vertical `Separator`), `addDropDown` and `addSplitButton` (an
 `internal::ToolBarDropDown` and `internal::ToolBarSplitButton`, the #632 controls with
 the toolbar's Tab stop rule below) and `addControl(control, overflowText)` (anything, a
-search box). The items are its children in item order, the overflow button
+search box; a control that is already an item, or the overflow button, is left as it is, so
+no control is an item twice). The items are its children in item order, the overflow button
 (`internal::ToolBarOverflowButton`, a `DropDownButton` showing the chevron alone) its last
 child, and all of them owner-placed: the toolbar sets their bounds and their visibility.
 They go left to right `Spacing` apart inside its padding, each its preferred width; a
@@ -757,7 +758,9 @@ pass runs twice, the toolbar named as having re-dirtied it); with it, the visibi
 placement and a width change is one pass that `--verify-layout` finds nothing in. The
 toolbar measures its hidden items in its `calculateSize` too (Base measures only the
 shown ones), so an item whose text changed while it was in the menu comes back at its new
-width. Their y and heights wait for the Y arrange.
+width. Their y and heights wait for the Y arrange. A change of the overflowed set calls
+`Canvas::hoverMayHaveMoved()`, as VirtualList's placement does, so an item hidden from
+under a resting mouse is no longer hovered and the overflow button come under it is.
 
 **It does not clip.** `ToolBar::shouldClip()` is false, as a Label's is. A toolbar that
 clipped would give every item a clip box of its bounds, so each width change would give
@@ -771,7 +774,8 @@ toolbar itself.
 `ToolBar::prepareOverflowMenu` from `DropDownButton::aboutToOpenMenu`, a protected hook
 `openMenu()` calls after closing the other menus and before opening it. It is built from
 the overflowed items in order, and built again only when the overflowed set changed since
-(`getOverflowSerial()`, raised by the arrange and by an item removed;
+(`getOverflowSerial()`, raised by the arrange and by an item removed, or when the button's
+Menu is another one than it was built in;
 `getMenuBuildCount()`): a tool button an entry with its text and icon, a toggle a checkable entry,
 an overflowed separator a `MenuDivider` (never first, last or doubled), a drop-down a
 submenu of copies of its menu's items (`MenuItem::hasMenu()` tells a submenu without
@@ -808,7 +812,8 @@ first entry highlighted, Menu's keyboard navigation.
 **The renderers** draw the bar on the `ToolBar` surface and a tool button in one slot:
 `ToolButton` at rest (the bar's fill, its border that colour too, so a button shows only
 while it is hovered, pressed or on), `ToolButtonHover`, `ToolButtonDown`, and `ToolButtonOn`
-for a toggle that is on, with `ButtonFocus`'s border while it is focused. The overflow
+for a toggle that is on (disabled too, as a Button's on look is, so the bar shows the state
+the menu's check does; its text dimmed), with `ButtonFocus`'s border while it is focused. The overflow
 button draws the same surfaces (Down while its menu is open) and the down chevron at
 z+1. Separators, drop-downs and split buttons keep their own renderers. ToolBarDemo
 shows an editor's toolbar whose width a slider sets and an icon-only one, and
