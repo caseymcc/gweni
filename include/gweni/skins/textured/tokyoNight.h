@@ -516,6 +516,24 @@ inline Surface GradientStopSelected { Blue,                  Blue,              
 inline Surface GradientStopFocus    { Cyan,                  Cyan,                  Cyan,        2.0f,     BorderW };
 inline Surface GradientStopDisabled { Muted,                 Muted,                 BgHighlight, 2.0f,     BorderW };
 
+// A CurveEditor's plot: its background (a chart's frame), the grid's minor and
+// major lines (their top colour), each curve's stroke (CurveCurve<i>'s top,
+// red, green, blue and orange for x, y, z and w), a key's disc at rest, hovered
+// and selected, a tangent handle's stem (top) and disc, and the marquee's
+// translucent fill (top, bottom) and outline (border), as a graph's.
+inline Surface CurveEditorBackground { BgDark,              BgDark,                Line,        RadiusSm, BorderW };
+inline Surface CurveEditorGrid       { Color(0x1f,0x22,0x31), Color(0x1f,0x22,0x31), Color(0x1f,0x22,0x31), 0.0f, 0.0f };
+inline Surface CurveEditorGridMajor  { Color(0x2f,0x33,0x48), Color(0x2f,0x33,0x48), Color(0x2f,0x33,0x48), 0.0f, 0.0f };
+inline Surface CurveCurve0           { Red,                   Red,                   Red,         0.0f,     0.0f };
+inline Surface CurveCurve1           { Green,                 Green,                 Green,       0.0f,     0.0f };
+inline Surface CurveCurve2           { Blue,                  Blue,                  Blue,        0.0f,     0.0f };
+inline Surface CurveCurve3           { Orange,                Orange,                Orange,      0.0f,     0.0f };
+inline Surface CurveKey              { FgDark,                FgDark,                BgDark,      0.0f,     BorderW };
+inline Surface CurveKeyHover         { Fg,                    Fg,                    BgDark,      0.0f,     BorderW };
+inline Surface CurveKeySelected      { Yellow,                Yellow,                BgDark,      0.0f,     BorderW };
+inline Surface CurveTangent          { FgDark,                FgDark,                BgDark,      0.0f,     BorderW };
+inline Surface CurveMarquee          { Color(0x7a,0xa2,0xf7,0x30), Color(0x7a,0xa2,0xf7,0x30), Blue, 0.0f, BorderW };
+
 // A VectorField component's axis tag, a block of the axis's colour before its
 // field (its letter in the skin's AxisTagText): X red, Y green, Z blue and W
 // grey; a disabled row's tags are filled as a disabled field.
@@ -698,6 +716,11 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"GradientBarFrame",&GradientBarFrame},{"GradientStop",&GradientStop},
         {"GradientStopHover",&GradientStopHover},{"GradientStopSelected",&GradientStopSelected},
         {"GradientStopFocus",&GradientStopFocus},{"GradientStopDisabled",&GradientStopDisabled},
+        {"CurveEditorBackground",&CurveEditorBackground},{"CurveEditorGrid",&CurveEditorGrid},
+        {"CurveEditorGridMajor",&CurveEditorGridMajor},{"CurveCurve0",&CurveCurve0},{"CurveCurve1",&CurveCurve1},
+        {"CurveCurve2",&CurveCurve2},{"CurveCurve3",&CurveCurve3},{"CurveKey",&CurveKey},
+        {"CurveKeyHover",&CurveKeyHover},{"CurveKeySelected",&CurveKeySelected},{"CurveTangent",&CurveTangent},
+        {"CurveMarquee",&CurveMarquee},
         {"VectorTagX",&VectorTagX},{"VectorTagY",&VectorTagY},{"VectorTagZ",&VectorTagZ},
         {"VectorTagW",&VectorTagW},
         {"Badge",&Badge},

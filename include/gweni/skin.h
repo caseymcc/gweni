@@ -480,6 +480,11 @@ public:
             gweni::Color ValueText{0xc0, 0xc0, 0xc0};
             gweni::Color CaptionText{0xa0, 0xa0, 0xa0};
         } Knob;
+        //! A CurveEditor's tick labels along its plot's left and bottom edges.
+        struct CurveEditor_t
+        {
+            gweni::Color TickText{0xa0, 0xa0, 0xa0};
+        } CurveEditor;
         //! A HexView's address column, its bytes, its zero bytes (dimmed),
         //! its ASCII column, the dots of its non-printable bytes, and its data
         //! preview's names and values.

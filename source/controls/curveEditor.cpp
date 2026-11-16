@@ -418,6 +418,8 @@ size_t CurveEditor::addCurve(Curve *curve, const String &surface)
     entry.surface=surface.empty()?"CurveCurve"+std::to_string(m_curves.size()%4):surface;
     m_curves.push_back(std::move(entry));
     m_plot->addStateChange(StateChange_Background);
+    // each curve is a depth layer of the plot's
+    m_plot->layersChanged();
     return m_curves.size()-1;
 }
 
@@ -428,6 +430,7 @@ void CurveEditor::clearCurves()
     m_hovered=false;
     syncFields();
     m_plot->addStateChange(StateChange_Background);
+    m_plot->layersChanged();
 }
 
 Curve *CurveEditor::getCurve(size_t index) const
@@ -1801,7 +1804,9 @@ void CurveEditor::setDisabled(bool active)
 
 void CurveEditor::onVisibleChanged()
 {
-    if(visible())
+    // attached to a hidden parent, it is told before its constructor has made
+    // its parts: there is no gesture to end then
+    if(visible() || !m_pan || !m_plot)
         return;
 
     endGesture();

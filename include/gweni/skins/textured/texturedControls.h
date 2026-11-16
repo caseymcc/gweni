@@ -6,6 +6,7 @@
 #include "gweni/skins/textured/tokyoNight.h"
 
 #include "gweni/controls/button.h"
+#include "gweni/controls/curveEditor.h"
 #include "gweni/controls/hexView.h"
 #include "gweni/controls/nodeGraph.h"
 #include "gweni/controls/timeline.h"
@@ -772,10 +773,8 @@ GWENI_TRANSPARENT_RENDERER(NodeBody)
 // purpose, so Base::setSkin() does not report the type as having none (#185),
 // and each names the idea that tracks its real renderer: drop the line when
 // that renderer lands. A drawsNothing() override is not the place for these,
-// since the controls are meant to draw.
+// since the controls are meant to draw. (None is waiting now.)
 #define GWENI_PENDING_RENDERER(Class) GWENI_TRANSPARENT_RENDERER(Class)
-// a CurveEditor's plot: its renderer is #641's next step
-GWENI_PENDING_RENDERER(CurvePlot)
 #undef GWENI_PENDING_RENDERER
 #undef GWENI_TRANSPARENT_RENDERER
 
@@ -1522,6 +1521,195 @@ public:
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
 
     inline static const std::string_view name="NodeGraphMarqueeFill";
+};
+
+// A CurveEditor's plot (controls::internal::CurvePlot), everything its editor
+// shows, in the plot's clip box (its bounds cut to the editor's region), in
+// slot lists taken back to front, each with spare hidden slots:
+// - [0] the background, CurveEditorBackground over the render bounds, at z;
+// - the grid: a vertical drawLine per time tick and a horizontal one per
+//   value tick, at the minor step (axis::niceStep for lines GridMinGap units
+//   apart) in CurveEditorGrid's top colour and the major step (LabelGapX and
+//   LabelGapY apart) in CurveEditorGridMajor's, 1 unit thick, at z+1; a
+//   label per major tick (axis::formatValue), its own text run in the skin's
+//   CurveEditor.TickText, the time labels along the bottom edge and the value
+//   labels along the left one, at z+1, so the grid is behind them and the
+//   curves in front;
+// - the marquee's fill (CurveMarquee's top, translucent) at z+2;
+// - per curve, at z+3+its index, its extensions (a horizontal drawLine from
+//   the plot's left edge to its first key and from its last key to the right
+//   edge, at their values) and its spans: each span the mode's most segments
+//   (slotsForShape(): a Hermite MaxHermiteSegments, a Linear 1, a Constant
+//   2), using as many as its on-screen length asks (segmentsFor()), the rest
+//   hidden; each a drawLine of LineThickness in the curve's surface's top
+//   colour with its neighbours along the curve (across spans and the
+//   extensions too), cut to the plot on the CPU first (a cut joint drawn
+//   without that neighbour, a segment wholly outside hidden);
+// - per curve, a disc per key (KeySize, CurveKey, CurveKeyHover or
+//   CurveKeySelected), at z+3+curves; a key outside the plot is hidden;
+// - the tangent handles of a key that shows them: two stems (drawLine in
+//   CurveTangent's top colour) at z+4+curves and two discs (HandleSize,
+//   CurveTangent) at z+5+curves;
+// - the marquee's outline, its four sides in CurveMarquee's border colour, at
+//   z+6+curves.
+// What changed comes from the editor's log (CurveEditor::pendingEdits()):
+// a span or key splice moves the slot lists with it (a span or key keeps its
+// slots while it is kept, a new one takes spare ones, a gone one's are hidden
+// and kept spare) and marks what it inserted and the spans next to it, a look
+// change marks its key; only what is marked is drawn, and each slot only
+// when what it would hold differs from what it holds, so a key drag writes
+// the segments of the spans it changed, its disc and its handles. A frame
+// that marks the plot's geometry, visibility or creation, a new view
+// (viewSerial()), opacity levels or the editor's pendingAll() draws every
+// slot of what it reaches. When a list needs more than its spare slots, or a
+// curve comes or goes, every list is given back and taken again (Chart's
+// rule), so the slots stay in id order back to front: slots draw in id order,
+// and one taken after a slot in front of it would lose the pixels under that
+// slot's anti-aliased edge.
+class CurvePlot:public textured::ControlRegister<CurvePlot>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    static constexpr int MaxHermiteSegments=16;
+    static constexpr int MinHermiteSegments=4;
+    //! A Hermite span's segments: one per this many units of its chord.
+    static constexpr float SegmentLength=10.0f;
+    static constexpr float LineThickness=1.5f;
+    static constexpr float GridMinGap=12.0f;
+    static constexpr float LabelGapX=64.0f;
+    static constexpr float LabelGapY=32.0f;
+    //! Layers above z: the grid, the fill, then the curves', then the keys,
+    //! the stems, the handles' discs and the outline.
+    static constexpr size_t FixedLayers=7;
+
+    size_t requiredPrimitives() override { return 1; }
+    size_t depthLayersOf(const controls::Base *control) override;
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
+    void appendIds(std::vector<size_t> &primitiveIds, std::vector<size_t> &textIds) const override;
+
+    inline static const std::string_view name="CurvePlot";
+
+    static size_t slotsForShape(Curve::SpanShape shape);
+    //! The segments a span of \p shape whose ends are \p chord units apart
+    //! on screen is drawn in.
+    static int segmentsFor(Curve::SpanShape shape, float chord);
+
+    //! For tests: span \p span's slots (all of them, used or not), key \p
+    //! key's disc, its handles' four (none while it shows no handles), the
+    //! grid's, the marquee's, the labels' text ids; every list's ids in the
+    //! order taken.
+    std::vector<size_t> spanPrimitives(size_t curve, size_t span) const;
+    std::vector<size_t> extensionPrimitives(size_t curve) const;
+    size_t keyPrimitive(size_t curve, size_t key) const;
+    std::vector<size_t> handlePrimitives(size_t curve, size_t key) const;
+    std::vector<size_t> gridPrimitives() const { return m_grid.ids; }
+    std::vector<size_t> marqueePrimitives() const;
+    std::vector<size_t> labelTexts() const;
+    std::vector<size_t> takenOrder() const;
+    //! How often every list was given back and taken again.
+    size_t takeCount() const { return m_takes; }
+
+private:
+    DrawnOpacity m_drawnOpacity;
+
+    //! What a slot holds, as last drawn: a rect or a segment.
+    struct Slot
+    {
+        bool valid=false;   //!< false for a new slot, which holds nothing known
+        bool shown=false;
+        bool line=false;
+        Rect rect;
+        tokyonight::Surface surface{};
+        PointF p0;
+        PointF p1;
+        bool hasPrev=false;
+        bool hasNext=false;
+        PointF prev;
+        PointF next;
+        float thickness=0.0f;
+        Color color;
+        int zIndex=0;
+        Rect clip;
+    };
+
+    struct Span
+    {
+        std::vector<size_t> ids;
+        std::vector<Slot> drawn;
+    };
+
+    struct Key
+    {
+        size_t id=0;
+        Slot drawn;
+        //! the handle set it holds (m_handles), or none
+        size_t handles=SIZE_MAX;
+    };
+
+    struct CurveSlots
+    {
+        size_t ext[2]={0, 0};
+        Slot extDrawn[2];
+        std::vector<Span> spans;
+        std::vector<Key> keys;
+        //! hidden slots of the curve's segment and key lists
+        std::vector<size_t> segmentSpare;
+        std::vector<size_t> keySpare;
+        std::vector<Slot> spareDrawn;
+    };
+
+    struct HandleSet
+    {
+        size_t ids[4]={0, 0, 0, 0};
+        Slot drawn[4];
+        bool used=false;
+    };
+
+    struct List
+    {
+        std::vector<size_t> ids;
+        std::vector<Slot> drawn;
+    };
+
+    struct Label
+    {
+        size_t id=0;
+        bool shown=false;
+        bool valid=false;
+        String text;
+        Point pos;
+        Rect clip;
+        Color color;
+    };
+
+    //! Every id given back and every list taken again for \p editor.
+    void takeAll(renderer::Base *renderer, const controls::CurveEditor *editor);
+    void releaseAll(renderer::Base *renderer);
+    //! The editor's log replayed onto curve \p index's lists; false when a
+    //! list ran out of spare slots.
+    bool replay(renderer::Base *renderer, const controls::CurveEditor *editor, size_t index,
+        std::vector<size_t> &spans, std::vector<size_t> &keys);
+    //! Span \p span's slot count set for its shape from the curve's spare ones.
+    bool fitSpan(renderer::Base *renderer, CurveSlots &slots, const Curve &curve, size_t span);
+
+    Slot m_background;
+    List m_grid;
+    size_t m_fill=0;
+    Slot m_fillDrawn;
+    std::vector<CurveSlots> m_curves;
+    std::vector<HandleSet> m_handles;
+    size_t m_outline[4]={0, 0, 0, 0};
+    Slot m_outlineDrawn[4];
+    std::vector<Label> m_labels;
+    bool m_taken=false;
+    size_t m_takes=0;
+    uint64_t m_viewSerial=0;
+    Point m_plotSize;
+    //! the ids in the order takeAll() took them
+    std::vector<size_t> m_order;
 };
 
 // A Node: [0] its frame (NodeBody, NodeSelected while it is selected, over

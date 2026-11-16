@@ -591,6 +591,7 @@ std::unordered_map<std::string, gweni::Color*> TexturedSkin::textColorRegistry()
         {"CodeMeta",&Colors.CodeEditor.Tokens[static_cast<size_t>(text::TokenKind::Meta)]},
         {"TimelineAxisText",&Colors.Timeline.AxisText},{"TimelineCaptionText",&Colors.Timeline.CaptionText},
         {"KnobValueText",&Colors.Knob.ValueText},{"KnobCaptionText",&Colors.Knob.CaptionText},
+        {"CurveEditorTickText",&Colors.CurveEditor.TickText},
         {"HexViewAddress",&Colors.HexView.Address},{"HexViewByte",&Colors.HexView.Byte},
         {"HexViewZeroByte",&Colors.HexView.ZeroByte},{"HexViewAscii",&Colors.HexView.Ascii},
         {"HexViewNonPrintable",&Colors.HexView.NonPrintable},{"HexViewPreviewName",&Colors.HexView.PreviewName},
@@ -1532,6 +1533,8 @@ void TexturedSkin::setThemeColors()
     Colors.Timeline.CaptionText=Fg;
     Colors.Knob.ValueText=Fg;
     Colors.Knob.CaptionText=FgDark;
+    // a CurveEditor's tick labels as a Chart's
+    Colors.CurveEditor.TickText=FgDark;
 
     // a HexView: the bytes primary, the zero bytes and the non-printable dots
     // dimmed as imgui_memory_editor dims them, the addresses and the preview's

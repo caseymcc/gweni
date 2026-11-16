@@ -39,7 +39,9 @@
  *  - the arrows nudging the selection a plot unit's worth (Shift ten);
  *  - the footer: blank and disabled unless one key is selected, showing its
  *    time and value, a field's new number moving it;
- *  - a hover logging the look of the key it left and the one it took.
+ *  - a hover logging the look of the key it left and the one it took;
+ *  - an editor made under a hidden parent (told it is not visible before its
+ *    parts exist) showing once the parent is shown.
  */
 #include "headlessFixture.h"
 
@@ -725,4 +727,29 @@ TEST_CASE("CurveEditor: a hover logs the look of the key it left and the one it 
     scene.move(scene.at(150, 100));
     CHECK(!editor->getHoveredKey(ref));
     CHECK(editor->pendingEdits(1).size() == 1);
+}
+
+TEST_CASE("CurveEditor: made under a hidden parent, it shows and works once the parent is shown")
+{
+    test::StubRenderer renderer;
+    test::StubSkin skin(&renderer);
+    controls::Canvas *canvas=new controls::Canvas(&skin);
+    controls::Base *page=canvas->newChild<controls::Base>();
+
+    canvas->setSize(800, 600);
+    page->setHidden(true);
+
+    // the hidden parent tells the editor it is not visible as it is attached,
+    // before its own construction has made its parts
+    controls::CurveEditor *editor=page->newChild<controls::CurveEditor>();
+    Curve curve({makeKey(0, 0.5), makeKey(1, 1.5)});
+
+    editor->addCurve(&curve);
+    CHECK(!editor->visible());
+    page->setHidden(false);
+    canvas->updateCanvas();
+    canvas->renderCanvas();
+    CHECK(editor->visible());
+    CHECK(editor->getPlot()->visible());
+    delete canvas;
 }

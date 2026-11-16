@@ -39,6 +39,8 @@ public:
 public:
 
     CurveEditor *getEditor() const;
+    //! The editor's curve count changed: the plot's depth layers with it.
+    void layersChanged() { zOrderChanged(); }
 
     void onMouseMoved(int x, int y, int deltaX, int deltaY) override;
     void onMouseClickLeft(int x, int y, bool down) override;

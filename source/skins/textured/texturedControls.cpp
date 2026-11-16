@@ -4946,6 +4946,1039 @@ void Chart::update(renderer::Base *renderer, controls::Base *baseControl)
 
 
 ///////////////////////////////////////////////////////////////////////////
+//CurvePlot
+size_t CurvePlot::slotsForShape(Curve::SpanShape shape)
+{
+    switch(shape)
+    {
+    case Curve::SpanShape::Constant:
+        return 2;
+    case Curve::SpanShape::Linear:
+        return 1;
+    case Curve::SpanShape::Hermite:
+        break;
+    }
+    return size_t(MaxHermiteSegments);
+}
+
+int CurvePlot::segmentsFor(Curve::SpanShape shape, float chord)
+{
+    switch(shape)
+    {
+    case Curve::SpanShape::Constant:
+        return 2;
+    case Curve::SpanShape::Linear:
+        return 1;
+    case Curve::SpanShape::Hermite:
+        break;
+    }
+    if(!std::isfinite(chord))
+        return MaxHermiteSegments;
+    return std::min(MaxHermiteSegments, std::max(MinHermiteSegments, int(std::ceil(chord/SegmentLength))));
+}
+
+size_t CurvePlot::depthLayersOf(const controls::Base *control)
+{
+    const auto *plot=gweni_cast<controls::internal::CurvePlot>(const_cast<controls::Base *>(control));
+    const controls::CurveEditor *editor=plot?plot->getEditor():nullptr;
+
+    return FixedLayers+(editor?editor->curveCount():0);
+}
+
+std::vector<size_t> CurvePlot::spanPrimitives(size_t curve, size_t span) const
+{
+    if((curve >= m_curves.size()) || (span >= m_curves[curve].spans.size()))
+        return {};
+    return m_curves[curve].spans[span].ids;
+}
+
+std::vector<size_t> CurvePlot::extensionPrimitives(size_t curve) const
+{
+    if(curve >= m_curves.size())
+        return {};
+    return {m_curves[curve].ext[0], m_curves[curve].ext[1]};
+}
+
+size_t CurvePlot::keyPrimitive(size_t curve, size_t key) const
+{
+    if((curve >= m_curves.size()) || (key >= m_curves[curve].keys.size()))
+        return 0;
+    return m_curves[curve].keys[key].id;
+}
+
+std::vector<size_t> CurvePlot::handlePrimitives(size_t curve, size_t key) const
+{
+    if((curve >= m_curves.size()) || (key >= m_curves[curve].keys.size()))
+        return {};
+
+    const size_t set=m_curves[curve].keys[key].handles;
+
+    if(set >= m_handles.size())
+        return {};
+    return std::vector<size_t>(m_handles[set].ids, m_handles[set].ids+4);
+}
+
+std::vector<size_t> CurvePlot::marqueePrimitives() const
+{
+    if(!m_taken)
+        return {};
+    return {m_fill, m_outline[0], m_outline[1], m_outline[2], m_outline[3]};
+}
+
+std::vector<size_t> CurvePlot::labelTexts() const
+{
+    std::vector<size_t> ids;
+
+    for(const Label &label : m_labels)
+        ids.push_back(label.id);
+    return ids;
+}
+
+std::vector<size_t> CurvePlot::takenOrder() const
+{
+    return m_order;
+}
+
+void CurvePlot::appendIds(std::vector<size_t> &primitiveIds, std::vector<size_t> &textIds) const
+{
+    ControlRegister<CurvePlot>::appendIds(primitiveIds, textIds);
+    if(m_taken)
+    {
+        // every id but the background's, which the base appended
+        primitiveIds.insert(primitiveIds.end(), m_order.begin()+1, m_order.end());
+    }
+    for(const Label &label : m_labels)
+        textIds.push_back(label.id);
+}
+
+void CurvePlot::releaseAll(renderer::Base *renderer)
+{
+    if(m_taken)
+    {
+        // m_order holds every id takeAll() took, spare ones included
+        for(size_t i=1; i<m_order.size(); ++i)
+            renderer->releasePrimitive(m_order[i]);
+    }
+    m_order.clear();
+    m_grid=List();
+    m_curves.clear();
+    m_handles.clear();
+    m_fill=0;
+    m_fillDrawn=Slot();
+    for(int i=0; i<4; ++i)
+    {
+        m_outline[i]=0;
+        m_outlineDrawn[i]=Slot();
+    }
+    m_taken=false;
+}
+
+void CurvePlot::remove(renderer::Base *renderer, controls::Base * /*baseControl*/)
+{
+    releaseAll(renderer);
+    for(const Label &label : m_labels)
+        renderer->releaseTextPrimitive(label.id);
+    m_labels.clear();
+    m_background=Slot();
+    releasePrimitives(renderer);
+}
+
+// The most grid lines a plot of this size draws on each axis and step: one
+// more than the intervals controls::axis::niceStep() cuts its span into, and one of
+// slack.
+static size_t curveGridLines(float length, float gap)
+{
+    return size_t(std::max(1, int(length/gap)))+2;
+}
+
+void CurvePlot::takeAll(renderer::Base *renderer, const controls::CurveEditor *editor)
+{
+    releaseAll(renderer);
+
+    const float width=float(m_plotSize.x);
+    const float height=float(m_plotSize.y);
+    // the bank hands out the lowest free id first, so what it gives goes up
+    // from list to list; one at or below the background's is put aside until
+    // every list is taken (Chart's rule)
+    const size_t frame=m_primitives[0];
+    std::vector<size_t> below;
+    // a slot freshly taken is all zero bytes: hidden
+    Slot hidden;
+
+    hidden.valid=true;
+    m_order.push_back(frame);
+
+    auto take=[&]()
+    {
+        size_t id;
+
+        renderer->generatePrimitive(id);
+        while(id <= frame)
+        {
+            below.push_back(id);
+            renderer->generatePrimitive(id);
+        }
+        m_order.push_back(id);
+        return id;
+    };
+
+    const size_t grid=curveGridLines(width, GridMinGap)+curveGridLines(width, LabelGapX)
+        +curveGridLines(height, GridMinGap)+curveGridLines(height, LabelGapY);
+
+    for(size_t i=0; i<grid; ++i)
+        m_grid.ids.push_back(take());
+    m_grid.drawn.assign(grid, hidden);
+    m_fill=take();
+    m_fillDrawn=hidden;
+
+    const size_t curves=editor->curveCount();
+
+    m_curves.assign(curves, CurveSlots());
+    for(size_t c=0; c<curves; ++c)
+    {
+        const Curve &curve=*editor->getCurve(c);
+        CurveSlots &slots=m_curves[c];
+        size_t need=0;
+
+        slots.ext[0]=take();
+        slots.ext[1]=take();
+        slots.extDrawn[0]=hidden;
+        slots.extDrawn[1]=hidden;
+        slots.spans.resize(curve.spanCount());
+        for(size_t k=0; k<curve.spanCount(); ++k)
+        {
+            Span &span=slots.spans[k];
+            const size_t count=slotsForShape(curve.spanShape(k));
+
+            for(size_t i=0; i<count; ++i)
+                span.ids.push_back(take());
+            span.drawn.assign(count, hidden);
+            need+=count;
+        }
+        // spare for the spans a few edits add or reshape
+        for(size_t i=0, spare=std::max<size_t>(need/8, 4*MaxHermiteSegments); i<spare; ++i)
+            slots.segmentSpare.push_back(take());
+    }
+    for(size_t c=0; c<curves; ++c)
+    {
+        const Curve &curve=*editor->getCurve(c);
+        CurveSlots &slots=m_curves[c];
+
+        slots.keys.resize(curve.keyCount());
+        for(Key &key : slots.keys)
+        {
+            key.id=take();
+            key.drawn=hidden;
+        }
+        for(size_t i=0, spare=std::max<size_t>(curve.keyCount()/8, 16); i<spare; ++i)
+            slots.keySpare.push_back(take());
+    }
+
+    // the handle sets: every set's stems, then every set's discs, in front
+    size_t shown=0;
+
+    for(const controls::CurveKeyRef &ref : editor->getSelection())
+    {
+        if(editor->showsHandles(ref.curve, ref.key))
+            ++shown;
+    }
+    m_handles.assign(std::max<size_t>(4, shown+shown/2), HandleSet());
+    for(HandleSet &set : m_handles)
+    {
+        set.ids[0]=take();
+        set.ids[1]=take();
+    }
+    for(HandleSet &set : m_handles)
+    {
+        set.ids[2]=take();
+        set.ids[3]=take();
+        for(Slot &slot : set.drawn)
+            slot=hidden;
+    }
+    for(int i=0; i<4; ++i)
+    {
+        m_outline[i]=take();
+        m_outlineDrawn[i]=hidden;
+    }
+
+    for(size_t id : below)
+        renderer->releasePrimitive(id);
+    m_taken=true;
+    ++m_takes;
+}
+
+bool CurvePlot::fitSpan(renderer::Base *renderer, CurveSlots &slots, const Curve &curve, size_t index)
+{
+    Span &span=slots.spans[index];
+    const size_t need=slotsForShape(curve.spanShape(index));
+
+    while(span.ids.size() > need)
+    {
+        if(span.drawn.back().shown || !span.drawn.back().valid)
+            renderer->hidePrimitive(span.ids.back());
+        slots.segmentSpare.push_back(span.ids.back());
+        span.ids.pop_back();
+        span.drawn.pop_back();
+    }
+    while(span.ids.size() < need)
+    {
+        if(slots.segmentSpare.empty())
+            return false;
+
+        Slot hidden;
+
+        hidden.valid=true;
+        span.ids.push_back(slots.segmentSpare.back());
+        span.drawn.push_back(hidden);
+        slots.segmentSpare.pop_back();
+    }
+    return true;
+}
+
+// A splice's effect on the indices of what was marked before it: kept before
+// it, shifted after it, kept where an entry is reused in place, dropped where
+// one was erased.
+static void curveRemap(std::vector<size_t> &marked, const controls::CurveEditorEdit &edit)
+{
+    const size_t keep=std::min(edit.removed, edit.inserted);
+    std::vector<size_t> out;
+
+    for(size_t index : marked)
+    {
+        if(index < edit.first+keep)
+            out.push_back(index);
+        else if(index >= edit.first+edit.removed)
+            out.push_back(index-edit.removed+edit.inserted);
+    }
+    marked.swap(out);
+}
+
+bool CurvePlot::replay(renderer::Base *renderer, const controls::CurveEditor *editor, size_t index,
+    std::vector<size_t> &spans, std::vector<size_t> &keys)
+{
+    CurveSlots &slots=m_curves[index];
+    const Curve &curve=*editor->getCurve(index);
+    // a slot given back was hidden as it went
+    Slot hidden;
+
+    hidden.valid=true;
+
+    for(const controls::CurveEditorEdit &edit : editor->pendingEdits(index))
+    {
+        using Kind=controls::CurveEditorEdit::Kind;
+
+        if(edit.kind == Kind::KeyLook)
+        {
+            keys.push_back(edit.first);
+            continue;
+        }
+
+        const size_t keep=std::min(edit.removed, edit.inserted);
+
+        if(edit.kind == Kind::Spans)
+        {
+            if(edit.first+edit.removed > slots.spans.size())
+                return false;
+            for(size_t k=edit.first+keep; k<edit.first+edit.removed; ++k)
+            {
+                Span &span=slots.spans[k];
+
+                for(size_t i=0; i<span.ids.size(); ++i)
+                {
+                    if(span.drawn[i].shown || !span.drawn[i].valid)
+                        renderer->hidePrimitive(span.ids[i]);
+                    slots.segmentSpare.push_back(span.ids[i]);
+                }
+            }
+            slots.spans.erase(slots.spans.begin()+std::ptrdiff_t(edit.first+keep),
+                slots.spans.begin()+std::ptrdiff_t(edit.first+edit.removed));
+            slots.spans.insert(slots.spans.begin()+std::ptrdiff_t(edit.first+keep), edit.inserted-keep, Span());
+            curveRemap(spans, edit);
+            // what it put in, and the spans either side, whose end segment has
+            // a new neighbour
+            for(size_t k=edit.first; k<edit.first+edit.inserted; ++k)
+                spans.push_back(k);
+            if(edit.first > 0)
+                spans.push_back(edit.first-1);
+            spans.push_back(edit.first+edit.inserted);
+        }
+        else
+        {
+            if(edit.first+edit.removed > slots.keys.size())
+                return false;
+            for(size_t k=edit.first+keep; k<edit.first+edit.removed; ++k)
+            {
+                Key &key=slots.keys[k];
+
+                if(key.drawn.shown || !key.drawn.valid)
+                    renderer->hidePrimitive(key.id);
+                slots.keySpare.push_back(key.id);
+                if(key.handles < m_handles.size())
+                {
+                    HandleSet &set=m_handles[key.handles];
+
+                    for(int i=0; i<4; ++i)
+                    {
+                        if(set.drawn[i].shown || !set.drawn[i].valid)
+                            renderer->hidePrimitive(set.ids[i]);
+                        set.drawn[i]=hidden;
+                    }
+                    set.used=false;
+                }
+            }
+            slots.keys.erase(slots.keys.begin()+std::ptrdiff_t(edit.first+keep),
+                slots.keys.begin()+std::ptrdiff_t(edit.first+edit.removed));
+            slots.keys.insert(slots.keys.begin()+std::ptrdiff_t(edit.first+keep), edit.inserted-keep, Key());
+            curveRemap(keys, edit);
+            for(size_t k=edit.first; k<edit.first+edit.inserted; ++k)
+                keys.push_back(k);
+        }
+    }
+
+    if((slots.spans.size() != curve.spanCount()) || (slots.keys.size() != curve.keyCount()))
+        return false;
+
+    std::sort(spans.begin(), spans.end());
+    spans.erase(std::unique(spans.begin(), spans.end()), spans.end());
+    while(!spans.empty() && (spans.back() >= slots.spans.size()))
+        spans.pop_back();
+    std::sort(keys.begin(), keys.end());
+    keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
+    while(!keys.empty() && (keys.back() >= slots.keys.size()))
+        keys.pop_back();
+
+    for(size_t k : spans)
+    {
+        if(!fitSpan(renderer, slots, curve, k))
+            return false;
+    }
+    for(size_t k : keys)
+    {
+        Key &key=slots.keys[k];
+
+        if(key.id != 0)
+            continue;
+        if(slots.keySpare.empty())
+            return false;
+        key.id=slots.keySpare.back();
+        key.drawn=hidden;
+        slots.keySpare.pop_back();
+    }
+    return true;
+}
+
+void CurvePlot::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    controls::internal::CurvePlot *plot=static_cast<controls::internal::CurvePlot *>(baseControl);
+    controls::CurveEditor *editor=plot->getEditor();
+
+    if(!editor)
+        return;
+
+    const unsigned int sc=baseControl->getStateChange();
+    const bool levelsMoved=m_drawnOpacity.moved(renderer);
+    bool all=levelsMoved || (sc&(controls::StateChange_Created|controls::StateChange_Visibility
+        |controls::StateChange_Geometry)) != 0;
+    const gweni::Rect &bounds=baseControl->getRenderBounds();
+    const size_t curves=editor->curveCount();
+
+    // what changed, onto the lists: every list again when one ran out of
+    // spare slots, the plot's size or the curve count changed, or a curve
+    // was changed by the app
+    std::vector<std::vector<size_t>> dirtySpans(curves);
+    std::vector<std::vector<size_t>> dirtyKeys(curves);
+    bool retake=!m_taken || (m_curves.size() != curves) || (m_plotSize.x != bounds.w)
+        || (m_plotSize.y != bounds.h);
+
+    for(size_t c=0; c<curves && !retake; ++c)
+        retake=editor->pendingAll(c) || !replay(renderer, editor, c, dirtySpans[c], dirtyKeys[c]);
+    if(!retake)
+    {
+        size_t shown=0;
+
+        for(const controls::CurveKeyRef &ref : editor->getSelection())
+        {
+            if(editor->showsHandles(ref.curve, ref.key))
+                ++shown;
+        }
+        retake=(shown > m_handles.size());
+    }
+    if(retake)
+    {
+        m_plotSize=Point(bounds.w, bounds.h);
+        takeAll(renderer, editor);
+        all=true;
+    }
+
+    const bool viewMoved=all || (editor->viewSerial() != m_viewSerial);
+    const int z=baseControl->getZIndex();
+    const int curveZ=z+3;
+    const int keyZ=z+3+int(curves);
+    const int stemZ=keyZ+1;
+    const int discZ=keyZ+2;
+    const int outlineZ=keyZ+3;
+    const gweni::Rect region=renderer->clipRegion();
+    const gweni::Point &offset=renderer->getRenderOffset();
+    gweni::Rect plotClip;
+
+    // the plot at the render offset, cut to the control's own region
+    {
+        const int x0=std::max(region.x, offset.x+bounds.x);
+        const int y0=std::max(region.y, offset.y+bounds.y);
+        const int x1=std::min(region.x+region.w, offset.x+bounds.x+bounds.w);
+        const int y1=std::min(region.y+region.h, offset.y+bounds.y+bounds.h);
+
+        plotClip=gweni::Rect(x0, y0, std::max(0, x1-x0), std::max(0, y1-y0));
+    }
+
+    auto hide=[&](size_t id, Slot &slot)
+    {
+        if(all || !slot.valid || slot.shown)
+            renderer->hidePrimitive(id);
+        slot=Slot();
+        slot.valid=true;
+    };
+    auto drawRect=[&](size_t id, Slot &slot, const gweni::Rect &rect, const tokyonight::Surface &surface,
+        float radius, int zIndex)
+    {
+        if(!all && slot.valid && slot.shown && !slot.line && (slot.rect == rect) && (slot.zIndex == zIndex)
+            && sameSurface(slot.surface, surface) && (slot.thickness == radius) && (slot.clip == plotClip))
+            return;
+
+        renderer->setClipRegion(plotClip);
+        renderer->drawRoundedRect(id, rect, radius, surface.borderWidth, surface.top, surface.bottom,
+            surface.border, zIndex);
+        slot=Slot();
+        slot.valid=true;
+        slot.shown=true;
+        slot.rect=rect;
+        slot.surface=surface;
+        slot.thickness=radius;
+        slot.zIndex=zIndex;
+        slot.clip=plotClip;
+    };
+
+    const bool visible=baseControl->visible();
+
+    if(!visible)
+    {
+        // every slot hidden; shown again, the visibility mark draws them all
+        hide(m_primitives[0], m_background);
+        for(size_t i=0; i<m_grid.ids.size(); ++i)
+            hide(m_grid.ids[i], m_grid.drawn[i]);
+        hide(m_fill, m_fillDrawn);
+        for(CurveSlots &slots : m_curves)
+        {
+            hide(slots.ext[0], slots.extDrawn[0]);
+            hide(slots.ext[1], slots.extDrawn[1]);
+            for(Span &span : slots.spans)
+            {
+                for(size_t i=0; i<span.ids.size(); ++i)
+                    hide(span.ids[i], span.drawn[i]);
+            }
+            for(Key &key : slots.keys)
+                hide(key.id, key.drawn);
+        }
+        for(HandleSet &set : m_handles)
+        {
+            for(int i=0; i<4; ++i)
+                hide(set.ids[i], set.drawn[i]);
+        }
+        for(int i=0; i<4; ++i)
+            hide(m_outline[i], m_outlineDrawn[i]);
+        for(Label &label : m_labels)
+        {
+            if(label.shown)
+                renderer->hideText(label.id);
+            label.shown=false;
+            label.valid=false;
+        }
+        editor->clearPendingEdits();
+        return;
+    }
+
+    const PointF origin(float(bounds.x), float(bounds.y));
+    const float width=float(bounds.w);
+    const float height=float(bounds.h);
+    const float margin=LineThickness+4.0f;
+    // the plot, a few units wider, in its own units: a cut end is off it
+    const ViewBox view{-margin, -margin, width+2.0f*margin, height+2.0f*margin};
+
+    drawRect(m_primitives[0], m_background, bounds, tokyonight::CurveEditorBackground,
+        tokyonight::CurveEditorBackground.radius, z);
+
+    //--- the segments
+    struct Cut
+    {
+        bool shown=false;
+        PointF p0;
+        PointF p1;
+        bool start=false; //!< not cut at p0
+        bool end=false;   //!< not cut at p1
+    };
+    auto cutOf=[&](const PointF &a, const PointF &b)
+    {
+        Cut cut;
+        float t0, t1;
+
+        cut.shown=clipSegment(a, b, view, t0, t1);
+        if(!cut.shown)
+            return cut;
+        cut.start=(t0 == 0.0f);
+        cut.end=(t1 == 1.0f);
+        cut.p0=cut.start?a:PointF(a.x+(b.x-a.x)*t0, a.y+(b.y-a.y)*t0);
+        cut.p1=cut.end?b:PointF(a.x+(b.x-a.x)*t1, a.y+(b.y-a.y)*t1);
+        return cut;
+    };
+    // one segment a-b with its neighbours along the curve, the one before
+    // ending at a and the one after starting at b (either may be absent)
+    auto drawSegment=[&](size_t id, Slot &slot, const PointF &a, const PointF &b, const PointF *before,
+        const PointF *after, const Color &color, int zIndex)
+    {
+        const Cut cut=cutOf(a, b);
+
+        if(!cut.shown)
+        {
+            hide(id, slot);
+            return;
+        }
+
+        // a neighbour shares the joint only where neither is cut there
+        bool hasPrev=false;
+        bool hasNext=false;
+        PointF prev, next;
+
+        if(before && cut.start)
+        {
+            const Cut neighbour=cutOf(*before, a);
+
+            hasPrev=neighbour.shown && neighbour.end;
+            if(hasPrev)
+                prev=PointF(origin.x+neighbour.p0.x, origin.y+neighbour.p0.y);
+        }
+        if(after && cut.end)
+        {
+            const Cut neighbour=cutOf(b, *after);
+
+            hasNext=neighbour.shown && neighbour.start;
+            if(hasNext)
+                next=PointF(origin.x+neighbour.p1.x, origin.y+neighbour.p1.y);
+        }
+
+        const PointF p0(origin.x+cut.p0.x, origin.y+cut.p0.y);
+        const PointF p1(origin.x+cut.p1.x, origin.y+cut.p1.y);
+
+        if(!all && slot.valid && slot.shown && slot.line && (slot.p0 == p0) && (slot.p1 == p1)
+            && (slot.hasPrev == hasPrev) && (!hasPrev || (slot.prev == prev)) && (slot.hasNext == hasNext)
+            && (!hasNext || (slot.next == next)) && (slot.color == color) && (slot.zIndex == zIndex)
+            && (slot.clip == plotClip))
+            return;
+
+        renderer->setClipRegion(plotClip);
+        renderer->setDrawColor(color);
+        renderer->drawLine(id, p0, p1, LineThickness, zIndex, hasPrev?&prev:nullptr, hasNext?&next:nullptr);
+        slot=Slot();
+        slot.valid=true;
+        slot.shown=true;
+        slot.line=true;
+        slot.p0=p0;
+        slot.p1=p1;
+        slot.hasPrev=hasPrev;
+        slot.prev=prev;
+        slot.hasNext=hasNext;
+        slot.next=next;
+        slot.thickness=LineThickness;
+        slot.color=color;
+        slot.zIndex=zIndex;
+        slot.clip=plotClip;
+    };
+    auto local=[&](double x, double y)
+    {
+        return editor->curveToLocal(CurvePoint{x, y});
+    };
+    // a span's points on the plot, at the segments its length asks for
+    auto spanPoints=[&](const Curve &curve, size_t k, std::vector<PointF> &points)
+    {
+        const Curve::Key &a=curve.key(k);
+        const Curve::Key &b=curve.key(k+1);
+        const PointF from=local(a.time, a.value);
+        const PointF to=local(b.time, b.value);
+        std::vector<CurvePoint> samples;
+
+        curve.tessellate(k, segmentsFor(curve.spanShape(k), std::hypot(to.x-from.x, to.y-from.y)), samples);
+        points.clear();
+        for(const CurvePoint &sample : samples)
+            points.push_back(local(sample.x, sample.y));
+    };
+    auto surfaceOf=[&](size_t c)
+    {
+        const std::unordered_map<std::string, tokyonight::Surface *> &surfaces=tokyonight::surfaceRegistry();
+        const auto found=surfaces.find(editor->getCurveSurface(c));
+
+        if(found != surfaces.end())
+            return *found->second;
+
+        // a name no theme knows draws as a missing surface
+        tokyonight::Surface surface{};
+
+        surface.top=colors::Missing;
+        surface.bottom=colors::Missing;
+        surface.border=colors::MissingDark;
+        return surface;
+    };
+
+    std::vector<PointF> points, before, after;
+
+    for(size_t c=0; c<curves; ++c)
+    {
+        const Curve &curve=*editor->getCurve(c);
+        CurveSlots &slots=m_curves[c];
+        const Color color=surfaceOf(c).top;
+        const int lineZ=curveZ+int(c);
+        const bool whole=viewMoved;
+        const size_t spanCount=curve.spanCount();
+
+        // the extensions: flat from the plot's left edge to the first key and
+        // from the last key to its right edge
+        if(curve.keyCount() == 0)
+        {
+            hide(slots.ext[0], slots.extDrawn[0]);
+            hide(slots.ext[1], slots.extDrawn[1]);
+        }
+        else
+        {
+            const PointF first=local(curve.keys().front().time, curve.keys().front().value);
+            const PointF last=local(curve.keys().back().time, curve.keys().back().value);
+            const PointF left(std::min(-margin, first.x), first.y);
+            const PointF right(std::max(width+margin, last.x), last.y);
+            PointF firstNext=right;
+            PointF lastPrev=left;
+
+            if(spanCount > 0)
+            {
+                spanPoints(curve, 0, points);
+                firstNext=points[1];
+                spanPoints(curve, spanCount-1, points);
+                lastPrev=points[points.size()-2];
+            }
+            drawSegment(slots.ext[0], slots.extDrawn[0], left, first, nullptr, &firstNext, color, lineZ);
+            drawSegment(slots.ext[1], slots.extDrawn[1], last, right, &lastPrev, nullptr, color, lineZ);
+        }
+
+        // the spans: every one on a new view, else the ones the log marked
+        auto drawSpan=[&](size_t k)
+        {
+            Span &span=slots.spans[k];
+
+            spanPoints(curve, k, points);
+
+            const size_t segments=points.size()-1;
+            PointF first, last;
+
+            // the neighbours across the span's ends: the span or extension
+            // before it and after it
+            if(k > 0)
+            {
+                spanPoints(curve, k-1, before);
+                first=before[before.size()-2];
+            }
+            else
+                first=PointF(std::min(-margin, points.front().x), points.front().y);
+            if(k+1 < spanCount)
+            {
+                spanPoints(curve, k+1, after);
+                last=after[1];
+            }
+            else
+                last=PointF(std::max(width+margin, points.back().x), points.back().y);
+
+            for(size_t i=0; i<span.ids.size(); ++i)
+            {
+                if(i >= segments)
+                {
+                    hide(span.ids[i], span.drawn[i]);
+                    continue;
+                }
+
+                const PointF &prev=(i > 0)?points[i-1]:first;
+                const PointF &next=(i+1 < segments)?points[i+2]:last;
+
+                drawSegment(span.ids[i], span.drawn[i], points[i], points[i+1], &prev, &next, color, lineZ);
+            }
+        };
+
+        if(whole)
+        {
+            for(size_t k=0; k<spanCount; ++k)
+                drawSpan(k);
+        }
+        else
+        {
+            for(size_t k : dirtySpans[c])
+                drawSpan(k);
+        }
+        if(all)
+        {
+            for(size_t id : slots.segmentSpare)
+                renderer->hidePrimitive(id);
+            for(size_t id : slots.keySpare)
+                renderer->hidePrimitive(id);
+        }
+
+        // the keys and their handles
+        auto drawKey=[&](size_t k)
+        {
+            Key &key=slots.keys[k];
+            const Curve::Key &value=curve.key(k);
+            const PointF at=local(value.time, value.value);
+            const bool inside=(at.x >= -float(controls::CurveEditor::KeySize))
+                && (at.x <= width+float(controls::CurveEditor::KeySize))
+                && (at.y >= -float(controls::CurveEditor::KeySize))
+                && (at.y <= height+float(controls::CurveEditor::KeySize));
+
+            if(!inside)
+                hide(key.id, key.drawn);
+            else
+            {
+                controls::CurveKeyRef hovered;
+                const bool isHovered=editor->getHoveredKey(hovered) && (hovered == controls::CurveKeyRef{c, k});
+                const tokyonight::Surface &surface=editor->isSelected(c, k)?tokyonight::CurveKeySelected:
+                    (isHovered?tokyonight::CurveKeyHover:tokyonight::CurveKey);
+                const int size=controls::CurveEditor::KeySize;
+                const gweni::Rect rect(int(bounds.x+std::lround(at.x))-size/2, int(bounds.y+std::lround(at.y))-size/2,
+                    size, size);
+
+                drawRect(key.id, key.drawn, rect, surface, 0.5f*float(size), keyZ);
+            }
+
+            const bool handles=editor->showsHandles(c, k);
+
+            if(!handles && (key.handles >= m_handles.size()))
+                return;
+            if(!handles)
+            {
+                HandleSet &set=m_handles[key.handles];
+
+                for(int i=0; i<4; ++i)
+                    hide(set.ids[i], set.drawn[i]);
+                set.used=false;
+                key.handles=SIZE_MAX;
+                return;
+            }
+            if(key.handles >= m_handles.size())
+            {
+                // a free set (there is one: update() counted them)
+                for(size_t i=0; i<m_handles.size(); ++i)
+                {
+                    if(!m_handles[i].used)
+                    {
+                        m_handles[i].used=true;
+                        key.handles=i;
+                        break;
+                    }
+                }
+                if(key.handles >= m_handles.size())
+                    return;
+            }
+
+            HandleSet &set=m_handles[key.handles];
+            PointF in, out;
+
+            editor->handlePositions(c, k, in, out);
+
+            const PointF ends[2]={in, out};
+            const int size=controls::CurveEditor::HandleSize;
+
+            for(int i=0; i<2; ++i)
+            {
+                drawSegment(set.ids[i], set.drawn[i], at, ends[i], nullptr, nullptr,
+                    tokyonight::CurveTangent.top, stemZ);
+
+                const gweni::Rect rect(int(bounds.x+std::lround(ends[i].x))-size/2,
+                    int(bounds.y+std::lround(ends[i].y))-size/2, size, size);
+
+                drawRect(set.ids[2+i], set.drawn[2+i], rect, tokyonight::CurveTangent, 0.5f*float(size), discZ);
+            }
+        };
+
+        if(whole)
+        {
+            for(size_t k=0; k<slots.keys.size(); ++k)
+                drawKey(k);
+        }
+        else
+        {
+            for(size_t k : dirtyKeys[c])
+                drawKey(k);
+        }
+    }
+    if(all)
+    {
+        // the handle sets no key holds
+        for(HandleSet &set : m_handles)
+        {
+            if(set.used)
+                continue;
+            for(int i=0; i<4; ++i)
+                hide(set.ids[i], set.drawn[i]);
+        }
+    }
+
+    //--- the marquee: its fill under the curves, its outline over the keys
+    {
+        const gweni::Rect marquee=editor->getMarqueeRect();
+
+        if((marquee.w <= 0) || (marquee.h <= 0))
+        {
+            hide(m_fill, m_fillDrawn);
+            for(int i=0; i<4; ++i)
+                hide(m_outline[i], m_outlineDrawn[i]);
+        }
+        else
+        {
+            const gweni::Rect rect(bounds.x+marquee.x, bounds.y+marquee.y, marquee.w, marquee.h);
+            tokyonight::Surface fill=tokyonight::CurveMarquee;
+
+            fill.border=Color(0, 0, 0, 0);
+            fill.borderWidth=0.0f;
+            drawRect(m_fill, m_fillDrawn, rect, fill, 0.0f, z+2);
+
+            const PointF corners[4]={PointF(float(marquee.x), float(marquee.y)),
+                PointF(float(marquee.x+marquee.w), float(marquee.y)),
+                PointF(float(marquee.x+marquee.w), float(marquee.y+marquee.h)),
+                PointF(float(marquee.x), float(marquee.y+marquee.h))};
+
+            for(int i=0; i<4; ++i)
+            {
+                drawSegment(m_outline[i], m_outlineDrawn[i], corners[i], corners[(i+1)%4], &corners[(i+3)%4],
+                    &corners[(i+2)%4], tokyonight::CurveMarquee.border, outlineZ);
+            }
+        }
+    }
+
+    //--- the grid and the labels, on a new view
+    if(viewMoved)
+    {
+        const double x0=editor->viewX0();
+        const double x1=editor->viewX1();
+        const double y0=editor->viewY0();
+        const double y1=editor->viewY1();
+        size_t line=0;
+        auto gridLine=[&](const PointF &a, const PointF &b, bool major)
+        {
+            if(line >= m_grid.ids.size())
+                return;
+            drawSegment(m_grid.ids[line], m_grid.drawn[line], a, b, nullptr, nullptr,
+                major?tokyonight::CurveEditorGridMajor.top:tokyonight::CurveEditorGrid.top, z+1);
+            ++line;
+        };
+        // the minor lines that are not major ones, then the major ones
+        auto axisLines=[&](double lo, double hi, float length, float labelGap, bool vertical,
+            std::vector<double> &majors, double &majorStep)
+        {
+            const double minorStep=controls::axis::niceStep(hi-lo, std::max(1, int(length/GridMinGap)));
+
+            majorStep=controls::axis::niceStep(hi-lo, std::max(1, int(length/labelGap)));
+            majors=controls::axis::valueTicks(lo, hi, majorStep);
+            for(double v : controls::axis::valueTicks(lo, hi, minorStep))
+            {
+                const double k=v/majorStep;
+
+                if(std::fabs(k-std::round(k)) < 1e-6)
+                    continue;
+
+                const PointF p=local(vertical?v:x0, vertical?y0:v);
+
+                gridLine(vertical?PointF(p.x, 0.0f):PointF(0.0f, p.y),
+                    vertical?PointF(p.x, height):PointF(width, p.y), false);
+            }
+            for(double v : majors)
+            {
+                const PointF p=local(vertical?v:x0, vertical?y0:v);
+
+                gridLine(vertical?PointF(p.x, 0.0f):PointF(0.0f, p.y),
+                    vertical?PointF(p.x, height):PointF(width, p.y), true);
+            }
+        };
+
+        std::vector<double> timeTicks, valueTicks;
+        double timeStep=1.0, valueStep=1.0;
+
+        axisLines(x0, x1, width, LabelGapX, true, timeTicks, timeStep);
+        axisLines(y0, y1, height, LabelGapY, false, valueTicks, valueStep);
+        for(; line<m_grid.ids.size(); ++line)
+            hide(m_grid.ids[line], m_grid.drawn[line]);
+
+        // a label per major tick: the times along the bottom, the values along
+        // the left, each its own run, drawn again only when it changed
+        const gweni::Font &font=baseControl->getSkin()->getDefaultFont();
+        const int lineHeight=renderer->lineHeight(font);
+        const Color color=baseControl->getSkin()->Colors.CurveEditor.TickText;
+        size_t used=0;
+        auto label=[&](const String &text, const Point &pos)
+        {
+            if(used >= m_labels.size())
+            {
+                Label added;
+
+                renderer->generateTextPrimitive(added.id);
+                m_labels.push_back(added);
+            }
+
+            Label &slot=m_labels[used++];
+
+            if(!all && slot.valid && slot.shown && (slot.text == text) && (slot.pos.x == pos.x) && (slot.pos.y == pos.y)
+                && (slot.clip == plotClip) && (slot.color == color))
+                return;
+
+            renderer->setClipRegion(plotClip);
+            renderer->setDrawColor(color);
+            renderer->renderText(slot.id, font, pos, z+1, text);
+            if(!slot.shown || all)
+                renderer->showText(slot.id);
+            slot.valid=true;
+            slot.shown=true;
+            slot.text=text;
+            slot.pos=pos;
+            slot.clip=plotClip;
+            slot.color=color;
+        };
+
+        for(double v : timeTicks)
+        {
+            const PointF p=local(v, y0);
+
+            label(controls::axis::formatValue(v, timeStep), Point(bounds.x+int(std::lround(p.x))+3,
+                bounds.y+bounds.h-lineHeight-2));
+        }
+        for(double v : valueTicks)
+        {
+            const PointF p=local(x0, v);
+
+            // none in the time labels' row along the bottom
+            if(p.y > height-float(2*lineHeight))
+                continue;
+            label(controls::axis::formatValue(v, valueStep), Point(bounds.x+3, bounds.y+int(std::lround(p.y))-lineHeight));
+        }
+        for(size_t i=used; i<m_labels.size(); ++i)
+        {
+            if(m_labels[i].shown)
+                renderer->hideText(m_labels[i].id);
+            m_labels[i].shown=false;
+            m_labels[i].valid=false;
+        }
+    }
+
+    renderer->setClipRegion(region);
+    editor->clearPendingEdits();
+    m_viewSerial=editor->viewSerial();
+}
+
+
+///////////////////////////////////////////////////////////////////////////
 //NodeGraphMarquee
 void NodeGraphMarquee::update(renderer::Base *renderer, controls::Base *baseControl)
 {
