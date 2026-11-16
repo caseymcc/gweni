@@ -290,13 +290,14 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # the knobs' drags and typed entry, the hex view's scroll, cursor keys,
     # copy and edit, the gradient editor's drags, typed colour, added stop
     # and picker, the curve editor's key and tangent drags, zoom, pan and
-    # added key, and the sequencer's drags, scrub, zoom, pan and deletes
+    # added key, the sequencer's drags, scrub, zoom, pan and deletes, and
+    # a finger's taps, drag-scrolls and pans
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
             dialog toast flow switch spinner navigation-rail board field-validation segmented
             tree-table tree-table-live split-button breadcrumb toolbar range-slider stepper code-view rich-text markdown
             markdown-images search-combo command-palette reorder calendar date-time translucency opacity knob hex-view
-            gradient-editor curve-editor sequencer)
+            gradient-editor curve-editor sequencer touch)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail" OR verify_scenario STREQUAL "knob"
@@ -734,6 +735,16 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_reorder 180
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario reorder --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/reorder@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # A finger through Canvas::inputTouch (#615): a tap presses its button
+    # once and leaves nothing hovered or tooltipped, a drag over a list scrolls
+    # it by the finger's distance at no more than a wheel notch's cost and
+    # presses no row, fractions kept, and a Slider's thumb, a ZoomPanel and a
+    # NodeGraph's node and empty space follow the finger
+    gweni_whole_app_test(controltest_touch 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario touch --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/touch@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # ChipBadgeDemo: a badge's new count writes its slots alone and lays out

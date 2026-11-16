@@ -214,6 +214,11 @@
  *                       goes through gweni::input::GLFW3's mouse-button
  *                       callback, as a window's does, and a press (a click's
  *                       included) steps the clock by 1 s, as --press does.
+ *    --touch-down ID,X,Y, --touch-move ID,X,Y, --touch-up ID
+ *                       a finger: put down, moved, lifted where it last was,
+ *                       through Canvas::inputTouch (a tap, a drag-scroll, a
+ *                       control's own drag); a down steps the clock by 1 s,
+ *                       as --press does
  *    --scroll DX,DY     mouse wheel, in wheel units (60 a notch): DY through
  *                       Canvas::inputMouseWheel, then DX, if not 0, through
  *                       inputMouseWheelH (the horizontal wheel)
@@ -989,6 +994,28 @@
  *                 they were; settled frames write nothing; the demo gives
  *                 its ids back. Three more lines list each drag, tangent
  *                 and view frame's writes. Exits non-zero if any check is no.
+ *    touch        a finger through Canvas::inputTouch, the clock frozen
+ *                 (touch-list.png): a tap on ButtonDemo's "Toggle Me" and on
+ *                 "With Tooltip" (the clock then run 1.5 s); a drag over
+ *                 VirtualListDemo's rows as far as a wheel notch scrolls,
+ *                 one back 2.5 units a move and a tap on a row; a drag on
+ *                 SliderDemo's thumb; one on ZoomPanelDemo's empty content;
+ *                 one on a NodeGraphDemo node's title bar and one on the
+ *                 graph's empty space. One line
+ *                   touch tap=yes|no ... ids_back=yes|no
+ *                 reports the checks: a tap presses its button once, leaves
+ *                 nothing hovered and shows no tooltip; the frame with the
+ *                 finger down writes nothing; the drag scrolls by the
+ *                 finger's distance in one pass entering no more than the
+ *                 list's subtree and the way down to it, writes no more
+ *                 slots than the wheel notch and draws its frame, and its
+ *                 lift presses no row; the slow drag scrolls by nothing
+ *                 under the slop and then by the finger's whole units; a
+ *                 tap presses the row under it once; the thumb, the node
+ *                 and the panel and the graph (no marquee) follow the
+ *                 finger, the pan laying nothing out; settled frames write
+ *                 nothing; the demos give their ids back. Exits non-zero if
+ *                 any check is no.
  *    chip-badge   ChipBadgeDemo, the clock frozen (chip-badge.png): the
  *                 Inbox entry's badge counted one more (the same width),
  *                 then 9 -> 10 (wider); the "Corners" button, a badge at
@@ -2215,6 +2242,8 @@ static void printUsage(std::ostream &out)
          "and a shot before any frame was rendered is an error:\n"
          "  --move/--press/--release/--click/--double-click X,Y, --scroll DX,DY\n"
          "  --press-right/--release-right/--click-right X,Y  the right button\n"
+         "  --touch-down ID,X,Y, --touch-move ID,X,Y, --touch-up ID  a finger,\n"
+         "                     through Canvas::inputTouch (lifted where it last was)\n"
          "  --key <name>       a named key (backspace, left, home, ...), a single\n"
          "                     character, or a chord such as ctrl+a or shift+left,\n"
          "                     sent as GLFW events through the GLFW translator\n"
@@ -2321,6 +2350,19 @@ static gweni::Point devicePixels(const gweni::Point &size, float scale)
 {
     return gweni::Point(gweni::renderer::Base::snap(float(size.x), scale),
         gweni::renderer::Base::snap(float(size.y), scale));
+}
+
+// ID,X,Y, the point in (fractional) logical units
+static bool parseTouchPoint(const std::string &value, int &id, float &x, float &y)
+{
+    const size_t first=value.find(',');
+    const size_t second=(first == std::string::npos)?first:value.find(',', first+1);
+    if(second == std::string::npos) return false;
+
+    id=std::atoi(value.substr(0, first).c_str());
+    x=std::strtof(value.substr(first+1, second-first-1).c_str(), nullptr);
+    y=std::strtof(value.substr(second+1).c_str(), nullptr);
+    return true;
 }
 
 static bool parsePoint(const std::string &value, int &x, int &y)
@@ -2783,6 +2825,42 @@ static void clickMouse(Session &s, int x, int y, int button=GLFW_MOUSE_BUTTON_LE
     mouseUp(s, x, y, button);
 }
 
+// A finger, through Canvas::inputTouch, at canvas units; each one's last
+// point is where --touch-up lifts it. A down steps the clock by as much as a
+// press does, so two taps in a row are two taps.
+static std::map<int, gweni::PointF> g_touchPoints;
+
+static void touchEvent(Session &s, int id, gweni::TouchPhase phase, float x, float y)
+{
+    static const char *const names[]={"down", "move", "up", "cancel"};
+
+    s.canvas->inputTouch(id, phase, x, y);
+    trace(s, std::string("touch ")+names[static_cast<int>(phase)]+" "+std::to_string(id)+" "
+        +std::to_string(x)+","+std::to_string(y));
+}
+
+static void touchDown(Session &s, int id, float x, float y, bool stepClock=true)
+{
+    if(stepClock)
+        g_clockSteps+=g_pressSteps;
+    g_touchPoints[id]=gweni::PointF(x, y);
+    touchEvent(s, id, gweni::TouchPhase::Down, x, y);
+}
+
+static void touchMove(Session &s, int id, float x, float y)
+{
+    g_touchPoints[id]=gweni::PointF(x, y);
+    touchEvent(s, id, gweni::TouchPhase::Move, x, y);
+}
+
+static void touchUp(Session &s, int id)
+{
+    const gweni::PointF at=g_touchPoints[id];
+
+    g_touchPoints.erase(id);
+    touchEvent(s, id, gweni::TouchPhase::Up, at.x, at.y);
+}
+
 static void doubleClickMouse(Session &s, int x, int y)
 {
     clickMouse(s, x, y);
@@ -3146,13 +3224,15 @@ static void dropControl(Session &s, gweni::controls::Base *control)
 // Scripted runs
 //-----------------------------------------------------------------------------
 enum class StepKind { Move, Down, Up, Click, DoubleClick, DownRight, UpRight, ClickRight, Scroll, Key, Type,
-    ExpectText, WaitClipboard, Frames, Shot };
+    ExpectText, WaitClipboard, Frames, Shot, TouchDown, TouchMove, TouchUp };
 
 struct Step
 {
     StepKind kind;
     int x=0, y=0;
     std::string text;
+    int touch=0;        // --touch-*'s finger
+    float fx=0.0f, fy=0.0f;
 };
 
 static std::string shotPathIn(const std::string &dir, const std::string &name)
@@ -3190,6 +3270,9 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
         case StepKind::DownRight: mouseDown(s, step.x, step.y, true, GLFW_MOUSE_BUTTON_RIGHT); break;
         case StepKind::UpRight: mouseUp(s, step.x, step.y, GLFW_MOUSE_BUTTON_RIGHT); break;
         case StepKind::ClickRight: clickMouse(s, step.x, step.y, GLFW_MOUSE_BUTTON_RIGHT); break;
+        case StepKind::TouchDown: touchDown(s, step.touch, step.fx, step.fy); break;
+        case StepKind::TouchMove: touchMove(s, step.touch, step.fx, step.fy); break;
+        case StepKind::TouchUp: touchUp(s, step.touch); break;
         case StepKind::Scroll:
             if(step.y)
                 (void)scrollWheel(s, step.y);
@@ -3227,7 +3310,7 @@ enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typ
     PlotLines, Knob, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
     ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented, SplitButton, ToolBar,
     Breadcrumb, RangeSlider, Stepper, CodeView, RichText, Markdown, MarkdownImages, SearchCombo, CommandPalette, Reorder, Calendar, DateTime, Translucency,
-    OpacityRoundTrip, Opacity, HexView, GradientEditor, CurveEditor, Sequencer };
+    OpacityRoundTrip, Opacity, HexView, GradientEditor, CurveEditor, Sequencer, Touch };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -3256,6 +3339,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "opacity") scenario=Scenario::Opacity;
     else if(name == "gradient-editor") scenario=Scenario::GradientEditor;
     else if(name == "curve-editor") scenario=Scenario::CurveEditor;
+    else if(name == "touch") scenario=Scenario::Touch;
     else if(name == "demo-labels") scenario=Scenario::DemoLabels;
     else if(name == "plot-histogram") scenario=Scenario::PlotHistogram;
     else if(name == "plot-lines") scenario=Scenario::PlotLines;
@@ -25623,6 +25707,391 @@ static bool checkTeardown(Session &s, const std::vector<std::string> &controls,
     return false;
 }
 
+//-----------------------------------------------------------------------------
+// --scenario touch: a finger through Canvas::inputTouch, the clock frozen
+//
+// A tap is a click where the finger went down, then the mouse gone, so
+// nothing stays hovered and no tooltip's delay starts; a drag pans the
+// nearest control under the down point that can move along each axis, in
+// whole units for a ScrollControl, the fractions kept, and presses nothing; a
+// control that keeps the drag (a Slider's thumb, a node's title bar) gets a
+// mouse drag.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+// The first Button under `root` whose text is `text`.
+gweni::controls::Button *buttonWithText(gweni::controls::Base *root, const std::string &text)
+{
+    for(int i=0; gweni::controls::Base *found=findControl(root, "Button", i); ++i)
+    {
+        auto *button=static_cast<gweni::controls::Button *>(found);
+
+        if(button->getText() == text)
+            return button;
+    }
+    return nullptr;
+}
+
+// A point of `area` (canvas units, searched on a 7-unit grid) where the
+// canvas's hit test finds a control `bare` says is empty space.
+template<typename Bare>
+bool emptyPointIn(Session &s, const gweni::Rect &area, Bare bare, gweni::Point &at)
+{
+    for(int y=area.y+area.h/2; y < area.y+area.h-4; y+=7)
+    {
+        for(int x=area.x+area.w/3; x < area.x+area.w-4; x+=7)
+        {
+            if(bare(s.canvas->getControlAt(x, y)))
+            {
+                at=gweni::Point(x, y);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+}//namespace
+
+static bool runTouchScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    checks.scenario="touch";
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    bool ok=true;
+
+    // (1) ButtonDemo: a tap clicks once and leaves nothing hovered; one on a
+    // button with a tooltip shows none however long the clock then runs
+    {
+        gweni::controls::Base *control=addControl(s, "ButtonDemo");
+        gweni::controls::Button *toggle=control?buttonWithText(control, "Toggle Me"):nullptr;
+        gweni::controls::Button *tipped=control?buttonWithText(control, "With Tooltip"):nullptr;
+
+        if(!toggle || !tipped)
+        {
+            std::cerr<<"ControlTest: touch: ButtonDemo has no \"Toggle Me\" or \"With Tooltip\"\n";
+            return false;
+        }
+
+        s.label="touch-button";
+        renderFrames(s, s.frames);
+
+        std::vector<uint8_t> pixels;
+        size_t idleWork=settleCodeEditor(s, pixels);
+        ScenarioCounter presses;
+
+        toggle->onPressCaller.add(&presses, &ScenarioCounter::count);
+
+        const gweni::Point at=centreOf(toggle);
+
+        touchDown(s, 0, float(at.x), float(at.y));
+
+        const CodeEditorFrame held=codeEditorFrame(s);
+
+        touchUp(s, 0);
+
+        const CodeEditorFrame tapped=codeEditorFrame(s);
+
+        checks.check("tap",
+            presses.calls == 1 && toggle->getToggleState() && held.written == 0 && held.changed == 0
+                && gweni::HoveredControl != toggle && !toggle->isDepressed(),
+            "a tap on \"Toggle Me\" pressed it "+std::to_string(presses.calls)+" times (1 wanted), left it "
+            +(toggle->getToggleState()?"on":"off")+(gweni::HoveredControl == toggle?", hovered":"")
+            +", or the frame with the finger down wrote "+std::to_string(held.written)+" slots");
+
+        const gweni::Point tip=centreOf(tipped);
+
+        touchDown(s, 0, float(tip.x), float(tip.y));
+        touchUp(s, 0);
+        s.freezeClock=false;
+        renderFrames(s, 90);
+        s.freezeClock=true;
+        checks.check("tap_no_tooltip", !s.canvas->toolTipShown() && gweni::HoveredControl != tipped,
+            "a tap on \"With Tooltip\" left it hovered or showed its tooltip 1.5 s later");
+
+        idleWork+=settleCodeEditor(s, pixels);
+        checks.check("button_settled", idleWork == 0,
+            "settled frames wrote or changed "+std::to_string(idleWork));
+        (void)tapped;
+        dropControl(s, control);
+    }
+
+    // (2) VirtualListDemo: a drag scrolls by the finger's distance, costing
+    // no more than a wheel notch to the same offset and drawing its frame, and
+    // presses no row; a slow drag keeps its fractions; a tap presses one row
+    int wheelOffset=0;
+    size_t wheelWritten=0, dragWritten=0, dragVisited=0;
+    {
+        gweni::controls::Base *control=addControl(s, "VirtualListDemo");
+        auto *demo=gweni::gweni_cast<gweni::VirtualListDemo>(control);
+
+        if(!demo || !demo->m_list)
+        {
+            std::cerr<<"ControlTest: touch: VirtualListDemo was not built\n";
+            return false;
+        }
+
+        gweni::controls::VirtualList *list=demo->m_list;
+
+        s.label="touch-list";
+        renderFrames(s, s.frames);
+        ok=shoot(s, shotDir+"/touch-list.png") && ok;
+
+        std::vector<uint8_t> pixels;
+        size_t idleWork=settleCodeEditor(s, pixels);
+        const gweni::Rect listRect=list->getCanvasBounds();
+        const gweni::Point at(listRect.x+listRect.w/3, listRect.y+listRect.h/2);
+
+        moveMouse(s, at.x, at.y);
+        scrollWheel(s, -60);
+
+        const CodeEditorFrame wheel=codeEditorFrame(s);
+
+        wheelOffset=list->getVerticalScrollOffset();
+        wheelWritten=wheel.written;
+        // the row the mouse leaves is drawn again
+        forgetMouse(s);
+        renderFrames(s, 1);
+
+        std::vector<uint8_t> wheelPixels;
+
+        idleWork+=settleCodeEditor(s, wheelPixels);
+        list->setVerticalScrollOffset(0);
+        renderFrames(s, 1);
+        idleWork+=settleCodeEditor(s, pixels);
+
+        // a drag whose one move goes the wheel's distance
+        touchDown(s, 0, float(at.x), float(at.y));
+
+        const CodeEditorFrame down=codeEditorFrame(s);
+
+        touchMove(s, 0, float(at.x), float(at.y-wheelOffset));
+
+        const CodeEditorFrame drag=codeEditorFrame(s);
+        const size_t allowed=4*(pathLength(list)+subtreeControls(list));
+
+        dragWritten=drag.written;
+        dragVisited=drag.visited;
+        checks.check("drag_scroll",
+            down.written == 0 && list->getVerticalScrollOffset() == wheelOffset && drag.passes <= 1
+                && drag.visited <= allowed && drag.written <= wheel.written && drag.pixels == wheelPixels,
+            "a "+std::to_string(wheelOffset)+"-unit drag scrolled to "+std::to_string(list->getVerticalScrollOffset())
+            +", ran "+std::to_string(drag.passes)+" passes entering "+std::to_string(drag.visited)+" ("
+            +std::to_string(allowed)+" allowed), wrote "+std::to_string(drag.written)+" slots (the wheel's "
+            +std::to_string(wheel.written)+" allowed), or did not draw the wheel's frame");
+
+        touchUp(s, 0);
+
+        const CodeEditorFrame lifted=codeEditorFrame(s);
+
+        checks.check("drag_presses_nothing",
+            demo->m_pressed->getText() == "Pressed: none" && lifted.pixels == wheelPixels
+                && gweni::HoveredControl == nullptr,
+            "the drag's lift said \""+demo->m_pressed->getText()+"\", left something hovered or changed pixels");
+        idleWork+=settleCodeEditor(s, pixels);
+
+        // a slow drag back down, 2.5 units a move: the offset follows the
+        // finger's whole units once past the slop
+        const int start=list->getVerticalScrollOffset();
+        bool followed=true;
+        std::string slow;
+
+        touchDown(s, 0, float(at.x), float(at.y));
+        for(int i=1; i <= 12; ++i)
+        {
+            const float moved=2.5f*i;
+
+            touchMove(s, 0, float(at.x), float(at.y)+moved);
+            renderFrames(s, 1);
+
+            const int expected=(moved < gweni::controls::Canvas::TouchSlop)?start:start-int(moved);
+
+            slow+=" "+std::to_string(start-list->getVerticalScrollOffset());
+            if(list->getVerticalScrollOffset() != expected)
+                followed=false;
+        }
+        touchUp(s, 0);
+        renderFrames(s, 1);
+        checks.check("drag_fractions", followed,
+            "a drag of 2.5 units a move scrolled by"+slow+" (0 under the slop, then the whole units wanted)");
+        idleWork+=settleCodeEditor(s, pixels);
+
+        // a tap presses the row under it, once
+        gweni::controls::Base *row=s.canvas->getControlAt(at.x, at.y);
+        auto *rowLabel=gweni::gweni_cast<gweni::controls::Label>(row);
+        const std::string wanted=rowLabel?"Pressed: "+rowLabel->getText():std::string("(no row)");
+
+        touchDown(s, 0, float(at.x), float(at.y));
+        touchUp(s, 0);
+        renderFrames(s, 1);
+        checks.check("tap_row", rowLabel && demo->m_pressed->getText() == wanted,
+            "a tap on a row said \""+demo->m_pressed->getText()+"\", not \""+wanted+"\"");
+
+        idleWork+=settleCodeEditor(s, pixels);
+        checks.check("list_settled", idleWork == 0,
+            "settled frames wrote or changed "+std::to_string(idleWork));
+        dropControl(s, control);
+    }
+
+    // (3) SliderDemo: a drag on a thumb is the thumb's, as the mouse's is
+    {
+        gweni::controls::Base *control=addControl(s, "SliderDemo");
+        gweni::controls::Base *thumb=control?findControl(control, "SliderBar"):nullptr;
+
+        if(!thumb)
+        {
+            std::cerr<<"ControlTest: touch: SliderDemo has no SliderBar\n";
+            return false;
+        }
+
+        s.label="touch-slider";
+        renderFrames(s, s.frames);
+
+        const gweni::Point at=centreOf(thumb);
+        const int before=thumb->getCanvasBounds().x;
+
+        touchDown(s, 0, float(at.x), float(at.y));
+        touchMove(s, 0, float(at.x+20), float(at.y));
+        renderFrames(s, 1);
+        touchMove(s, 0, float(at.x+40), float(at.y));
+        renderFrames(s, 1);
+        touchUp(s, 0);
+        renderFrames(s, 1);
+
+        const int after=thumb->getCanvasBounds().x;
+
+        checks.check("slider_thumb", after > before+20 && gweni::HoveredControl == nullptr,
+            "a 40-unit drag on the thumb moved it from "+std::to_string(before)+" to "+std::to_string(after));
+        dropControl(s, control);
+    }
+
+    // (4) ZoomPanelDemo: a drag on the content's empty space pans by the
+    // finger's distance and lays nothing out
+    {
+        gweni::controls::Base *control=addControl(s, "ZoomPanelDemo");
+        auto *demo=gweni::gweni_cast<gweni::ZoomPanelDemo>(control);
+
+        if(!demo || !demo->panel())
+        {
+            std::cerr<<"ControlTest: touch: ZoomPanelDemo was not built\n";
+            return false;
+        }
+
+        gweni::controls::ZoomPanel *panel=demo->panel();
+
+        s.label="touch-zoom-panel";
+        renderFrames(s, s.frames);
+
+        gweni::Point at;
+        const bool found=emptyPointIn(s, panel->getCanvasBounds(),
+            [panel](gweni::controls::Base *hit) { return hit == panel || hit == panel->getInnerPanel(); }, at);
+        const gweni::PointF pan=panel->pan();
+
+        touchDown(s, 0, float(at.x), float(at.y));
+        touchMove(s, 0, float(at.x+30), float(at.y+20));
+
+        const CodeEditorFrame moved=codeEditorFrame(s);
+
+        touchUp(s, 0);
+        renderFrames(s, 1);
+        checks.check("zoom_panel_pan",
+            found && panel->pan().x == pan.x+30 && panel->pan().y == pan.y+20 && moved.passes == 0,
+            std::string(found?"":"no empty point found; ")+"a (30, 20) drag panned by ("
+            +std::to_string(panel->pan().x-pan.x)+", "+std::to_string(panel->pan().y-pan.y)+") and ran "
+            +std::to_string(moved.passes)+" layout passes");
+        dropControl(s, control);
+    }
+
+    // (5) NodeGraphDemo: a drag on a node's title bar moves the node; one on
+    // the graph's empty space pans it, with no marquee
+    {
+        gweni::controls::Base *control=addControl(s, "NodeGraphDemo");
+        auto *demo=gweni::gweni_cast<gweni::NodeGraphDemo>(control);
+
+        if(!demo || !demo->graph() || demo->graph()->getNodes().empty())
+        {
+            std::cerr<<"ControlTest: touch: NodeGraphDemo was not built\n";
+            return false;
+        }
+
+        gweni::controls::NodeGraph *graph=demo->graph();
+        gweni::controls::Node *node=graph->getNodes().front();
+
+        s.label="touch-node-graph";
+        renderFrames(s, s.frames);
+
+        const gweni::Point title=centreOf(node->getTitleBar());
+        const gweni::Rect before=node->getBounds();
+
+        touchDown(s, 0, float(title.x), float(title.y));
+        touchMove(s, 0, float(title.x+12), float(title.y+8));
+        renderFrames(s, 1);
+        touchMove(s, 0, float(title.x+24), float(title.y+16));
+        renderFrames(s, 1);
+        touchUp(s, 0);
+        renderFrames(s, 1);
+
+        const gweni::Rect after=node->getBounds();
+        const float zoom=graph->zoom();
+        const int wantX=int(std::lround(24/zoom));
+        const int wantY=int(std::lround(16/zoom));
+
+        checks.check("node_drag",
+            std::abs(after.x-before.x-wantX) <= 1 && std::abs(after.y-before.y-wantY) <= 1,
+            "a (24, 16) drag on a title bar moved the node by ("+std::to_string(after.x-before.x)+", "
+            +std::to_string(after.y-before.y)+"), not ("+std::to_string(wantX)+", "+std::to_string(wantY)+")");
+
+        gweni::Point at;
+        const bool found=emptyPointIn(s, graph->getCanvasBounds(),
+            [graph](gweni::controls::Base *hit)
+            {
+                for(gweni::controls::Base *at=hit; at; at=at->getActualParent())
+                {
+                    if(gweni::gweni_cast<gweni::controls::Node>(at) || gweni::gweni_cast<gweni::controls::Link>(at))
+                        return false;
+                    if(at == graph)
+                        return true;
+                }
+                return false;
+            }, at);
+        const gweni::PointF pan=graph->pan();
+        bool marquee=false;
+
+        touchDown(s, 0, float(at.x), float(at.y));
+        touchMove(s, 0, float(at.x+40), float(at.y-30));
+        marquee=graph->marqueeActive();
+        renderFrames(s, 1);
+        touchUp(s, 0);
+        renderFrames(s, 1);
+        checks.check("graph_pan",
+            found && !marquee && graph->pan().x == pan.x+40 && graph->pan().y == pan.y-30,
+            std::string(found?"":"no empty point found; ")+"a (40, -30) drag on empty space panned by ("
+            +std::to_string(graph->pan().x-pan.x)+", "+std::to_string(graph->pan().y-pan.y)+")"
+            +(marquee?" and drew a marquee":""));
+        dropControl(s, control);
+    }
+
+    forgetMouse(s);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()+liveTextIds()-idsBefore;
+
+    checks.check("ids_back", idsLeft == 0, std::to_string(idsLeft)+" ids not given back");
+
+    passed=checks.allPassed();
+    std::cout<<"touch";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<" wheel_offset="<<wheelOffset<<" wheel_written="<<wheelWritten
+             <<" drag_written="<<dragWritten<<" drag_visited="<<dragVisited<<"\n";
+    return ok;
+}
+
 #if GWENI_EXAMPLE_WEBGL
 //-----------------------------------------------------------------------------
 // The interactive window in the browser: what a script driving the page reads
@@ -26283,6 +26752,29 @@ int main(int argc, char *argv[])
             scripted=true;
             waitsForClipboard=true;
             steps.push_back({StepKind::WaitClipboard, std::atoi(argv[++i]), 0, {}});
+        }
+        else if((arg == "--touch-down" || arg == "--touch-move") && hasValue)
+        {
+            int id=0;
+            float x=0.0f, y=0.0f;
+            if(!parseTouchPoint(argv[++i], id, x, y))
+            {
+                std::cerr<<"ControlTest: "<<arg<<" wants ID,X,Y, e.g. 0,100,20\n";
+                return EXIT_FAILURE;
+            }
+            scripted=true;
+            Step step{arg == "--touch-down"?StepKind::TouchDown:StepKind::TouchMove, 0, 0, {}};
+            step.touch=id;
+            step.fx=x;
+            step.fy=y;
+            steps.push_back(step);
+        }
+        else if(arg == "--touch-up" && hasValue)
+        {
+            scripted=true;
+            Step step{StepKind::TouchUp, 0, 0, {}};
+            step.touch=std::atoi(argv[++i]);
+            steps.push_back(step);
         }
         else if(isMouseStep && hasValue)
         {
@@ -27090,6 +27582,15 @@ int main(int argc, char *argv[])
             ok=runCurveEditorScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // an edit wrote outside what it touched
+            break;
+        }
+
+        case Scenario::Touch:
+        {
+            bool passed=false;
+            ok=runTouchScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a tap, a drag or a pan did other than the mouse or the wheel would
             break;
         }
 
