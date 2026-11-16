@@ -1549,10 +1549,11 @@ borders, lines, grids and trapezoids (so selections and the caret) take the
 MenuDivider, a DataTable's or PropertyTree's lines, a StepperConnector, a Markdown
 rule and table grid, a RichText's underline and strikethrough), since it is a line
 of the panel's chrome (`SlotRenderer::styleLevel`, read in the draws and in
-`showPrimitive()`). At 1 the bytes are those written before #686.
+`showPrimitive()`). At 1 the bytes are those written before #686, but for a
+checker's cell alphas.
 A checker (style 7) keeps its fill's alpha over its cells and outputs the level as
-its alpha (packed in the cells' alphas, which its shader did not read), so
-`slotTranslucent()` reads it there. A glyph's alpha was always 1; it is now the run's
+its alpha (packed in the cells' alphas, which its shader did not read: 255 at 1,
+whatever alpha the theme gives the cells), so `slotTranslucent()` reads it there. A glyph's alpha was always 1; it is now the run's
 text level, kept as `TextRun::color`'s alpha, and a plain run whose colour or level
 alone changed has its glyph colours rewritten (`colorTextRun`) instead of being laid
 out again, as a run with colour spans already was.
