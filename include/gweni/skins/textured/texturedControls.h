@@ -772,8 +772,11 @@ GWENI_TRANSPARENT_RENDERER(NodeBody)
 // purpose, so Base::setSkin() does not report the type as having none (#185),
 // and each names the idea that tracks its real renderer: drop the line when
 // that renderer lands. A drawsNothing() override is not the place for these,
-// since the controls are meant to draw. (None is waiting now.)
+// since the controls are meant to draw.
 #define GWENI_PENDING_RENDERER(Class) GWENI_TRANSPARENT_RENDERER(Class)
+// the GradientEditor's ramp and stop handles (#642)
+GWENI_PENDING_RENDERER(GradientBar)
+GWENI_PENDING_RENDERER(GradientStopHandle)
 #undef GWENI_PENDING_RENDERER
 #undef GWENI_TRANSPARENT_RENDERER
 

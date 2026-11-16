@@ -48,6 +48,7 @@
 #include <gweni/controls/heightIndex.h>
 #include <gweni/controls/hexView.h>
 #include <gweni/controls/highlight.h>
+#include <gweni/controls/gradientEditor.h>
 #include <gweni/controls/horizontalScrollBar.h>
 #include <gweni/controls/horizontalSlider.h>
 #include <gweni/controls/hsvColorPicker.h>
