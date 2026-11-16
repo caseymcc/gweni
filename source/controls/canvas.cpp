@@ -15,6 +15,7 @@
 #include <gweni/controls/toolTip.h>
 #include <gweni/controls/toast.h>
 #include "touchGesture.h"
+#include <gweni/text/cells.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/primitiveIds.h>
 
@@ -2416,6 +2417,61 @@ bool Canvas::inputCharacter(UnicodeChar chr)
 
     KeyboardFocus->onChar(chr);
     return true;
+}
+
+// The control a composition goes to: the keyboard focus, if it is a shown
+// control of this canvas.
+static Base *compositionTarget(Canvas *canvas)
+{
+    if(!KeyboardFocus || (KeyboardFocus->getCanvas() != canvas) || !KeyboardFocus->visible())
+        return nullptr;
+    return KeyboardFocus;
+}
+
+bool Canvas::inputCompositionUpdate(const String &text, int caret)
+{
+    if(m_inputCapture)
+        return true;
+    if(hidden())
+        return false;
+
+    if(Base *target=compositionTarget(this))
+        target->onCompositionUpdate(text, caret);
+    return holdsKeyboard();
+}
+
+bool Canvas::inputCompositionCommit(const String &text)
+{
+    if(m_inputCapture)
+    {
+        for(size_t at=0; at < text.size();)
+        {
+            size_t next=at;
+            const uint32_t codepoint=text::utf8CodepointAt(text, at, &next);
+
+            m_inputCapture->captureCharacter(static_cast<UnicodeChar>(codepoint));
+            at=(next > at)?next:at+1;
+        }
+        return true;
+    }
+    if(hidden())
+        return false;
+
+    if(Base *target=compositionTarget(this))
+        target->onCompositionCommit(text);
+    return holdsKeyboard();
+}
+
+bool Canvas::inputCompositionCancel()
+{
+    if(m_inputCapture)
+        return true;
+    if(hidden())
+        return false;
+
+    if(Base *target=compositionTarget(this))
+        target->onCompositionCancel();
+    return holdsKeyboard();
 }
 
 bool Canvas::inputMouseLeave()

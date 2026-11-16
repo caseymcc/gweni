@@ -990,6 +990,17 @@ public:
 
     virtual bool onChar(gweni::UnicodeChar /*c*/) { return false; }
 
+    //! An input method's composition, given to the keyboard focus
+    //! (Canvas::inputCompositionUpdate, ...Commit, ...Cancel): \p text as it
+    //! is being composed with the input method's caret \p caret bytes into
+    //! it, the text it ends with, or nothing. Each returns whether it took
+    //! it. A TextBox shows the composing text inline; by default an update
+    //! and a cancel are not taken and a commit is typed, onChar() a codepoint
+    //! at a time.
+    virtual bool onCompositionUpdate(const String & /*text*/, int /*caret*/) { return false; }
+    virtual bool onCompositionCommit(const String &text);
+    virtual bool onCompositionCancel() { return false; }
+
     virtual bool onKeyPress(int key, bool bPress=true);
     virtual bool onKeyRelease(int key);
 

@@ -73,6 +73,12 @@ public:
     //! A touch point \p id at \p x, \p y (logical units, fractions kept) in
     //! \p phase. Optional: the default ignores it.
     virtual bool inputTouch(int /*id*/, TouchPhase /*phase*/, float /*x*/, float /*y*/) { return false; }
+    //! An input method's composition: \p text (UTF-8) as it is being
+    //! composed, its caret \p caret bytes into it; the text it ends with;
+    //! or none (the composition dropped). Optional: the defaults ignore them.
+    virtual bool inputCompositionUpdate(const String & /*text*/, int /*caret*/) { return false; }
+    virtual bool inputCompositionCommit(const String & /*text*/) { return false; }
+    virtual bool inputCompositionCancel() { return false; }
     virtual bool inputQuit()=0;
 };
 

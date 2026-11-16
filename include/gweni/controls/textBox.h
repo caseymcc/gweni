@@ -205,6 +205,42 @@ public:
     //! The z of the glyphs' run: a rect drawn at it is behind every glyph.
     int getTextZIndex() const { return m_text->getZIndex(); }
 
+    //! \name An input method's composition
+    //! The text an input method is composing (a Japanese word before its
+    //! kanji are chosen, a dead key's accent, a phone keyboard's word) shows
+    //! inline in place of the selection, or at the caret, underlined, the
+    //! caret \p caret bytes into it and the text after it moved along; it is
+    //! not in getText() and fires no onTextChanged. commitComposition() puts
+    //! \p text there as typing it would (one edit, one onTextChanged), and
+    //! cancelComposition() (or Escape) gives back the text, caret and
+    //! selection the composition began from. An update with no text cancels.
+    //! Anything else that edits or moves the caret (a key, a click, a paste,
+    //! insertText(), the focus leaving) commits what is composed first; the
+    //! app's setText() drops it. A box that is not editable, and a
+    //! PasswordTextBox, show no composition: a commit is typed.
+    //! The canvas gives them from Canvas::inputComposition*.
+    //! @{
+    void setComposition(const String &text, int caret);
+    void commitComposition(const String &text);
+    void cancelComposition();
+    bool isComposing() const { return m_composition != nullptr; }
+    //! The composing text, empty with none.
+    const String &getComposition() const;
+    //! The underline under the composing text, in getCaretBounds()'s
+    //! coordinates: one unit high at the bottom of its line; empty with no
+    //! composition (or one wrapped onto two lines).
+    const gweni::Rect &getCompositionBounds() const { return m_rectCompositionBounds; }
+    bool onCompositionUpdate(const String &text, int caret) override;
+    bool onCompositionCommit(const String &text) override;
+    bool onCompositionCancel() override;
+    //! @}
+
+    //! The committed text: a composition's is shown, not in it.
+    const String &getText() const override;
+    //! A key during a composition commits it first, but Escape, which
+    //! cancels it.
+    bool onKeyPress(int key, bool press=true) override;
+
     bool onKeyReturn(bool down) override;
     bool onKeyBackspace(bool down) override;
     bool onKeyDelete(bool down) override;
@@ -313,6 +349,9 @@ protected:
     //! Whether the hint shows while the empty box has the focus too (a
     //! CommandPalette's field, which always has it while open); false.
     virtual bool placeholderWhileFocused() const { return false; }
+    //! Whether an input method's composition shows in the box (true): a
+    //! PasswordTextBox's is only typed when committed.
+    virtual bool allowsComposition() const { return m_editable; }
 
     virtual bool isTextAllowed(const gweni::String &/*str*/, int /*pos*/)
     {
@@ -355,6 +394,28 @@ protected:
 
     gweni::Rect m_rectSelectionBounds;
     gweni::Rect m_rectCaretBounds;
+    gweni::Rect m_rectCompositionBounds;
+
+    //! A composition under way: the text and caret it began from, the
+    //! range of that text it replaces (the selection) and what it shows.
+    struct Composition
+    {
+        String committed;
+        int from=0;
+        int to=0;
+        int cursorPos=0;
+        int cursorEnd=0;
+        String text;
+    };
+    std::unique_ptr<Composition> m_composition;
+    //! Puts back the text, caret and selection the composition began from,
+    //! and ends it.
+    void endComposition();
+    //! Commits what is being composed, if anything (an edit's guard).
+    void commitPendingComposition();
+    //! Tells the platform where the caret is, for its text input
+    //! (platform::setTextInputRect), while the box has the focus.
+    void reportTextInput();
 
     //! Lights the caret and holds it lit for a while (an edit, a move).
     void keepCaretLit();
@@ -500,6 +561,9 @@ public:
     void onCut(event::Info) override {}
 
 protected:
+
+    //! A password shows no composition: the committed text is typed.
+    bool allowsComposition() const override { return false; }
 
     //! A mask character for each codepoint of the password: its offsets are
     //! the number of codepoints before a getText() offset times the mask

@@ -290,14 +290,15 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # the knobs' drags and typed entry, the hex view's scroll, cursor keys,
     # copy and edit, the gradient editor's drags, typed colour, added stop
     # and picker, the curve editor's key and tangent drags, zoom, pan and
-    # added key, the sequencer's drags, scrub, zoom, pan and deletes, and
-    # a finger's taps, drag-scrolls and pans
+    # added key, the sequencer's drags, scrub, zoom, pan and deletes, a
+    # finger's taps, drag-scrolls and pans, and an input method's
+    # compositions
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
             dialog toast flow switch spinner navigation-rail board field-validation segmented
             tree-table tree-table-live split-button breadcrumb toolbar range-slider stepper code-view rich-text markdown
             markdown-images search-combo command-palette reorder calendar date-time translucency opacity knob hex-view
-            gradient-editor curve-editor sequencer touch)
+            gradient-editor curve-editor sequencer touch ime)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail" OR verify_scenario STREQUAL "knob"
@@ -747,6 +748,16 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_touch 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario touch --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/touch@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # An input method's composition in TextBoxDemo's TextBox and
+    # TextBoxMultiline (#615): shown at the caret, underlined, outside
+    # getText() and firing nothing, each frame writing no more glyph slots
+    # than typing the text does and the underline's slot; Escape gives the
+    # frame back; the commit gives what typing gives, text, listing and pixels
+    gweni_whole_app_test(controltest_ime 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario ime --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/ime@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # ChipBadgeDemo: a badge's new count writes its slots alone and lays out

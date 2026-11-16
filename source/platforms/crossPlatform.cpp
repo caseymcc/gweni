@@ -564,6 +564,29 @@ String getClipboardText()
     return gs_ClipboardEmulator;
 }
 
+static std::function<void(bool, const Rect &)> &textInputHandler()
+{
+    static std::function<void(bool, const Rect &)> handler;
+    return handler;
+}
+
+void setTextInputHandler(std::function<void(bool active, const Rect &caretDeviceRect)> handler)
+{
+    textInputHandler()=std::move(handler);
+}
+
+void setTextInputRect(bool active, const Rect &caretDeviceRect)
+{
+    if(textInputHandler())
+    {
+        textInputHandler()(active, caretDeviceRect);
+        return;
+    }
+    // the page's text field comes with the page side (#615 step 5)
+    (void)active;
+    (void)caretDeviceRect;
+}
+
 bool setClipboardText(const String &str)
 {
     if(clipboardBackend().set)

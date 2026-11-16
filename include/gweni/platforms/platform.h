@@ -121,6 +121,24 @@ GWENI_EXPORT void setClipboardBackend(std::function<String()> get,
 GWENI_EXPORT void useBrowserClipboard(bool on);
 
 //
+// The text input
+//
+// A control that takes text (a TextBox) asks for the platform's text input
+// while it has the keyboard focus, so a phone's keyboard opens and an input
+// method's candidate window stands at the caret.
+//
+
+//! \p active: a text control has the keyboard focus, its caret at
+//! \p caretDeviceRect (device px of the window's framebuffer, as the
+//! renderer draws); called as the focus comes and goes and as the caret
+//! moves. In a browser page it focuses the page's hidden text field there
+//! (or blurs it); elsewhere it does nothing.
+GWENI_EXPORT void setTextInputRect(bool active, const Rect &caretDeviceRect);
+//! What setTextInputRect() calls instead of the platform's, for a test; an
+//! empty function gives the platform's back.
+GWENI_EXPORT void setTextInputHandler(std::function<void(bool active, const Rect &caretDeviceRect)> handler);
+
+//
 // The URL and the history
 //
 // The page's URL on the web, and an in-process stand-in for it everywhere

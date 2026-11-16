@@ -813,6 +813,15 @@ public:
     /// \param chr - Unicode character code.
     /// \return Event consumed?
     bool inputCharacter(gweni::UnicodeChar chr) override;
+    /// An input method's composition, for the keyboard focus as a character
+    /// is (Base::onCompositionUpdate, onCompositionCommit, onCompositionCancel):
+    /// a TextBox shows the composing text inline at its caret and takes the
+    /// committed text as typed. Taken while the UI has the keyboard, as a
+    /// character is. An input capture gets a commit as characters and
+    /// nothing of the rest.
+    bool inputCompositionUpdate(const String &text, int caret) override;
+    bool inputCompositionCommit(const String &text) override;
+    bool inputCompositionCancel() override;
 
     bool inputMouseWheel(int val) override;
     bool inputMouseWheelH(int val) override;

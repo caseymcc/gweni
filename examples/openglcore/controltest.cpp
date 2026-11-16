@@ -219,6 +219,11 @@
  *                       through Canvas::inputTouch (a tap, a drag-scroll, a
  *                       control's own drag); a down steps the clock by 1 s,
  *                       as --press does
+ *    --compose <utf8>   an input method's composition: the text shown at the
+ *                       focused TextBox's caret, its caret at its end, through
+ *                       Canvas::inputCompositionUpdate ("" cancels it)
+ *    --commit <utf8>    the composition's end: the text it commits, through
+ *                       Canvas::inputCompositionCommit, typed as --type would
  *    --scroll DX,DY     mouse wheel, in wheel units (60 a notch): DY through
  *                       Canvas::inputMouseWheel, then DX, if not 0, through
  *                       inputMouseWheelH (the horizontal wheel)
@@ -1025,6 +1030,22 @@
  *                 click did; the one on the Document box opens its menu at
  *                 the finger in the frame drawn LongPressSeconds after the
  *                 down, and its lift neither closes it nor chooses an item;
+ *                 settled frames write nothing; the demos give their ids
+ *                 back. Exits non-zero if any check is no.
+ *    ime          an input method's composition in TextBoxDemo's TextBox and
+ *                 TextBoxMultiline, the clock frozen: in a fresh demo each
+ *                 clicked, its caret put at the end, "日本" and then "語"
+ *                 typed; in another, "日本" and "日本語" composed there
+ *                 (ime-<box>-composing.png), Escape, "日本語" composed and
+ *                 committed. One line
+ *                   ime textbox_compose=yes|no ... ids_back=yes|no
+ *                 reports the checks: the composing text shows at the
+ *                 caret, underlined, outside getText() and with no
+ *                 onTextChanged, each frame writing no more glyph slots
+ *                 than typing the same text did and one primitive slot
+ *                 more (the underline); Escape gives back the text, listing and pixels
+ *                 with the focus kept; the commit fires one onTextChanged
+ *                 and gives the text, listing and pixels typing gives;
  *                 settled frames write nothing; the demos give their ids
  *                 back. Exits non-zero if any check is no.
  *    chip-badge   ChipBadgeDemo, the clock frozen (chip-badge.png): the
@@ -2256,6 +2277,8 @@ static void printUsage(std::ostream &out)
          "  --press-right/--release-right/--click-right X,Y  the right button\n"
          "  --touch-down ID,X,Y, --touch-move ID,X,Y, --touch-up ID  a finger,\n"
          "                     through Canvas::inputTouch (lifted where it last was)\n"
+         "  --compose <utf8>   an input method's composing text (\"\" cancels it)\n"
+         "  --commit <utf8>    the text the composition commits\n"
          "  --key <name>       a named key (backspace, left, home, ...), a single\n"
          "                     character, or a chord such as ctrl+a or shift+left,\n"
          "                     sent as GLFW events through the GLFW translator\n"
@@ -2873,6 +2896,21 @@ static void touchUp(Session &s, int id)
     touchEvent(s, id, gweni::TouchPhase::Up, at.x, at.y);
 }
 
+// An input method's composition through Canvas::inputComposition*: the
+// composing text with its caret at its end ("" cancels it), and the text it
+// ends with.
+static void compose(Session &s, const std::string &text)
+{
+    s.canvas->inputCompositionUpdate(text, static_cast<int>(text.size()));
+    trace(s, "compose "+text);
+}
+
+static void commitComposition(Session &s, const std::string &text)
+{
+    s.canvas->inputCompositionCommit(text);
+    trace(s, "commit "+text);
+}
+
 static void doubleClickMouse(Session &s, int x, int y)
 {
     clickMouse(s, x, y);
@@ -3236,7 +3274,7 @@ static void dropControl(Session &s, gweni::controls::Base *control)
 // Scripted runs
 //-----------------------------------------------------------------------------
 enum class StepKind { Move, Down, Up, Click, DoubleClick, DownRight, UpRight, ClickRight, Scroll, Key, Type,
-    ExpectText, WaitClipboard, Frames, Shot, TouchDown, TouchMove, TouchUp };
+    ExpectText, WaitClipboard, Frames, Shot, TouchDown, TouchMove, TouchUp, Compose, Commit };
 
 struct Step
 {
@@ -3285,6 +3323,8 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
         case StepKind::TouchDown: touchDown(s, step.touch, step.fx, step.fy); break;
         case StepKind::TouchMove: touchMove(s, step.touch, step.fx, step.fy); break;
         case StepKind::TouchUp: touchUp(s, step.touch); break;
+        case StepKind::Compose: compose(s, step.text); break;
+        case StepKind::Commit: commitComposition(s, step.text); break;
         case StepKind::Scroll:
             if(step.y)
                 (void)scrollWheel(s, step.y);
@@ -3322,7 +3362,7 @@ enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typ
     PlotLines, Knob, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
     ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented, SplitButton, ToolBar,
     Breadcrumb, RangeSlider, Stepper, CodeView, RichText, Markdown, MarkdownImages, SearchCombo, CommandPalette, Reorder, Calendar, DateTime, Translucency,
-    OpacityRoundTrip, Opacity, HexView, GradientEditor, CurveEditor, Sequencer, Touch };
+    OpacityRoundTrip, Opacity, HexView, GradientEditor, CurveEditor, Sequencer, Touch, Ime };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -3352,6 +3392,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "gradient-editor") scenario=Scenario::GradientEditor;
     else if(name == "curve-editor") scenario=Scenario::CurveEditor;
     else if(name == "touch") scenario=Scenario::Touch;
+    else if(name == "ime") scenario=Scenario::Ime;
     else if(name == "demo-labels") scenario=Scenario::DemoLabels;
     else if(name == "plot-histogram") scenario=Scenario::PlotHistogram;
     else if(name == "plot-lines") scenario=Scenario::PlotLines;
@@ -26271,6 +26312,186 @@ static bool runTouchScenario(Session &s, const std::string &shotDir, bool &passe
     return ok;
 }
 
+//-----------------------------------------------------------------------------
+// --scenario ime: an input method's composition in TextBoxDemo's TextBox and
+// TextBoxMultiline, the clock frozen
+//
+// For each box, the reference first: a fresh demo's box clicked, its caret
+// put at the end and "日本" then "語" typed. Then in another fresh demo
+// "日本" and "日本語" are composed there, Escape cancels, "日本語" is composed
+// again and committed, each compared with the typing.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+const std::string imeText="\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E";    // 日本語
+const std::string imePart="\xE6\x97\xA5\xE6\x9C\xAC";                // 日本
+
+// The demo's box of `type` focused by a click, its caret then put at the end
+// of its text.
+gweni::controls::TextBox *focusImeBox(Session &s, gweni::controls::Base *demo, const char *type)
+{
+    auto *box=static_cast<gweni::controls::TextBox *>(findControl(demo, type));
+
+    if(!box)
+        return nullptr;
+
+    const gweni::Point at=centreOf(box);
+
+    clickMouse(s, at.x, at.y);
+    box->setCursorPos(box->textLength());
+    box->setCursorend(box->textLength());
+    renderFrames(s, 1);
+    return box;
+}
+
+}//namespace
+
+static bool runImeScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    checks.scenario="ime";
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    bool ok=true;
+    std::string counts;
+
+    for(const char *type : {"TextBox", "TextBoxMultiline"})
+    {
+        const std::string name=(std::strcmp(type, "TextBox") == 0)?"textbox":"multiline";
+
+        // the reference: the text typed, "日本" then "語", into a fresh demo
+        gweni::controls::Base *control=addControl(s, "TextBoxDemo");
+
+        s.label="ime-"+name;
+        renderFrames(s, s.frames);
+
+        gweni::controls::TextBox *box=control?focusImeBox(s, control, type):nullptr;
+
+        if(!box)
+        {
+            std::cerr<<"ControlTest: ime: TextBoxDemo has no "<<type<<"\n";
+            return false;
+        }
+
+        std::vector<uint8_t> typedPixels;
+        size_t idleWork=settleCodeEditor(s, typedPixels);
+        const std::string before=box->getText();
+
+        typeText(s, imePart);
+
+        const CodeEditorFrame typedFirst=codeEditorFrame(s);
+
+        typeText(s, imeText.substr(imePart.size()));
+
+        const CodeEditorFrame typedSecond=codeEditorFrame(s);
+
+        idleWork+=settleCodeEditor(s, typedPixels);
+
+        const std::string typedText=box->getText();
+        const std::string typedListing=boundsListing(s);
+
+        forgetMouse(s);
+        dropControl(s, control);
+
+        // the composition, its cancel and its commit, in another fresh demo
+        control=addControl(s, "TextBoxDemo");
+        s.label="ime-"+name;
+        renderFrames(s, s.frames);
+        // addControl restarted the clock: the click is a second later than
+        // the first demo's, so not a double click with it (inputHandler keeps
+        // the last click's point and time)
+        g_clockSteps+=g_pressSteps;
+        box=focusImeBox(s, control, type);
+
+        ScenarioCounter changes;
+
+        box->onTextChangedCaller.add(&changes, &ScenarioCounter::count);
+
+        std::vector<uint8_t> pixels;
+
+        idleWork+=settleCodeEditor(s, pixels);
+
+        const std::string listingBefore=boundsListing(s);
+
+        compose(s, imePart);
+
+        const CodeEditorFrame first=codeEditorFrame(s);
+
+        compose(s, imeText);
+
+        const CodeEditorFrame second=codeEditorFrame(s);
+
+        ok=shoot(s, shotDir+"/ime-"+name+"-composing.png") && ok;
+
+        const bool shown=box->isComposing() && box->getText() == before
+            && box->getTextControl()->getText() == before+imeText && box->getCompositionBounds().w > 0;
+
+        // a composition frame: no more glyph slots than typing the same text
+        // writes, and one primitive slot more, the underline's (drawn)
+        checks.check(name+"_compose",
+            shown && changes.calls == 0 && first.glyphSlots <= typedFirst.glyphSlots
+                && second.glyphSlots <= typedSecond.glyphSlots
+                && first.primitives.size() == typedFirst.primitives.size()+1
+                && second.primitives.size() == typedSecond.primitives.size()+1 && first.passes <= 1,
+            std::string(shown?"":"the composing text is not shown at the caret, or is in getText(); ")
+            +"onTextChanged fired "+std::to_string(changes.calls)+" times; the frames wrote "
+            +std::to_string(first.glyphSlots)+" and "+std::to_string(second.glyphSlots)+" glyph slots (typing's "
+            +std::to_string(typedFirst.glyphSlots)+" and "+std::to_string(typedSecond.glyphSlots)+" allowed) and "
+            +std::to_string(first.primitives.size())+" and "+std::to_string(second.primitives.size())
+            +" primitive slots (typing's "+std::to_string(typedFirst.primitives.size())+" and "
+            +std::to_string(typedSecond.primitives.size())+" and the underline's wanted)");
+        counts+=" "+name+"_glyphs="+std::to_string(first.glyphSlots)+","+std::to_string(second.glyphSlots)
+            +" "+name+"_typed_glyphs="+std::to_string(typedFirst.glyphSlots)+","+std::to_string(typedSecond.glyphSlots)
+            +" "+name+"_prims="+std::to_string(first.primitives.size())+","+std::to_string(second.primitives.size());
+
+        sendKey(s, "escape");
+
+        const CodeEditorFrame cancelled=codeEditorFrame(s);
+
+        checks.check(name+"_cancel",
+            !box->isComposing() && box->getText() == before && cancelled.pixels == pixels && changes.calls == 0
+                && boundsListing(s) == listingBefore && gweni::KeyboardFocus == box,
+            "Escape left the composition "+std::string(box->isComposing()?"on":"off")+", the text \""+box->getText()
+            +"\", the pixels or the listing changed, or the box lost the focus");
+
+        compose(s, imePart);
+        compose(s, imeText);
+        renderFrames(s, 1);
+        commitComposition(s, imeText);
+        renderFrames(s, 1);
+
+        std::vector<uint8_t> committedPixels;
+
+        idleWork+=settleCodeEditor(s, committedPixels);
+        checks.check(name+"_commit",
+            box->getText() == before+imeText && box->getText() == typedText && changes.calls == 1
+                && boundsListing(s) == typedListing && committedPixels == typedPixels,
+            "the commit gave \""+box->getText()+"\" with "+std::to_string(changes.calls)
+            +" onTextChanged (1 wanted), typing gave \""+typedText+"\", or their listings or pixels differ");
+        checks.check(name+"_settled", idleWork == 0,
+            "settled frames wrote or changed "+std::to_string(idleWork));
+        forgetMouse(s);
+        dropControl(s, control);
+    }
+
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()+liveTextIds()-idsBefore;
+
+    checks.check("ids_back", idsLeft == 0, std::to_string(idsLeft)+" ids not given back");
+
+    passed=checks.allPassed();
+    std::cout<<"ime";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<counts<<"\n";
+    return ok;
+}
+
 #if GWENI_EXAMPLE_WEBGL
 //-----------------------------------------------------------------------------
 // The interactive window in the browser: what a script driving the page reads
@@ -26947,6 +27168,11 @@ int main(int argc, char *argv[])
             step.fx=x;
             step.fy=y;
             steps.push_back(step);
+        }
+        else if((arg == "--compose" || arg == "--commit") && hasValue)
+        {
+            scripted=true;
+            steps.push_back({arg == "--compose"?StepKind::Compose:StepKind::Commit, 0, 0, argv[++i]});
         }
         else if(arg == "--touch-up" && hasValue)
         {
@@ -27761,6 +27987,15 @@ int main(int argc, char *argv[])
             ok=runCurveEditorScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // an edit wrote outside what it touched
+            break;
+        }
+
+        case Scenario::Ime:
+        {
+            bool passed=false;
+            ok=runImeScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a composition wrote more than its glyphs, or its commit or cancel differed from typing
             break;
         }
 

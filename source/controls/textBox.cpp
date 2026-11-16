@@ -88,7 +88,13 @@ static constexpr float MessageFontStep=1.0f;
 //! The gap between the field part and the message line's text.
 static constexpr int MessageGap=2;
 
-TextBox::~TextBox()=default;
+// A box deleted with the focus hands back the platform's text input, as
+// one losing the focus does.
+TextBox::~TextBox()
+{
+    if(KeyboardFocus == this)
+        platform::setTextInputRect(false, Rect());
+}
 
 bool TextBox::keepsTouchDrag() const
 {
@@ -122,6 +128,8 @@ void TextBox::insertText(const gweni::String &strIn)
 {
     if(!m_editable)
         return;
+
+    commitPendingComposition();
 
     // converted first, so the checks and the cap see what goes in; nothing
     // left (a paste of "\n") keeps the selection
@@ -232,6 +240,8 @@ bool TextBox::undo()
     if(!m_editable)
         return false;
 
+    commitPendingComposition();
+
     const text::UndoStep *step=m_undo.undo();
 
     if(step == nullptr)
@@ -263,6 +273,8 @@ bool TextBox::redo()
 {
     if(!m_editable)
         return false;
+
+    commitPendingComposition();
 
     const text::UndoStep *step=m_undo.redo();
 
@@ -311,6 +323,14 @@ void TextBox::updateCaretBlink()
 
 void TextBox::setText(const String &str, bool doEvents)
 {
+    // the app's text: what was being composed goes
+    if(m_composition)
+    {
+        endComposition();
+        m_cursorLine=0;
+        refreshCursorBounds();
+    }
+
     String converted;
     const String &newText=normalizeText(str, converted)?converted:str;
 
@@ -384,7 +404,7 @@ void TextBox::updatePlaceholder()
     if(!m_placeholder)
         return;
 
-    const bool show=!m_placeholder->getText().empty() && !hidden() && getText().empty()
+    const bool show=!m_placeholder->getText().empty() && !hidden() && getText().empty() && !m_composition
         && (!isFocussed() || placeholderWhileFocused());
 
     if(m_placeholder->hidden() == !show)
@@ -653,10 +673,14 @@ void TextBox::onKeyboardFocus()
     ParentClass::onKeyboardFocus();
     keepCaretLit();
     m_caretBlink.start(this);
+    reportTextInput();
 }
 
+// The focus leaving keeps what was composed, as a browser's text field does.
 void TextBox::onLostKeyboardFocus()
 {
+    commitPendingComposition();
+    platform::setTextInputRect(false, Rect());
     ParentClass::onLostKeyboardFocus();
     m_caretBlink.stop(this);
     // typing after the focus comes back is a step of its own
@@ -687,6 +711,18 @@ void TextBox::updateCursorRects()
 {
     const gweni::Rect pA=getCharacterPosition(displayPos(m_cursorPos));
     gweni::Rect selection;
+    gweni::Rect composition;
+
+    // under the composing text, on its line's bottom unit row
+    if(m_composition)
+    {
+        const int from=m_composition->from;
+        const gweni::Rect start=getCharacterPosition(displayPos(from));
+        const gweni::Rect end=getCharacterPosition(displayPos(from+static_cast<int>(m_composition->text.size())));
+
+        if(start.y == end.y && end.x > start.x)
+            composition=gweni::Rect(start.x, start.y+start.h-1, end.x-start.x, 1);
+    }
 
     if(hasSelection() && !m_text->wrap())
     {
@@ -701,11 +737,17 @@ void TextBox::updateCursorRects()
     // one unit wide and as high as the line box renderText draws
     const gweni::Rect caret(pA.x, pA.y, 1, pA.h);
 
-    if(caret == m_rectCaretBounds && selection == m_rectSelectionBounds)
+    if(caret == m_rectCaretBounds && selection == m_rectSelectionBounds && composition == m_rectCompositionBounds)
         return;
+
+    const bool caretMoved=!(caret == m_rectCaretBounds);
 
     m_rectCaretBounds=caret;
     m_rectSelectionBounds=selection;
+    m_rectCompositionBounds=composition;
+
+    if(caretMoved)
+        reportTextInput();
 
     // unfocused neither is drawn; the focus arriving repaints them
     if(isFocussed())
@@ -894,6 +936,7 @@ bool TextBox::onKeyend(bool /*down*/)
 
 void TextBox::setCursorPos(int i)
 {
+    commitPendingComposition();
     i=snapPos(getText(), i);
 
     if(m_cursorPos == i)
@@ -906,6 +949,7 @@ void TextBox::setCursorPos(int i)
 
 void TextBox::setCursorend(int i)
 {
+    commitPendingComposition();
     i=snapPos(getText(), i);
 
     if(m_cursorEnd == i)
@@ -919,6 +963,8 @@ void TextBox::deleteText(int iStartPos, int iLength)
 {
     if(!m_editable)
         return;
+
+    commitPendingComposition();
 
     String str=getText();
     // Whole codepoints: both ends of the range are snapped back to a boundary.
@@ -1216,6 +1262,165 @@ void TextBox::arrange(skin::Base *skin, Dim dim)
 void TextBox::postLayout(skin::Base *skin)
 {
     updateCursorRects();
+}
+
+const String &TextBox::getText() const
+{
+    return m_composition?m_composition->committed:ParentClass::getText();
+}
+
+const String &TextBox::getComposition() const
+{
+    static const String none;
+
+    return m_composition?m_composition->text:none;
+}
+
+// The composing text replaces the selection (or goes in at the caret) in what
+// m_text shows; the box's own text, its undo stack and its events are left
+// alone until the commit.
+void TextBox::setComposition(const String &text, int caret)
+{
+    if(!allowsComposition())
+        return;
+
+    if(text.empty())
+    {
+        cancelComposition();
+        return;
+    }
+
+    if(!m_composition)
+    {
+        auto composition=std::make_unique<Composition>();
+
+        composition->committed=ParentClass::getText();
+        composition->cursorPos=m_cursorPos;
+        composition->cursorEnd=m_cursorEnd;
+        composition->from=std::min(m_cursorPos, m_cursorEnd);
+        composition->to=std::max(m_cursorPos, m_cursorEnd);
+        m_composition=std::move(composition);
+    }
+
+    Composition &composition=*m_composition;
+    const int at=snapPos(text, std::min(std::max(caret, 0), static_cast<int>(text.size())));
+
+    composition.text=text;
+    m_text->setText(composition.committed.substr(0, composition.from)+text+composition.committed.substr(composition.to));
+    m_cursorPos=composition.from+at;
+    m_cursorEnd=m_cursorPos;
+    m_cursorLine=0;
+    refreshCursorBounds();
+    updatePlaceholder();
+}
+
+void TextBox::endComposition()
+{
+    if(!m_composition)
+        return;
+
+    std::unique_ptr<Composition> composition=std::move(m_composition);
+
+    m_text->setText(composition->committed);
+    m_cursorPos=composition->cursorPos;
+    m_cursorEnd=composition->cursorEnd;
+}
+
+void TextBox::cancelComposition()
+{
+    if(!m_composition)
+        return;
+
+    endComposition();
+    m_cursorLine=0;
+    refreshCursorBounds();
+    updatePlaceholder();
+}
+
+// As typed: the selection the composition replaced goes, the text goes in at
+// the caret, one edit and one onTextChanged.
+void TextBox::commitComposition(const String &text)
+{
+    endComposition();
+
+    if(!text.empty())
+    {
+        EditKindScope kind(*this, text::EditKind::Insert);
+
+        insertText(text);
+    }
+    m_cursorLine=0;
+    refreshCursorBounds();
+    updatePlaceholder();
+}
+
+void TextBox::commitPendingComposition()
+{
+    if(!m_composition)
+        return;
+
+    const String text=m_composition->text;
+
+    commitComposition(text);
+}
+
+bool TextBox::onCompositionUpdate(const String &text, int caret)
+{
+    if(!allowsComposition())
+        return false;
+
+    setComposition(text, caret);
+    return true;
+}
+
+bool TextBox::onCompositionCommit(const String &text)
+{
+    if(!m_editable)
+        return false;
+
+    commitComposition(text);
+    return true;
+}
+
+bool TextBox::onCompositionCancel()
+{
+    if(!m_composition)
+        return false;
+
+    cancelComposition();
+    return true;
+}
+
+bool TextBox::onKeyPress(int key, bool press)
+{
+    if(m_composition)
+    {
+        if(key == keys::Escape)
+        {
+            if(press)
+                cancelComposition();
+            return true;
+        }
+        commitPendingComposition();
+    }
+    return ParentClass::onKeyPress(key, press);
+}
+
+// The caret in device px of the framebuffer, as the renderer snaps a rect.
+void TextBox::reportTextInput()
+{
+    if(!isFocussed())
+        return;
+
+    Canvas *canvas=getCanvas();
+    const float scale=canvas?canvas->scale():1.0f;
+    const Point origin=localPosToCanvas(Point(m_rectCaretBounds.x, m_rectCaretBounds.y));
+    const auto snap=[scale](int v) { return static_cast<int>(std::floor(v*scale+0.5f)); };
+    const int x=snap(origin.x);
+    const int y=snap(origin.y);
+
+    platform::setTextInputRect(true, Rect(x, y, std::max(1, snap(origin.x+m_rectCaretBounds.w)-x),
+        std::max(1, snap(origin.y+m_rectCaretBounds.h)-y)));
 }
 
 void TextBox::onTextChanged()

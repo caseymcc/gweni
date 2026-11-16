@@ -7558,7 +7558,8 @@ static Rect inBox(const Rect &local, const Rect &box)
 
 // [1] a TextBox's selection at the text's z, behind every glyph
 // (renderer::Base::renderText), [2] its caret at the overlay z, in front of
-// the whole subtree, a multiline box's line children included. Both are drawn
+// the whole subtree, a multiline box's line children included, and [3], from
+// the first composition on, the composing text's underline. They are drawn
 // only while the box has the focus. A blink (\p blinkOnly) shows or hides [2]
 // and writes nothing else; any other change rewrites what is shown, and a
 // hidden primitive's geometry is rewritten when it is shown next
@@ -7582,6 +7583,23 @@ static void paintTextBoxMarks(renderer::Base *renderer, std::vector<size_t> &pri
                 fill.top, fill.bottom, fill.border, box->getTextZIndex());
         else
             renderer->hidePrimitive(primitives[1]);
+
+        // [3] an input method's composition's underline, at the text's z in
+        // the text's colour, its slot taken by the first composition
+        const Rect underline=inBox(box->getCompositionBounds(), bounds);
+
+        if(focused && box->isComposing() && underline.w > 0 && underline.h > 0)
+        {
+            if(primitives.size() < 4)
+            {
+                primitives.resize(4);
+                renderer->generatePrimitive(primitives[3]);
+            }
+            renderer->setDrawColor(box->getTextColor());
+            renderer->drawFilledRect(primitives[3], underline, box->getTextZIndex());
+        }
+        else if(primitives.size() >= 4)
+            renderer->hidePrimitive(primitives[3]);
 
         caretStale=true;
     }

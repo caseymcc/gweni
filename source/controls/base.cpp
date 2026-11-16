@@ -7,6 +7,7 @@
 
 #include <gweni/controls/base.h>
 #include <gweni/text/wrap.h>
+#include <gweni/text/cells.h>
 #include <gweni/controls/label.h>
 #include <gweni/controls/canvas.h>
 #include <gweni/controls/menu.h>
@@ -3285,6 +3286,21 @@ bool Base::onMouseWheeled(int iDelta)
         return m_actualParent->onMouseWheeled(iDelta);
 
     return false;
+}
+
+bool Base::onCompositionCommit(const String &text)
+{
+    bool taken=false;
+
+    for(size_t at=0; at < text.size();)
+    {
+        size_t next=at;
+        const uint32_t codepoint=text::utf8CodepointAt(text, at, &next);
+
+        taken=onChar(static_cast<UnicodeChar>(codepoint)) || taken;
+        at=(next > at)?next:at+1;
+    }
+    return taken;
 }
 
 bool Base::onMouseWheeledH(int iDelta)
