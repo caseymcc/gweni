@@ -636,7 +636,8 @@ int ToolBar::minimumWidth() const
 
     if(overflows && m_overflowButton)
         width+=(width > 0?Spacing:0)+m_overflowButton->getPreferredSize().width;
-    return width+getPadding().left+getPadding().right;
+    // never past the width that shows everything with no button
+    return std::min(width+getPadding().left+getPadding().right, fullWidth());
 }
 
 void ToolBar::calculateSize(skin::Base *skin, Dim dim)
@@ -782,9 +783,26 @@ Base *ToolBar::focusedItem() const
 
     while(from && from->getParent() != this)
         from=from->getParent();
-    if(!from || ((from != m_overflowButton) && (indexOf(from) < 0)))
+    if(from && ((from == m_overflowButton) || (indexOf(from) >= 0)))
+        return from;
+    // A drop-down's or split button's own open menu (or a submenu of it:
+    // opening it closed every other menu) holds the focus for its item.
+    if(!gweni_cast<Menu>(KeyboardFocus))
         return nullptr;
-    return from;
+    for(Base *item : m_items)
+    {
+        if(auto *dropDown=gweni_cast<DropDownButton>(item))
+        {
+            if(dropDown->isMenuOpen())
+                return item;
+        }
+        else if(auto *split=gweni_cast<SplitButton>(item))
+        {
+            if(split->isMenuOpen())
+                return item;
+        }
+    }
+    return nullptr;
 }
 
 // A hidden item keeps the focus until the layout ends, when the input code
@@ -1212,7 +1230,8 @@ void ToolBar::onMenuEntryChosen(event::Info info)
     Base *source=entry.source?getControlById(entry.source):nullptr;
     Base *item=getControlById(entry.item);
 
-    if(!item)
+    // a copied entry whose original was deleted while the menu was open
+    if(!item || (entry.source && !source))
         return;
 
     if(Button *button=gweni_cast<Button>(source))

@@ -15893,13 +15893,14 @@ static bool runToolBarScenario(Session &s, const std::string &shotDir, bool &pas
 
     const CodeEditorFrame off=codeEditorFrame(s);
     const size_t cutSlots=cut ? cut->getSkinControl()->getPrimitives().size() : 0;
+    const size_t cutControls=cut ? subtreeControls(cut) : 0;
 
     checks.check("hover", cut && !hover.primitives.empty() && hover.primitives.size() <= cutSlots
         && idsWithin(hover.primitives, cutPrims) && idsWithin(hover.texts, cutTexts) && hover.passes == 0
-        && hover.changed <= subtreeControls(cut) && off.pixels == pixels,
+        && hover.changed <= cutControls && off.pixels == pixels,
         "the hover on Cut wrote "+std::to_string(hover.primitives.size())+" primitive ids (its "
         +std::to_string(cutSlots)+" alone allowed) or text ids outside it, marked "+std::to_string(hover.changed)
-        +" controls (its "+std::to_string(subtreeControls(cut))+" allowed), laid out ("+std::to_string(hover.passes)
+        +" controls (its "+std::to_string(cutControls)+" allowed), laid out ("+std::to_string(hover.passes)
         +" passes), or moving off did not give the frame back ("+(off.pixels == pixels ? "it did" : "it did not")+")");
     idleWork+=settleCodeEditor(s, pixels);
 

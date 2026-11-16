@@ -740,7 +740,7 @@ between two shown items with no shown separator since the first, so the row neve
 or ends with one nor shows two together. The preferred width (`fullWidth()`) is the
 width that shows every item but the AlwaysOverflow ones, with the overflow button they
 force, and the height the tallest item's, whatever is shown, so no overflow
-changes a preferred size; `minimumWidth()` is the AlwaysShow items' and the button's.
+changes a preferred size; `minimumWidth()` is the AlwaysShow items' and the button's, never more than `fullWidth()` (a Normal item narrower than the button shows instead of it).
 Below that, when even the AlwaysShow items do not fit, the overflow button stays at the
 bar's right edge, inside it, so the menu stays in reach of the mouse (the hit test enters
 no point outside a control's bounds); the AlwaysShow items are placed at their widths all
@@ -832,7 +832,10 @@ A width change that hides the focused control hands the focus on, as the Breadcr
 layout does: `ToolBar::arrange` notes which item holds the focus (itself or through a
 part, a SplitButton's or a search box's) before `handleOverflow()` and, outside the
 `PlacementScope`, gives it to what now shows that item: an item gone into the menu to
-the overflow button (so the Tab stop is there and Tab comes back in at it), a hidden
+the overflow button (so the Tab stop is there and Tab comes back in at it; a drop-down or
+split button item whose own open menu, or a submenu of it, holds the focus counts as
+focused, the canvas closing that menu in the next update, which finds the focus moved on
+and leaves it), a hidden
 overflow button, or its open menu (or a submenu of it, opened by Right) holding the focus
 (closed by the canvas in the next update), to the first tool item the widening gave back, else the first shown one. The
 focus moves change no layout, so the frame stays one pass; without this the hidden

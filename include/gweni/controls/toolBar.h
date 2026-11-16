@@ -310,8 +310,9 @@ public:
     //! addControl items (which keep their own keys and Tab stop) are passed
     //! over. Space and Return press the focused item; on the overflow button
     //! they open the menu navigating by keyboard (DropDownButton's). A width
-    //! change that hides the focused item hands the focus to the overflow
-    //! button, and one that hides the overflow button (or its open menu
+    //! change that hides the focused item (or a drop-down or split button
+    //! item whose own open menu, or a submenu of it, holds the focus) hands
+    //! the focus to the overflow button, and one that hides the overflow button (or its open menu
     //! or a submenu of it holding the focus) to the first item it gave back,
     //! in the same pass.
     //! \{
@@ -334,7 +335,8 @@ public:
     //! asked for (a Fixed toolbar's preferred width is its request).
     int fullWidth() const;
     //! The least width that shows every AlwaysShow item and the overflow
-    //! button (the button only if some item may overflow).
+    //! button (the button only if some item may overflow), never more than
+    //! fullWidth().
     int minimumWidth() const;
 
     void calculateSize(skin::Base *skin, Dim dim) override;
@@ -371,7 +373,8 @@ protected:
     //! Decides the overflow at the current width and places the items in X.
     void handleOverflow();
     //! The item (or the overflow button) holding the keyboard focus, itself
-    //! or through a part of it, or null.
+    //! or through a part of it or (a drop-down or split button) its own open
+    //! menu, or null.
     Base *focusedItem() const;
     //! After handleOverflow(): \p focused (focusedItem() before it), now
     //! hidden, gives the focus on: an item gone into the menu to the overflow

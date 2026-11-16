@@ -66,12 +66,15 @@
  *  overflow button's Space opens its menu navigating by keyboard. A tool
  *  button disabled while it has the focus gives it up at once and its Space
  *  and Return press nothing (a toggle is not flipped); enabled again it
- *  takes them. A narrowing that hides the focused item hands the focus to
+ *  takes them. A narrowing that hides the focused item, or a drop-down or
+ *  split button item whose own open menu holds the focus, hands the focus to
  *  the overflow button (so Tab comes back in there), and a widening that
  *  hides the overflow button, or it with its open menu (or a submenu of it,
  *  entered by Right) holding the focus, hands it to the first item it gave
  *  back, each in one pass; a focus
- *  outside the toolbar stays where it is. In TextOnly a text set on an icon button after its icon hides
+ *  outside the toolbar stays where it is. minimumWidth() is never more than
+ *  fullWidth() (a Normal item narrower than the button), and a copied entry
+ *  whose original was deleted while the menu was open fires nothing. In TextOnly a text set on an icon button after its icon hides
  *  the icon, and taken away shows it again, in one pass.
  */
 #include "headlessFixture.h"
@@ -1497,4 +1500,89 @@ TEST_CASE("ToolBar: a widening that hides the overflow button while a submenu of
     CHECK(menu->hidden());
     CHECK(exportMenu->hidden());
     CHECK(KeyboardFocus == m.a);
+}
+
+TEST_CASE("ToolBar: a narrowing that hides a drop-down whose own open menu has the focus hands it to the overflow button")
+{
+    MenuBar m;
+    ToolBar *bar=m.scene.bar;
+    auto *more=bar->getOverflowButton();
+
+    m.scene.setWidth(bar->fullWidth());
+    m.scene.settle();
+    REQUIRE(more->hidden());
+    m.dd->focus();
+    m.scene.frame();
+    m.scene.key(keys::Space);
+    REQUIRE(m.dd->isMenuOpen());
+    REQUIRE(KeyboardFocus == m.dd->getMenu());
+
+    m.scene.setWidth(bar->minimumWidth());
+    checkOnePass(m.scene.frame());
+    REQUIRE(m.scene.shown() == "keep +");
+    CHECK(KeyboardFocus == more);
+    m.scene.settle();
+    CHECK(m.dd->getMenu()->hidden());
+    CHECK(KeyboardFocus == more);
+}
+
+TEST_CASE("ToolBar: a narrowing that hides a split button whose own open menu has the focus hands it to the overflow button")
+{
+    MenuBar m;
+    ToolBar *bar=m.scene.bar;
+    auto *more=bar->getOverflowButton();
+
+    m.scene.setWidth(bar->fullWidth());
+    m.scene.settle();
+    REQUIRE(more->hidden());
+    m.sp->focus();
+    m.scene.frame();
+    input::onKeyEvent(m.scene.canvas, keys::Alt, true);
+    m.scene.key(keys::Down);
+    input::onKeyEvent(m.scene.canvas, keys::Alt, false);
+    REQUIRE(m.sp->isMenuOpen());
+    REQUIRE(KeyboardFocus == m.sp->getMenu());
+
+    m.scene.setWidth(bar->minimumWidth());
+    checkOnePass(m.scene.frame());
+    REQUIRE(m.scene.shown() == "keep +");
+    CHECK(KeyboardFocus == more);
+    m.scene.settle();
+    CHECK(m.sp->getMenu()->hidden());
+    CHECK(KeyboardFocus == more);
+}
+
+TEST_CASE("ToolBar: the minimum width is never more than the width that shows every item")
+{
+    Scene scene;
+    ToolBar *bar=scene.bar;
+    controls::ToolButton *keep=button(bar, "keep");
+
+    bar->setOverflowPriority(keep, OverflowPriority::AlwaysShow);
+    // a Normal item narrower than the overflow button: showing it costs
+    // less than the button would
+    bar->addButton("x")->setName("x");
+    scene.settle();
+    REQUIRE(bar->getItems().back()->getPreferredSize().width
+        < bar->getOverflowButton()->getPreferredSize().width);
+    CHECK(bar->minimumWidth() == bar->fullWidth());
+    scene.setWidth(bar->minimumWidth());
+    scene.settle();
+    CHECK(scene.shown() == "keep x");
+}
+
+TEST_CASE("ToolBar: a copied entry whose original was deleted while the menu was open fires nothing")
+{
+    MenuBar m;
+    controls::Menu *menu=m.scene.openMenu();
+    controls::MenuItem *copy=m.scene.bar->getMenuEntry(m.ddSave);
+
+    REQUIRE(copy);
+    REQUIRE(!menu->hidden());
+    delete m.ddSave;
+    m.ddSave=nullptr;
+    copy->onPress(event::Info(menu));
+    m.scene.frame();
+    CHECK(m.handler.dropItem.calls == 0);
+    CHECK(m.handler.chosen.calls == 0);
 }
