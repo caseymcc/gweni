@@ -132,6 +132,8 @@ set(GWENI_SOURCES
     include/gweni/controlList.h
     source/controlList.cpp
     include/gweni/controls.h
+    include/gweni/curve.h
+    source/curve.cpp
     include/gweni/dragAndDrop.h
     source/dragAndDrop.cpp
     include/gweni/events.h
