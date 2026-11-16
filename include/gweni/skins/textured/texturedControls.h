@@ -949,6 +949,20 @@ public:
     inline static const std::string_view name="MarkdownCodeBlock";
 };
 
+// A Markdown image paragraph (controls::internal::MarkdownImage): [0] its box,
+// the MarkdownImagePlaceholder surface over MarkdownImage::getBoxSize() at its
+// top-left, in the Box look only (hidden in the Alt look, whose alt text draws
+// its own placeholder, and in the Image look, the ImagePanel drawing there).
+class MarkdownImage:public textured::ControlRegister<MarkdownImage>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="MarkdownImage";
+};
+
 // A Markdown table (controls::internal::MarkdownTable): [0] the header row's
 // background (MarkdownTableHeader) inside its lines, then a line per row edge
 // across the columns and one per column edge down the rows, each an icon of

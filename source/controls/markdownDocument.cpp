@@ -127,6 +127,10 @@ Base *MarkdownColumn::buildBlock(const text::MarkdownBlock &block)
         return newChild<MarkdownCodeBlock>();
     case Type::Table:
         return newChild<MarkdownTable>();
+    case Type::Paragraph:
+        if(MarkdownImage::isImageParagraph(block))
+            return newChild<MarkdownImage>();
+        return newChild<MarkdownText>();
     default:
         return newChild<MarkdownText>();
     }
@@ -144,7 +148,17 @@ void MarkdownColumn::setBlocks(const std::vector<text::MarkdownBlock> &blocks)
     {
         const text::MarkdownBlockMatch &match=matches[i];
 
-        if(match.kind == Kind::New)
+        // a block its control cannot show (a paragraph turned image or back)
+        // is built anew, the old control going as a removed block's
+        bool build=(match.kind == Kind::New);
+
+        if(!build)
+        {
+            const MarkdownBlockControl *old=dynamic_cast<const MarkdownBlockControl *>(m_blockControls[match.old]);
+
+            build=old && !old->shows(blocks[i]);
+        }
+        if(build)
         {
             Base *control=buildBlock(blocks[i]);
 
@@ -324,6 +338,11 @@ std::vector<RichSpan> MarkdownText::richSpans(const std::vector<text::MarkdownSp
     return rich;
 }
 
+bool MarkdownText::shows(const text::MarkdownBlock &block) const
+{
+    return !MarkdownImage::isImageParagraph(block);
+}
+
 void MarkdownText::setBlock(const text::MarkdownBlock &block)
 {
     using Type=text::MarkdownBlock::Type;
@@ -437,6 +456,218 @@ void MarkdownText::onLink(event::Info info)
         info.control=document;
         document->onLinkClicked.call(document, info);
     }
+}
+
+///////////////////////////////////////////////////////////////////////////
+// MarkdownImage
+
+GWENI_CONTROL_CONSTRUCTOR(MarkdownImage)
+{
+    m_alt=newChild<MarkdownText>();
+    m_alt->setPlacement(Placement::Owner);
+}
+
+bool MarkdownImage::isImageParagraph(const text::MarkdownBlock &block)
+{
+    if(block.type != text::MarkdownBlock::Type::Paragraph)
+        return false;
+
+    int images=0;
+
+    for(const text::MarkdownSpan &span:block.spans)
+    {
+        if(span.image)
+        {
+            ++images;
+            continue;
+        }
+        if(!span.url.empty() || (span.text.find_first_not_of(" \t\n") != String::npos))
+            return false;
+    }
+    return images == 1;
+}
+
+Size MarkdownImage::boxSize(int width, int height, int available)
+{
+    if((width < 1) || (height < 1))
+        return Size(0, 0);
+    if((available < 1) || (width <= available))
+        return Size(width, height);
+
+    // rounded to the nearest unit, at least 1
+    const int64_t scaled=(int64_t(height)*available*2+width)/(int64_t(width)*2);
+
+    return Size(available, int(std::max<int64_t>(1, scaled)));
+}
+
+Size MarkdownImage::getBoxSize() const
+{
+    if(m_look == Look::Alt)
+        return Size(0, 0);
+    return boxSize(m_imageWidth, m_imageHeight, getWidth());
+}
+
+void MarkdownImage::setBlock(const text::MarkdownBlock &block)
+{
+    const text::MarkdownSpan *image=nullptr;
+
+    for(const text::MarkdownSpan &span:block.spans)
+    {
+        if(span.image)
+            image=&span;
+    }
+
+    // the alt text is a paragraph of the image span alone
+    m_spans.clear();
+    if(image)
+        m_spans.push_back(*image);
+
+    text::MarkdownBlock alt=block;
+
+    alt.spans=m_spans;
+    m_alt->setBlock(alt);
+
+    const String source=image?image->src:String();
+
+    if(!m_watch.handle() || (source != m_source))
+    {
+        m_source=source;
+        resolve();
+        return;
+    }
+    // the same source: the look as it was, its alt text's spans again
+    showAlt();
+}
+
+void MarkdownImage::resolve()
+{
+    MarkdownDocument *document=documentOf(this);
+    std::shared_ptr<ImageHandle> handle=document?document->resolveImage(m_source):nullptr;
+
+    if(handle != m_watch.handle())
+    {
+        if(handle)
+            m_watch.reset(handle, [this](ImageHandle &changed) { handleChanged(changed); });
+        else
+            m_watch.reset();
+    }
+    applyHandle(true);
+}
+
+void MarkdownImage::handleChanged(ImageHandle &)
+{
+    applyHandle(true);
+}
+
+void MarkdownImage::applyHandle(bool mark)
+{
+    const ImageHandle *handle=m_watch.handle().get();
+    Look look=Look::Alt;
+
+    if(handle)
+    {
+        if(handle->state() == ImageHandle::State::Bytes)
+            look=Look::Image;
+        else if(handle->state() == ImageHandle::State::Sized)
+            look=Look::Box;
+    }
+
+    const int width=(look == Look::Alt)?0:handle->width();
+    const int height=(look == Look::Alt)?0:handle->height();
+    const uint64_t serial=handle?handle->serial():0;
+    const bool lookChanged=(look != m_look);
+    const bool sizeChanged=(width != m_imageWidth) || (height != m_imageHeight);
+
+    if(look == Look::Image)
+    {
+        if(!m_image)
+        {
+            m_image=newChild<ImagePanel>();
+            m_image->setPlacement(Placement::Owner);
+        }
+        if(lookChanged || (serial != m_shownSerial))
+            m_image->setImageData(handle->bytes().data(), handle->bytes().size());
+        m_image->setHidden(false);
+    }
+    else if(m_image)
+    {
+        // the texture given back as the image goes
+        m_image->clearImage();
+        m_image->setHidden(true);
+    }
+
+    m_look=look;
+    m_imageWidth=width;
+    m_imageHeight=height;
+    m_shownSerial=serial;
+    m_alt->setHidden(look == Look::Image);
+    if(lookChanged)
+        showAlt();
+
+    if(mark && (lookChanged || sizeChanged))
+    {
+        invalidate();
+        addStateChange(StateChange_Background);
+    }
+}
+
+void MarkdownImage::showAlt()
+{
+    std::vector<RichSpan> spans=MarkdownText::richSpans(m_spans);
+
+    // in its box the alt text is on no placeholder of its own
+    if(m_look != Look::Alt)
+    {
+        for(RichSpan &span:spans)
+            span.style&=~unsigned(RichSpan::Placeholder);
+    }
+    m_alt->setSpans(std::move(spans));
+}
+
+void MarkdownImage::calculateSize(skin::Base *skin, Dim dim)
+{
+    ParentClass::calculateSize(skin, dim);
+
+    if(dim == Dim::X)
+    {
+        const int width=(m_look == Look::Alt)?m_alt->getPreferredSize().width:m_imageWidth;
+
+        m_preferredSize.width=preferredFromContent(width, Dim::X);
+        return;
+    }
+    if(inLayoutPass() && !laidOutThisPass(Dim::X))
+        return;
+
+    const int height=(m_look == Look::Alt)?m_alt->getPreferredSize().height:getBoxSize().height;
+
+    m_preferredSize.height=preferredFromContent(height, Dim::Y);
+}
+
+void MarkdownImage::arrange(skin::Base *skin, Dim dim)
+{
+    const Size box=getBoxSize();
+
+    if(dim == Dim::X)
+    {
+        if(m_look == Look::Alt)
+            placeChild(m_alt, 0, 0, getWidth(), m_alt->getHeight());
+        else
+            placeChild(m_alt, AltInset, AltInset, std::max(0, box.width-2*AltInset), m_alt->getHeight());
+        if(m_image && (m_look == Look::Image))
+            placeChild(m_image, 0, 0, box.width, m_image->getHeight());
+    }
+    else
+    {
+        if(m_look == Look::Alt)
+            placeChild(m_alt, m_alt->getX(), 0, m_alt->getWidth(), m_alt->getPreferredSize().height);
+        else
+            placeChild(m_alt, m_alt->getX(), AltInset, m_alt->getWidth(),
+                std::max(0, std::min(m_alt->getPreferredSize().height, box.height-2*AltInset)));
+        if(m_image && (m_look == Look::Image))
+            placeChild(m_image, m_image->getX(), 0, m_image->getWidth(), box.height);
+    }
+
+    ParentClass::arrange(skin, dim);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -1062,6 +1293,8 @@ void MarkdownDocument::assignPaths()
         }
         else if(MarkdownCodeBlock *code=dynamic_cast<MarkdownCodeBlock *>(control))
             add(code->getText(), path, Selectable::Kind::Text, nullptr, 0);
+        else if(internal::MarkdownImage *image=dynamic_cast<internal::MarkdownImage *>(control))
+            add(image->getAltText(), path, Selectable::Kind::Text, nullptr, 0);
         else if(MarkdownTable *table=dynamic_cast<MarkdownTable *>(control))
         {
             for(size_t row=0; row < table->getRowCount(); ++row)
@@ -1332,6 +1565,21 @@ void MarkdownDocument::setCodeHighlighter(MarkdownHighlighter highlighter)
         if(internal::MarkdownCodeBlock *code=dynamic_cast<internal::MarkdownCodeBlock *>(control))
             code->setBlock(*block);
     });
+}
+
+void MarkdownDocument::setImageResolver(MarkdownImageResolver resolver)
+{
+    m_imageResolver=std::move(resolver);
+    forEachBlock([](Base *control, const text::MarkdownBlock *)
+    {
+        if(internal::MarkdownImage *image=dynamic_cast<internal::MarkdownImage *>(control))
+            image->resolve();
+    });
+}
+
+std::shared_ptr<ImageHandle> MarkdownDocument::resolveImage(const String &url)
+{
+    return m_imageResolver?m_imageResolver(url):nullptr;
 }
 
 Font MarkdownDocument::getFont()

@@ -360,8 +360,25 @@ public:
     gweni::Font::Status loadFont(const gweni::Font &) override { return gweni::Font::Status::Loaded; }
     void freeFont(const gweni::Font &) override {}
     gweni::Texture::Status loadTexture(gweni::Texture &) override { return textureStatus; }
-    void freeTexture(const gweni::Texture &) override {}
+    //! From memory: nothing decoded, but a successful load is counted live
+    //! (loadedTextureCount()) until its freeTexture, and its bytes kept in
+    //! textureBytes
+    gweni::Texture::Status loadTexture(gweni::Texture &texture, const uint8_t *bytes, size_t size,
+        int) override
+    {
+        if(textureStatus != gweni::Texture::Status::Loaded)
+            return textureStatus;
+        texture.dataIndex=nextTexture++;
+        textureBytes[texture.dataIndex]=std::vector<uint8_t>(bytes, bytes+(bytes?size:0));
+        return textureStatus;
+    }
+    size_t loadedTextureCount() const override { return textureBytes.size(); }
+    void freeTexture(const gweni::Texture &texture) override { textureBytes.erase(texture.dataIndex); }
     gweni::TextureData getTextureData(const gweni::Texture &) const override { return gweni::TextureData(); }
+
+    //! The textures loaded from memory and not freed, by Texture::dataIndex
+    std::map<size_t, std::vector<uint8_t>> textureBytes;
+    size_t nextTexture=0;
 
     //! Ids this renderer handed out and has not been given back, per bank.
     std::set<size_t> livePrimitives;

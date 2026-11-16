@@ -9,11 +9,14 @@
 #define _gweni_controls_markdownDocument_h_
 
 #include <gweni/controls/base.h>
+#include <gweni/controls/imagePanel.h>
 #include <gweni/controls/richText.h>
 #include <gweni/controls/scrollControl.h>
+#include <gweni/imageHandle.h>
 #include <gweni/text/markdown.h>
 
 #include <functional>
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
@@ -31,6 +34,10 @@ class MarkdownDocument;
 using MarkdownHighlighter=std::function<std::vector<RichSpan>(const gweni::String &language,
     const gweni::String &code)>;
 
+//! An image's handle from its source (an `attachment:N` url, or any other):
+//! the app's, filled in when the bytes arrive; null to keep the alt text
+using MarkdownImageResolver=std::function<std::shared_ptr<ImageHandle>(const gweni::String &url)>;
+
 namespace internal
 {
 
@@ -45,6 +52,10 @@ public:
 
     //! Shows block (of the type the control was built for)
     virtual void setBlock(const text::MarkdownBlock &block)=0;
+    //! Whether it can show block, of the type it was built for: a paragraph
+    //! that is one image is a MarkdownImage's, any other a MarkdownText's, so
+    //! a paragraph changed from one kind to the other is built anew
+    virtual bool shows(const text::MarkdownBlock &block) const { return true; }
 };
 
 //! Blocks stacked top to bottom, each as wide as the column less its padding
@@ -130,6 +141,8 @@ public:
 
 public:
     void setBlock(const text::MarkdownBlock &block) override;
+    //! Any block of its types but a paragraph that is one image
+    bool shows(const text::MarkdownBlock &block) const override;
     //! The RichText spans a Markdown block's spans are shown as: the style
     //! bits as they are, a url a link, an image its alt text (or "image" for
     //! none) on a placeholder (RichSpan::Placeholder, in italics)
@@ -168,6 +181,91 @@ protected:
     //! shows a block given by setBlock (not a marker or a code block's text,
     //! whose owners set their fonts)
     bool m_fromBlock=false;
+};
+
+//! A paragraph whose only content is one image (spaces aside: `![alt](src)` on
+//! a line of its own; an image among text keeps its alt text on a placeholder
+//! in its paragraph). Its source is given to the document's resolver
+//! (MarkdownDocument::setImageResolver) when the block is built or its source
+//! changes, and the block watches the handle it gets (ImageHandle::Watch):
+//! - no resolver, a null handle, a handle with nothing known yet and a failed
+//!   one: the alt text on its placeholder, as a paragraph shows it (getAltText,
+//!   a MarkdownText, selectable as a paragraph is);
+//! - the size known (ImageHandle::setSize): a box of the image's size, one
+//!   image px a unit, scaled down to the block's width keeping its aspect
+//!   (boxSize), on the MarkdownImagePlaceholder surface, with the alt text
+//!   in it AltInset units in, in italics on no placeholder of its own;
+//! - the bytes (ImageHandle::setBytes): an ImagePanel (getImage) given them
+//!   (ImagePanel::setImageData, the renderer decoding them) drawn in that box,
+//!   the alt text hidden (still copied with a selection through it). Bytes the
+//!   renderer cannot decode draw its missing image there.
+//! Each change of what it shows (a notification, the app filling the handle in
+//! between frames) marks this block alone: invalidate() and its background,
+//! so a layout enters it, its ancestors and moves the blocks below it.
+//! An image link (`[![alt](src)](url)`) keeps its link on the alt text only.
+class GWENI_EXPORT MarkdownImage: public Base, public MarkdownBlockControl
+{
+public:
+
+    GWENI_CONTROL(MarkdownImage, Base);
+
+public:
+    static constexpr int AltInset=6;
+
+    //! What it shows
+    enum class Look
+    {
+        Alt,    //!< the alt text on its placeholder
+        Box,    //!< the image's box with the alt text in it
+        Image   //!< the image in its box
+    };
+
+    //! A paragraph of one image span and nothing but spaces
+    static bool isImageParagraph(const text::MarkdownBlock &block);
+
+    void setBlock(const text::MarkdownBlock &block) override;
+    bool shows(const text::MarkdownBlock &block) const override { return isImageParagraph(block); }
+
+    //! Asks the document's resolver for the source's handle again (a new
+    //! resolver)
+    void resolve();
+
+    const gweni::String &getSource() const { return m_source; }
+    const std::shared_ptr<ImageHandle> &getHandle() const { return m_watch.handle(); }
+    Look getLook() const { return m_look; }
+    MarkdownText *getAltText() const { return m_alt; }
+    //! The image's panel, null until bytes came
+    ImagePanel *getImage() const { return m_image; }
+    //! The box of an image of width x height in units at most available wide
+    //! (1 image px a unit, scaled down keeping the aspect, each side at
+    //! least 1; available under 1: not limited)
+    static gweni::Size boxSize(int width, int height, int available);
+    //! The box as last laid out (0x0 in the Alt look)
+    gweni::Size getBoxSize() const;
+
+    //! X: the image's width in the Box and Image looks, the alt text's else.
+    //! Y: the box's height at the width the X arrange gave it, or the alt
+    //! text's (a Y measure before this pass's X arrange keeps the last).
+    void calculateSize(skin::Base *skin, Dim dim) override;
+    void arrange(skin::Base *skin, Dim dim) override;
+
+protected:
+    void handleChanged(ImageHandle &handle);
+    //! The look the handle asks for, applied; marks the block when it moved
+    void applyHandle(bool mark);
+    //! The alt text's spans for the look
+    void showAlt();
+
+    gweni::String m_source;
+    std::vector<text::MarkdownSpan> m_spans;
+    ImageHandle::Watch m_watch;
+    Look m_look=Look::Alt;
+    //! the handle's size and serial as last applied
+    int m_imageWidth=0;
+    int m_imageHeight=0;
+    uint64_t m_shownSerial=0;
+    MarkdownText *m_alt=nullptr;
+    ImagePanel *m_image=nullptr;
 };
 
 //! The ScrollControl a code block scrolls sideways in: horizontal only, and a
@@ -408,7 +506,10 @@ protected:
 //! a quote an internal::MarkdownQuote, a list an internal::MarkdownList of
 //! internal::MarkdownListItem, a code block an internal::MarkdownCodeBlock, a
 //! table an internal::MarkdownTable, and raw HTML a MarkdownText of the HTML
-//! as it was written. An image is its alt text on a placeholder.
+//! as it was written. A paragraph that is one image is an
+//! internal::MarkdownImage, its image's bytes from the app's resolver
+//! (setImageResolver), filled in later; an image among a paragraph's text is
+//! its alt text on a placeholder.
 class GWENI_EXPORT MarkdownDocument: public internal::MarkdownColumn
 {
 public:
@@ -444,6 +545,15 @@ public:
     //! every code block again
     void setCodeHighlighter(MarkdownHighlighter highlighter);
     const MarkdownHighlighter &getCodeHighlighter() const { return m_highlighter; }
+
+    //! Gives each image's source (an image paragraph's, internal::MarkdownImage)
+    //! to resolver for the ImageHandle the app fills in later, as each image
+    //! block is built or its source changes; a new one asks again for every
+    //! image shown. None (the default), or a null handle: the alt text.
+    void setImageResolver(MarkdownImageResolver resolver);
+    const MarkdownImageResolver &getImageResolver() const { return m_imageResolver; }
+    //! The resolver's handle for url, null with no resolver
+    std::shared_ptr<ImageHandle> resolveImage(const gweni::String &url);
 
     //! Called with a link's url in info.string when one of the document's
     //! links is clicked (RichText::onLinkClicked), info.control the
@@ -520,6 +630,7 @@ private:
     bool m_hasFont=false;
     bool m_codeWrap=false;
     MarkdownHighlighter m_highlighter;
+    MarkdownImageResolver m_imageResolver;
 
     text::SelectionModel m_selection;
     std::vector<Selectable> m_selectables;

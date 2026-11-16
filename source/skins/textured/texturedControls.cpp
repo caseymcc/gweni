@@ -2830,6 +2830,28 @@ void MarkdownCodeBlock::update(renderer::Base *renderer, controls::Base *baseCon
     tokyonight::paintSurface(renderer, m_primitives.data(), baseControl, tokyonight::MarkdownCodeBlock);
 }
 
+void MarkdownImage::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.empty())
+        return;
+
+    controls::internal::MarkdownImage *image=static_cast<controls::internal::MarkdownImage *>(baseControl);
+    const Size box=image->getBoxSize();
+    const bool visible=image->visible() && (image->getLook() == controls::internal::MarkdownImage::Look::Box)
+        && (box.width > 0) && (box.height > 0);
+
+    if(visible)
+    {
+        const Rect bounds=image->getRenderBounds();
+        const tokyonight::Surface &surface=tokyonight::MarkdownImagePlaceholder;
+
+        renderer->drawRoundedRect(m_primitives[0], Rect(bounds.x, bounds.y, box.width, box.height), surface.radius,
+            surface.borderWidth, surface.top, surface.bottom, surface.border, image->getZIndex());
+    }
+    else
+        renderer->hidePrimitive(m_primitives[0]);
+}
+
 void MarkdownTable::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     controls::internal::MarkdownTable *table=static_cast<controls::internal::MarkdownTable *>(baseControl);
@@ -6077,6 +6099,7 @@ template class ControlRegister<MarkdownRule>;
 template class ControlRegister<MarkdownQuote>;
 template class ControlRegister<MarkdownCodeBlock>;
 template class ControlRegister<MarkdownTable>;
+template class ControlRegister<MarkdownImage>;
 template class ControlRegister<ColorLerpBox>;
 template class ControlRegister<ColorSlider>;
 template class ControlRegister<ColorDisplay>;

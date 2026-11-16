@@ -57,6 +57,8 @@ public:
     {
         m_document->setCodeHighlighter(std::move(highlighter));
     }
+    //! MarkdownDocument::setImageResolver
+    void setImageResolver(MarkdownImageResolver resolver) { m_document->setImageResolver(std::move(resolver)); }
 
     //! Called with a link's url in info.string when one of the document's
     //! links is clicked (MarkdownDocument::onLinkClicked, info.control the
