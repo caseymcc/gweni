@@ -14,7 +14,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <numeric>
 
 namespace gweni
 {
@@ -33,91 +32,12 @@ const TimelineBar NoBar;
 
 }//namespace
 
-// ---- the body and the caption column --------------------------------------
-
-namespace internal
-{
-
-GWENI_CONTROL_CONSTRUCTOR(TimelineBody)
-{
-    // the lanes scroll up and down, never sideways, through virtual content:
-    // nothing is ever placed far outside the viewport
-    setScroll(false, true);
-    setAutoHideBars(true);
-    setVirtualContentHeight(0);
-    m_innerPanel->setMargin(Margin(0, 0, 0, 0));
-    // the timeline takes the mouse over its lanes: only the bar is the body's
-    m_innerPanel->setMouseInputEnabled(false);
-}
-
-void TimelineBody::contentsPlaced(skin::Base * /*skin*/)
-{
-    if(m_timeline)
-        m_timeline->bodyScrolled(getVerticalScrollOffset());
-}
-
-GWENI_CONTROL_CONSTRUCTOR(TimelineCaptionColumn)
-{
-    setMouseInputEnabled(false);
-}
-
-// The captions are placed by the Timeline (placeCaptions(), in its Y arrange);
-// this lays out the shown ones, X then Y, once both are final.
-void TimelineCaptionColumn::arrange(skin::Base *skin, Dim dim)
-{
-    if(dim == Dim::X)
-        return;
-
-    stampLayoutPass();
-    if(needsLayout())
-    {
-        m_needsLayout=false;
-        layout(skin);
-    }
-
-    countLayoutChildrenScanned(m_children);
-    for(auto &&child : m_children)
-    {
-        if(child->hidden())
-            continue;
-        child->doCalculateSize(skin, Dim::X);
-        child->doArrange(skin, Dim::X);
-    }
-
-    countLayoutChildrenScanned(m_children);
-    for(auto &&child : m_children)
-    {
-        if(!child->hidden())
-            child->doCalculateSize(skin, Dim::Y);
-    }
-
-    countLayoutChildrenScanned(m_children);
-    for(auto &&child : m_children)
-    {
-        if(!child->hidden())
-            child->doArrange(skin, Dim::Y);
-    }
-
-    postLayout(skin);
-}
-
-}//namespace internal
-
 // ---- the timeline -----------------------------------------------------------
 
+// the bounds, the padding, the body and the caption column are LaneView's
 GWENI_CONTROL_CONSTRUCTOR(Timeline)
 {
-    setBounds(gweni::Rect(0, 0, 480, 240));
-    // inside the frame's 1-unit border, with room clear of it
-    setPadding(Padding(4, 4, 4, 4));
     m_utcOffset=axis::localUtcOffset();
-
-    m_body=newChild<internal::TimelineBody>();
-    m_body->m_timeline=this;
-    m_body->setPlacement(Placement::Owner);
-
-    m_captions=newChild<internal::TimelineCaptionColumn>();
-    m_captions->setPlacement(Placement::Owner);
 }
 
 // the labels, the body and the caption column are children: ~Base deletes them
@@ -129,11 +49,8 @@ Timeline::~Timeline()
 
 size_t Timeline::addLane(const String &caption)
 {
-    Lane lane;
-
-    lane.caption=caption;
-    m_lanes.push_back(std::move(lane));
-    lanesChanged();
+    m_lanes.emplace_back();
+    appendLane(caption);
     return m_lanes.size()-1;
 }
 
@@ -144,10 +61,8 @@ void Timeline::removeLane(size_t lane)
 
     m_barCount-=m_lanes[lane].bars.size();
     m_lanes.erase(m_lanes.begin()+static_cast<std::ptrdiff_t>(lane));
-    // the lanes after it moved up: every caption is bound again
-    unbindCaptions();
     m_rangeDirty=true;
-    lanesChanged();
+    eraseLane(lane);
 }
 
 void Timeline::clearLanes()
@@ -156,69 +71,21 @@ void Timeline::clearLanes()
         return;
 
     m_lanes.clear();
-    unbindCaptions();
     m_barCount=0;
     m_rangeDirty=true;
-    lanesChanged();
+    eraseLanes();
 }
 
 void Timeline::setLaneCaption(size_t lane, const String &caption)
 {
-    if(lane >= m_lanes.size() || m_lanes[lane].caption == caption)
-        return;
+    renameLane(lane, caption);
+}
 
-    m_lanes[lane].caption=caption;
-    if(internal::Text *label=getCaptionLabel(lane))
-        label->setText(caption);
+void Timeline::laneCaptionChanged(size_t lane)
+{
     // a shown tooltip of this lane's (the default one names it) set again
     if(m_hovering && m_hoverLane == lane)
         setHover(true, m_hoverLane, m_hoverIndex, true);
-    // an automatic column follows the widest caption
-    if(m_captionWidthSetting <= 0)
-        invalidate();
-}
-
-String Timeline::getLaneCaption(size_t lane) const
-{
-    const Lane *found=laneAtIndex(lane);
-
-    return found ? found->caption : String();
-}
-
-internal::Text *Timeline::getCaptionLabel(size_t lane) const
-{
-    for(const CaptionRow &row : m_captionRows)
-    {
-        if(row.lane == lane)
-            return row.label;
-    }
-    return nullptr;
-}
-
-void Timeline::unbindCaptions()
-{
-    for(CaptionRow &row : m_captionRows)
-        row.lane=NoLane;
-}
-
-void Timeline::setLaneHeight(int height)
-{
-    height=std::max(height, 2*BarInset+1);
-    if(height == m_laneHeight)
-        return;
-
-    m_laneHeight=height;
-    lanesChanged();
-}
-
-void Timeline::setCaptionColumnWidth(int width)
-{
-    width=std::max(width, 0);
-    if(width == m_captionWidthSetting)
-        return;
-
-    m_captionWidthSetting=width;
-    invalidate();
 }
 
 void Timeline::lanesChanged()
@@ -227,6 +94,13 @@ void Timeline::lanesChanged()
     invalidate();
     barsMoved();
     refreshHover(true);
+}
+
+void Timeline::laneContentMoved()
+{
+    // every bar in view moved, and the one under the mouse may be another
+    barsMoved();
+    refreshHover();
 }
 
 // ---- bars -------------------------------------------------------------------
@@ -289,7 +163,7 @@ void Timeline::clearBars(size_t lane)
 
     m_barCount-=target.bars.size();
     target.bars.clear();
-    target.dirty=true;
+    target.index.dirty=true;
     barsMoved();
     m_rangeDirty=true;
     if(!m_xFixed)
@@ -321,12 +195,12 @@ int Timeline::getOverlapLevel(size_t lane, size_t index) const
         return 0;
 
     ensureLane(*found);
-    return found->levels[index];
+    return found->index.levels[index];
 }
 
 void Timeline::barsChanged(Lane &lane, const TimelineBar *before, const TimelineBar *after)
 {
-    lane.dirty=true;
+    lane.index.dirty=true;
     // the renderer redraws what moved
     barsMoved();
     // what the mouse is over may be another bar now, or the same one with
@@ -358,64 +232,21 @@ void Timeline::barsChanged(Lane &lane, const TimelineBar *before, const Timeline
     }
 }
 
-// Sorted by start among the lane's finite bars, with the running maximum of
-// their ends; each bar's overlap level from the earlier bars it overlaps,
-// found the hit test's way: the bars starting before its end, walked back
-// while their ends reach past its start.
+// The lane's finite bars searched by start, with their overlap levels
+// (LaneBarIndex).
 void Timeline::ensureLane(const Lane &lane) const
 {
-    if(!lane.dirty)
+    if(!lane.index.dirty)
         return;
-
-    lane.dirty=false;
 
     const std::vector<TimelineBar> &bars=lane.bars;
 
-    lane.order.clear();
-    for(size_t i=0; i < bars.size(); ++i)
+    lane.index.build(bars.size(), [&bars](size_t i, double &start, double &end)
     {
-        if(finiteBar(bars[i]))
-            lane.order.push_back(i);
-    }
-    std::stable_sort(lane.order.begin(), lane.order.end(),
-        [&bars](size_t a, size_t b) { return bars[a].start < bars[b].start; });
-
-    const size_t count=lane.order.size();
-
-    lane.starts.resize(count);
-    lane.maxEnds.resize(count);
-    for(size_t i=0; i < count; ++i)
-    {
-        const TimelineBar &bar=bars[lane.order[i]];
-
-        lane.starts[i]=bar.start;
-        lane.maxEnds[i]=(i == 0) ? bar.end : std::max(lane.maxEnds[i-1], bar.end);
-    }
-
-    lane.levels.assign(bars.size(), 0);
-    for(size_t i=0; i < bars.size(); ++i)
-    {
-        const TimelineBar &bar=bars[i];
-
-        if(!finiteBar(bar))
-            continue;
-
-        size_t pos=static_cast<size_t>(std::lower_bound(lane.starts.begin(), lane.starts.end(), bar.end)
-            -lane.starts.begin());
-        int level=0;
-
-        while(pos > 0 && lane.maxEnds[pos-1] > bar.start)
-        {
-            --pos;
-
-            const size_t other=lane.order[pos];
-            const TimelineBar &earlier=bars[other];
-
-            if(other < i && earlier.end > bar.start && earlier.start < bar.end)
-                level=std::max(level, std::min(MaxOverlapLevel, lane.levels[other]+1));
-        }
-        lane.levels[i]=level;
-    }
+        start=bars[i].start;
+        end=bars[i].end;
+        return finiteBar(bars[i]);
+    }, MaxOverlapLevel);
 }
 
 // ---- the x axis -------------------------------------------------------------
@@ -504,70 +335,7 @@ void Timeline::setUtcOffset(const axis::UtcOffset &offset)
         setHover(true, m_hoverLane, m_hoverIndex, true);
 }
 
-// ---- scrolling --------------------------------------------------------------
-
-int Timeline::getScrollOffset() const
-{
-    return m_body->getVerticalScrollOffset();
-}
-
-void Timeline::setScrollOffset(int offset)
-{
-    m_body->setVerticalScrollOffset(std::max(offset, 0));
-}
-
-void Timeline::scrollToLane(size_t lane)
-{
-    if(lane >= m_lanes.size())
-        return;
-
-    const int top=static_cast<int>(lane)*m_laneHeight;
-    const int bottom=top+m_laneHeight;
-    const int offset=getScrollOffset();
-
-    if(top < offset)
-        setScrollOffset(top);
-    else if(bottom > offset+m_area.h)
-        setScrollOffset(std::min(top, bottom-m_area.h));
-}
-
-// GLFW's translator gives 60 per wheel notch.
-bool Timeline::onMouseWheeled(int delta)
-{
-    const int before=getScrollOffset();
-    const long moved=std::lround(-static_cast<double>(delta)*WheelLanes*m_laneHeight/60.0);
-
-    setScrollOffset(static_cast<int>(std::clamp<long>(before+moved, 0, INT32_MAX)));
-    if(getScrollOffset() != before)
-        return true;
-
-    return ParentClass::onMouseWheeled(delta);
-}
-
-void Timeline::bodyScrolled(int offset)
-{
-    if(offset == m_scrollOffset)
-        return;
-
-    m_scrollOffset=offset;
-    // every bar in view moved, and the one under the mouse may be another
-    barsMoved();
-    refreshHover();
-}
-
 // ---- hit test ---------------------------------------------------------------
-
-int Timeline::laneAt(int y) const
-{
-    if(y < m_area.y || y >= m_area.y+m_area.h)
-        return -1;
-
-    const int64_t lane=(static_cast<int64_t>(y)-m_area.y+m_scrollOffset)/m_laneHeight;
-
-    if(lane < 0 || lane >= static_cast<int64_t>(m_lanes.size()))
-        return -1;
-    return static_cast<int>(lane);
-}
 
 // A bar holds the unit x when its left edge, rounded, is at or before x and its
 // right edge after it: so its start is before the time at x+0.5 (taken as
@@ -588,34 +356,19 @@ bool Timeline::barAt(const Point &local, size_t &lane, size_t &index) const
 
     const double low=timeAt(local.x-1.0);
     const double high=timeAt(local.x+1.0);
-    size_t pos=static_cast<size_t>(std::lower_bound(target.starts.begin(), target.starts.end(), high)
-        -target.starts.begin());
-    bool found=false;
+    const size_t laneNumber=static_cast<size_t>(laneIndex);
     size_t best=0;
 
-    while(pos > 0 && target.maxEnds[pos-1] >= low)
-    {
-        --pos;
-
-        const size_t candidate=target.order[pos];
-        Rect rect;
-
-        if(!barRect(static_cast<size_t>(laneIndex), target.bars[candidate], rect)
-            || local.x < rect.x || local.x >= rect.x+rect.w)
-            continue;
-
-        // the one drawn on top: the highest level, then, sharing a layer
-        // (past MaxOverlapLevel, or a column two bars both reach), the one
-        // whose slot is drawn first, the earlier, which the depth test keeps
-        if(!found || target.levels[candidate] > target.levels[best]
-            || (target.levels[candidate] == target.levels[best] && candidate < best))
+    // the one drawn on top: the highest level, then, sharing a layer (past
+    // MaxOverlapLevel, or a column two bars both reach), the one whose slot is
+    // drawn first, the earlier, which the depth test keeps
+    if(!target.index.pick(low, high, [&](size_t candidate)
         {
-            best=candidate;
-            found=true;
-        }
-    }
+            Rect rect;
 
-    if(!found)
+            return barRect(laneNumber, target.bars[candidate], rect) && local.x >= rect.x
+                && local.x < rect.x+rect.w;
+        }, best))
         return false;
 
     lane=static_cast<size_t>(laneIndex);
@@ -812,40 +565,6 @@ void Timeline::onMouseClickLeft(int x, int y, bool down)
 
 // ---- geometry ---------------------------------------------------------------
 
-Rect Timeline::getCaptionColumnBounds() const
-{
-    return Rect(m_viewport.x, m_area.y, m_captionWidth, m_area.h);
-}
-
-double Timeline::xPosition(double t) const
-{
-    return m_area.x+axis::positionOf(t, getXMin(), getXMax(), m_area.w);
-}
-
-double Timeline::timeAt(double x) const
-{
-    const double min=getXMin();
-    const double max=getXMax();
-
-    if(m_area.w <= 0)
-        return min;
-    return min+(x-m_area.x)/m_area.w*(max-min);
-}
-
-bool Timeline::getLaneRect(size_t lane, Rect &rect) const
-{
-    if(lane >= m_lanes.size() || m_area.w <= 0 || m_area.h <= 0)
-        return false;
-
-    const int64_t top=static_cast<int64_t>(m_area.y)+static_cast<int64_t>(lane)*m_laneHeight-m_scrollOffset;
-
-    if(top+m_laneHeight <= m_area.y || top >= m_area.y+m_area.h)
-        return false;
-
-    rect=Rect(m_area.x, static_cast<int>(top), m_area.w, m_laneHeight);
-    return true;
-}
-
 bool Timeline::barRect(size_t laneIndex, const TimelineBar &bar, Rect &rect) const
 {
     if(!finiteBar(bar) || m_area.w <= 0)
@@ -895,349 +614,15 @@ bool Timeline::getBarRect(size_t lane, size_t index, Rect &rect) const
     return true;
 }
 
-// ---- measures ---------------------------------------------------------------
+// ---- the axis -----------------------------------------------------------------
 
-void Timeline::renewMeasureKey()
+std::vector<axis::Tick> Timeline::chooseTicks(double min, double max, int width)
 {
-    const Font &font=getSkin()->getDefaultFont();
-    const renderer::Base *renderer=getSkin()->getRenderer();
-    const unsigned serial=renderer ? renderer->textLayoutSerial() : 0;
+    axis::TimeTicks time=axis::chooseTimeTicks(min, max, width,
+        [this](const String &label) { return double(labelWidth(label)); }, XLabelGap, m_utcOffset);
 
-    if(m_measureFont == &font && m_measureFontValue == font && m_measureRenderer == renderer
-        && m_measureSerial == serial)
-        return;
-
-    m_measureFont=&font;
-    m_measureFontValue=font;
-    m_measureRenderer=renderer;
-    m_measureSerial=serial;
-    m_widths.clear();
-    m_lineHeight=-1;
-}
-
-int Timeline::labelWidth(const String &text)
-{
-    const auto found=m_widths.find(text);
-
-    if(found != m_widths.end())
-        return found->second;
-
-    // the time axis tries many strings as its range moves, and the captions
-    // are a hundred or so: keep it bounded
-    if(m_widths.size() >= 1024)
-        m_widths.clear();
-
-    const int width=measureText(getSkin()->getDefaultFont(), text).x;
-
-    m_widths.emplace(text, width);
-    return width;
-}
-
-int Timeline::labelLineHeight()
-{
-    if(m_lineHeight < 0)
-        m_lineHeight=measureLineHeight(getSkin()->getDefaultFont());
-    return m_lineHeight;
-}
-
-// ---- layout -----------------------------------------------------------------
-
-internal::Text *Timeline::makeLabel(Base *parent, const Color &color)
-{
-    internal::Text *label=nullptr;
-
-    {
-        PartScope part;
-
-        label=parent->newChild<internal::Text>();
-    }
-    label->setPlacement(Placement::Owner);
-    label->setTextColor(color);
-    return label;
-}
-
-void Timeline::updateColors()
-{
-    const Color &axisText=getSkin()->Colors.Timeline.AxisText;
-    const Color &captionText=getSkin()->Colors.Timeline.CaptionText;
-
-    for(internal::Text *label : m_tickLabels)
-        label->setTextColor(axisText);
-    for(CaptionRow &row : m_captionRows)
-        row.label->setTextColor(captionText);
-}
-
-// The body and the caption column, which need nothing of the body's layout:
-// the bar area and the ticks, which need its viewport, are placeAxis()'s.
-void Timeline::layout(skin::Base *skin)
-{
-    ParentClass::layout(skin);
-    renewMeasureKey();
-
-    // the children are laid out next: what is written to them is placement
-    PlacementScope placement;
-
-    const int lineHeight=labelLineHeight();
-    const Padding &padding=getPadding();
-    const int innerLeft=padding.left;
-    const int innerTop=padding.top;
-    const int innerWidth=std::max(0, getWidth()-padding.left-padding.right);
-    const int innerBottom=std::max(innerTop, getHeight()-padding.bottom);
-
-    int captionWidth=m_captionWidthSetting;
-
-    if(captionWidth <= 0)
-    {
-        captionWidth=0;
-        for(const Lane &lane : m_lanes)
-            captionWidth=std::max(captionWidth, labelWidth(lane.caption)+2*CaptionPadding);
-        captionWidth=std::min(captionWidth, innerWidth/3);
-    }
-    m_captionWidth=std::min(captionWidth, innerWidth);
-
-    // the axis's labels above the lanes
-    m_axisTop=innerTop;
-
-    const int bodyTop=std::min(innerBottom, innerTop+lineHeight+LabelGap);
-    const int bodyHeight=innerBottom-bodyTop;
-
-    m_body->setVirtualContentHeight(static_cast<int>(std::min<int64_t>(
-        static_cast<int64_t>(m_lanes.size())*m_laneHeight, INT32_MAX)));
-    placeChild(m_body, innerLeft, bodyTop, innerWidth, bodyHeight);
-    placeChild(m_captions, innerLeft, bodyTop, m_captionWidth, bodyHeight);
-}
-
-void Timeline::placeAxis()
-{
-    // the labels are children laid out next: what is written to them is
-    // placement
-    PlacementScope placement;
-
-    const int lineHeight=labelLineHeight();
-    const Padding &padding=getPadding();
-    const int innerLeft=padding.left;
-    const int innerRight=std::max(innerLeft, getWidth()-padding.right);
-
-    // the body's viewport right of the caption column
-    const int captionWidth=std::min(m_captionWidth, m_viewport.w);
-
-    m_area=Rect(m_viewport.x+captionWidth, m_viewport.y, m_viewport.w-captionWidth, m_viewport.h);
-
-    const double min=getXMin();
-    const double max=getXMax();
-
-    m_ticks.clear();
-    if(max > min && m_area.w > 0)
-    {
-        axis::TimeTicks time=axis::chooseTimeTicks(min, max, m_area.w,
-            [this](const String &label) { return double(labelWidth(label)); }, XLabelGap, m_utcOffset);
-        std::vector<double> positions;
-        std::vector<double> widths;
-
-        m_timeStep=time.step;
-        positions.reserve(time.ticks.size());
-        widths.reserve(time.ticks.size());
-        for(const axis::Tick &tick : time.ticks)
-        {
-            positions.push_back(tick.position);
-            widths.push_back(labelWidth(tick.label));
-        }
-
-        // every stride-th label, so none overlaps the next
-        const size_t stride=axis::thinLabels(positions, widths, XLabelGap);
-
-        for(size_t i=0; i < time.ticks.size(); i+=stride)
-        {
-            time.ticks[i].position+=m_area.x;
-            m_ticks.push_back(std::move(time.ticks[i]));
-        }
-    }
-
-    // the labels centred on their ticks inside the control
-    while(m_tickLabels.size() > m_ticks.size())
-    {
-        delete m_tickLabels.back();   // ~Base takes it out of the children
-        m_tickLabels.pop_back();
-    }
-    while(m_tickLabels.size() < m_ticks.size())
-        m_tickLabels.push_back(makeLabel(this, getSkin()->Colors.Timeline.AxisText));
-
-    for(size_t t=0; t < m_ticks.size(); ++t)
-    {
-        internal::Text *label=m_tickLabels[t];
-        const axis::Tick &tick=m_ticks[t];
-        const int width=labelWidth(tick.label);
-        int x=static_cast<int>(std::lround(tick.position))-width/2;
-
-        x=std::max(innerLeft, std::min(x, innerRight-width));
-        label->setText(tick.label);
-        placeChild(label, x, m_axisTop, width, lineHeight);
-    }
-
-    // the renderer draws from what this computed, and the bars may have
-    // moved under the mouse
-    barsMoved();
-    refreshHover();
-}
-
-// The captions of the lanes in view, in a pool of rows as many as the most
-// lanes the column can show any of (VirtualList's): a row whose lane is still
-// in view keeps it, the lanes that came into view go to the free rows (their
-// text set, which writes their glyphs), and a row with no lane is hidden. A
-// new pool size (a new column height or lane count) deletes the free rows
-// before the pool is topped up, so a timeline resized to a height shows the
-// rows one built at it does. Each row is centred on its lane less the scroll
-// offset, so a scroll moves the captions in view alone.
-void Timeline::placeCaptions(skin::Base *skin)
-{
-    PlacementScope placement;
-
-    const int lineHeight=labelLineHeight();
-    const int width=m_captions->getWidth();
-    const int height=m_captions->getHeight();
-    const int labelWidth=std::max(0, width-2*CaptionPadding);
-    const size_t lanes=m_lanes.size();
-    size_t first=0;
-    size_t end=0;
-    size_t poolSize=0;
-
-    if(width > 0 && height > 0 && lanes > 0)
-    {
-        const int64_t offset=m_scrollOffset;
-
-        first=std::min(lanes, static_cast<size_t>(offset/m_laneHeight));
-        end=std::min(lanes, static_cast<size_t>((offset+height+m_laneHeight-1)/m_laneHeight));
-        poolSize=std::min(lanes, static_cast<size_t>((height+m_laneHeight-1)/m_laneHeight)+1);
-    }
-
-    std::vector<bool> held(end-first, false);
-
-    for(CaptionRow &row : m_captionRows)
-    {
-        if(row.lane != NoLane && row.lane >= first && row.lane < end && !held[row.lane-first])
-            held[row.lane-first]=true;
-        else
-            row.lane=NoLane;
-    }
-
-    if(m_captionRows.size() != poolSize)
-    {
-        std::vector<CaptionRow> kept;
-
-        for(CaptionRow &row : m_captionRows)
-        {
-            if(row.lane == NoLane)
-                delete row.label;   // ~Base takes it out of the column's children
-            else
-                kept.push_back(row);
-        }
-        m_captionRows.swap(kept);
-        while(m_captionRows.size() < poolSize)
-        {
-            CaptionRow row;
-
-            row.label=makeLabel(m_captions, getSkin()->Colors.Timeline.CaptionText);
-            row.label->setHidden(true);
-            m_captionRows.push_back(row);
-        }
-    }
-
-    // the lanes that came into view, to the free rows in order
-    size_t freeRow=0;
-
-    for(size_t lane=first; lane < end; ++lane)
-    {
-        if(held[lane-first])
-            continue;
-        while(freeRow < m_captionRows.size() && m_captionRows[freeRow].lane != NoLane)
-            ++freeRow;
-        if(freeRow == m_captionRows.size())
-            break;
-        m_captionRows[freeRow].lane=lane;
-    }
-
-    for(CaptionRow &row : m_captionRows)
-    {
-        internal::Text *label=row.label;
-
-        if(row.lane == NoLane)
-        {
-            label->setHidden(true);
-            continue;
-        }
-
-        const bool wasHidden=label->hidden();
-        const bool rebound=(label->getText() != m_lanes[row.lane].caption);
-        const int64_t top=static_cast<int64_t>(row.lane)*m_laneHeight-m_scrollOffset;
-
-        label->setText(m_lanes[row.lane].caption);
-        label->setHidden(false);
-        if(wasHidden || rebound)
-            label->doCalculateSize(skin, Dim::X);
-        placeChild(label, CaptionPadding, static_cast<int>(top)+(m_laneHeight-lineHeight)/2, labelWidth, lineHeight);
-    }
-}
-
-// The bar area is the body's viewport less the caption column, and the ticks
-// need its width: the body is laid out first (all of it is in its Y arrange,
-// as a ScrollControl's), then the axis and the captions, then the rest, X then
-// Y, as a Chart lays out its labels (docs/layout.md, "Children whose X layout
-// needs the parent's height").
-void Timeline::arrange(skin::Base *skin, Dim dim)
-{
-    if(dim == Dim::X)
-        return;
-
-    stampLayoutPass();
-
-    const bool relayout=needsLayout();
-
-    if(relayout)
-    {
-        m_needsLayout=false;
-        layout(skin);
-    }
-
-    m_body->doCalculateSize(skin, Dim::X);
-    m_body->doArrange(skin, Dim::X);
-    m_body->doCalculateSize(skin, Dim::Y);
-    m_body->doArrange(skin, Dim::Y);
-
-    const Rect &viewport=m_body->getViewport();
-    const Rect bodyViewport(m_body->getX()+viewport.x, m_body->getY()+viewport.y, viewport.w, viewport.h);
-
-    if(relayout || !(bodyViewport == m_viewport))
-    {
-        m_viewport=bodyViewport;
-        placeAxis();
-    }
-    placeCaptions(skin);
-
-    countLayoutChildrenScanned(m_children);
-    for(auto &&child : m_children)
-    {
-        if(child == m_body || child->hidden())
-            continue;
-        // a label made by placeAxis() was not measured this pass
-        child->doCalculateSize(skin, Dim::X);
-        child->doArrange(skin, Dim::X);
-    }
-
-    countLayoutChildrenScanned(m_children);
-    for(auto &&child : m_children)
-    {
-        if(child != m_body && !child->hidden())
-            child->doCalculateSize(skin, Dim::Y);
-    }
-
-    countLayoutChildrenScanned(m_children);
-    for(auto &&child : m_children)
-    {
-        if(child != m_body && !child->hidden())
-            child->doArrange(skin, Dim::Y);
-    }
-
-    postLayout(skin);
+    m_timeStep=time.step;
+    return std::move(time.ticks);
 }
 
 }//namespace controls

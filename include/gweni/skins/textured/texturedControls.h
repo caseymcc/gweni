@@ -1329,6 +1329,100 @@ private:
     SlotList m_crosshair;
 };
 
+// What a LaneView's renderer (the Timeline's, the Sequencer's) shares: the
+// slots of its lists, each keeping what it last drew (a rect or a line), and
+// the lanes' stripes and the grid drawn from the view.
+namespace lanes
+{
+
+//! What a slot holds, as last drawn: a rect or a line.
+struct Slot
+{
+    bool valid=false;   //!< false for a new slot, which holds nothing known
+    bool shown=false;
+    bool line=false;
+    Rect rect;
+    tokyonight::Surface surface{};
+    PointF p0;
+    PointF p1;
+    Color color;
+    float thickness=1.0f;
+    int zIndex=0;
+    Rect clip;
+};
+
+struct SlotList
+{
+    std::vector<size_t> ids;
+    std::vector<Slot> drawn;
+    size_t used=0;
+    size_t taken=0;
+};
+
+//! The slots in use as last drawn (the spare ones are not in them).
+GWENI_EXPORT std::vector<size_t> inUse(const SlotList &list);
+//! Every slot of \p list given back.
+GWENI_EXPORT void releaseList(renderer::Base *renderer, SlotList &list);
+//! The slots a list is taken with for \p count in use (Chart's).
+inline size_t capacity(size_t count) { return count ? count+std::max<size_t>(count/2, 4) : 0; }
+
+//! Takes lists back to front: each list's ids from the bank, which hands out
+//! the lowest free id first, so what it gives back goes up from list to list;
+//! one at or below \p above (the control's own first slot) is put aside until
+//! finish() gives it back.
+class GWENI_EXPORT Taker
+{
+public:
+    Taker(renderer::Base *renderer, bool hasAbove, size_t above): m_renderer(renderer), m_hasAbove(hasAbove),
+        m_above(above) {}
+    //! \p list taken with \p count slots, \p used of them to be in use.
+    void take(SlotList &list, size_t used, size_t count);
+    void finish();
+
+private:
+    renderer::Base *m_renderer;
+    bool m_hasAbove;
+    size_t m_above;
+    std::vector<size_t> m_below;
+};
+
+//! One update()'s drawing: a slot is drawn only when what it holds differs
+//! (or with \p all), and hidden only when it showed.
+class GWENI_EXPORT Painter
+{
+public:
+    Painter(renderer::Base *renderer, bool all): m_renderer(renderer), m_all(all) {}
+
+    void hide(size_t id, Slot &slot);
+    //! The slots past the list's used ones.
+    void hideSpare(SlotList &list);
+    void drawRect(size_t id, Slot &slot, const Rect &rect, const tokyonight::Surface &surface, int zIndex,
+        const Rect &clip);
+    void drawSegment(size_t id, Slot &slot, const PointF &p0, const PointF &p1, const Color &color, int zIndex,
+        const Rect &clip, float thickness=1.0f);
+
+    //! The lanes' stripes (\p stripes, a slot per lane: an odd lane's
+    //! TimelineLane across the caption column and the lane area, at
+    //! z+\p laneLayer clipped to \p viewClip; an even lane's and one out of
+    //! view hidden) and the grid (\p grid, ticks+2 slots: a vertical line per
+    //! tick across the area in TimelineGrid's top colour, clipped to
+    //! \p areaClip, then the axis lines along the area's top, over the caption
+    //! column too, and its left edge in TimelineAxis's, at z+\p gridLayer), of
+    //! \p view drawn at \p bounds (its render bounds).
+    void paintLanes(const controls::LaneView &view, const Rect &bounds, int z, int laneLayer, int gridLayer,
+        const Rect &areaClip, const Rect &viewClip, SlotList &stripes, SlotList &grid);
+
+private:
+    renderer::Base *m_renderer;
+    bool m_all;
+};
+
+//! \p rect of a control at \p bounds, at the renderer's offset, cut to its
+//! clip region.
+GWENI_EXPORT Rect clipTo(renderer::Base *renderer, const Rect &bounds, const Rect &rect);
+
+}//namespace lanes
+
 // A Timeline: [0] its frame (TimelineFrame, over the render bounds, at its z),
 // then slot lists it sizes to what it draws, each slot keeping what it last
 // drew (as a Chart's):
@@ -1397,7 +1491,7 @@ public:
     std::vector<size_t> hoverPrimitives() const { return inUse(m_hover); }
 
     //! The slots a list is taken with for \p count in use (Chart's).
-    static size_t capacity(size_t count) { return count ? count+std::max<size_t>(count/2, 4) : 0; }
+    static size_t capacity(size_t count) { return lanes::capacity(count); }
 
     //! What a bar is drawn in: TimelineBar, its colour with TimelineBar's
     //! border, or the theme surface it names (magenta for a name no theme has).
@@ -1406,32 +1500,11 @@ public:
 private:
     //! the levels its slots were drawn at
     DrawnOpacity m_drawnOpacity;
-    //! What a slot holds, as last drawn: a rect or a line.
-    struct Slot
-    {
-        bool valid=false;   //!< false for a new slot, which holds nothing known
-        bool shown=false;
-        bool line=false;
-        Rect rect;
-        tokyonight::Surface surface{};
-        PointF p0;
-        PointF p1;
-        Color color;
-        int zIndex=0;
-        Rect clip;
-    };
+    typedef lanes::Slot Slot;
+    typedef lanes::SlotList SlotList;
 
-    struct SlotList
-    {
-        std::vector<size_t> ids;
-        std::vector<Slot> drawn;
-        size_t used=0;
-        size_t taken=0;
-    };
-
-    static std::vector<size_t> inUse(const SlotList &list);
-    static void releaseList(renderer::Base *renderer, SlotList &list);
-    void takeLists(renderer::Base *renderer, size_t lanes, size_t grid, const std::vector<size_t> &bars);
+    static std::vector<size_t> inUse(const SlotList &list) { return lanes::inUse(list); }
+    void takeLists(renderer::Base *renderer, size_t laneCount, size_t grid, const std::vector<size_t> &bars);
 
     Slot m_frame;
     SlotList m_lanes;

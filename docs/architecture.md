@@ -4810,12 +4810,12 @@ two programs and the draws. What follows describes both together:
   zone of `setUtcOffset`, then `thinLabels`), pooled `internal::Text`s in a row at the
   top. A bar changed inside an automatic range that did not hold one of its ends lays
   nothing out, and with a fixed range no bar change does. **Scroll and captions:** the
-  lanes scroll in `internal::TimelineBody`, a ScrollControl with virtual content as tall
+  lanes scroll in `internal::LaneBody`, a ScrollControl with virtual content as tall
   as the lanes and a vertical bar alone; neither it nor its inner panel takes the mouse,
   so the Timeline itself is hovered over its lanes and the wheel scrolls `WheelLanes` (3)
   a notch. Its viewport less the caption column is the bar area; the Timeline lays the
   body out first in its Y arrange and the axis after, from that viewport. The captions
-  are a pool of Texts in `internal::TimelineCaptionColumn`, which clips them, as many as
+  are a pool of Texts in `internal::LaneCaptionColumn`, which clips them, as many as
   the most lanes it can show any of (VirtualList's rule): a row whose lane stays in view
   keeps it, a lane coming into view takes a free row, and a new pool size deletes the
   free rows before topping the pool up, so a timeline resized back has the rows one built
