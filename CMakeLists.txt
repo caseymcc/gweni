@@ -162,6 +162,8 @@ set(GWENI_SOURCES
     source/text/cellWrap.cpp
     include/gweni/text/document.h
     source/text/document.cpp
+    include/gweni/text/fuzzyMatch.h
+    source/text/fuzzyMatch.cpp
     include/gweni/text/highlightCache.h
     source/text/highlightCache.cpp
     include/gweni/text/markdown.h
