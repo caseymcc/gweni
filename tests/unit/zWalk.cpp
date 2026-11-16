@@ -278,10 +278,12 @@ TEST_CASE("Z walk: skipping clean subtrees gives the labels of the walk that ent
         Scene skipping;
         Scene full;
         full.walkAll=true;
-        skipping.renderer.maxZ=maxZ;
-        full.renderer.maxZ=maxZ;
+        // numbered first with the whole range, so its ZGap labels run out of
+        // the smaller one (a first numbering at it would fit its gap to it)
         skipping.populate(10, 6, 1);
         full.populate(10, 6, 1);
+        skipping.renderer.maxZ=maxZ;
+        full.renderer.maxZ=maxZ;
         REQUIRE(skipping.labels() == full.labels());
 
         std::mt19937 rng(20261108u);

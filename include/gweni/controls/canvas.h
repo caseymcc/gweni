@@ -931,6 +931,12 @@ protected:
     /// and again after renderPhaseLayout(), so a control that pass created is
     /// drawn at its z in the same frame.
     void renumberZOrder();
+    /// The gap a full numbering spreads the tree out with: ZGap, or less, so
+    /// that the tree takes at most half of the renderer's maxZ, the other half
+    /// left for what is added or moved to the end after it; 0 for a tree
+    /// that barely fits at all. \p layers is set to the z values the tree
+    /// needs packed.
+    int spreadZGap(int maxZ, size_t &layers) const;
 
     /// The update phase's toast step (see notify()): the hover pause, then the
     /// expiry, before layout.
@@ -1028,7 +1034,7 @@ protected:
     bool m_zOrderDirty=true;
     /// renumberZOrder() has numbered the tree once (else the next pass is the
     /// first, spread out), the highest z it used, and the gap of the last full
-    /// pass, ZGap unless a compaction had to make it smaller.
+    /// pass, ZGap unless the tree was too large for it (spreadZGap()).
     bool m_zNumbered=false;
     int m_zHigh=0;
     /// invalidateZOrder() was called: the next renumber enters every control.

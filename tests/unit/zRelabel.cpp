@@ -20,7 +20,9 @@
  *  order (test::zOrderViolation) after each frame. When the labels run past
  *  the renderer's maxZIndex() one full pass spreads the tree over the range
  *  again, with a smaller gap, packed when it barely fits, and with ties, every
- *  z still within it, when even packed it does not.
+ *  z still within it, when even packed it does not. A tree too large for
+ *  ZGap in the range gets that smaller gap in its first numbering, in one
+ *  walk, instead of running out and compacting in the same frame.
  */
 #include "headlessFixture.h"
 
@@ -453,10 +455,10 @@ TEST_CASE("Z relabel: random inserts, deletes, moves and layer changes keep ever
 TEST_CASE("Z relabel: labels past maxZIndex() are compacted in one full pass")
 {
     Scene scene;
-    // the first numbering of 261 controls and 289 ranges, spread out, and a
-    // little room after it
-    scene.renderer.maxZ=2600;
+    // the first numbering of 261 controls and 289 ranges, spread out with
+    // ZGap in the whole range, then a range with a little room after it
     scene.populate();
+    scene.renderer.maxZ=2600;
     CHECK(scene.violation() == "");
 
     // controls added at the end take the gap each until the range runs out
@@ -512,4 +514,39 @@ TEST_CASE("Z relabel: labels past maxZIndex() are compacted in one full pass")
             CHECK(control->getOverlayZIndex() <= 100);
         });
     }
+}
+
+TEST_CASE("Z relabel: the first numbering of a tree too large for ZGap fits it, with no compaction")
+{
+    Scene scene;
+    // 261 controls and 289 ranges spread out with ZGap would reach past 2300:
+    // the first numbering takes a smaller gap instead of running out and
+    // compacting in the same frame
+    scene.renderer.maxZ=1200;
+    for(int b=0; b<Scene::Branches; ++b)
+    {
+        controls::Base *branch=Scene::add(scene.canvas, (b%4) == 3?2:0);
+
+        for(int c=0; c<Scene::Children; ++c)
+            Scene::add(branch, (c%3) == 2?1:((c%5) == 4?2:0));
+    }
+    scene.frame();
+
+    CHECK(scene.violation() == "");
+    // one walk of the tree, not a second one for a compaction
+    CHECK(scene.canvas->getUpdateStats().zVisited == scene.all().size());
+
+    // the z values the tree needs packed, and the highest it was given
+    int layers=0;
+    int high=0;
+    test::forEachControl(scene.canvas, [&](controls::Base *control) {
+        skin::Control *skinControl=const_cast<skin::Control *>(control->getSkinControl());
+        layers+=skinControl?skinControl->depthLayers()+skinControl->overlayLayers():1;
+        high=std::max({high, control->getZIndex(), control->getOverlayZIndex()});
+    });
+    // spread over at most half of what is spare, the rest left for what comes
+    // next, as a compaction does
+    CHECK(high <= layers+(1200-layers)/2);
+    // and spread out still, not packed
+    CHECK(high > layers+(int)scene.all().size()/2);
 }

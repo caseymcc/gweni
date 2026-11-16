@@ -388,10 +388,17 @@ void Canvas::renumberZOrder()
         return;
     }
 
-    // The first numbering spreads the tree out; after that a control keeps
-    // its z unless the ones before it now reach past it.
+    // The first numbering spreads the tree out, with a gap that fits it, so a
+    // large tree is not compacted in its first frame; after that a control
+    // keeps its z unless the ones before it now reach past it.
     ZNumbering numbering;
     numbering.full=!m_zNumbered;
+
+    if(numbering.full && render)
+    {
+        size_t layers=0;
+        m_zGap=spreadZGap(maxZ, layers);
+    }
     numbering.gap=m_zGap;
     numbering.high=m_zHigh;
     numbering.tailGap=m_zGap;
@@ -407,10 +414,7 @@ void Canvas::renumberZOrder()
         // (which takes new z at the top) has the other half before the next
         // compaction; packed for a tree that barely fits at all.
         size_t layers=0;
-        size_t ranges=0;
-        countZRanges(layers, ranges);
-        const size_t spare=(layers < (size_t)maxZ)?(size_t)maxZ-layers:0;
-        m_zGap=(int)std::min<size_t>(ZGap, ranges?spare/(2*ranges):0);
+        m_zGap=spreadZGap(maxZ, layers);
 
         if(layers > (size_t)maxZ)
         {
@@ -435,6 +439,14 @@ void Canvas::renumberZOrder()
     m_zNumbered=true;
     m_zClamped=numbering.clamped;
     m_zHigh=numbering.maxUsed;
+}
+
+int Canvas::spreadZGap(int maxZ, size_t &layers) const
+{
+    size_t ranges=0;
+    countZRanges(layers, ranges);
+    const size_t spare=(layers < (size_t)maxZ)?(size_t)maxZ-layers:0;
+    return (int)std::min<size_t>(ZGap, ranges?spare/(2*ranges):0);
 }
 
 void Canvas::renderCanvas()

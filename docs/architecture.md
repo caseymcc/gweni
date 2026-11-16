@@ -143,7 +143,8 @@ the tree depth-first; each range (a control's `depthLayers()`, then its subtree,
 its `overlayLayers()`) keeps its z if that is still at or past the cursor, and otherwise
 takes the cursor, which then moves past the range. So:
 - the canvas's first numbering, and a compaction, give every range the cursor and leave
-  `Canvas::ZGap` (7) free after it: stride 8 for a one-layer control;
+  `Canvas::ZGap` (7) free after it: stride 8 for a one-layer control (less for a tree
+  too large for that, below);
 - a control added between two numbered ones takes the next free z, packed; the ones
   after it keep theirs as soon as the cascade reaches a gap, so adding k controls in the
   middle changes about k z indices however large the tree (`tests/unit/zRelabel.cpp`);
@@ -166,7 +167,11 @@ z among the drawn ones for that reason. When a pass runs past the renderer's
 compacts the tree with the largest gap up to `ZGap` that spreads it over at most half
 the range, leaving the other half for what is added or moved to the end before the
 next compaction, packed when the tree barely fits, and clamped (with ties, one warning
-on stderr) when even packed it does not. That pass costs a whole-tree rewrite once:
+on stderr) when even packed it does not. The first numbering takes that same gap
+(`Canvas::spreadZGap`, a count of the tree's ranges before it), so a tree too large for
+`ZGap` is spread over half the range in its first frame instead of running out and
+being compacted in the same frame, a second walk of the whole tree (the demo shell, about 7800 controls, is
+one). A compaction costs a whole-tree rewrite once:
 `gweni_bench --scene bring-to-front --n 2000` (4120 controls, a 515-control Window
 moved to the end per frame) compacts once in about 32 frames.
 
