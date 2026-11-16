@@ -24,6 +24,9 @@
  *  opening its menu with its first item highlighted; a focused part draws
  *  BreadcrumbItemFocus's ring over an opaque fill (a border takes its fill's
  *  alpha, so a ring round the transparent rest look would not show).
+ *  A shortened path bounds its collapsed range before another input event
+ *  can reopen the menu. Disabled paths release focus, take no keys or
+ *  clicks, and use the registered disabled text colour.
  */
 #include "headlessFixture.h"
 
@@ -658,5 +661,157 @@ TEST_CASE("Breadcrumb: one Tab stop and the arrows over the shown items and the 
     // disabled: no Tab stop
     path->setDisabled(true);
     CHECK(path->getTabStop() == nullptr);
+}
+
+TEST_CASE("Breadcrumb: shortening the path bounds the menu before the next layout")
+{
+    Scene scene;
+    auto *path=scene.path;
+    auto *ellipsis=path->getEllipsisControl();
+
+    path->setItems({"Home", "Projects", "gweni", "source", "controls", "base.cpp"});
+    scene.frame();
+    scene.setWidth(neededWidth(path, 1, 5));
+    ellipsis->openMenu();
+    scene.frame();
+    REQUIRE(menuLabels(path) == std::vector<String>{"Projects", "gweni", "source", "controls"});
+
+    path->onItemClicked.addCallback(path, [path](event::Handler &, event::Info info)
+    {
+        path->popTo(info.integer);
+    });
+    REQUIRE(menuItem(path, "source"));
+    menuItem(path, "source")->doAction();
+    // No frame: another input event or app call can arrive before layout.
+    CHECK(path->getItemCount() == 4);
+    CHECK(path->getCollapsedBegin() == 1);
+    CHECK(path->getCollapsedEnd() == 3);
+    CHECK(!path->getItemControl(3)->hidden());
+    ellipsis->openMenu();
+    CHECK(menuLabels(path) == std::vector<String>{"Projects", "gweni"});
+    ellipsis->closeMenu();
+
+    path->popTo(1);
+    CHECK(path->getCollapsedBegin() == 0);
+    CHECK(path->getCollapsedEnd() == 0);
+    CHECK(ellipsis->hidden());
+    CHECK(!path->getItemControl(1)->hidden());
+    ellipsis->openMenu();
+    CHECK(!ellipsis->isMenuOpen());
+
+    // setItems uses the same removal path, including a completely empty path.
+    scene.frame();
+    path->setItems({"Home", "Projects", "gweni", "source", "controls", "base.cpp"});
+    scene.frame();
+    scene.setWidth(neededWidth(path, 1, 5));
+    path->setItems({"Home", "Work", "current"});
+    CHECK(path->getCollapsedEnd() == 2);
+    ellipsis->openMenu();
+    CHECK(menuLabels(path) == std::vector<String>{"Work"});
+    path->setItems({});
+    CHECK(path->getCollapsedBegin() == 0);
+    CHECK(path->getCollapsedEnd() == 0);
+    CHECK(ellipsis->hidden());
+    CHECK(!ellipsis->isMenuOpen());
+    ellipsis->openMenu();
+    CHECK(!ellipsis->isMenuOpen());
+    scene.frame();
+}
+
+TEST_CASE("Breadcrumb: disabling releases focus and keys until enabled")
+{
+    Scene scene;
+    auto *path=scene.path;
+    std::vector<size_t> clicked;
+
+    path->onItemClicked.addCallback(path, [&](event::Handler &, event::Info info) { clicked.push_back(info.integer); });
+    path->setItems({"Home", "Projects", "gweni", "source", "base.cpp"});
+    scene.frame();
+    scene.setWidth(neededWidth(path, 1, 3));
+    auto *home=path->getItemControl(0);
+    auto *ellipsis=path->getEllipsisControl();
+
+    home->focus();
+    path->setDisabled(true);
+    CHECK(KeyboardFocus == nullptr);
+    CHECK(path->getTabStop() == nullptr);
+    CHECK(!home->getKeyboardInputEnabled());
+    CHECK(!ellipsis->getKeyboardInputEnabled());
+    CHECK_FALSE(home->onKeyReturn(true));
+    CHECK_FALSE(home->onKeySpace(true));
+    scene.click(0);
+    CHECK(KeyboardFocus == nullptr);
+    scene.key(keys::Return);
+    scene.key(keys::Space);
+    CHECK(clicked.empty());
+
+    // Path edits while disabled must not give a new or former current item keys.
+    path->push("next");
+    CHECK(!path->getItemControl(4)->getKeyboardInputEnabled());
+    CHECK(!path->getItemControl(5)->getKeyboardInputEnabled());
+    path->setLastItemClickable(true);
+    CHECK(!path->getItemControl(5)->getKeyboardInputEnabled());
+    path->popTo(4);
+    CHECK(!path->getItemControl(4)->getKeyboardInputEnabled());
+    path->setDisabled(false);
+    CHECK(home->getKeyboardInputEnabled());
+    CHECK(path->getItemControl(4)->getKeyboardInputEnabled());
+    path->setLastItemClickable(false);
+    CHECK_FALSE(path->getItemControl(4)->getKeyboardInputEnabled());
+    scene.frame();
+    scene.click(0);
+    CHECK(KeyboardFocus == home);
+    scene.key(keys::Return);
+    CHECK(clicked == std::vector<size_t>{0, 0});
+
+    // The menu's focus hand-back cannot refocus a disabled ellipsis.
+    ellipsis->openMenu();
+    scene.frame();
+    REQUIRE(ellipsis->isMenuOpen());
+    path->setDisabled(true);
+    CHECK(!ellipsis->isMenuOpen());
+    CHECK(KeyboardFocus == nullptr);
+    scene.frame();
+    scene.frame();
+    CHECK(scene.renderer.writtenPrimitiveIds().empty());
+    CHECK(scene.renderer.writtenTextIds().empty());
+    path->setDisabled(false);
+    CHECK(ellipsis->getKeyboardInputEnabled());
+    ellipsis->focus();
+    scene.key(keys::Return);
+    CHECK(ellipsis->isMenuOpen());
+}
+
+TEST_CASE("Breadcrumb: disabled links and ellipsis use the registered theme colour")
+{
+    Scene scene;
+    auto *path=scene.path;
+
+    scene.skin.setThemeColors();
+    path->setItems({"Home", "Projects", "gweni", "source", "base.cpp"});
+    scene.frame();
+    scene.setWidth(neededWidth(path, 1, 3));
+    path->setDisabled(true);
+    scene.frame();
+    CHECK_FALSE((path->getItemControl(0)->getTextColor() == scene.skin.Colors.Breadcrumb.Text));
+    CHECK_FALSE((path->getItemControl(4)->getTextColor() == scene.skin.Colors.Breadcrumb.CurrentText));
+    CHECK_FALSE((path->getEllipsisControl()->getTextColor() == scene.skin.Colors.Breadcrumb.Text));
+    auto registry=scene.skin.textColorRegistry();
+
+    REQUIRE(registry.count("BreadcrumbDisabledText") == 1);
+    const Color disabled(110, 90, 140);
+
+    *registry.at("BreadcrumbDisabledText")=disabled;
+    path->getItemControl(0)->updateColors();
+    path->getItemControl(4)->updateColors();
+    path->getEllipsisControl()->updateColors();
+    CHECK((path->getItemControl(0)->getTextColor() == disabled));
+    CHECK((path->getItemControl(4)->getTextColor() == disabled));
+    CHECK((path->getEllipsisControl()->getTextColor() == disabled));
+    path->setDisabled(false);
+    scene.frame();
+    CHECK((path->getItemControl(0)->getTextColor() == scene.skin.Colors.Breadcrumb.Text));
+    CHECK((path->getItemControl(4)->getTextColor() == scene.skin.Colors.Breadcrumb.CurrentText));
+    CHECK((path->getEllipsisControl()->getTextColor() == scene.skin.Colors.Breadcrumb.Text));
 }
 

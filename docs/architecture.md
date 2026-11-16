@@ -643,7 +643,9 @@ the slots of the parts it hides, shows or moves and the ellipsis's alone. A clip
 container an app puts around it still costs that re-stamp; BreadcrumbDemo's resizable
 box clips nothing for that reason. The collapsed range is `getCollapsedBegin()` to
 `getCollapsedEnd()`, and a change of it hit-tests the hover again
-(`Canvas::hoverMayHaveMoved`).
+(`Canvas::hoverMayHaveMoved`). Removing a tail clamps that range immediately,
+keeping the new trailing items outside it and hiding and closing an empty ellipsis.
+A menu reopened before the next layout therefore cannot read removed items.
 
 **The ellipsis.** `internal::BreadcrumbEllipsis` is a `DropDownButton` showing "…",
 drawn as an item (its own renderer, the item surfaces, no chevron; its menu open is its
@@ -661,7 +663,10 @@ the shown clickable items and the ellipsis, and Home and End go to the first and
 last of them; the keys bubble up from the focused part. Return and Space activate an
 item. On the ellipsis they open its menu with its first item highlighted, as Alt+Down
 and F4 do (`MenuFocus::FirstItem`). The menu gives the focus back to the ellipsis when
-it closes. A focused item that collapses loses the focus.
+it closes. A focused item that collapses loses the focus. Disabling the path closes
+the menu, releases focus and turns off its items' keyboard and mouse input; enabling
+it restores input according to each item's click policy, including items pushed
+while disabled.
 
 **The renderer.** An item's and the ellipsis's one slot paints `BreadcrumbItem`
 (transparent), `BreadcrumbItemHover` or `BreadcrumbItemDown`; a non-clickable item hides
@@ -671,8 +676,9 @@ because style 4's border takes its fill's alpha. A click focuses an item, so it 
 the focus look until the focus moves. The separator's slot is the chevron in
 `BreadcrumbSeparator`, hidden when it shows text in that colour. Item text is
 `BreadcrumbText`, and hover and press change no text colour, so they write the item's
-surface slot alone. ThemeEditorDemo hides the four `Breadcrumb*` surface nodes in its
-recorded view, so its gallery image stays as it was; the canvas's F11 editor lists them.
+surface slot alone. Disabled items, including the current one and the ellipsis, use
+`BreadcrumbDisabledText`; the separators keep `BreadcrumbSeparator`. All these colours
+and surfaces are registered in the theme editor, including ThemeEditorDemo.
 BreadcrumbDemo has a deep path in a box a slider resizes, a `/`-separated path, and a
 path whose clicks `popTo` the item, with a "Push folder" button; `tests/unit/breadcrumb.cpp`
 and `--scenario breadcrumb` hold it to its slots.
@@ -7068,11 +7074,11 @@ the shipped theme with `"strict": true` added):
 
 ```
 theme strict: 239 of 243 surfaces not set: Badge, BreadcrumbItem, BreadcrumbItemDown, ...
-theme strict: 91 of 93 text colors not set: AxisTagText, BadgeText, BreadcrumbCurrentText, ...
+theme strict: 92 of 94 text colors not set: AxisTagText, BadgeText, BreadcrumbCurrentText, ...
 ```
 
 (`theme strict: all 243 surfaces set` for a kind with no gaps, and a single
-`theme strict: all 243 surfaces and 93 text colors set` when there are none at all). A
+`theme strict: all 243 surfaces and 94 text colors set` when there are none at all). A
 rejected value counts as not set. A surface that is transparent at rest on purpose
 (`WindowButton`, `SelectableHover`: a transparent fill hides the slot) is magenta too
 until the theme sets it to `[0,0,0,0]`; the theme has not said what it looks like. The

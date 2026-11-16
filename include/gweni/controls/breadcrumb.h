@@ -37,6 +37,8 @@ public:
     void onPress(event::Info info) override;
     //! Return presses it as Space does (Button's).
     bool onKeyReturn(bool down) override;
+    bool onKeySpace(bool down) override;
+    void setDisabled(bool disabled) override;
     void updateColors() override;
     //! The path is one Tab stop: Breadcrumb::getTabStop().
     bool isTabable() override;
@@ -161,7 +163,8 @@ public:
     size_t getItemsAfterCollapse() const { return m_itemsAfter; }
 
     //! The collapsed items are [getCollapsedBegin(), getCollapsedEnd()),
-    //! empty while everything fits (as of the last X arrange).
+    //! empty while everything fits (as of the last X arrange, clamped when
+    //! the path shrinks to keep the trailing items outside the menu).
     size_t getCollapsedBegin() const { return m_collapseBegin; }
     size_t getCollapsedEnd() const { return m_collapseEnd; }
     bool isCollapsed(size_t index) const { return index >= m_collapseBegin && index < m_collapseEnd; }

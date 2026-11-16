@@ -35,8 +35,8 @@ void BreadcrumbItem::setCurrent(bool current, bool clickable)
 
     m_current=current;
     m_clickable=clickable;
-    setMouseInputEnabled(clickable);
-    setKeyboardInputEnabled(clickable);
+    setMouseInputEnabled(clickable && !isDisabled());
+    setKeyboardInputEnabled(clickable && !isDisabled());
     setCursor(clickable?cursor::Finger:cursor::Normal);
     if(!clickable)
     {
@@ -60,6 +60,24 @@ bool BreadcrumbItem::onKeyReturn(bool down)
     return onKeySpace(down);
 }
 
+bool BreadcrumbItem::onKeySpace(bool down)
+{
+    return m_clickable && !isDisabled()?ParentClass::onKeySpace(down):false;
+}
+
+void BreadcrumbItem::setDisabled(bool disabled)
+{
+    setMouseInputEnabled(m_clickable && !disabled);
+    setKeyboardInputEnabled(m_clickable && !disabled);
+    ParentClass::setDisabled(disabled);
+    if(disabled)
+    {
+        setDepressed(false);
+        if(KeyboardFocus == this)
+            unfocus();
+    }
+}
+
 bool BreadcrumbItem::isTabable()
 {
     return m_breadcrumb && (m_breadcrumb->getTabStop() == this);
@@ -69,7 +87,7 @@ void BreadcrumbItem::updateColors()
 {
     const auto &colors=getSkin()->Colors.Breadcrumb;
 
-    setTextColor(m_current?colors.CurrentText:colors.Text);
+    setTextColor(isDisabled()?colors.DisabledText:(m_current?colors.CurrentText:colors.Text));
 }
 
 GWENI_CONTROL_CONSTRUCTOR(BreadcrumbSeparator)
@@ -124,7 +142,9 @@ void BreadcrumbEllipsis::openMenu(MenuFocus focus)
 
 void BreadcrumbEllipsis::updateColors()
 {
-    setTextColor(getSkin()->Colors.Breadcrumb.Text);
+    const auto &colors=getSkin()->Colors.Breadcrumb;
+
+    setTextColor(isDisabled()?colors.DisabledText:colors.Text);
 }
 
 bool BreadcrumbEllipsis::isTabable()
@@ -193,6 +213,31 @@ void Breadcrumb::removeTail(size_t count)
         m_items.pop_back();
         m_itemControls.pop_back();
         m_separators.pop_back();
+    }
+
+    // A menu pick may pop the path, followed by another key or openMenu()
+    // before layout. Keep the range valid now and reveal the new trailing
+    // items; the next X arrange places them and decides the fitting range.
+    const size_t oldBegin=m_collapseBegin;
+    const size_t oldEnd=m_collapseEnd;
+    const size_t last=m_items.size()-std::min(m_itemsAfter, m_items.size());
+
+    m_collapseEnd=std::min(m_collapseEnd, last);
+    m_collapseBegin=std::min(m_collapseBegin, m_collapseEnd);
+    if(m_collapseBegin == m_collapseEnd)
+    {
+        m_collapseBegin=m_collapseEnd=0;
+        m_ellipsis->setHidden(true);
+        m_ellipsis->closeMenu();
+    }
+    for(size_t i=oldBegin; i < std::min(oldEnd, m_items.size()); ++i)
+    {
+        if(!isCollapsed(i))
+        {
+            m_itemControls[i]->setHidden(false);
+            if(m_separators[i])
+                m_separators[i]->setHidden(false);
+        }
     }
 }
 
@@ -321,7 +366,7 @@ void Breadcrumb::updateMenu()
 {
     std::vector<String> labels;
 
-    for(size_t i=m_collapseBegin; i < m_collapseEnd; ++i)
+    for(size_t i=m_collapseBegin; i < std::min(m_collapseEnd, m_items.size()); ++i)
         labels.push_back(m_items[i].label);
     if(m_menuBuilt && (m_menuBegin == m_collapseBegin) && (labels == m_menuLabels))
         return;

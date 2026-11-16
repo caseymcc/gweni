@@ -348,6 +348,7 @@ public:
         {
             gweni::Color Text;
             gweni::Color CurrentText;
+            gweni::Color DisabledText;
             gweni::Color Separator;
         } Breadcrumb;
 
