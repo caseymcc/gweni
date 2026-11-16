@@ -343,6 +343,8 @@ protected:
     //! The canvas's control id, to tell it is still there.
     size_t m_attachedCanvasId=0;
     String m_accelerator;
+    //! The canvas's caller attach() added, which detach() takes away.
+    event::Caller *m_acceleratorCaller=nullptr;
 
     internal::CommandPalettePopup *m_popup=nullptr;
     internal::CommandPaletteField *m_field=nullptr;

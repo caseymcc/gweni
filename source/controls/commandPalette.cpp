@@ -175,6 +175,8 @@ void CommandPaletteRow::updateColors()
 GWENI_CONTROL_CONSTRUCTOR(CommandPaletteField)
 {
     setDock(DockPosition::Top);
+    // as wide as the popup (a TextBox is a fixed 200 by default)
+    setSizeFlags({SizeFlag::Expand, SizeFlag::Fixed});
     setPlaceholder(CommandPalette::placeholderText());
 }
 
@@ -492,20 +494,24 @@ void CommandPalette::attach(Canvas *canvas, const String &accelerator)
     m_attachedCanvasId=canvas->getControlId();
     m_accelerator=Base::acceleratorKey(accelerator);
     canvas->addAccelerator(accelerator, &CommandPalette::acceleratorPressed, this);
+    m_acceleratorCaller=canvas->m_accelerators[m_accelerator];
 }
 
 void CommandPalette::detach()
 {
     Canvas *canvas=m_attachedCanvas;
+    event::Caller *caller=m_acceleratorCaller;
 
     m_attachedCanvas=nullptr;
+    m_acceleratorCaller=nullptr;
 
     if(!canvas || (Base::getControlById(m_attachedCanvasId) != canvas))
         return;
 
     auto found=canvas->m_accelerators.find(m_accelerator);
 
-    if(found != canvas->m_accelerators.end())
+    // another palette may have taken the key since: its caller stays
+    if((found != canvas->m_accelerators.end()) && (found->second == caller))
     {
         delete found->second;
         canvas->m_accelerators.erase(found);

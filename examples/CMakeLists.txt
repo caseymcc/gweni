@@ -138,6 +138,8 @@ set(GWENI_DEMO_SOURCES
     demo/toolBar.h
     demo/stepper.cpp
     demo/stepper.h
+    demo/commandPalette.cpp
+    demo/commandPalette.h
     demo/searchCombo.cpp
     demo/searchCombo.h
     demo/calendar.cpp

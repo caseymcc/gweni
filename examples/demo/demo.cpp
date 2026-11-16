@@ -49,6 +49,7 @@
 #include "demo/toolBar.h"
 #include "demo/stepper.h"
 #include "demo/searchCombo.h"
+#include "demo/commandPalette.h"
 #include "demo/calendar.h"
 #include "demo/dateTime.h"
 #include "demo/dialog.h"
@@ -239,6 +240,7 @@ void Demo::init(const String &name)
 
         addDemo<ComboBoxDemo>(cat, "ComboBoxDemo", "Combo box");
         addDemo<SearchComboDemo>(cat, "SearchComboDemo", "Search combo box");
+        addDemo<CommandPaletteDemo>(cat, "CommandPaletteDemo", "Command palette");
         addDemo<TextBoxDemo>(cat, "TextBoxDemo", "Text box");
         addDemo<ListBoxDemo>(cat, "ListBoxDemo", "List box");
         addDemo<SelectableDemo>(cat, "SelectableDemo", "Selectable");

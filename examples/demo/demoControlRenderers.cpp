@@ -98,6 +98,7 @@ GWENI_DEMO_TRANSPARENT(BreadcrumbDemo)
 GWENI_DEMO_TRANSPARENT(ToolBarDemo)
 GWENI_DEMO_TRANSPARENT(StepperDemo)
 GWENI_DEMO_TRANSPARENT(SearchComboDemo)
+GWENI_DEMO_TRANSPARENT(CommandPaletteDemo)
 GWENI_DEMO_TRANSPARENT(CalendarDemo)
 GWENI_DEMO_TRANSPARENT(DateTimeDemo)
 GWENI_DEMO_TRANSPARENT(ZoomPanelDemo)
@@ -307,6 +308,7 @@ template class ControlRegister<BreadcrumbDemo>;
 template class ControlRegister<ToolBarDemo>;
 template class ControlRegister<StepperDemo>;
 template class ControlRegister<SearchComboDemo>;
+template class ControlRegister<CommandPaletteDemo>;
 template class ControlRegister<CalendarDemo>;
 template class ControlRegister<DateTimeDemo>;
 template class ControlRegister<ZoomPanelDemo>;
