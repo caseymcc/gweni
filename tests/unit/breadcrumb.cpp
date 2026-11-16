@@ -28,7 +28,9 @@
  *  can reopen the menu. Disabled paths release focus, take no keys or
  *  clicks, and use the registered disabled text colour. A handler that pops
  *  the path from a Return or a menu pick leaves the focus on a shown part,
- *  so Tab and the arrows still work.
+ *  so Tab and the arrows still work, and so does a layout that hides the
+ *  focused part: a collapsing item hands it to the ellipsis, a hidden
+ *  ellipsis to the first item it reveals.
  */
 #include "headlessFixture.h"
 
@@ -881,4 +883,67 @@ TEST_CASE("Breadcrumb: navigating from the keyboard keeps the focus in the path"
     CHECK(KeyboardFocus == path->getItemControl(0));
     path->setLastItemClickable(false);
     CHECK(KeyboardFocus == nullptr);
+}
+
+TEST_CASE("Breadcrumb: a layout that hides the focused part hands the focus on")
+{
+    Scene scene;
+    auto *path=scene.path;
+    auto *ellipsis=path->getEllipsisControl();
+    controls::Button *before=scene.canvas->newChild<controls::Button>();
+
+    before->setTabable(true);
+    before->setKeyboardInputEnabled(true);
+    before->setDock(DockPosition::Bottom);
+    path->onItemClicked.addCallback(path, [path](event::Handler &, event::Info info)
+    {
+        path->popTo(info.integer);
+    });
+
+    // a menu pick of a middle collapsed item whose pop leaves a path that
+    // fits: the pop keeps a smaller collapse (the ellipsis shown and
+    // focused), and the next layout hides the ellipsis
+    path->setItems({"Home", "Projects", "gweni"});
+    scene.frame();
+    const int fits=neededWidth(path, 0, 0);
+
+    path->setItems({"Home", "Projects", "gweni", "source", "controls", "base.cpp"});
+    scene.setWidth(fits);
+    REQUIRE(shown(path) == std::vector<int>{0, -1, 5});
+    before->focus();
+    scene.key(keys::Tab);
+    scene.key(keys::Right);
+    REQUIRE(KeyboardFocus == ellipsis);
+    scene.key(keys::Return);
+    scene.key(keys::Down);
+    REQUIRE(ellipsis->getMenu()->getHighlightedItem() != nullptr);
+    REQUIRE(ellipsis->getMenu()->getHighlightedItem()->getText() == "gweni");
+    scene.key(keys::Return);
+    REQUIRE(path->getItemCount() == 3);
+    CHECK(ellipsis->hidden());
+    CHECK(shown(path) == std::vector<int>{0, 1, 2});
+    CHECK(KeyboardFocus == path->getItemControl(1));
+    scene.key(keys::Left);
+    CHECK(KeyboardFocus == path->getItemControl(0));
+    scene.key(keys::Tab);
+    CHECK(KeyboardFocus == before);
+    scene.key(keys::Tab);
+    CHECK(KeyboardFocus == path->getItemControl(0));
+
+    // a resize that collapses the focused item gives the focus to the
+    // ellipsis, and one that shows it again to the first item it reveals
+    path->setItems({"Home", "Projects", "gweni", "source", "controls", "base.cpp"});
+    scene.frame();
+    scene.setWidth(neededWidth(path, 0, 0));
+    REQUIRE(shown(path) == std::vector<int>{0, 1, 2, 3, 4, 5});
+    path->getItemControl(2)->focus();
+    REQUIRE(KeyboardFocus == path->getItemControl(2));
+    scene.setWidth(neededWidth(path, 1, 4));
+    REQUIRE(shown(path) == std::vector<int>{0, -1, 4, 5});
+    CHECK(KeyboardFocus == ellipsis);
+    scene.setWidth(neededWidth(path, 0, 0));
+    REQUIRE(shown(path) == std::vector<int>{0, 1, 2, 3, 4, 5});
+    CHECK(KeyboardFocus == path->getItemControl(1));
+    scene.key(keys::Right);
+    CHECK(KeyboardFocus == path->getItemControl(2));
 }

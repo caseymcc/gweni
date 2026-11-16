@@ -561,6 +561,10 @@ void Breadcrumb::calculateSize(skin::Base *skin, Dim dim)
 // is always the whole path's).
 void Breadcrumb::arrange(skin::Base *skin, Dim dim)
 {
+    Base *focused=(dim == Dim::X) && partFocused()?KeyboardFocus:nullptr;
+    const size_t begin=m_collapseBegin;
+    const size_t end=m_collapseEnd;
+
     {
         PlacementScope placement;
 
@@ -582,7 +586,40 @@ void Breadcrumb::arrange(skin::Base *skin, Dim dim)
             }
         }
     }
+    // the focus moves outside the placement, which it changes nothing of
+    passFocusOn(focused, begin, end);
     ParentClass::arrange(skin, dim);
+}
+
+// A hidden part keeps the focus until the layout ends, when the input code
+// drops it; the keyboard stays in the path instead, on the part that now
+// shows what the hidden one did.
+void Breadcrumb::passFocusOn(Base *focused, size_t begin, size_t end)
+{
+    if(!focused || !focused->hidden() || (KeyboardFocus != focused))
+        return;
+    if(focused != m_ellipsis)
+    {
+        if(!m_ellipsis->hidden())
+        {
+            m_ellipsis->focus();
+            return;
+        }
+    }
+    else
+    {
+        for(size_t i=begin; i < std::min(end, m_itemControls.size()); ++i)
+        {
+            internal::BreadcrumbItem *item=m_itemControls[i];
+
+            if(!item->hidden() && item->isClickable())
+            {
+                item->focus();
+                return;
+            }
+        }
+    }
+    keepFocus(true);
 }
 
 void Breadcrumb::handleOverflow()

@@ -668,8 +668,11 @@ it closes. The path's own edits keep the keyboard in it: when `popTo`, `setItems
 current one, which takes none, or a pick's pop empties the collapse and hides the
 focused ellipsis), the focus goes to the last shown focusable part, the nearest one
 before the current item, and is dropped only when none is left (`keepFocus`), so Tab
-and the arrows go on working after an `onItemClicked` handler navigates. A focused
-item that collapses in a layout loses the focus. Disabling the path closes
+and the arrows go on working after an `onItemClicked` handler navigates. A layout
+that hides the focused part hands the focus on too (`passFocusOn`, after the X
+arrange's placement): a collapsing item gives it to the ellipsis, and the ellipsis,
+hidden once the path fits (a resize, or a pick's pop that left a smaller collapse
+the next layout undoes), to the first item it reveals. Disabling the path closes
 the menu, releases focus and turns off its items' keyboard and mouse input; enabling
 it restores input according to each item's click policy, including items pushed
 while disabled.
