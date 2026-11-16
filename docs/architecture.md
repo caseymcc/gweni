@@ -605,6 +605,78 @@ rows; `Base::focus()`, `unfocus()` and `setDisabled()` redraw the control, and s
 divider. SplitButtonDemo shows both kinds, and
 `--scenario split-button` holds them to their slots.
 
+#### The breadcrumb
+
+`controls::Breadcrumb` (`controls/breadcrumb.h`) is a path of items, the last one the
+current location (WinUI's BreadcrumbBar, MUI's Breadcrumbs). Each item is an
+`internal::BreadcrumbItem`, a `Button` that draws as a flat link, and each item but the
+first has an `internal::BreadcrumbSeparator` before it: a `Label` that is either a right
+chevron (icon kind 1, direction 3) or `setSeparatorText`'s text. Both are owner-placed in
+the Breadcrumb's arrange. `setItems`, `push(text, name)` and `popTo(index)` keep every
+item they do not add or remove, with its controls and slots: `setItems` sets new text
+only on the shared items whose label changed, and a removed item and its separator are
+hidden and then `delayedDelete()`d, so an `onItemClicked` handler may `popTo` its own
+item. The app's id or name for an item is `getItemData` (`setItemData`), as
+SearchComboBox's options have one; it draws nothing. The last item is plain text in
+`BreadcrumbCurrentText` and takes no input unless `setLastItemClickable(true)`. A click,
+or Return or Space on a focused item, fires `onItemClicked` with the path index in
+`info.integer`. Navigation is the app's: a handler calls `popTo` or `push`.
+
+**Collapsing.** The Breadcrumb's preferred width is always the whole path's. Which items
+show is decided in its X arrange, as `TabControl::arrange` → `handleOverflow()` decides
+the tab overflow: under a `PlacementScope`, from its final width and the parts'
+preferred widths, before the parts are placed. Hiding or showing a part changes no
+preferred size. While the path does not fit, the items after the first
+`getItemsBeforeCollapse()` (1) collapse into an `internal::BreadcrumbEllipsis`, one more
+per step towards the current item, until the rest fits or only
+`getItemsAfterCollapse()` (1, at least 1) items are left after it. A collapsed item and
+its separator are hidden; the first collapsed item's separator stays, before the
+ellipsis. With no items before (0), the ellipsis comes first. If even the least collapse
+does not fit, the last item is cut at the right edge: gweni's `Text` has no ellipsis
+truncation, so the item is placed narrower and its `Label` clips its text to its bounds
+(`isLastItemCut()`). Every part is cut at that edge the same way, so none draws past
+it. That is why the Breadcrumb clips nothing (`shouldClip()` false): a clipping control
+whose width changes re-stamps the clip box of every slot under it
+(`Base::childRegionChanged`), and a resize would rewrite every part's slots. With no
+clip, a width that moves items in or out of the menu lays out in one pass and writes
+the slots of the parts it hides, shows or moves and the ellipsis's alone. A clipping
+container an app puts around it still costs that re-stamp; BreadcrumbDemo's resizable
+box clips nothing for that reason. The collapsed range is `getCollapsedBegin()` to
+`getCollapsedEnd()`, and a change of it hit-tests the hover again
+(`Canvas::hoverMayHaveMoved`).
+
+**The ellipsis.** `internal::BreadcrumbEllipsis` is a `DropDownButton` showing "…",
+drawn as an item (its own renderer, the item surfaces, no chevron; its menu open is its
+pressed look). Its menu lists the collapsed items in path order, and a pick fires
+`onItemClicked` with that item's index. It is filled as it opens: `DropDownButton::openMenu`
+is virtual, and every open goes through it. It is filled again only when the collapsed
+range's start or its labels differ from what it was last filled with
+(`getMenuBuildCount()`); the old items are hidden and `delayedDelete()`d. A menu left
+open across a resize is not filled again until its next open, and its items still fire
+their own indices.
+
+**The keyboard** is WinUI's. The path is one Tab stop (`getTabStop()`): the focused
+part, else the first shown clickable item or the ellipsis. Left and Right move between
+the shown clickable items and the ellipsis, and Home and End go to the first and the
+last of them; the keys bubble up from the focused part. Return and Space activate an
+item. On the ellipsis they open its menu with its first item highlighted, as Alt+Down
+and F4 do (`MenuFocus::FirstItem`). The menu gives the focus back to the ellipsis when
+it closes. A focused item that collapses loses the focus.
+
+**The renderer.** An item's and the ellipsis's one slot paints `BreadcrumbItem`
+(transparent), `BreadcrumbItemHover` or `BreadcrumbItemDown`; a non-clickable item hides
+its slot. While focused it paints `BreadcrumbItemFocus`'s ring, over that surface's own
+fill at rest and over the hover's or press's fill otherwise. The ring needs a fill
+because style 4's border takes its fill's alpha. A click focuses an item, so it shows
+the focus look until the focus moves. The separator's slot is the chevron in
+`BreadcrumbSeparator`, hidden when it shows text in that colour. Item text is
+`BreadcrumbText`, and hover and press change no text colour, so they write the item's
+surface slot alone. ThemeEditorDemo hides the four `Breadcrumb*` surface nodes in its
+recorded view, so its gallery image stays as it was; the canvas's F11 editor lists them.
+BreadcrumbDemo has a deep path in a box a slider resizes, a `/`-separated path, and a
+path whose clicks `popTo` the item, with a "Push folder" button; `tests/unit/breadcrumb.cpp`
+and `--scenario breadcrumb` hold it to its slots.
+
 #### The modal stack: what a dialog blocks
 
 A canvas keeps a stack of modals (`Canvas::pushModal`, `popModal`, `topModal`,
@@ -6995,12 +7067,12 @@ set by its bare name and one with some of them as `Name.field` per missing field
 the shipped theme with `"strict": true` added):
 
 ```
-theme strict: 235 of 239 surfaces not set: Badge, ButtonDisabled, ButtonDown, ...
-theme strict: 88 of 90 text colors not set: AxisTagText, BadgeText, ButtonDisabled, ...
+theme strict: 239 of 243 surfaces not set: Badge, BreadcrumbItem, BreadcrumbItemDown, ...
+theme strict: 91 of 93 text colors not set: AxisTagText, BadgeText, BreadcrumbCurrentText, ...
 ```
 
-(`theme strict: all 239 surfaces set` for a kind with no gaps, and a single
-`theme strict: all 239 surfaces and 90 text colors set` when there are none at all). A
+(`theme strict: all 243 surfaces set` for a kind with no gaps, and a single
+`theme strict: all 243 surfaces and 93 text colors set` when there are none at all). A
 rejected value counts as not set. A surface that is transparent at rest on purpose
 (`WindowButton`, `SelectableHover`: a transparent fill hides the slot) is magenta too
 until the theme sets it to `[0,0,0,0]`; the theme has not said what it looks like. The
