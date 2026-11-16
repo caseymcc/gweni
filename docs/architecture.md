@@ -813,7 +813,11 @@ focused item to the toolbar, which moves the focus over the shown, enabled tool 
 order, the overflow button last, stopping at the ends, and passing over separators,
 disabled items and addControl items (a search box keeps its own arrows and Tab stop).
 Space and Return press a tool button; on the overflow button they open its menu with the
-first entry highlighted, Menu's keyboard navigation.
+first entry highlighted, Menu's keyboard navigation. A tool button disabled takes no
+keyboard input or Tab and gives up the focus at once (as `DropDownButton::setDisabled`
+does), and its Space and Return press nothing, so an Undo disabled while focused fires no
+`onPress`. A text set on an icon button later shows or hides the icon as the display
+says (TextOnly shows the icon only while there is no text).
 
 **The renderers** draw the bar on the `ToolBar` surface and a tool button in one slot:
 `ToolButton` at rest (the bar's fill, its border that colour too, so a button shows only

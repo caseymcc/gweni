@@ -85,8 +85,12 @@ public:
     //! Its toolbar's Tab stop alone is tabable (ToolBar::getTabStop()).
     bool isTabable() override;
     void onKeyboardFocus() override;
-    //! Return presses it, as Space does.
+    //! Space and Return press it, unless it is disabled.
+    bool onKeySpace(bool down) override;
     bool onKeyReturn(bool down) override;
+    //! Disabled, it takes no keyboard input or Tab and gives up the focus,
+    //! as a DropDownButton does.
+    void setDisabled(bool disabled) override;
 
 protected:
     int imageWidth() const;

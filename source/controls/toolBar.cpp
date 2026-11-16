@@ -60,15 +60,34 @@ void ToolButton::onKeyboardFocus()
         bar->itemFocused(this);
 }
 
+bool ToolButton::onKeySpace(bool down)
+{
+    if(isDisabled())
+        return false;
+    return ParentClass::onKeySpace(down);
+}
+
 bool ToolButton::onKeyReturn(bool down)
 {
     return onKeySpace(down);
+}
+
+void ToolButton::setDisabled(bool disabled)
+{
+    setKeyboardInputEnabled(!disabled);
+    setTabable(!disabled);
+    ParentClass::setDisabled(disabled);
+    if(disabled && (KeyboardFocus == this))
+        unfocus();
 }
 
 void ToolButton::setText(const String &str, bool doEvents)
 {
     ParentClass::setText(str, doEvents);
     m_text->setHidden(!textShows());
+    // TextOnly shows the icon only while there is no text
+    if(m_image)
+        m_image->setHidden(!imageShows());
     updateToolTip();
 }
 

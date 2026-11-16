@@ -56,10 +56,15 @@
  *  Home and End move the focus over the shown, enabled tool items, the
  *  overflow button last, passing over separators, disabled items and an
  *  addControl item (whose keys are its own); Space and Return press; the
- *  overflow button's Space opens its menu navigating by keyboard.
+ *  overflow button's Space opens its menu navigating by keyboard. A tool
+ *  button disabled while it has the focus gives it up at once and its Space
+ *  and Return press nothing (a toggle is not flipped); enabled again it
+ *  takes them. In TextOnly a text set on an icon button after its icon hides
+ *  the icon, and taken away shows it again, in one pass.
  */
 #include "headlessFixture.h"
 
+#include <gweni/controls/imagePanel.h>
 #include <gweni/controls/menu.h>
 #include <gweni/controls/menuItem.h>
 #include <gweni/controls/separator.h>
@@ -1165,4 +1170,105 @@ TEST_CASE("ToolBar: Left and Right pass over a disabled item and an addControl o
     m.scene.frame();
     m.scene.key(keys::Left);
     CHECK(KeyboardFocus == m.search);
+}
+
+namespace
+{
+// The tool button's icon, its ImagePanel child.
+controls::Base *iconOf(controls::ToolButton *b)
+{
+    for(controls::Base *child : b->getChildren())
+    {
+        if(gweni_cast<controls::ImagePanel>(child))
+            return child;
+    }
+    return nullptr;
+}
+}
+
+TEST_CASE("ToolBar: a tool button's text set after its icon shows or hides the icon as the display says")
+{
+    Scene scene;
+    ToolBar *bar=scene.bar;
+
+    bar->setDisplay(controls::ToolBarDisplay::TextOnly);
+    controls::ToolButton *b=bar->addButton("", "test16.png");
+    scene.settle();
+
+    controls::Base *icon=iconOf(b);
+
+    REQUIRE(icon);
+    // no text: TextOnly shows the icon
+    CHECK(b->imageShows());
+    CHECK_FALSE(icon->hidden());
+
+    // a text given later replaces it
+    b->setText("Save");
+    CHECK_FALSE(b->imageShows());
+    CHECK(icon->hidden());
+    CHECK(b->textShows());
+    checkOnePass(scene.frame());
+
+    // and taken away, the icon is back
+    b->setText("");
+    CHECK(b->imageShows());
+    CHECK_FALSE(icon->hidden());
+    checkOnePass(scene.frame());
+}
+
+TEST_CASE("ToolBar: a tool button disabled while it has the focus gives it up and takes no Space or Return")
+{
+    MenuBar m;
+    ToolBar *bar=m.scene.bar;
+
+    m.scene.setWidth(1100);
+    m.scene.settle();
+    REQUIRE(m.scene.shown() == "keep | a1 | Bold Export | Paste b1 Search");
+
+    // the Undo case: a focused button disabled by the app
+    m.a->focus();
+    m.scene.frame();
+    REQUIRE(KeyboardFocus == m.a);
+    m.a->setDisabled(true);
+    // at once, not only once a frame finds it takes no keyboard input
+    CHECK(KeyboardFocus != m.a);
+    m.scene.frame();
+    CHECK_FALSE(m.a->isTabable());
+    CHECK(bar->getTabStop() != m.a);
+
+    const int presses=m.handler.press.calls;
+
+    m.scene.key(keys::Space);
+    m.scene.key(keys::Return);
+    CHECK(m.handler.press.calls == presses);
+    // its keys are not taken even if it is pressed by them directly
+    CHECK_FALSE(m.a->onKeySpace(true));
+    CHECK_FALSE(m.a->onKeyReturn(true));
+    CHECK(m.handler.press.calls == presses);
+
+    // a disabled toggle is not flipped
+    m.t->focus();
+    m.scene.frame();
+    m.t->setDisabled(true);
+    CHECK(KeyboardFocus != m.t);
+    m.scene.frame();
+
+    const bool on=m.t->getToggleState();
+    const int toggles=m.handler.toggle.calls;
+
+    m.scene.key(keys::Space);
+    m.t->onKeySpace(true);
+    m.t->onKeyReturn(true);
+    CHECK(m.t->getToggleState() == on);
+    CHECK(m.handler.toggle.calls == toggles);
+
+    // enabled again, it takes the focus, the keys and the Left/Right moves
+    m.a->setDisabled(false);
+    m.a->focus();
+    m.scene.frame();
+    REQUIRE(KeyboardFocus == m.a);
+    m.scene.key(keys::Space);
+    CHECK(m.handler.press.calls == presses+1);
+    m.scene.key(keys::Right);
+    CHECK(KeyboardFocus == m.dd);
 }
