@@ -181,8 +181,8 @@ public:
     bool deleteSelected();
     //! nudgeSelected() and deleteSelected() for stop \p index (a focused
     //! handle's own stop, which an app's setSelectedStop() can have moved the
-    //! selection away from): the stop is selected first. A delete is refused
-    //! during a drag.
+    //! selection away from): the stop is selected first. Neither does anything
+    //! during a drag (a delete returns false).
     void nudgeStop(size_t index, float delta);
     bool deleteStop(size_t index);
     void setSelectedColor(const gweni::Color &color);
