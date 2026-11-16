@@ -794,7 +794,9 @@ A changed label resizes the menu holding its entry from the current contents, gr
 or shrinking it without replacing entries, including copied submenus. Only menus whose
 entry text changed are resized, before the opening layout pass. So a toggle the app
 turned while it was overflowed shows in the next open, and a disabled item's entry is
-disabled. Choosing an entry closes
+disabled. A copied entry whose original menu item was hidden or deleted since the build
+is disabled (enabled again once its original shows), and a tool button with no text (an
+icon button) is its tooltip in the menu. Choosing an entry closes
 the menus, flips a checkable entry's check (`MenuItem::onPress`), then fires what pressing
 the item fires: a tool button's own `onPress` (a toggle flipping its state, which its
 entry's check is set from again), the SplitButton main part's, a drop-down item's
@@ -818,6 +820,17 @@ keyboard input or Tab and gives up the focus at once (as `DropDownButton::setDis
 does), and its Space and Return press nothing, so an Undo disabled while focused fires no
 `onPress`. A text set on an icon button later shows or hides the icon as the display
 says (TextOnly shows the icon only while there is no text).
+
+A width change that hides the focused control hands the focus on, as the Breadcrumb's
+layout does: `ToolBar::arrange` notes which item holds the focus (itself or through a
+part, a SplitButton's or a search box's) before `handleOverflow()` and, outside the
+`PlacementScope`, gives it to what now shows that item: an item gone into the menu to
+the overflow button (so the Tab stop is there and Tab comes back in at it), a hidden
+overflow button, or its open menu holding the focus (closed by the canvas in the next
+update), to the first tool item the widening gave back, else the first shown one. The
+focus moves change no layout, so the frame stays one pass; without this the hidden
+control kept the focus until the layout ended, when the input code dropped it, and Tab
+came back in at the first item.
 
 **The renderers** draw the bar on the `ToolBar` surface and a tool button in one slot:
 `ToolButton` at rest (the bar's fill, its border that colour too, so a button shows only

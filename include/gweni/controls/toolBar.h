@@ -72,6 +72,10 @@ public:
     void setDisplay(ToolBarDisplay display);
     ToolBarDisplay getDisplay() const { return m_display; }
 
+    //! Its overflow menu entry's text: its text, or with none (an icon
+    //! button) its tooltip.
+    String getMenuText() const;
+
     bool hasImage() const { return m_image != nullptr; }
     //! Whether its icon and its text are shown, by its display, its icon and
     //! its text.
@@ -301,7 +305,10 @@ public:
     //! order, the overflow button last, stopping at the ends; separators and
     //! addControl items (which keep their own keys and Tab stop) are passed
     //! over. Space and Return press the focused item; on the overflow button
-    //! they open the menu navigating by keyboard (DropDownButton's).
+    //! they open the menu navigating by keyboard (DropDownButton's). A width
+    //! change that hides the focused item hands the focus to the overflow
+    //! button, and one that hides the overflow button (or its open menu
+    //! holding the focus) to the first item it gave back, in the same pass.
     //! \{
     Base *getTabStop() const;
     //! Whether \p item is a tool item that can take the focus now.
@@ -358,6 +365,15 @@ protected:
     int rowWidth(std::vector<bool> &shown) const;
     //! Decides the overflow at the current width and places the items in X.
     void handleOverflow();
+    //! The item (or the overflow button) holding the keyboard focus, itself
+    //! or through a part of it, or null.
+    Base *focusedItem() const;
+    //! After handleOverflow(): \p focused (focusedItem() before it), now
+    //! hidden, gives the focus on: an item gone into the menu to the overflow
+    //! button, a hidden overflow button (or its open menu, \p menuFocused)
+    //! to the first tool item it gave back (\p wasHidden: each item's hidden()
+    //! before), else the first shown one; with none it is dropped as before.
+    void passFocusOn(Base *focused, bool menuFocused, const std::vector<bool> &wasHidden);
     //! Whether the item has the bar's content height (not an addControl one).
     bool fillsHeight(size_t i) const;
 

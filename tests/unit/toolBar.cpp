@@ -37,7 +37,10 @@
  *  original menu item's copy. A rebuilt menu is as wide as its entries, not
  *  the widest set it held. A copied menu item keeps its icon, and an
  *  overflow button's Menu made again (the old one deleted) is built anew.
- *  getMenuEntry(nullptr) is null. An item overflowed from under a resting
+ *  getMenuEntry(nullptr) is null. A copied entry whose original menu item
+ *  was hidden or deleted after the build is disabled (enabled again once
+ *  shown), and an icon button with no text is its tooltip in the menu.
+ *  An item overflowed from under a resting
  *  mouse is no longer the hovered control. addControl of a control that is already an
  *  item, or of the overflow button, adds nothing, so deleting it leaves no
  *  item behind.
@@ -59,7 +62,11 @@
  *  overflow button's Space opens its menu navigating by keyboard. A tool
  *  button disabled while it has the focus gives it up at once and its Space
  *  and Return press nothing (a toggle is not flipped); enabled again it
- *  takes them. In TextOnly a text set on an icon button after its icon hides
+ *  takes them. A narrowing that hides the focused item hands the focus to
+ *  the overflow button (so Tab comes back in there), and a widening that
+ *  hides the overflow button, or it with its open menu holding the focus,
+ *  hands it to the first item it gave back, each in one pass; a focus
+ *  outside the toolbar stays where it is. In TextOnly a text set on an icon button after its icon hides
  *  the icon, and taken away shows it again, in one pass.
  */
 #include "headlessFixture.h"
@@ -607,6 +614,29 @@ TEST_CASE("ToolBar: a copied submenu's entry in a drop-down's overflow submenu f
     CHECK(entries(entry(menu, "Export")->getMenu()) == std::vector<std::string>{"Save", "-", "(off) [ ] Save copy >"});
 }
 
+TEST_CASE("ToolBar: a copied entry whose original was hidden or deleted is disabled")
+{
+    MenuBar m;
+    controls::Menu *menu=m.scene.openMenu();
+
+    REQUIRE(entry(menu, "Export"));
+    CHECK(entries(entry(menu, "Export")->getMenu()) == std::vector<std::string>{"Save", "-", "[ ] Save as >"});
+
+    m.scene.closeMenu();
+    m.ddSave->hide();
+    m.ddAs->delayedDelete();
+    m.scene.settle();
+    menu=m.scene.openMenu();
+    CHECK(m.scene.bar->getMenuBuildCount() == 1);
+    CHECK(entries(entry(menu, "Export")->getMenu()) == std::vector<std::string>{"(off) Save", "-", "(off) [ ] Save as >"});
+
+    // shown again, it is enabled again
+    m.scene.closeMenu();
+    m.ddSave->show();
+    menu=m.scene.openMenu();
+    CHECK(entries(entry(menu, "Export")->getMenu()) == std::vector<std::string>{"Save", "-", "(off) [ ] Save as >"});
+}
+
 TEST_CASE("ToolBar: a rebuilt overflow menu is as wide as its entries, not the widest set it held")
 {
     Scene scene;
@@ -805,6 +835,34 @@ TEST_CASE("ToolBar: an overflow entry has its tool button's icon, and an empty s
     CHECK(iconEntry->getImageName() == "test16.png");
     REQUIRE(entry(menu, "Solo"));
     CHECK(entries(entry(menu, "Solo")->getMenu()) == std::vector<std::string>{"Solo"});
+}
+
+TEST_CASE("ToolBar: an icon button with no text is its tooltip in the overflow menu")
+{
+    Scene scene;
+    ToolBar *bar=scene.bar;
+    controls::ToolButton *icon=bar->addButton("", "test16.png");
+
+    icon->setToolTipText("Undo");
+    bar->setOverflowPriority(icon, OverflowPriority::AlwaysOverflow);
+    scene.settle();
+
+    scene.openMenu();
+    controls::MenuItem *iconEntry=bar->getMenuEntry(icon);
+
+    REQUIRE(iconEntry);
+    CHECK(iconEntry->getText() == "Undo");
+
+    // a new tooltip shows on the next open, and a text, once set, wins
+    scene.closeMenu();
+    icon->setToolTipText("Undo typing");
+    scene.openMenu();
+    CHECK(iconEntry->getText() == "Undo typing");
+    scene.closeMenu();
+    icon->setText("Undo it");
+    scene.openMenu();
+    CHECK(iconEntry->getText() == "Undo it");
+    CHECK(bar->getMenuBuildCount() == 1);
 }
 
 TEST_CASE("ToolBar: the width that shows every item counts the button AlwaysOverflow items force")
@@ -1271,4 +1329,74 @@ TEST_CASE("ToolBar: a tool button disabled while it has the focus gives it up an
     CHECK(m.handler.press.calls == presses+1);
     m.scene.key(keys::Right);
     CHECK(KeyboardFocus == m.dd);
+}
+
+TEST_CASE("ToolBar: an overflow that hides the focused control hands the focus on, in one pass")
+{
+    Scene scene;
+
+    fill(scene.bar);
+    scene.settle();
+
+    const size_t failures=controls::layoutVerifyFailures();
+    const int full=scene.bar->getPreferredSize().width;
+    const std::vector<controls::Base *> &items=scene.bar->getItems();
+    controls::Base *f1=items.back();
+    controls::Base *more=scene.bar->getOverflowButton();
+
+    scene.setWidth(full);
+    scene.settle();
+    f1->focus();
+    scene.frame();
+    REQUIRE(KeyboardFocus == f1);
+
+    // narrowed until f1 goes into the menu: the focus goes to the overflow
+    // button, which shows what f1 did, in the frame that hides it
+    scene.setWidth(full-1);
+    checkOnePass(scene.frame());
+    REQUIRE(scene.shown() == "a1 b1 | c1 d1 | e1 +");
+    CHECK(KeyboardFocus == more);
+    CHECK(scene.bar->getTabStop() == more);
+    CHECK(controls::layoutVerifyFailures() == failures);
+    CHECK(scene.frame().passes == 0);
+
+    // so Tab comes back in at the overflow button, not the first item
+    controls::Base *outside=scene.canvas->newChild<controls::ToolButton>();
+    outside->focus();
+    scene.frame();
+    scene.key(keys::Tab);
+    CHECK(KeyboardFocus == more);
+
+    // widened back: the hidden overflow button hands it to the first item
+    // it gave back
+    scene.setWidth(full);
+    checkOnePass(scene.frame());
+    REQUIRE(scene.shown() == "a1 b1 | c1 d1 | e1 f1");
+    CHECK(KeyboardFocus == f1);
+    CHECK(controls::layoutVerifyFailures() == failures);
+
+    // the overflow button's open menu holding the focus: the first item it
+    // gave back takes it as the button goes
+    scene.setWidth(full-1);
+    scene.settle();
+    more->focus();
+    scene.frame();
+    scene.key(keys::Space);
+    controls::Menu *menu=scene.bar->getOverflowButton()->getMenu();
+    REQUIRE_FALSE(menu->hidden());
+    REQUIRE(KeyboardFocus == menu);
+    scene.setWidth(full);
+    checkOnePass(scene.frame());
+    CHECK(KeyboardFocus == f1);
+    scene.settle();
+    CHECK(menu->hidden());
+    CHECK(KeyboardFocus == f1);
+    CHECK(controls::layoutVerifyFailures() == failures);
+
+    // a focus the toolbar does not hold is left as it is
+    outside->focus();
+    scene.frame();
+    scene.setWidth(full-1);
+    checkOnePass(scene.frame());
+    CHECK(KeyboardFocus == outside);
 }

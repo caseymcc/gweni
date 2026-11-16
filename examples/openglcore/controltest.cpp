@@ -1212,7 +1212,9 @@
  *                 moving off gives the frame back; Bold's entry is checkable,
  *                 choosing it turns Bold on and closes the menu, the next open
  *                 shows it checked and the one after the app's change
- *                 unchecked, and the wide bar shows it on with no pixel
+ *                 unchecked; widened with the overflow button focused, the
+ *                 focus goes to an item that came back in that frame, and
+ *                 the wide bar (unfocused) shows Bold on with no pixel
  *                 changed outside it; settled frames write nothing with the
  *                 menu open and closed; Right visits every shown tool item
  *                 (not the separators or the search box) to the overflow
@@ -15967,7 +15969,22 @@ static bool runToolBarScenario(Session &s, const std::string &shotDir, bool &pas
         "a settled frame wrote or changed "+std::to_string(openIdle)+" with the menu open and "
         +std::to_string(closedIdle)+" closed");
 
+    // the overflow button holds the focus from the clicks: widened, it is
+    // hidden, and the focus goes to the first item that came back, in the
+    // same frame (then dropped, so the wide bar is compared unfocused)
+    more->focus();
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
     demo->setBarWidth(widths.front());
+    renderFrames(s, 1);
+
+    gweni::controls::Base *handedTo=gweni::KeyboardFocus;
+    const bool handedOn=more->hidden() && handedTo && (handedTo->getParent() == bar) && handedTo->visible();
+
+    checks.check("focus_handoff", handedOn, "widening the bar hid the focused overflow button and the focus went to "
+        +std::string(handedTo ? handedTo->getTypeName() : "nothing")+", not an item that came back");
+    if(gweni::KeyboardFocus)
+        gweni::KeyboardFocus->unfocus();
     renderFrames(s, 1);
     idleWork+=settleCodeEditor(s, pixels);
     shoot(s, shotDir+"/toolbar-bold.png");
@@ -15997,7 +16014,9 @@ static bool runToolBarScenario(Session &s, const std::string &shotDir, bool &pas
 
     // (5) a bar with items in the menu: Right moves the focus over the shown
     // tool items, the overflow button last, and stays there; Left goes back
-    demo->setBarWidth(widths[3]-1);
+    // (the shrink check fails, and this stays inside widths, if fewer steps
+    // were found)
+    demo->setBarWidth(widths[std::min<size_t>(3, widths.size()-1)]-1);
     renderFrames(s, 1);
     idleWork+=settleCodeEditor(s, pixels);
 

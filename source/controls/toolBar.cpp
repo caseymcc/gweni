@@ -138,6 +138,13 @@ bool ToolButton::textShows() const
     return m_display != ToolBarDisplay::IconOnly || !m_image;
 }
 
+String ToolButton::getMenuText() const
+{
+    const String &text=m_text->getText();
+
+    return text.empty()?getToolTipText():text;
+}
+
 void ToolButton::updateToolTip()
 {
     const bool iconOnly=imageShows() && !textShows() && !m_text->getText().empty();
@@ -670,6 +677,18 @@ void ToolBar::calculateSize(skin::Base *skin, Dim dim)
 // changes a preferred size). Their y and heights wait for the Y pass.
 void ToolBar::arrange(skin::Base *skin, Dim dim)
 {
+    Base *focused=(dim == Dim::X)?focusedItem():nullptr;
+    // the overflow button's open menu holds the focus for it
+    const bool menuFocused=(dim == Dim::X) && !focused && m_overflowButton
+        && m_overflowButton->isMenuOpen() && (KeyboardFocus == m_overflowButton->getMenu());
+    std::vector<bool> wasHidden;
+
+    if(focused || menuFocused)
+    {
+        for(Base *item : m_items)
+            wasHidden.push_back(item->hidden());
+    }
+
     {
         PlacementScope placement;
 
@@ -703,8 +722,68 @@ void ToolBar::arrange(skin::Base *skin, Dim dim)
                     m_overflowButton->getWidth(), content);
         }
     }
+    // the focus moves outside the placement, which it changes nothing of
+    if(focused || menuFocused)
+        passFocusOn(focused, menuFocused, wasHidden);
 
     ParentClass::arrange(skin, dim);
+}
+
+Base *ToolBar::focusedItem() const
+{
+    Base *from=KeyboardFocus;
+
+    while(from && from->getParent() != this)
+        from=from->getParent();
+    if(!from || ((from != m_overflowButton) && (indexOf(from) < 0)))
+        return nullptr;
+    return from;
+}
+
+// A hidden item keeps the focus until the layout ends, when the input code
+// drops it; the keyboard stays in the toolbar instead, on the control that
+// now shows what the hidden one did.
+void ToolBar::passFocusOn(Base *focused, bool menuFocused, const std::vector<bool> &wasHidden)
+{
+    // A hidden overflow button's menu is closed by the canvas in the next
+    // update (a close here would re-dirty the pass), handing back the focus
+    // it holds only if it still does: given on here, it stays in the bar.
+    if(menuFocused)
+    {
+        if(!m_overflowButton || (KeyboardFocus != m_overflowButton->getMenu()))
+            return;
+        focused=m_overflowButton;
+    }
+    else if(focusedItem() != focused)
+        return;
+    if(!focused || !focused->hidden())
+        return;
+
+    Base *target=nullptr;
+
+    if(focused != m_overflowButton)
+    {
+        // gone into the menu, which the overflow button opens
+        if(canFocus(m_overflowButton))
+            target=m_overflowButton;
+    }
+    else
+    {
+        for(size_t i=0; i < m_items.size() && !target; ++i)
+        {
+            if((i < wasHidden.size()) && wasHidden[i] && canFocus(m_items[i]))
+                target=m_items[i];
+        }
+    }
+    if(!target)
+    {
+        const std::vector<Base *> items=toolItems();
+
+        if(!items.empty())
+            target=items.front();
+    }
+    if(target)
+        target->focus();
 }
 
 void ToolBar::handleOverflow()
@@ -912,7 +991,7 @@ void ToolBar::buildMenu(Menu *menu)
         }
         else if(ToolButton *button=gweni_cast<ToolButton>(item))
         {
-            MenuItem *entry=menu->addItem(button->getText(), imageNameOf(button));
+            MenuItem *entry=menu->addItem(button->getMenuText(), imageNameOf(button));
 
             entry->setCheckable(button->isToggle());
             addMenuEntry(entry, button, button);
@@ -974,6 +1053,15 @@ void ToolBar::prepareOverflowMenu(Menu *menu)
             continue;
 
         Base *source=e.source?getControlById(e.source):nullptr;
+
+        // a copy whose original menu item was deleted or hidden since the
+        // build is there no more: disabled, not chosen
+        if(e.source && (!source || (gweni_cast<MenuItem>(source) && source->hidden())))
+        {
+            entry->setDisabled(true);
+            continue;
+        }
+
         const Base *enabledBy=source?source:item;
 
         entry->setDisabled(const_cast<Base *>(enabledBy)->isDisabled() || item->isDisabled());
@@ -998,8 +1086,8 @@ void ToolBar::prepareOverflowMenu(Menu *menu)
             }
             if(Button *button=gweni_cast<Button>(source))
             {
-                if(gweni_cast<ToolButton>(button))
-                    setText(entry, button->getText());
+                if(ToolButton *tool=gweni_cast<ToolButton>(button))
+                    setText(entry, tool->getMenuText());
                 entry->setCheckable(button->isToggle());
                 entry->setChecked(button->isToggle() && button->getToggleState());
             }
