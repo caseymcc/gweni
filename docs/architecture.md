@@ -4735,7 +4735,9 @@ two programs and the draws. What follows describes both together:
   (`setCaption`) and the value's text under it (`setShowValue`, on by default), both
   `internal::Text`s it places itself; the control is as wide as the widest of the dial,
   the caption and the value text at the range's two ends, so a drag never changes its
-  size. Its API is DragNumber's: a double `setNumber`/`getNumber` clamped to `setRange`
+  size. Making or deleting either moves the dial inside bounds that may stay (a fixed
+  size, a layout cell), so it marks the knob's `StateChange_Background` as well as laying
+  it out. Its API is DragNumber's: a double `setNumber`/`getNumber` clamped to `setRange`
   ([0, 1] by default) and rounded by `setInteger(true)`, `setSpeed` (the key step, a
   hundredth of the range by default), `setFormat` through `Slider::validValueFormat`
   ("%.2f", "%.0f" for an integer knob), the text set only for a new string, and
@@ -4761,8 +4763,9 @@ two programs and the draws. What follows describes both together:
   `MinCentreDistance` forgets the angle, so the move out of it, on whichever side, takes
   the angle afresh rather than summing half a turn to an end. **The look:** the textured
   `Knob` renderer keeps one list of slots: the body disc (one `drawRoundedRect`, radius
-  half its side, its left and right edges each `lround(centre ∓ radius)`, so a body of a
-  fractional radius stays centred on the dial; `KnobBody`, `-Hover`, `-Pressed`,
+  half its side, its left edge `lround(centre - radius)` and its side twice that edge's
+  distance from the centre, so a body stays centred on the dial whichever way its edges
+  round (at 72 units both would round up); `KnobBody`, `-Hover`, `-Pressed`,
   `-Focus`, `-Disabled`) at z, the track arc (`KnobTrack`) at z+1, the value arc
   (`KnobValue`, `KnobValueDisabled`) over it at z+2, the indicator across the body
   (`KnobIndicator`) at z+1 and the ticks (`setTickCount`, `KnobTick`) in an outer ring at

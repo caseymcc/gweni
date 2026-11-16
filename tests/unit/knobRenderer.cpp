@@ -200,11 +200,15 @@ TEST_CASE("Knob renderer: the body, the track, the value arc, the indicator and 
     CHECK((body.fill == tokyonight::KnobBody.top));
     CHECK(body.rect.x+body.rect.w*0.5f == doctest::Approx(centre.x));
     CHECK(body.rect.y+body.rect.h*0.5f == doctest::Approx(centre.y));
-    // an 80-unit dial's body is 56.67 units across: its edges rounded each
-    // from the centre, not an odd side placed from a rounded corner
-    knob->setDiameter(80);
-    scene.frame();
+    // an 80-unit dial's body is 56.67 units across, a 72-unit one's 51 with
+    // its edges on .5 either side of the centre: each side's distance from
+    // the centre the same, not an odd side placed from a rounded corner nor
+    // both edges rounded up
+    for(int diameter: {80, 72, 30, 120})
     {
+        CAPTURE(diameter);
+        knob->setDiameter(diameter);
+        scene.frame();
         const Rect wide=knob->getRenderBounds();
         const Knob::Geometry big=knob->getGeometry();
         const PointF middle(wide.x+big.centre.x, wide.y+big.centre.y);
@@ -267,6 +271,66 @@ TEST_CASE("Knob renderer: the body, the track, the value arc, the indicator and 
     knob->setTickCount(0);
     scene.frame();
     CHECK(slotsOf(knob).size() == 4);
+}
+
+TEST_CASE("Knob renderer: a caption or value text made or deleted on a fixed-size knob draws the dial again where it moved")
+{
+    Scene scene;
+    Knob *knob=scene.knob();
+
+    knob->setShowValue(false);
+    knob->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    knob->setSize(48, 70);
+    scene.frame();
+    scene.frame();
+    REQUIRE(scene.written().empty());
+
+    // the bounds stay, the dial moves down under the caption
+    const Rect before=knob->getDialRect();
+    const auto check=[&](const char *what)
+    {
+        CAPTURE(what);
+        const Rect dial=knob->getDialRect();
+        const Rect bounds=knob->getRenderBounds();
+        REQUIRE_FALSE((dial == before));
+        CHECK(scene.written().count(bodySlot(knob)));
+        CHECK(scene.written().count(trackSlot(knob)));
+        CHECK(scene.written().count(indicatorSlot(knob)));
+        const BodyRecorder::Body &body=scene.renderer.bodies[bodySlot(knob)];
+        CHECK(body.rect.y+body.rect.h*0.5f == doctest::Approx(bounds.y+dial.y+dial.h*0.5f));
+        const auto *track=arcOf(scene, trackSlot(knob));
+        REQUIRE(track);
+        CHECK(track->rect.y == bounds.y+knob->getGeometry().arcRect.y);
+    };
+
+    knob->setCaption("Gain");
+    scene.frame();
+    check("caption made");
+    scene.frame();
+    CHECK(scene.written().empty());
+
+    const Rect withCaption=knob->getDialRect();
+    knob->setCaption("");
+    scene.frame();
+    CHECK((knob->getDialRect() == before));
+    CHECK(scene.written().count(bodySlot(knob)));
+    CHECK(scene.renderer.bodies[bodySlot(knob)].rect.y < knob->getRenderBounds().y+withCaption.y);
+
+    // the value text, its row under the dial, leaves the dial a smaller side
+    knob->setCaption("Gain");
+    scene.frame();
+    const Rect captioned=knob->getDialRect();
+    knob->setShowValue(true);
+    scene.frame();
+    REQUIRE_FALSE((knob->getDialRect() == captioned));
+    CHECK(scene.written().count(bodySlot(knob)));
+    CHECK(scene.written().count(trackSlot(knob)));
+    knob->setShowValue(false);
+    scene.frame();
+    CHECK((knob->getDialRect() == captioned));
+    CHECK(scene.written().count(bodySlot(knob)));
+    scene.frame();
+    CHECK(scene.written().empty());
 }
 
 TEST_CASE("Knob renderer: a value change writes the indicator and the value arc alone")

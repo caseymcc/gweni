@@ -3273,10 +3273,12 @@ void Knob::update(renderer::Base *renderer, controls::Base *baseControl)
     else if(knob->isHovered())
         surface=&tokyonight::KnobBodyHover;
 
-    // its edges rounded on their own, so an odd side stays centred
+    // its left edge rounded, its side twice that edge's distance from the
+    // centre (the centre on a whole or half unit), so it stays centred
+    // whichever way the edges round
     const int left=int(std::lround(centre.x-geometry.bodyRadius));
     const int top=int(std::lround(centre.y-geometry.bodyRadius));
-    const int side=std::max(0, int(std::lround(centre.x+geometry.bodyRadius))-left);
+    const int side=std::max(0, int(std::lround(2.0f*(centre.x-float(left)))));
     const Rect body(left, top, side, side);
 
     if(all || !m_body.valid || !m_body.shown || !(m_body.rect == body) || (m_body.zIndex != z)

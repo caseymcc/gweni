@@ -267,6 +267,8 @@ void Knob::setShowValue(bool show)
         delete m_valueText;
         m_valueText=nullptr;
         m_valueColumn=0;
+        // the dial takes the room it leaves, its bounds the same
+        addStateChange(StateChange_Background);
         invalidate();
         return;
     }
@@ -277,6 +279,8 @@ void Knob::setShowValue(bool show)
     m_valueText->setSameSizeKeepsLayout(true);
     updateColors();
     updateText();
+    // the dial gives it room, its bounds the same
+    addStateChange(StateChange_Background);
     invalidate();
 }
 
@@ -293,6 +297,8 @@ void Knob::setCaption(const String &caption)
         {
             delete m_caption;
             m_caption=nullptr;
+            // the dial moves up, its bounds the same
+            addStateChange(StateChange_Background);
             invalidate();
         }
         return;
@@ -303,6 +309,8 @@ void Knob::setCaption(const String &caption)
         m_caption=newChild<internal::Text>();
         m_caption->setPlacement(Placement::Owner);
         updateColors();
+        // the dial moves down under it, its bounds the same
+        addStateChange(StateChange_Background);
         invalidate();
     }
     m_caption->setText(caption);

@@ -105,7 +105,7 @@ right-click for menus; dragging one node rewrites its own slots and its links' s
 the value arc (from the start, or from 0 for a bipolar range), an indicator and optional ticks, a caption
 above and the value's text below. Drag up to raise a value or round the arc in angular mode, Shift for
 fine steps, the arrows, PageUp/PageDown, Home and End, or double-click to type one. A drag frame rewrites
-the indicator and the value arc, one slot each, nothing else.
+the indicator and the value arc, one slot each, and the value text's glyphs only when its string changes.
 
 [![An agent run's log beside three five-line excerpts](docs/images/LogViewDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=LogViewDemo)
 
