@@ -181,7 +181,7 @@
  *                       split-button | breadcrumb | toolbar |
  *                       range-slider | stepper |
  *                       code-view | rich-text | markdown | markdown-images |
- *                       search-combo |
+ *                       search-combo | command-palette |
  *                       reorder |
  *                       calendar | date-time | translucency |
  *                       gradient-editor (see below)
@@ -1811,6 +1811,7 @@
 #include <demo/stepper.h>
 #include <demo/searchCombo.h>
 #include <demo/commandPalette.h>
+#include <gweni/controls/commandPalette.h>
 #include <demo/calendar.h>
 #include <demo/dateTime.h>
 #include <gweni/controls/badge.h>
@@ -2101,7 +2102,7 @@ static void printUsage(std::ostream &out)
          "                     | image-grid | segmented | split-button | breadcrumb\n"
          "                     | toolbar | range-slider | stepper | code-view\n"
          "                     | rich-text\n"
-         "                     | search-combo | reorder | calendar | date-time\n"
+         "                     | search-combo | command-palette | reorder | calendar | date-time\n"
          "                     | translucency | gradient-editor;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
@@ -3162,7 +3163,7 @@ enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typ
     ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, TreeTable, TreeTableLive, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Knob, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
     ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented, SplitButton, ToolBar,
-    Breadcrumb, RangeSlider, Stepper, CodeView, RichText, Markdown, MarkdownImages, SearchCombo, Reorder, Calendar, DateTime, Translucency,
+    Breadcrumb, RangeSlider, Stepper, CodeView, RichText, Markdown, MarkdownImages, SearchCombo, CommandPalette, Reorder, Calendar, DateTime, Translucency,
     OpacityRoundTrip, Opacity, HexView, GradientEditor };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
@@ -3226,6 +3227,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "markdown") scenario=Scenario::Markdown;
     else if(name == "markdown-images") scenario=Scenario::MarkdownImages;
     else if(name == "search-combo") scenario=Scenario::SearchCombo;
+    else if(name == "command-palette") scenario=Scenario::CommandPalette;
     else if(name == "calendar") scenario=Scenario::Calendar;
     else if(name == "date-time") scenario=Scenario::DateTime;
     else return false;
@@ -13816,6 +13818,267 @@ static bool runSearchComboScenario(Session &s, const std::string &shotDir, bool 
         std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
     std::cout<<" keystroke_30: "<<small.text()<<" keystroke_3000: "<<large.text()
              <<" highlight_prims="<<moved.primitives.size()<<" wrap_prims="<<wrap.primitives.size()<<"\n";
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
+// --scenario command-palette: CommandPaletteDemo's palette, the clock frozen
+//
+// Ctrl+Shift+P opens the palette at the canvas's top centre, changing no pixel
+// outside it, and a settled frame with it open writes nothing. Its list is a
+// FilteredList over a VirtualList of pooled rows, so a keystroke costs what the
+// rows on screen cost whatever the command count: at the demo's first 50
+// commands and at those 50 with 4 950 more that match neither query ("Tasks:
+// Run Task NNNN", no h or i in them), "h" then "i" typed shows the same
+// commands, and the "i"'s frame writes, renders, changes and lays out the same,
+// with the same pool and popup controls and no id made, in one pass, inside the
+// popup. Down writes the two rows' ids alone; Return runs the highlighted
+// command, closes the palette and gives the frame before opening back but the
+// demo's label naming it.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+struct PaletteKeystroke
+{
+    size_t prims=0;
+    size_t texts=0;
+    size_t glyphs=0;
+    size_t visited=0;
+    size_t changed=0;
+    int passes=0;
+    size_t layoutVisited=0;
+    size_t pool=0;
+    size_t popupControls=0;
+    long long idsMade=0;
+    size_t binds=0;
+    bool withinPopup=false;
+    bool glyphsWithin=false;
+    std::vector<size_t> shown;
+
+    bool sameAs(const PaletteKeystroke &o) const
+    {
+        return prims == o.prims && texts == o.texts && glyphs == o.glyphs && visited == o.visited
+            && changed == o.changed && passes == o.passes && layoutVisited == o.layoutVisited
+            && pool == o.pool && popupControls == o.popupControls && idsMade == o.idsMade && binds == o.binds
+            && shown == o.shown;
+    }
+
+    std::string text() const
+    {
+        return "prims="+std::to_string(prims)+" texts="+std::to_string(texts)+" glyphs="+std::to_string(glyphs)
+            +" visited="+std::to_string(visited)+" changed="+std::to_string(changed)+" passes="+std::to_string(passes)
+            +" layout_visited="+std::to_string(layoutVisited)+" pool="+std::to_string(pool)
+            +" popup_controls="+std::to_string(popupControls)+" ids_made="+std::to_string(idsMade)
+            +" binds="+std::to_string(binds)+" shown="+std::to_string(shown.size());
+    }
+};
+
+// The glyphs the shown rows' three labels and the field hold.
+size_t paletteShownGlyphs(gweni::controls::CommandPalette *palette)
+{
+    size_t glyphs=palette->getField()->getText().size();
+
+    for(gweni::controls::Base *control : palette->getList()->getRows())
+    {
+        auto *row=gweni::gweni_cast<gweni::controls::internal::CommandPaletteRow>(control);
+
+        if(row && row->visible())
+            glyphs+=row->getCategoryText().size()+row->getLabelText().size()+row->getShortcutText().size();
+    }
+    return glyphs;
+}
+
+}//namespace
+
+static bool runCommandPaletteScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    checks.scenario="command-palette";
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    gweni::controls::Base *control=addControl(s, "CommandPaletteDemo");
+    auto *demo=gweni::gweni_cast<gweni::CommandPaletteDemo>(control);
+
+    if(!demo)
+    {
+        std::cerr<<"ControlTest: command-palette: CommandPaletteDemo was not built\n";
+        return false;
+    }
+
+    gweni::controls::CommandPalette *palette=demo->palette();
+
+    s.label="command-palette";
+    // the mouse off where the popup goes
+    moveMouse(s, s.size.x-4, s.size.y-4);
+    renderFrames(s, s.frames);
+
+    std::vector<uint8_t> pixels;
+    size_t idleWork=settleCodeEditor(s, pixels);
+    const std::vector<uint8_t> beforeOpen=pixels;
+
+    // (1) Ctrl+Shift+P: the popup at the top centre, nothing changed outside it
+    sendKey(s, "ctrl+shift+p");
+
+    const CodeEditorFrame opened=codeEditorFrame(s);
+    gweni::controls::internal::CommandPalettePopup *popup=palette->getPopup();
+    const gweni::Rect at=popup?popup->getCanvasBounds():gweni::Rect();
+    const size_t openOutside=popup?differencesOutsideRects(s, beforeOpen, opened.pixels, {at}):1;
+    const int width=gweni::controls::CommandPalette::Width;
+
+    checks.check("opens_top_centre", palette->isOpen() && gweni::KeyboardFocus == palette->getField()
+        && at.w == std::min(width, s.size.x-2*gweni::controls::CommandPalette::CanvasInset)
+        && at.x == (s.size.x-at.w)/2 && at.y == gweni::controls::Popup::CanvasTopInset
+        && at.y+at.h <= s.size.y && openOutside == 0,
+        "Ctrl+Shift+P left it "+std::string(palette->isOpen()?"open":"closed")+" at "+std::to_string(at.x)+","
+        +std::to_string(at.y)+" "+std::to_string(at.w)+"x"+std::to_string(at.h)+", changing "
+        +std::to_string(openOutside)+" pixels outside it");
+
+    bool ok=shoot(s, shotDir+"/command-palette.png");
+    const size_t openIdle=settleCodeEditor(s, pixels);
+
+    checks.check("settled_open", openIdle == 0, "settled frames with it open wrote or changed "
+        +std::to_string(openIdle));
+
+    // (2) Down: the two rows alone
+    gweni::controls::Base *firstRow=palette->getList()->rowForItem(0);
+    gweni::controls::Base *secondRow=palette->getList()->rowForItem(1);
+    std::set<size_t> rowPrims, rowTexts;
+
+    if(firstRow && secondRow)
+    {
+        subtreeIds(firstRow, rowPrims, rowTexts);
+        subtreeIds(secondRow, rowPrims, rowTexts);
+    }
+
+    glfwKey(s, GLFW_KEY_DOWN, GLFW_PRESS, 0);
+    glfwKey(s, GLFW_KEY_DOWN, GLFW_RELEASE, 0);
+
+    const CodeEditorFrame moved=codeEditorFrame(s);
+    const size_t movedOutside=(firstRow && secondRow)?differencesOutsideRects(s, pixels, moved.pixels,
+        {firstRow->getCanvasBounds(), secondRow->getCanvasBounds()}):1;
+
+    checks.check("highlight_rows", firstRow && secondRow && palette->getHighlightedPosition() == 1
+        && !moved.primitives.empty() && idsWithin(moved.primitives, rowPrims) && idsWithin(moved.texts, rowTexts)
+        && movedOutside == 0,
+        "Down wrote "+std::to_string(moved.primitives.size())+" primitive and "+std::to_string(moved.texts.size())
+        +" text ids (the two rows' alone allowed) and changed "+std::to_string(movedOutside)+" pixels outside them");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (3) Return: the command run, the frame before opening back but the label
+    const int highlighted=palette->getHighlightedIndex();
+    const gweni::String expected=(highlighted >= 0)?"Ran: "
+        +palette->getCommand(static_cast<size_t>(highlighted)).category+": "
+        +palette->getCommand(static_cast<size_t>(highlighted)).label:gweni::String();
+
+    glfwKey(s, GLFW_KEY_ENTER, GLFW_PRESS, 0);
+    glfwKey(s, GLFW_KEY_ENTER, GLFW_RELEASE, 0);
+
+    const CodeEditorFrame ran=codeEditorFrame(s);
+    const size_t ranOutside=differencesOutsideRects(s, beforeOpen, ran.pixels,
+        {demo->lastLabel()->getCanvasBounds()});
+
+    checks.check("return_runs", !palette->isOpen() && !expected.empty() && demo->lastCommand() == expected
+        && ranOutside == 0 && gweni::KeyboardFocus == nullptr,
+        "Return left the palette "+std::string(palette->isOpen()?"open":"closed")+", the label saying \""
+        +demo->lastCommand()+"\" for \""+expected+"\", and changed "+std::to_string(ranOutside)
+        +" pixels outside the label from the frame before opening");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (4) "h" then "i" at 50 commands and at 5 000
+    auto keystroke=[&](size_t fillers) -> PaletteKeystroke
+        {
+            demo->setCommandCount(50);
+            for(size_t i=0; i < fillers; ++i)
+            {
+                gweni::controls::CommandPalette::Command filler;
+                const std::string number=std::to_string(10000+50+i).substr(1);
+
+                filler.id="task."+number;
+                filler.label="Run Task "+number;
+                filler.category="Tasks";
+                palette->addCommand(filler);
+            }
+            renderFrames(s, 1);
+            idleWork+=settleCodeEditor(s, pixels);
+
+            sendKey(s, "ctrl+shift+p");
+            renderFrames(s, 1);
+            typeText(s, "h");
+            renderFrames(s, 1);
+            idleWork+=settleCodeEditor(s, pixels);
+
+            std::set<size_t> allowedPrims, allowedTexts;
+
+            subtreeIds(palette->getPopup(), allowedPrims, allowedTexts);
+
+            const size_t idsHeld=livePrimitiveIds()+liveTextIds();
+            const size_t binds=palette->getRowBindCount();
+
+            typeText(s, "i");
+
+            const CodeEditorFrame frame=codeEditorFrame(s);
+            PaletteKeystroke key;
+
+            key.prims=frame.primitives.size();
+            key.texts=frame.texts.size();
+            key.glyphs=frame.glyphSlots;
+            key.visited=gweni::controls::getChangeStats().visited;
+            key.changed=frame.changed;
+            key.passes=frame.passes;
+            key.layoutVisited=frame.visited;
+            key.pool=palette->getList()->getRows().size();
+            key.popupControls=subtreeControls(palette->getPopup());
+            key.idsMade=static_cast<long long>(livePrimitiveIds()+liveTextIds())-static_cast<long long>(idsHeld);
+            key.binds=palette->getRowBindCount()-binds;
+            key.withinPopup=idsWithin(frame.primitives, allowedPrims) && idsWithin(frame.texts, allowedTexts);
+            key.glyphsWithin=frame.glyphSlots <= paletteShownGlyphs(palette);
+            key.shown=palette->getShownCommands();
+            idleWork+=settleCodeEditor(s, pixels);
+
+            glfwKey(s, GLFW_KEY_ESCAPE, GLFW_PRESS, 0);
+            glfwKey(s, GLFW_KEY_ESCAPE, GLFW_RELEASE, 0);
+            renderFrames(s, 1);
+            idleWork+=settleCodeEditor(s, pixels);
+            return key;
+        };
+
+    const PaletteKeystroke small=keystroke(0);
+    const PaletteKeystroke large=keystroke(4950);
+
+    checks.check("keystroke_same", small.sameAs(large),
+        "the keystroke at 50 commands ("+small.text()+") and at 5000 ("+large.text()+") differ");
+    // the popup's subtree and the canvas entered, each at most twice an axis
+    const size_t entries=4*(small.popupControls+1);
+
+    checks.check("keystroke_local", small.withinPopup && large.withinPopup && small.glyphsWithin
+        && large.glyphsWithin && small.binds > 0 && small.layoutVisited <= entries,
+        "the keystroke wrote outside the popup, more glyphs than its shown rows and field hold, bound no row "
+        "or entered "+std::to_string(small.layoutVisited)+" controls in layout (at most "+std::to_string(entries)+")");
+    checks.check("keystroke_one_pass", small.passes == 1 && small.idsMade == 0,
+        "the keystroke ran "+std::to_string(small.passes)+" layout passes and made "
+        +std::to_string(small.idsMade)+" ids");
+    demo->setCommandCount(gweni::CommandPaletteDemo::CommandCount);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+    checks.check("settled", idleWork == 0, "settled frames wrote or changed "+std::to_string(idleWork));
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()+liveTextIds()-idsBefore;
+
+    checks.check("ids_back", idsLeft == 0, std::to_string(idsLeft)+" ids not given back");
+
+    passed=checks.allPassed();
+    std::cout<<"command-palette";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<" keystroke_50: "<<small.text()<<" keystroke_5000: "<<large.text()
+             <<" highlight_prims="<<moved.primitives.size()<<"\n";
     return ok;
 }
 
@@ -25827,6 +26090,15 @@ int main(int argc, char *argv[])
             ok=runSearchComboScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a keystroke, the highlight, a pick or a wrap did more than its part
+            break;
+        }
+
+        case Scenario::CommandPalette:
+        {
+            bool passed=false;
+            ok=runCommandPaletteScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // the open, a keystroke, the highlight or Return did more than its part
             break;
         }
 

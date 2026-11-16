@@ -280,7 +280,8 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # and sort, the split and drop-down
     # buttons' menus, the breadcrumb's collapses, the range slider's drags and keys, the
     # steppers' step changes, the code view's copy button, a RichText, the
-    # SearchComboBox's keystrokes, picks and chip wrap, the reorder drags'
+    # SearchComboBox's keystrokes, picks and chip wrap, the command palette's
+    # open, keystrokes, highlight and run, the reorder drags'
     # looks and drops, the calendar's months and views, the date and time
     # fields' steps, commits and calendar popup, and a MarkdownView's
     # edits, selection and code block, its images' late deliveries, the
@@ -293,7 +294,7 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
             dialog toast flow switch spinner navigation-rail board field-validation segmented
             tree-table tree-table-live split-button breadcrumb toolbar range-slider stepper code-view rich-text markdown
-            markdown-images search-combo reorder calendar date-time translucency opacity knob hex-view
+            markdown-images search-combo command-palette reorder calendar date-time translucency opacity knob hex-view
             gradient-editor)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
@@ -924,6 +925,16 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_search_combo 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario search-combo --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/search_combo@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # CommandPaletteDemo: Ctrl+Shift+P opens the palette at the canvas's top
+    # centre changing nothing outside it, a settled frame with it open writes
+    # nothing, Down writes its two rows, Return runs the command and gives the
+    # frame before opening back but the demo's label, and a keystroke costs
+    # the same at 50 and 5 000 commands, inside the popup, in one pass
+    gweni_whole_app_test(controltest_command_palette 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario command-palette --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/command_palette@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # CalendarDemo: a hover writes its cell (and the one the mouse left), a
