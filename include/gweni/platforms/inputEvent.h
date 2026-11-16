@@ -42,6 +42,17 @@ enum: char
 
 }//namespace keys
 
+//! A touch point's phase, for IInputEvent::inputTouch: put on the screen, moved,
+//! lifted, or taken away by the system (the browser, a palm rejection) with no
+//! lift.
+enum class TouchPhase
+{
+    Down,
+    Move,
+    Up,
+    Cancel
+};
+
 class IInputEvent
 {
 public:
@@ -59,6 +70,9 @@ public:
     virtual bool inputMouseWheelH(int val) { return false; }
     //! The cursor left the window. Optional: the default ignores it.
     virtual bool inputMouseLeave() { return false; }
+    //! A touch point \p id at \p x, \p y (logical units, fractions kept) in
+    //! \p phase. Optional: the default ignores it.
+    virtual bool inputTouch(int /*id*/, TouchPhase /*phase*/, float /*x*/, float /*y*/) { return false; }
     virtual bool inputQuit()=0;
 };
 

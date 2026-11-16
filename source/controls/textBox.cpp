@@ -90,6 +90,11 @@ static constexpr int MessageGap=2;
 
 TextBox::~TextBox()=default;
 
+bool TextBox::keepsTouchDrag() const
+{
+    return KeyboardFocus == this;
+}
+
 void TextBox::preDelete(skin::Base *skin)
 {
     if(m_message)

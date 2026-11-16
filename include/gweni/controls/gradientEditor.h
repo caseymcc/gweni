@@ -47,6 +47,9 @@ public:
 
     GWENI_CONTROL(GradientStopStrip, Base);
 
+    //! a touch adds and drags a stop as the mouse does (Base::keepsTouchDrag())
+    bool keepsTouchDrag() const override { return true; }
+
     GWENI_DRAWS_NOTHING
 
 public:
@@ -69,6 +72,9 @@ class GWENI_EXPORT GradientStopHandle: public Base
 public:
 
     GWENI_CONTROL(GradientStopHandle, Base);
+
+    //! a touch drags its stop as the mouse does (Base::keepsTouchDrag())
+    bool keepsTouchDrag() const override { return true; }
 
 public:
 

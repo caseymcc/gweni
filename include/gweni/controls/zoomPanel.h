@@ -100,6 +100,9 @@ public:
     //! Taken and ignored: the horizontal wheel and Shift+wheel zoom nothing.
     bool onMouseWheeledH(int delta) override;
     InputCapture *pressGesture(int button) override;
+    //! A finger's drag pans it by the drag, in the panel's units, fractions
+    //! kept, unless it is disabled (Base::touchPan()).
+    PointF touchPan(const PointF &delta) override;
 
 protected:
 

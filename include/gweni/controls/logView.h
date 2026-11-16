@@ -428,6 +428,9 @@ public:
     bool scrollToRow(RowId id);
 
     bool onMouseWheeled(int delta) override;
+    //! A drag up the log detaches it as a wheel notch up does, and one that
+    //! reaches the end follows again.
+    PointF touchPan(const PointF &delta) override;
     //! Up, Down, PageUp and PageDown scroll by a line and a page less a
     //! line; Home goes to the first row, End follows the log.
     bool onKeyUp(bool down) override;

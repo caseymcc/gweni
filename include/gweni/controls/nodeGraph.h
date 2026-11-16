@@ -85,6 +85,9 @@ public:
 
     GWENI_CONTROL(NodeTitleBar, controls::Base);
 
+    //! a touch drags the node as the mouse does (Base::keepsTouchDrag())
+    bool keepsTouchDrag() const override { return true; }
+
     void onMouseClickLeft(int x, int y, bool down) override;
     void onMouseMoved(int x, int y, int deltaX, int deltaY) override;
 
@@ -164,6 +167,9 @@ class GWENI_EXPORT Pin: public Base
 public:
 
     GWENI_CONTROL(Pin, Base);
+
+    //! a touch drags a link from it as the mouse does (Base::keepsTouchDrag())
+    bool keepsTouchDrag() const override { return true; }
 
 public:
 

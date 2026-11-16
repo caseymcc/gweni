@@ -26,6 +26,9 @@ public:
 
     GWENI_CONTROL(Dragger, controls::Base);
 
+    //! its drag is a touch's too (Base::keepsTouchDrag())
+    bool keepsTouchDrag() const override { return true; }
+
 public:
     //! A drag handle: the control it moves draws it (a WindowControl's title bar).
     GWENI_DRAWS_NOTHING

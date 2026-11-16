@@ -96,6 +96,9 @@ public:
 
     GWENI_CONTROL(DragNumber, Label);
 
+    //! a touch scrubs it as the mouse does (Base::keepsTouchDrag())
+    bool keepsTouchDrag() const override { return true; }
+
 public:
 
     //! Drag and key-step multipliers while Shift (faster) or Alt (slower) is held.

@@ -33,7 +33,7 @@ enum class PopupPlacement;
 class Toast;
 enum class ToastKind: int;
 struct ToastOptions;
-namespace internal { class ToastHost; class ModalScrim; }
+namespace internal { class ToastHost; class ModalScrim; class TouchGesture; }
 
 /// What takes every input event a Canvas gets while it is the canvas's input
 /// capture (Canvas::setInputCapture): tools::DepthView's camera. The events
@@ -58,6 +58,10 @@ public:
     virtual void captureCharacter(gweni::UnicodeChar chr) {}
     /// The cursor left the window
     virtual void captureMouseLeave() {}
+    /// A touch point (Canvas::inputTouch's, as the canvas got it). A capture
+    /// set when a finger goes down gets every event of that finger until it
+    /// lifts, whatever capture is set by then.
+    virtual void captureTouch(int /*id*/, TouchPhase /*phase*/, float /*x*/, float /*y*/) {}
     /// \p canvas, whose capture this is, is being deleted: it no longer calls
     /// anything and must not be used after this returns
     virtual void captureCanvasDeleted(Canvas *canvas) {}
@@ -815,6 +819,26 @@ public:
     /// The cursor left the window: nothing on this canvas is hovered any more
     /// (input::onMouseLeft), so the next update phase hides its tooltip.
     bool inputMouseLeave() override;
+    /// A touch point (docs/architecture.md -> "Touch"). One finger is tracked:
+    /// the first down, until its up or cancel; every other finger's events are
+    /// taken and ignored meanwhile. On its down the canvas hit-tests the point
+    /// (getControlAt). If the control there or an ancestor keepsTouchDrag(), the
+    /// finger is a left-button mouse drag (a move to the point and a press,
+    /// its moves, a release where it lifts), so a control's own drag and its
+    /// pressGesture() run as for the mouse. Otherwise the canvas's touch
+    /// gesture takes the canvas's input (setInputCapture) until the lift: a
+    /// lift within TouchSlop units of the down is a tap (a move to the down
+    /// point, a left press and release there), and a finger moved TouchSlop or
+    /// more pans, per axis, the nearest control under the down point whose
+    /// touchPan() moves along it, keeping it until the lift; a pan delivers no
+    /// press. Every touch ends with inputMouseLeave(), so nothing stays hovered
+    /// and no tooltip's delay starts from one. An input capture set at the
+    /// down (the depth view) gets the finger instead (captureTouch). Returns
+    /// whether the UI took it, as a press there would.
+    bool inputTouch(int id, TouchPhase phase, float x, float y) override;
+    /// How far a finger moves, in logical units, before a touch is a pan, not
+    /// a tap.
+    static constexpr float TouchSlop=8.0f;
     bool inputQuit() override
     {
         return false;
@@ -1110,6 +1134,14 @@ protected:
     float m_toolTipDelay=0.5f;
     //! setInputCapture's, or null
     InputCapture *m_inputCapture=nullptr;
+    /// The touch point inputTouch() tracks (-1: none), what it is, the
+    /// canvas's gesture (made on the first touch) and the last point a mouse
+    /// drag of the finger was moved to.
+    enum class TouchMode: uint8_t { None, Capture, Mouse, Gesture };
+    int m_touchId=-1;
+    TouchMode m_touchMode=TouchMode::None;
+    Point m_touchMouse;
+    std::unique_ptr<internal::TouchGesture> m_touchGesture;
     /// Per mouse button (bit = button, 0..31): its press is held and was the
     /// scene's (inputMouseButton returned false), or the UI's (true), so its
     /// release, and the moves while it is held, get the press's answer.

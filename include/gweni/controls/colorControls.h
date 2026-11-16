@@ -26,6 +26,9 @@ public:
 
     GWENI_CONTROL(ColorLerpBox, controls::Base);
 
+    //! a touch picks along it as the mouse does (Base::keepsTouchDrag())
+    bool keepsTouchDrag() const override { return true; }
+
 public:
     //! The colour at local (x, y) in the box's hue.
     gweni::Color  getColorAtPos(int x, int y);
@@ -71,6 +74,9 @@ class GWENI_EXPORT ColorSlider: public controls::Base
 {
 public:
     GWENI_CONTROL(ColorSlider, controls::Base);
+
+    //! a touch picks along it as the mouse does (Base::keepsTouchDrag())
+    bool keepsTouchDrag() const override { return true; }
 
 public:
     void onMouseMoved(int x, int y, int deltaX, int deltaY) override;

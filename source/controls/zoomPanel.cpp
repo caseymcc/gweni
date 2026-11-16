@@ -225,6 +225,15 @@ InputCapture *ZoomPanel::pressGesture(int button)
     return m_gesture.get();
 }
 
+PointF ZoomPanel::touchPan(const PointF &delta)
+{
+    if(isDisabled() || ((delta.x == 0.0f) && (delta.y == 0.0f)))
+        return PointF(0.0f, 0.0f);
+
+    setPan(PointF(m_pan.x+delta.x, m_pan.y+delta.y));
+    return delta;
+}
+
 void ZoomPanel::setZoomRange(float lowest, float highest)
 {
     // a content point is (p-pan)/zoom: no zoom of 0

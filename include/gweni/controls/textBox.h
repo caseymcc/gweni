@@ -52,6 +52,10 @@ class GWENI_EXPORT TextBox:public Label
     GWENI_CONTROL(TextBox, Label);
 
 public:
+    //! A touch drag on a box with the keyboard focus selects its text, as
+    //! the mouse's does; on any other it scrolls what the box is in
+    //! (Base::keepsTouchDrag()).
+    bool keepsTouchDrag() const override;
     ~TextBox() override;
     //! Points the message line's Text at the skin's font before its own goes.
     void preDelete(skin::Base *skin) override;

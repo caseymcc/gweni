@@ -1522,6 +1522,19 @@ bool LogView::onMouseWheeled(int delta)
     return used;
 }
 
+PointF LogView::touchPan(const PointF &delta)
+{
+    // a finger moved down shows rows above
+    if(delta.y >= 1.0f && getVerticalScrollOffset() > 0)
+        setFollowing(false);
+
+    const PointF moved=ParentClass::touchPan(delta);
+
+    if(moved.y < 0.0f)
+        followIfAtEnd();
+    return moved;
+}
+
 bool LogView::onKeyUp(bool down)
 {
     if(down)

@@ -316,6 +316,42 @@ bool ScrollControl::onMouseWheeledH(int iDelta)
     return ParentClass::onMouseWheeledH(iDelta);
 }
 
+// The content follows the finger: a finger moved up (a negative delta) moves
+// the offset down the content. Only whole units are taken, through
+// set*ScrollOffset() (a VirtualList's included), so the gesture keeps the
+// fractions and the offset never lands past what the last pass ranged.
+PointF ScrollControl::touchPan(const PointF &delta)
+{
+    PointF moved(0.0f, 0.0f);
+    const int stepY=static_cast<int>(-delta.y);
+    const int stepX=static_cast<int>(-delta.x);
+
+    if(stepY && canScrollVertical() && m_verticalScrollBar->visible() && !m_verticalScrollBar->isDisabled())
+    {
+        const int before=getVerticalScrollOffset();
+        const int to=gweni::clamp(before+stepY, 0, std::max(getMaxVerticalScrollOffset(), 0));
+
+        if(to != before)
+        {
+            setVerticalScrollOffset(to);
+            moved.y=static_cast<float>(before-getVerticalScrollOffset());
+        }
+    }
+
+    if(stepX && canScrollHorizontal() && m_horizontalScrollBar->visible() && !m_horizontalScrollBar->isDisabled())
+    {
+        const int before=getHorizontalScrollOffset();
+        const int to=gweni::clamp(before+stepX, 0, std::max(getMaxHorizontalScrollOffset(), 0));
+
+        if(to != before)
+        {
+            setHorizontalScrollOffset(to);
+            moved.x=static_cast<float>(before-getHorizontalScrollOffset());
+        }
+    }
+    return moved;
+}
+
 bool ScrollControl::contentsAreDocked()
 {
     if(!m_innerPanel)

@@ -55,6 +55,9 @@ public:
 
     GWENI_CONTROL(Knob, Base);
 
+    //! a touch turns it as the mouse does (Base::keepsTouchDrag())
+    bool keepsTouchDrag() const override { return true; }
+
 public:
 
     enum class DragMode

@@ -14,6 +14,7 @@
 #include <gweni/dragAndDrop.h>
 #include <gweni/controls/toolTip.h>
 #include <gweni/controls/toast.h>
+#include "touchGesture.h"
 #include <gweni/platforms/platform.h>
 #include <gweni/primitiveIds.h>
 
@@ -2427,6 +2428,115 @@ bool Canvas::inputMouseLeave()
 
     input::onMouseLeft(this);
     // the scene is told too
+    return false;
+}
+
+// One finger at a time: the first down is tracked until it lifts, and the
+// other fingers' events are taken and dropped meanwhile (canvas.h, "Input").
+bool Canvas::inputTouch(int id, TouchPhase phase, float x, float y)
+{
+    const Point point(static_cast<int>(std::lround(x)), static_cast<int>(std::lround(y)));
+
+    if(phase == TouchPhase::Down)
+    {
+        if(m_touchId >= 0)
+            return true;
+
+        if(m_inputCapture)
+        {
+            m_touchId=id;
+            m_touchMode=TouchMode::Capture;
+            m_inputCapture->captureTouch(id, phase, x, y);
+            return true;
+        }
+
+        if(hidden())
+            return false;
+
+        Base *target=getControlAt(point.x, point.y);
+        bool keeps=false;
+
+        for(Base *control=target; control && (control != this); control=control->getActualParent())
+        {
+            if(control->keepsTouchDrag())
+            {
+                keeps=true;
+                break;
+            }
+        }
+
+        m_touchId=id;
+        if(keeps)
+        {
+            // the mouse's own drag: a move to the point and a left press
+            m_touchMode=TouchMode::Mouse;
+
+            const Point mouse=input::getMousePosition();
+
+            m_touchMouse=point;
+            inputMouseMoved(point.x, point.y, point.x-mouse.x, point.y-mouse.y);
+            return inputMouseButton(0, true);
+        }
+
+        m_touchMode=TouchMode::Gesture;
+        if(!m_touchGesture)
+            m_touchGesture=std::make_unique<internal::TouchGesture>(this);
+        m_touchGesture->start(target, PointF(x, y));
+        setInputCapture(m_touchGesture.get());
+        // as a press there would be: a control's, or anything under a modal
+        return (target && (target != this)) || (topModal() != nullptr);
+    }
+
+    if((m_touchId < 0) || (id != m_touchId))
+        return m_touchId >= 0;
+
+    const TouchMode mode=m_touchMode;
+    const bool ends=(phase == TouchPhase::Up) || (phase == TouchPhase::Cancel);
+
+    if(ends)
+    {
+        m_touchId=-1;
+        m_touchMode=TouchMode::None;
+    }
+
+    switch(mode)
+    {
+    case TouchMode::Capture:
+        // whatever capture is set by now, the finger's down having gone to one
+        if(m_inputCapture)
+            m_inputCapture->captureTouch(id, phase, x, y);
+        return true;
+
+    case TouchMode::Mouse:
+    {
+        bool taken=true;
+
+        if((phase != TouchPhase::Cancel) && ((point.x != m_touchMouse.x) || (point.y != m_touchMouse.y)))
+        {
+            taken=inputMouseMoved(point.x, point.y, point.x-m_touchMouse.x, point.y-m_touchMouse.y);
+            m_touchMouse=point;
+        }
+        if(ends)
+        {
+            // a cancel ends the drag where it is, as the release would
+            taken=inputMouseButton(0, false);
+            inputMouseLeave();
+        }
+        return taken;
+    }
+
+    case TouchMode::Gesture:
+        // a capture set meanwhile (the depth view opened) took the canvas's
+        // input from the gesture: the finger goes nowhere
+        if(m_inputCapture == m_touchGesture.get())
+            m_touchGesture->captureTouch(id, phase, x, y);
+        else if(ends)
+            m_touchGesture->abandon();
+        return true;
+
+    case TouchMode::None:
+        break;
+    }
     return false;
 }
 

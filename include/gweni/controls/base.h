@@ -935,6 +935,20 @@ public:
     //! the mouse.
     virtual InputCapture *pressGesture(int /*button*/) { return nullptr; }
 
+    //! Whether a one-finger touch that starts on this control (or under it,
+    //! Canvas::inputTouch asking the touched control and its ancestors) is
+    //! this control's own drag, delivered as a left-button mouse drag: a
+    //! Dragger, a DragNumber, a node's title bar, a pin, a focused TextBox.
+    //! False (the default) leaves the touch to the canvas's gesture, a tap or
+    //! a pan (touchPan()).
+    virtual bool keepsTouchDrag() const { return false; }
+    //! A finger dragged \p delta (this control's own units; the content
+    //! follows the finger) over it: moves what it shows by as much of that as
+    //! it can and returns what it moved, (0, 0) (the default) when it moves
+    //! nothing on either axis. A ScrollControl moves in whole units and stops
+    //! at its range's ends; the gesture keeps what is left.
+    virtual PointF touchPan(const PointF & /*delta*/) { return PointF(0.0f, 0.0f); }
+
     virtual void onMouseClickLeft(int /*x*/, int /*y*/, bool /*down*/) {}
     virtual void onMouseClickRight(int /*x*/, int /*y*/, bool /*down*/) {}
 

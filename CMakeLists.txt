@@ -337,6 +337,8 @@ set(GWENI_CONTROL_SOURCES
     include/gweni/controls/toast.h
     source/controls/popup.cpp
     source/controls/toast.cpp
+    source/controls/touchGesture.h
+    source/controls/touchGesture.cpp
     include/gweni/controls/progressBar.h
     source/controls/progressBar.cpp
     include/gweni/controls/properties.h

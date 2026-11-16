@@ -155,6 +155,10 @@ public:
     bool onMouseWheeled(int iDelta) override;
     //! Uses the horizontal bar alone; bubbles when it cannot move.
     bool onMouseWheeledH(int iDelta) override;
+    //! A finger's drag scrolls it along each axis whose bar is shown and
+    //! enabled, in whole units, the content following the finger, up to the
+    //! range's ends (Base::touchPan()).
+    PointF touchPan(const PointF &delta) override;
 
     //! Scroll to an edge of the content: resolved by the next layout, to 0
     //! or getMax*ScrollOffset() of the content that layout gives, so a call
