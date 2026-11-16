@@ -31,6 +31,7 @@
 #include "gweni/controls/colorPicker.h"
 #include "gweni/controls/colorButton.h"
 #include "gweni/controls/dragNumber.h"
+#include "gweni/controls/gradientEditor.h"
 #include "gweni/controls/vectorField.h"
 #include "gweni/controls/badge.h"
 #include "gweni/controls/chip.h"
@@ -2849,6 +2850,108 @@ void PlotHistogram::update(renderer::Base *renderer, controls::Base *baseControl
 
         draw(1+i, rect, (int(i) == hovered)?tokyonight::PlotBarHover:tokyonight::PlotBar, z+1);
     }
+}
+
+
+///////////////////////////////////////////////////////////////////////////
+//GradientBar
+void GradientBar::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    controls::internal::GradientBar *bar=static_cast<controls::internal::GradientBar *>(baseControl);
+    const controls::GradientEditor *editor=bar->getEditor();
+    const Gradient *gradient=editor?editor->getGradient():nullptr;
+    const size_t stops=gradient?gradient->stopCount():0;
+
+    resizePlotPrimitives(renderer, m_primitives, 3+((stops > 0)?stops-1:0));
+
+    if(!baseControl->visible() || !gradient)
+    {
+        for(size_t id : m_primitives)
+            renderer->hidePrimitive(id);
+        return;
+    }
+
+    const tokyonight::Surface &frame=tokyonight::GradientBarFrame;
+    const tokyonight::Surface &cells=tokyonight::ColorChecker;
+    const gweni::Rect bounds=baseControl->getRenderBounds();
+    const int z=baseControl->getZIndex();
+
+    renderer->drawCheckerRect(m_primitives[0], bounds, z, gweni::Color(0, 0, 0, 0), cells.top, cells.bottom,
+        frame.radius, frame.borderWidth, frame.border);
+
+    const int inset=(int)std::ceil(std::max(0.0f, frame.borderWidth));
+    const gweni::Rect inner(bounds.x+inset, bounds.y+inset, std::max(0, bounds.w-2*inset),
+        std::max(0, bounds.h-2*inset));
+    // a stop's column: where its handle is centred, kept inside the frame
+    auto column=[&](float t)
+    {
+        const int x=bounds.x+(int)std::lround(t*(float)bounds.w);
+
+        return std::min(std::max(x, inner.x), inner.x+inner.w);
+    };
+    auto span=[&](size_t slot, int left, int right, const gweni::Color &a, const gweni::Color &b)
+    {
+        if((right <= left) || (inner.h <= 0))
+        {
+            renderer->hidePrimitive(m_primitives[slot]);
+            return;
+        }
+        renderer->drawBilinearRect(m_primitives[slot], gweni::Rect(left, inner.y, right-left, inner.h), z+1,
+            a, b, a, b, 0.0f, 0.0f, a);
+    };
+
+    const GradientStop &first=gradient->stop(0);
+    const GradientStop &last=gradient->stop(stops-1);
+    const bool constant=(gradient->interpolation() == Gradient::Interpolation::Constant);
+
+    span(1, inner.x, column(first.position), first.color, first.color);
+    span(2, column(last.position), inner.x+inner.w, last.color, last.color);
+    for(size_t i=0; i+1 < stops; ++i)
+    {
+        const GradientStop &a=gradient->stop(i);
+        const GradientStop &b=gradient->stop(i+1);
+
+        span(3+i, column(a.position), column(b.position), a.color, constant?a.color:b.color);
+    }
+}
+
+
+///////////////////////////////////////////////////////////////////////////
+//GradientStopHandle
+void GradientStopHandle::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    if(m_primitives.size() < 2)
+        return;
+
+    controls::internal::GradientStopHandle *handle=static_cast<controls::internal::GradientStopHandle *>(baseControl);
+
+    if(!baseControl->visible())
+    {
+        renderer->hidePrimitive(m_primitives[0]);
+        renderer->hidePrimitive(m_primitives[1]);
+        return;
+    }
+
+    controls::GradientEditor *editor=handle->getEditor();
+    const tokyonight::Surface *surface=&tokyonight::GradientStop;
+
+    if(editor && editor->isDisabled())
+        surface=&tokyonight::GradientStopDisabled;
+    else if(handle->isFocussed())
+        surface=&tokyonight::GradientStopFocus;
+    else if(handle->isSelected() || handle->isDepressed())
+        surface=&tokyonight::GradientStopSelected;
+    else if(handle->isHovered())
+        surface=&tokyonight::GradientStopHover;
+
+    const tokyonight::Surface &cells=tokyonight::ColorChecker;
+    const gweni::Rect r=baseControl->getRenderBounds();
+    const int marker=std::min(r.h, controls::GradientEditor::MarkerHeight);
+    const int z=baseControl->getZIndex();
+
+    renderer->drawIcon(m_primitives[0], gweni::Rect(r.x, r.y, r.w, marker), 7, 1, surface->top, z);
+    renderer->drawCheckerRect(m_primitives[1], gweni::Rect(r.x, r.y+marker, r.w, r.h-marker), z,
+        handle->getStopColor(), cells.top, cells.bottom, surface->radius, surface->borderWidth, surface->border);
 }
 
 

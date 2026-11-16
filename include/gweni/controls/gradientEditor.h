@@ -145,6 +145,9 @@ public:
     static constexpr int HandleWidth=11;
     static constexpr int BarHeight=20;
     static constexpr int StripHeight=16;
+    //! The top of a handle its marker (the triangle pointing at the bar)
+    //! takes; its swatch is the rest.
+    static constexpr int MarkerHeight=5;
     static constexpr int Gap=4;
     static constexpr int PositionFieldWidth=64;
     static constexpr float NudgeStep=0.01f;

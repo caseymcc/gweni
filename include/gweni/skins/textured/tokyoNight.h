@@ -503,6 +503,19 @@ inline Surface KnobTick          { Muted,                 Muted,                
 // A disabled knob's value arc and indicator.
 inline Surface KnobValueDisabled { Muted,                 Muted,                 Muted,       0.0f,     0.0f };
 
+// A GradientEditor: the bar's frame, whose border goes round the checkerboard
+// (ColorChecker's cells) the ramp's spans are drawn over, a border width in
+// (only its border, radius and width are read); a stop's handle, its marker,
+// the triangle pointing up at the bar, in top, over a swatch of the stop's
+// colour (over ColorChecker's cells) bordered in border, at rest, hovered,
+// selected, with the keyboard focus and disabled.
+inline Surface GradientBarFrame     { BgDark,                BgDark,                Line,        0.0f,     BorderW };
+inline Surface GradientStop         { FgDark,                FgDark,                Line,        2.0f,     BorderW };
+inline Surface GradientStopHover    { Fg,                    Fg,                    Muted,       2.0f,     BorderW };
+inline Surface GradientStopSelected { Blue,                  Blue,                  Blue,        2.0f,     BorderW };
+inline Surface GradientStopFocus    { Cyan,                  Cyan,                  Cyan,        2.0f,     BorderW };
+inline Surface GradientStopDisabled { Muted,                 Muted,                 BgHighlight, 2.0f,     BorderW };
+
 // A VectorField component's axis tag, a block of the axis's colour before its
 // field (its letter in the skin's AxisTagText): X red, Y green, Z blue and W
 // grey; a disabled row's tags are filled as a disabled field.
@@ -682,6 +695,9 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"KnobBodyPressed",&KnobBodyPressed},{"KnobBodyDisabled",&KnobBodyDisabled},
         {"KnobTrack",&KnobTrack},{"KnobValue",&KnobValue},{"KnobIndicator",&KnobIndicator},
         {"KnobTick",&KnobTick},{"KnobValueDisabled",&KnobValueDisabled},
+        {"GradientBarFrame",&GradientBarFrame},{"GradientStop",&GradientStop},
+        {"GradientStopHover",&GradientStopHover},{"GradientStopSelected",&GradientStopSelected},
+        {"GradientStopFocus",&GradientStopFocus},{"GradientStopDisabled",&GradientStopDisabled},
         {"VectorTagX",&VectorTagX},{"VectorTagY",&VectorTagY},{"VectorTagZ",&VectorTagZ},
         {"VectorTagW",&VectorTagW},
         {"Badge",&Badge},

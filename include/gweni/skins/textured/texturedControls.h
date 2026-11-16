@@ -772,11 +772,8 @@ GWENI_TRANSPARENT_RENDERER(NodeBody)
 // purpose, so Base::setSkin() does not report the type as having none (#185),
 // and each names the idea that tracks its real renderer: drop the line when
 // that renderer lands. A drawsNothing() override is not the place for these,
-// since the controls are meant to draw.
+// since the controls are meant to draw. (None is waiting now.)
 #define GWENI_PENDING_RENDERER(Class) GWENI_TRANSPARENT_RENDERER(Class)
-// the GradientEditor's ramp and stop handles (#642)
-GWENI_PENDING_RENDERER(GradientBar)
-GWENI_PENDING_RENDERER(GradientStopHandle)
 #undef GWENI_PENDING_RENDERER
 #undef GWENI_TRANSPARENT_RENDERER
 
@@ -2379,6 +2376,53 @@ public:
 // DragNumberDown while pressed, DragNumberDisabled), hidden while its edit
 // box covers it; the label's Text draws the value. A hover, a press or the
 // focus rewrites that one slot.
+// A GradientEditor's bar: [0] ColorChecker's cells under the whole bar,
+// framed in GradientBarFrame's border (a checker of a transparent fill), then
+// at getZIndex()+1, a border width in from the frame, [1] a flat span of the
+// first stop's colour from the bar's left to it and [2] one of the last
+// stop's colour from it to the bar's right (each hidden when it has no
+// width), and [3+i] the span from stop i to stop i+1, a bilinear fill of
+// stop i's colour on its left edge to stop i+1's on its right (flat in stop
+// i's colour in Constant mode, hidden when the two stops share a column). A
+// stop at t is at the bar's left plus round(t*width), the column its handle
+// is centred on. update() resizes the slot list to the stop count (two stops
+// a span) and draws every slot each time the bar is marked; a slot whose
+// bytes stay is not written, so moving or recolouring a stop writes the spans
+// on its sides (and the flat end when it is the first or the last) alone.
+class GradientBar:public textured::ControlRegister<GradientBar>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 3; }
+    // the spans are drawn at getZIndex()+1, over the checkerboard
+    size_t depthLayers() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="GradientBar";
+};
+
+// A GradientEditor stop's handle: [0] its marker, a filled triangle (icon
+// kind 7) pointing up at the bar over the handle's top MarkerHeight units, in
+// the state surface's top colour, and [1] under it a swatch of the stop's
+// colour over ColorChecker's cells, bordered in the state surface's border:
+// GradientStop at rest, GradientStopHover hovered, GradientStopSelected for
+// the selected stop (or while dragged), GradientStopFocus with the keyboard
+// focus, GradientStopDisabled in a disabled editor. A hover, a selection or a
+// new colour rewrites the handle's own slots alone.
+class GradientStopHandle:public textured::ControlRegister<GradientStopHandle>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    size_t requiredPrimitives() override { return 2; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+
+    inline static const std::string_view name="GradientStopHandle";
+};
+
 class DragNumber:public textured::ControlRegister<DragNumber>
 {
 public:
