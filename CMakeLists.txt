@@ -268,6 +268,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/groupBox.cpp
     include/gweni/controls/heightIndex.h
     source/controls/heightIndex.cpp
+    include/gweni/controls/hexView.h
+    source/controls/hexView.cpp
     include/gweni/controls/highlight.h
     include/gweni/controls/hsvColorPicker.h
     source/controls/hsvColorPicker.cpp
