@@ -302,6 +302,18 @@ public:
         gweni::Color c00, gweni::Color c10, gweni::Color c01, gweni::Color c11,
         float radius, float border, gweni::Color borderColor);
 
+    //! drawBilinearRect with drawRoundedRect's edge mask (no reach): the
+    //! corners it names square, the sides it names without a border, so
+    //! abutting spans that draw a frame's top and bottom border rows join with
+    //! no border between them (a GradientEditor's bar). The default ignores the
+    //! mask.
+    virtual void drawBilinearRect(size_t primitiveId, gweni::Rect rect, int zIndex,
+        gweni::Color c00, gweni::Color c10, gweni::Color c01, gweni::Color c11,
+        float radius, float border, gweni::Color borderColor, uint8_t edges)
+    {
+        drawBilinearRect(primitiveId, rect, zIndex, c00, c10, c01, c11, radius, border, borderColor);
+    }
+
     //! Draw a rounded rectangle like drawRoundedRect, filled with \a fill composited
     //! over a checkerboard of \a light and \a dark cells, so a translucent colour can be
     //! previewed. The result is opaque (only the rounded edge is blended), so it does not

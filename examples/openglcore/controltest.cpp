@@ -932,8 +932,14 @@
  *                 release; "200" typed into the R field of the second stop;
  *                 a stop added on the strip at 90 % and deleted; the first
  *                 handle double-clicked (the picker) and Escape. One line
- *                   gradient-editor drag_within=yes|no ... ids_back=yes|no
- *                 reports the checks: each drag frame writes no slot but the
+ *                   gradient-editor drag_within=yes|no ... bar_borders=yes|no
+ *                 reports the checks: on the settled frame each of the
+ *                 three bars' frame border, scanned down three columns and
+ *                 along its middle row, is two runs of max(1, snap(width))
+ *                 device px at the bar's device edges, at any --scale, and
+ *                 the opaque bars are one colour down each column between
+ *                 them (no checker row; gradient_editor_borders lists the
+ *                 runs when not); each drag frame writes no slot but the
  *                 dragged handle's, the handles a reorder passed, the bar's
  *                 spans beside the stop where it was and where it is and the
  *                 position field's, and the drag changes no pixel outside
@@ -9150,7 +9156,9 @@ static void checkVectorField(Session &s, const std::string &shotDir, Interaction
 // a colour typed into the R field to the spans beside the stop, its handle and
 // the ColorEdit's own (its swatch and the field). No drag changes a pixel
 // outside the editor. An added and a deleted stop give the live ids back, and
-// a settled frame writes nothing with the picker closed and open.
+// a settled frame writes nothing with the picker closed and open. First, each
+// bar's frame border is one border width in device px on every side
+// (gradientBarBorders), registered at 1, 1.25 and 1.5.
 //-----------------------------------------------------------------------------
 
 namespace
@@ -9227,6 +9235,105 @@ static void spansBeside(gweni::controls::GradientEditor *editor, size_t index, s
         ids.insert(bar[3+index]);
 }
 
+// The runs of GradientBarFrame's border colour (each channel within 2) along a
+// device row (\p horizontal) or column of \p pixels, from \p from up to \p to.
+static std::vector<std::pair<int, int>> gradientBorderRuns(const Session &s, const std::vector<uint8_t> &pixels,
+    bool horizontal, int line, int from, int to)
+{
+    const gweni::Color &border=gweni::skin::textured::tokyonight::GradientBarFrame.border;
+    std::vector<std::pair<int, int>> runs;
+
+    for(int i=std::max(from, 0); i < std::min(to, horizontal?s.pixels.x:s.pixels.y); ++i)
+    {
+        const int x=horizontal?i:line, y=horizontal?line:i;
+
+        if(x < 0 || y < 0 || x >= s.pixels.x || y >= s.pixels.y)
+            continue;
+
+        const size_t at=(static_cast<size_t>(y)*s.pixels.x+x)*4;
+
+        if(std::abs(int(pixels[at])-int(border.r)) > 2 || std::abs(int(pixels[at+1])-int(border.g)) > 2
+            || std::abs(int(pixels[at+2])-int(border.b)) > 2)
+            continue;
+        if(!runs.empty() && runs.back().first+runs.back().second == i)
+            ++runs.back().second;
+        else
+            runs.push_back({i, 1});
+    }
+    return runs;
+}
+
+// The bar's frame of each of GradientEditorDemo's editors: down device columns
+// at an eighth, the middle and seven eighths of the bar (inside spans) and
+// along its middle row, the border colour must be exactly two runs of
+// max(1, snap(width)) device px at the bar's device edges, at any scale (a
+// logical inset of the spans gives 1 or 2 rows by position at 1.5, or leaves
+// a row of checker inside the frame at 1.25); and in the opaque ramps each
+// such column must be one colour between the border rows, so no checker row
+// shows. Empty when they are; else what was found.
+static std::string gradientBarBorders(const Session &s, const std::vector<uint8_t> &pixels,
+    gweni::GradientEditorDemo *demo)
+{
+    const int borderPx=std::max(1, gweni::renderer::Base::snap(
+        gweni::skin::textured::tokyonight::GradientBarFrame.borderWidth, s.scale));
+    gweni::controls::GradientEditor *editors[]={demo->opaqueEditor(), demo->translucentEditor(),
+        demo->constantEditor()};
+    const char *names[]={"opaque", "translucent", "constant"};
+    std::string report;
+
+    for(int e=0; e < 3; ++e)
+    {
+        const gweni::Rect bounds=editors[e]->getBar()->getCanvasBounds();
+        const gweni::Point p0=devicePixels(gweni::Point(bounds.x, bounds.y), s.scale);
+        const gweni::Point p1=devicePixels(gweni::Point(bounds.x+bounds.w, bounds.y+bounds.h), s.scale);
+        auto runsOk=[&](const std::vector<std::pair<int, int>> &runs, int start, int end)
+        {
+            return runs.size() == 2 && runs.front() == std::make_pair(start, borderPx)
+                && runs.back() == std::make_pair(end-borderPx, borderPx);
+        };
+        auto describe=[&](const std::vector<std::pair<int, int>> &runs)
+        {
+            std::string text;
+
+            for(size_t r=0; r < runs.size(); ++r)
+                text+=(r?",":"")+std::to_string(runs[r].first)+"+"+std::to_string(runs[r].second);
+            return text;
+        };
+
+        for(int eighth : {1, 4, 7})
+        {
+            const int x=p0.x+(p1.x-p0.x)*eighth/8;
+            const std::vector<std::pair<int, int>> runs=gradientBorderRuns(s, pixels, false, x, p0.y, p1.y);
+            bool uniform=true;
+
+            if(e != 1)
+            {
+                const size_t first=(static_cast<size_t>(p0.y+borderPx)*s.pixels.x+x)*4;
+
+                for(int y=p0.y+borderPx; y < p1.y-borderPx; ++y)
+                {
+                    const size_t at=(static_cast<size_t>(y)*s.pixels.x+x)*4;
+
+                    if(!std::equal(pixels.begin()+at, pixels.begin()+at+3, pixels.begin()+first))
+                        uniform=false;
+                }
+            }
+            if(!runsOk(runs, p0.y, p1.y) || !uniform)
+                report+=std::string(" ")+names[e]+"@x"+std::to_string(x)+"="+describe(runs)
+                    +(uniform?"":",not_uniform");
+        }
+
+        const int y=(p0.y+p1.y)/2;
+        const std::vector<std::pair<int, int>> runs=gradientBorderRuns(s, pixels, true, y, p0.x, p1.x);
+
+        if(!runsOk(runs, p0.x, p1.x))
+            report+=std::string(" ")+names[e]+"@y"+std::to_string(y)+"="+describe(runs);
+    }
+    if(!report.empty())
+        report+=" (border "+std::to_string(borderPx)+" device px, bar rows and columns as device edges)";
+    return report;
+}
+
 static bool runGradientEditorScenario(Session &s, const std::string &shotDir, bool &passed)
 {
     s.freezeClock=true;
@@ -9248,6 +9355,7 @@ static bool runGradientEditorScenario(Session &s, const std::string &shotDir, bo
     renderFrames(s, s.frames);
 
     size_t idleWritten=gradientFrame(s).written;
+    const std::string borders=gradientBarBorders(s, framePixels(s), demo);
 
     auto settle=[&]()
     {
@@ -9409,8 +9517,9 @@ static bool runGradientEditorScenario(Session &s, const std::string &shotDir, bo
     const bool pickerOk=pickerOpen && pickerClosed && openWritten == 0;
     const bool settled=idleWritten == 0;
     const bool idsBack=idsLeft == 0;
+    const bool bordersOk=borders.empty();
 
-    passed=dragOk && escapeOk && typeOk && addOk && pickerOk && settled && idsBack;
+    passed=bordersOk && dragOk && escapeOk && typeOk && addOk && pickerOk && settled && idsBack;
 
     std::cout<<"gradient-editor drag_within="<<(dragWithin?"yes":"no")<<" drag_moved="<<(dragMoved?"yes":"no")
              <<" reordered="<<(reordered?"yes":"no")<<" drag_outside_pixels="<<dragDiff.outside
@@ -9419,12 +9528,17 @@ static bool runGradientEditorScenario(Session &s, const std::string &shotDir, bo
              <<" ids_after_delete="<<(idsDeleted == idsSettled?"same":"differ")
              <<" picker_open="<<(pickerOpen?"yes":"no")<<" picker_open_written="<<openWritten
              <<" picker_closed="<<(pickerClosed?"yes":"no")<<" idle_written="<<idleWritten
-             <<" ids_left="<<idsLeft<<" ids_back="<<(idsBack?"yes":"no")<<"\n";
+             <<" ids_left="<<idsLeft<<" ids_back="<<(idsBack?"yes":"no")
+             <<" bar_borders="<<(bordersOk?"yes":"no")<<"\n";
+    if(!bordersOk)
+        std::cout<<"gradient_editor_borders"<<borders<<"\n";
     std::cout<<"gradient_editor_drag"<<frames<<"\n";
     std::cout<<"gradient_editor_type"<<typed<<"\n";
     if(!passed)
         std::cerr<<"ControlTest: gradient-editor: "
-                 <<(!dragOk ? "a drag frame wrote outside the stop's handle, its spans and the position field,"
+                 <<(!bordersOk ? "a bar's frame border is not max(1, snap(width)) device px on every side,"
+                                 " or a checker row shows inside it"
+                     : !dragOk ? "a drag frame wrote outside the stop's handle, its spans and the position field,"
                               " did not reorder, or changed pixels outside the editor"
                      : !escapeOk ? "Escape did not put the dragged stop back"
                      : !typeOk ? "a colour typed into the R field wrote outside its spans, handle and ColorEdit,"

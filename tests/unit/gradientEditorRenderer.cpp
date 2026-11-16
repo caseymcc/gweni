@@ -9,7 +9,9 @@
  *  writes only the slots whose bytes differ.
  *
  *  The bar is a ColorChecker checkerboard under the whole bar in
- *  GradientBarFrame's border, then a border width in, at z+1, a flat span of
+ *  GradientBarFrame's border, then at z+1, each the bar's whole height and
+ *  drawing the frame's border on its top and bottom and on a side where it
+ *  meets the bar's edge (none, square, where it meets another span), a flat span of
  *  the first stop's colour up to its column, one of the last stop's from its
  *  column (each hidden at no width) and a bilinear span per pair of stops, its
  *  left edge the first's colour and its right the second's (flat in Constant
@@ -74,13 +76,21 @@ public:
         Color a, b, border;
         int z=0;
         std::string key;
+        uint8_t edges=0;
+        float borderWidth=0.0f;
     };
 
     void drawBilinearRect(size_t id, Rect rect, int z, Color c00, Color c10, Color c01, Color c11,
         float radius, float border, Color borderColor) override
     {
+        drawBilinearRect(id, rect, z, c00, c10, c01, c11, radius, border, borderColor, 0);
+    }
+
+    void drawBilinearRect(size_t id, Rect rect, int z, Color c00, Color c10, Color c01, Color c11,
+        float radius, float border, Color borderColor, uint8_t edges) override
+    {
         record(id, {"bilinear", rect, c00, c10, borderColor, z,
-            text(c01)+text(c11)+std::to_string(radius)+std::to_string(border)});
+            text(c01)+text(c11)+std::to_string(radius)+std::to_string(border), edges, border});
     }
 
     void drawCheckerRect(size_t id, Rect rect, int z, Color fill, Color light, Color dark,
@@ -118,7 +128,7 @@ public:
     static std::string describe(const Slot &slot)
     {
         return slot.kind+" "+text(slot.rect)+" "+text(slot.a)+" "+text(slot.b)+" "+text(slot.border)+" "
-            +std::to_string(slot.z)+" "+slot.key;
+            +std::to_string(slot.z)+" "+slot.key+" "+std::to_string(slot.edges);
     }
 
     const Slot &at(size_t id) const { return slots.at(id); }
@@ -268,14 +278,24 @@ TEST_CASE("GradientEditor renderer: a checkerboard under the bar and a span per 
 
     CHECK(left.kind == "bilinear");
     CHECK(left.z == z+1);
-    CHECK(left.rect.x == bounds.x+1);
-    CHECK(left.rect.y == bounds.y+1);
-    CHECK(left.rect.h == bounds.h-2);
+    // each span the bar's whole height, drawing the frame's border rows on its
+    // top and bottom and its outer side where it meets the bar's edge, none
+    // and square corners where it meets the other span
+    const uint8_t openRight=renderer::SquareTopRight|renderer::SquareBottomRight|renderer::NoBorderRight;
+    const uint8_t openLeft=renderer::SquareTopLeft|renderer::SquareBottomLeft|renderer::NoBorderLeft;
+
+    CHECK(left.rect.x == bounds.x);
+    CHECK(left.rect.y == bounds.y);
+    CHECK(left.rect.h == bounds.h);
     CHECK(left.rect.x+left.rect.w == column(editor, 0.4f));
     CHECK(text(left.a) == text(grey(10)));
     CHECK(text(left.b) == text(grey(100, 128)));
+    CHECK(text(left.border) == text(tokyonight::GradientBarFrame.border));
+    CHECK(left.borderWidth == tokyonight::GradientBarFrame.borderWidth);
+    CHECK(int(left.edges) == int(openRight));
     CHECK(right.rect.x == column(editor, 0.4f));
-    CHECK(right.rect.x+right.rect.w == bounds.x+bounds.w-1);
+    CHECK(right.rect.x+right.rect.w == bounds.x+bounds.w);
+    CHECK(int(right.edges) == int(openLeft));
     CHECK(text(right.a) == text(grey(100, 128)));
     CHECK(text(right.b) == text(grey(200)));
 
@@ -309,12 +329,12 @@ TEST_CASE("GradientEditor renderer: the flat ends show for stops inside the bar"
     const SlotRecorder::Slot &after=scene.renderer.at(bar[2]);
 
     CHECK(before.kind == "bilinear");
-    CHECK(before.rect.x == bounds.x+1);
+    CHECK(before.rect.x == bounds.x);
     CHECK(before.rect.x+before.rect.w == column(editor, 0.25f));
     CHECK(text(before.a) == text(grey(10)));
     CHECK(text(before.b) == text(grey(10)));
     CHECK(after.rect.x == column(editor, 0.75f));
-    CHECK(after.rect.x+after.rect.w == bounds.x+bounds.w-1);
+    CHECK(after.rect.x+after.rect.w == bounds.x+bounds.w);
     CHECK(text(after.b) == text(grey(200)));
 
     // two stops in one column: their span is hidden

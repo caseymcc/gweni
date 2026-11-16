@@ -2879,33 +2879,42 @@ void GradientBar::update(renderer::Base *renderer, controls::Base *baseControl)
     renderer->drawCheckerRect(m_primitives[0], bounds, z, gweni::Color(0, 0, 0, 0), cells.top, cells.bottom,
         frame.radius, frame.borderWidth, frame.border);
 
-    const int inset=(int)std::ceil(std::max(0.0f, frame.borderWidth));
-    const gweni::Rect inner(bounds.x+inset, bounds.y+inset, std::max(0, bounds.w-2*inset),
-        std::max(0, bounds.h-2*inset));
-    // a stop's column: where its handle is centred, kept inside the frame
+    // A stop's column: where its handle is centred, inside the bar.
     auto column=[&](float t)
     {
         const int x=bounds.x+(int)std::lround(t*(float)bounds.w);
 
-        return std::min(std::max(x, inner.x), inner.x+inner.w);
+        return std::min(std::max(x, bounds.x), bounds.x+bounds.w);
     };
+    // Each span is the bar's whole height and draws the frame's border on its
+    // top and bottom, and on the side where it meets the bar's edge (rounded
+    // there with the frame), none where it meets another span: its border rows
+    // are the frame's max(1, snap(width)) device rows at any scale, which a
+    // logical inset is not at a fractional one (1 or 2 rows by position).
     auto span=[&](size_t slot, int left, int right, const gweni::Color &a, const gweni::Color &b)
     {
-        if((right <= left) || (inner.h <= 0))
+        if((right <= left) || (bounds.h <= 0))
         {
             renderer->hidePrimitive(m_primitives[slot]);
             return;
         }
-        renderer->drawBilinearRect(m_primitives[slot], gweni::Rect(left, inner.y, right-left, inner.h), z+1,
-            a, b, a, b, 0.0f, 0.0f, a);
+
+        uint8_t edges=0;
+
+        if(left > bounds.x)
+            edges|=renderer::SquareTopLeft|renderer::SquareBottomLeft|renderer::NoBorderLeft;
+        if(right < bounds.x+bounds.w)
+            edges|=renderer::SquareTopRight|renderer::SquareBottomRight|renderer::NoBorderRight;
+        renderer->drawBilinearRect(m_primitives[slot], gweni::Rect(left, bounds.y, right-left, bounds.h), z+1,
+            a, b, a, b, frame.radius, frame.borderWidth, frame.border, edges);
     };
 
     const GradientStop &first=gradient->stop(0);
     const GradientStop &last=gradient->stop(stops-1);
     const bool constant=(gradient->interpolation() == Gradient::Interpolation::Constant);
 
-    span(1, inner.x, column(first.position), first.color, first.color);
-    span(2, column(last.position), inner.x+inner.w, last.color, last.color);
+    span(1, bounds.x, column(first.position), first.color, first.color);
+    span(2, column(last.position), bounds.x+bounds.w, last.color, last.color);
     for(size_t i=0; i+1 < stops; ++i)
     {
         const GradientStop &a=gradient->stop(i);

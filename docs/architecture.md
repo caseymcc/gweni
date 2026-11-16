@@ -7167,11 +7167,20 @@ gradient itself (`tests/unit/gradientEditor.cpp`).
 **Drawing and what a change writes.** The textured `GradientBar` renderer keeps a slot
 list of three plus one per pair of stops (resized with the stop count, as the plots'
 are): [0] a checker of a transparent fill under the whole bar (`ColorChecker`'s cells,
-in `GradientBarFrame`'s border), then at z+1 (`depthLayers()` 2), a border width in,
-[1] a flat span of the first stop's colour up to its column, [2] one of the last stop's
-from its column (each hidden at no width) and [3+i] a bilinear span from stop i to stop
-i+1 (flat in stop i's colour in Constant mode, hidden for two stops in one column), so a
-translucent ramp shows the checker through it. A `GradientStopHandle` is a filled
+in `GradientBarFrame`'s border), then at z+1 (`depthLayers()` 2), [1] a flat span of
+the first stop's colour up to its column, [2] one of the last stop's from its column
+(each hidden at no width) and [3+i] a bilinear span from stop i to stop i+1 (flat in
+stop i's colour in Constant mode, hidden for two stops in one column), so a translucent
+ramp shows the checker through it. Each span is the bar's whole height and draws the
+frame's border itself, through `drawBilinearRect`'s edge-mask overload (style 6 takes
+style 4's mask, `renderer::RoundedEdge`): on its top and bottom, and on a side where it
+meets the bar's edge, rounded there with the frame, while where it meets another span
+that side is square with no border. So the border is the frame's `max(1, snap(width))`
+device px on every side at any scale; spans inset by the border's width in logical
+units were not, since a logical unit snaps to 1 or 2 device rows by position (at 1.5 a
+2 px top border over a 1 px bottom one, at 1.25 a row of checker left inside the frame).
+A translucent span's border rows are its border colour at the span's alpha over the
+checker's own border rows, the same colour within a level. A `GradientStopHandle` is a filled
 triangle (icon kind 7) pointing up over its top `MarkerHeight` units and a checker
 swatch of its stop's colour, in `GradientStop`, `GradientStopHover`,
 `GradientStopSelected` (or dragged), `GradientStopFocus` or `GradientStopDisabled`. Both
@@ -7183,7 +7192,9 @@ colour its swatch and the spans beside it, a hover the handle alone, a settled f
 nothing (`tests/unit/gradientEditorRenderer.cpp`, on a recorder that counts a slot only
 when what it was drawn with changes). `--scenario gradient-editor` holds each drag,
 typed-colour, add and delete frame of GradientEditorDemo's Constant ramp to the ids of
-what it touched and the drag to no pixel outside the editor. GradientEditorDemo (the
+what it touched and the drag to no pixel outside the editor, and first scans each
+bar's border rows and columns (`bar_borders`), also registered at `--scale` 1.5 and
+1.25 (`controltest_gradient_editor_scale150`, `_scale125`). GradientEditorDemo (the
 shell's "Gradient editor", the README gallery) shows an opaque, a translucent and a
 Constant ramp and a strip of 32 swatches sampling the first one's `evaluate()`, set again
 on its `onChanged`.

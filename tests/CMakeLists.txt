@@ -759,13 +759,26 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     # GradientEditorDemo's Constant ramp, the clock frozen (#642): each frame
     # of a stop's drag, past another stop too, writes no slot but its handle's,
     # the bar's spans beside it and the position field's, and changes no pixel
-    # outside the editor; Escape gives the stops back; a colour typed into the
+    # outside the editor; each bar's frame border is one border width on every
+    # side; Escape gives the stops back; a colour typed into the
     # R field writes the spans beside the stop, its handle and the ColorEdit
     # alone; an added and deleted stop give the live ids back; settled frames
     # write nothing, with the picker open too; the demo gives its ids back
     gweni_whole_app_test(controltest_gradient_editor 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario gradient-editor --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/gradient_editor@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    # the same at 1.5 and 1.25, where the bar frame's border is 2 and 1
+    # device rows: each bar's border rows and columns must be the frame's
+    # max(1, snap(width)) device px on every side, with no row of checker
+    # inside it (its bar_borders check)
+    gweni_whole_app_test(controltest_gradient_editor_scale150 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario gradient-editor --require-one-pass --scale 1.5
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/gradient_editor_scale150@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    gweni_whole_app_test(controltest_gradient_editor_scale125 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario gradient-editor --require-one-pass --scale 1.25
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/gradient_editor_scale125@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # SwitchDemo, the clock stepping: a hover writes the track's slot alone,

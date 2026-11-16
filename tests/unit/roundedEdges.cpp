@@ -15,7 +15,8 @@
  *  the radius in device px in its low byte, at most 255, and the mask in its
  *  high byte, on all four vertexes. A call without a mask, a mask of 0 and
  *  drawBilinearRect/drawCheckerRect leave the high byte 0, and a mask of 0 is the
- *  unmasked call's slot byte for byte. Drawing the same mask again writes
+ *  unmasked call's slot byte for byte; drawBilinearRect's masked call (a
+ *  GradientEditor bar's spans) packs its mask the same way. Drawing the same mask again writes
  *  nothing; changing only the mask rewrites that slot alone. A reach widens
  *  the quad (and the SDF's size with it) by max(1, snap(reach)) device px on
  *  each borderless side and nowhere else, and no reach is the call without
@@ -261,6 +262,21 @@ TEST_CASE("SlotRenderer packs the edge mask in Vertex::radius's high byte, over 
         });
         checkRadius(renderer, ids[0], 6);
         checkRadius(renderer, ids[1], 6);
+    }
+
+    SUBCASE("the bilinear rect's masked call packs its mask as the rounded rect's, 0 its unmasked slot")
+    {
+        renderer.frame([&]
+        {
+            renderer.drawBilinearRect(ids[0], rect, 1, fill, fill, fill, fill, 6.0f, 1.0f, border, edges);
+            renderer.drawBilinearRect(ids[1], rect, 1, fill, fill, fill, fill, 6.0f, 1.0f, border, 0);
+        });
+        checkRadius(renderer, ids[0], (unsigned(edges) << 8) | 6u);
+
+        const std::vector<uint8_t> zeroMask=renderer.slotBytes(ids[1]);
+
+        renderer.frame([&] { renderer.drawBilinearRect(ids[1], rect, 1, fill, fill, fill, fill, 6.0f, 1.0f, border); });
+        CHECK(renderer.slotBytes(ids[1]) == zeroMask);
     }
 
     SUBCASE("the same mask again writes nothing; another mask rewrites that slot alone")

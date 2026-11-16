@@ -376,6 +376,10 @@ public:
     void drawBilinearRect(size_t primitiveId, gweni::Rect rect, int zIndex,
         gweni::Color c00, gweni::Color c10, gweni::Color c01, gweni::Color c11,
         float radius, float border, gweni::Color borderColor) override;
+    //! Style 6 with the edge mask in Vertex::radius's high byte, as style 4's.
+    void drawBilinearRect(size_t primitiveId, gweni::Rect rect, int zIndex,
+        gweni::Color c00, gweni::Color c10, gweni::Color c01, gweni::Color c11,
+        float radius, float border, gweni::Color borderColor, uint8_t edges) override;
     void drawCheckerRect(size_t primitiveId, gweni::Rect rect, int zIndex,
         gweni::Color fill, gweni::Color light, gweni::Color dark,
         float radius, float border, gweni::Color borderColor) override;

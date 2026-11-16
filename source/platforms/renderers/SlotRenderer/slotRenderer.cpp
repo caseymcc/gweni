@@ -3719,6 +3719,14 @@ void SlotRenderer::drawBilinearRect(size_t primitiveId, gweni::Rect rect, int zI
         gweni::Color(0, 0, 0, 0), c01, c11, borderColor);
 }
 
+void SlotRenderer::drawBilinearRect(size_t primitiveId, gweni::Rect rect, int zIndex,
+    gweni::Color c00, gweni::Color c10, gweni::Color c01, gweni::Color c11,
+    float radius, float border, gweni::Color borderColor, uint8_t edges)
+{
+    writeRoundedQuad(primitiveId, rect, zIndex, 6, radius, border, c00, c10,
+        gweni::Color(0, 0, 0, 0), c01, c11, borderColor, edges);
+}
+
 void SlotRenderer::drawCheckerRect(size_t primitiveId, gweni::Rect rect, int zIndex,
     gweni::Color fill, gweni::Color light, gweni::Color dark,
     float radius, float border, gweni::Color borderColor)
