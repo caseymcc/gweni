@@ -324,7 +324,11 @@ of tabs under its button. `popup->open(anchor, PopupPlacement::Below|Right)` han
 was made elsewhere, shows it, brings it to the front and fires `onOpen`. The canvas shows
 **one popup at a time**, and its context menu (below) is the same slot:
 `Canvas::shownPopup()` / `popupAnchor()` are whichever is open, `closePopup()` closes
-either, `shownContextMenu()` is the shown popup when it is a context menu. A popup's
+either, `shownContextMenu()` is the shown popup when it is a context menu. A popup opened
+with `PopupPlacement::CanvasTop` has no anchor (`popupAnchor()` null): it is placed at
+the canvas's top centre, `Popup::CanvasTopInset` down, a press anywhere outside it closes
+it, and the canvas leaves it out of the followers it enters in every pass (the command
+palette's, below). A popup's
 textured renderer paints one `tokyonight::Menu` surface, a context menu's panel.
 
 **It closes** on `close()` or `setHidden(true)` (both through `closePopup`, which fires
@@ -5814,6 +5818,99 @@ two programs and the draws. What follows describes both together:
   box, its list and the controls it moves. SearchComboDemo (the shell's "Search combo
   box") has a ComboBox beside a plain box, a searchable box over 300 generated
   references, a free-text host box with a validator and two multi-select boxes.
+- **The command palette: commands as data, the search combo box's list, a fuzzy scorer.**
+  `controls::CommandPalette` (`include/gweni/controls/commandPalette.h`) is VS Code's
+  Ctrl+Shift+P: a Popup at the canvas's top centre holding a `TextBox` with the keyboard
+  focus (placeholder "Type a command") and, under it, the app's commands that match what
+  is typed, best first; Return runs the highlighted one.
+
+  *Commands are data.* `addCommand({id, label, category, shortcut, enabled,
+  isEnabled})` keeps a command (one whose id is held already is replaced in place),
+  `removeCommand(id)`, `clearCommands()`; `onCommand` fires with the id in the info's
+  string. A disabled command (the flag, or the predicate, asked at each match) is not
+  listed. The shortcut is only shown: the palette binds no key but its own.
+
+  *The shared list.* `controls::FilteredList` (`include/gweni/controls/filteredList.h`)
+  is the part of the search combo box both controls use, not a control: the options'
+  lower-cased texts (ASCII letters folded, every other byte kept), the query as typed and
+  lower-cased, the matches (indices into the options, in shown order) filled by a
+  pluggable `Matcher` (`substringMatcher()` by default, the search combo box's), an
+  optional trailing row that is no option (the Add row, "No matches", the palette's "No
+  matching commands") with whether it takes the highlight and is bound again every time,
+  the highlight (a position and the option it shows) and its keys (`step()`, wrapping;
+  `page()`, stopping at the ends; `rowHovered()`), and `rebindChanged()`, which tells the
+  `VirtualList` the new row count and binds again only the pooled rows that now show
+  another key, telling the others their highlight alone. The owner keeps what an option
+  is (a label and a name, a command) and binds its own rows. SearchComboBox was moved
+  onto it with its counters, pixels and scenario line byte for byte as before.
+
+  *The scorer.* `text::fuzzyMatch(query, text, score)` and `text::fuzzyRank`
+  (`include/gweni/text/fuzzyMatch.h`, after fzf's and VS Code's, kept small) read both
+  strings as UTF-8 code points (a byte that starts no valid sequence one of its own, past
+  every code point) and fold ASCII letters only. The query matches when its code points
+  appear in the text in order. The score is the best over every way they appear: 16 per
+  matched point, +10 at the text's start, +8 at a word start (after a space or one of
+  ``:-_/.,()[]``), +7 at a camelCase hump (an upper-case ASCII letter, read from the
+  text's own case, after a lower-case one or a digit), +5 right after the previous match,
+  and a gap of d points between two matches costs 3 + (d-1); the points before the first
+  match cost nothing. So a prefix beats a word start, a word start a hump, a hump a
+  scattered match, a run the same letters with gaps. It is one row of a table per query
+  point over the text's points, the affine gap kept as a running best, O(query × text);
+  `text::FuzzyMatcher` decodes the query once and keeps its buffers across texts. The
+  palette matches against `matchText()`, `"category: label"` (the label alone without a
+  category), and sorts by score, then by recency (`setRecentFirst(true)`, the default:
+  the last `getRecentLimit()` (10) run, the latest first), then by the order added, so
+  equal scores come out the same every time. An empty query lists the recent commands
+  first and then the rest by category and label (an order kept until the commands
+  change). `tests/unit/fuzzyMatch.cpp` pins it.
+
+  *The accelerator and the popup.* The palette is a hidden control that draws nothing
+  (`GWENI_DRAWS_NOTHING`), put anywhere on the canvas; `attach(canvas, "Ctrl+Shift+P")`
+  registers the key on the canvas (`Base::addAccelerator`, so `input::handleAccelerator`
+  finds it whatever has the focus, but not under a modal, whose accelerators are the only
+  ones looked up) and toggles the palette, and `detach()` (and the palette's deletion)
+  takes away that caller alone, not one another palette registered since. `open()` makes
+  the popup and its controls the first time only, empties the field, lists every enabled
+  command, highlights the first and opens the popup with `PopupPlacement::CanvasTop`: at
+  the canvas's top centre, `Popup::CanvasTopInset` (32) down, kept inside the canvas, with
+  **no anchor** (`Popup::open(control, CanvasTop)` takes the control only for its canvas),
+  so a press anywhere outside it closes it, no anchor's hide or deletion does, and the
+  canvas does not re-enter it in every layout pass as it does a popup that follows an
+  anchor (its width follows the canvas, whose new size invalidates it). It is `Width`
+  (600) wide, less on a canvas narrower than that and `2*CanvasInset`. It closes on
+  Escape (the field does not take it, so the canvas's `escapePopup()` does), a press
+  outside, a command run and the accelerator again; however it closes, the keyboard focus
+  goes back to the control that had it at the open, if still shown, unless the close gave
+  it to another (a press outside on a control). A run closes first and then fires
+  `onCommand`, so a handler opening a dialog gives the focus back where it was.
+
+  *The rows and the keys.* The list is a `VirtualList` (`internal::CommandPaletteList`)
+  always `MaxShownRows` (10) rows high, so its pool never follows the query, and the
+  popup (`internal::CommandPalettePopup`) is cut to `min(shown rows, MaxShownRows)` in its
+  Y measuring. A row (`internal::CommandPaletteRow`) is a SearchComboBox row, so it has
+  that row's look and highlight (the `MenuHover` slot, hidden at rest) and takes no focus,
+  with three Labels docked in it: the category (`"View:"`, in `CommandPaletteCategoryText`)
+  on the left, the shortcut right-aligned (`CommandPaletteShortcutText`) and the label
+  filling the rest in the row's text colour; each is set only when its string changes.
+  The field (`internal::CommandPaletteField`) gives Up and Down (wrapping), PageUp and
+  PageDown (a page, stopping at the ends) and Return to the palette and keeps Home, End
+  and editing; a click on a row runs its command and a real mouse move highlights it.
+
+  *The cost.* A keystroke ranks the command data again (a decode and a table per
+  command, no control touched) and goes through `rebindChanged()`: only the pooled rows
+  that now show another command are bound, nothing is made or deleted, and the layout it
+  runs is the popup's (its height when the shown count crosses `MaxShownRows`, a row whose
+  category's width changed). So the pool, the popup's controls, the live ids and a
+  keystroke's frame are the same at 50 commands and at 5 000. `tests/unit/commandPalette.cpp`
+  pins the behaviour headless; `controltest_command_palette` (`--scenario
+  command-palette`, and `_vulkan`, and `controltest_verify_layout_command_palette`) holds
+  the open to the popup's pixels at the top centre, a settled open frame to nothing,
+  Down to its two rows, Return to the frame before opening but the demo's label, and the
+  keystroke "i" after "h" to the same frame at 50 commands and at those and 4 950 that
+  match neither. CommandPaletteDemo (the shell's "Command palette") holds 300 generated
+  commands in ten categories, every fourth with a shortcut and every thirteenth disabled,
+  a button that opens it and a label naming the last command run.
+
 - **Scale and the device-pixel grid.** Controls lay out in logical units (integers);
   `renderer::Base::translate()` turns them into device pixels at `scale()` (set by
   `Canvas::setScale`). It snaps **edges**, not origin and size apart: a point is
