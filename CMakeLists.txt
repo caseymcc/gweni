@@ -277,6 +277,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/horizontalSlider.cpp
     include/gweni/controls/imagePanel.h
     source/controls/imagePanel.cpp
+    include/gweni/controls/knob.h
+    source/controls/knob.cpp
     include/gweni/controls/label.h
     source/controls/label.cpp
     include/gweni/controls/bullet.h

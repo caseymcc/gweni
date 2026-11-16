@@ -142,6 +142,9 @@ public:
     //! precision for %f (6 otherwise), trailing zeros dropped; whole for an
     //! integer field.
     String editText() const;
+    //! editText()'s rule for any \p value, \p format and integer flag (a
+    //! Knob's edit box starts with it too).
+    static String editTextFor(const String &format, bool integer, double value);
     //! \p text as a number: a whole finite strtod() parse, spaces around it
     //! allowed. False, and \p value untouched, for anything else.
     static bool parseNumber(const String &text, double &value);

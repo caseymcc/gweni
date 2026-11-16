@@ -182,12 +182,16 @@ String DragNumber::formatNumber(double value) const
 
 String DragNumber::editText() const
 {
-    if(m_integer)
-        return Slider::formatValue("%.0f", m_value);
+    return editTextFor(getFormat(), m_integer, m_value);
+}
+
+String DragNumber::editTextFor(const String &format, bool integer, double value)
+{
+    if(integer)
+        return Slider::formatValue("%.0f", value);
 
     // the precision of the format's conversion when it is %f, else 6
     int precision=6;
-    const String &format=getFormat();
 
     for(size_t i=0; i < format.size(); ++i)
     {
@@ -211,7 +215,7 @@ String DragNumber::editText() const
         break;
     }
 
-    String text=Slider::formatValue("%."+std::to_string(precision)+"f", m_value);
+    String text=Slider::formatValue("%."+std::to_string(precision)+"f", value);
 
     if(text.find('.') != String::npos)
     {

@@ -51,6 +51,7 @@
 #include <gweni/controls/horizontalSlider.h>
 #include <gweni/controls/hsvColorPicker.h>
 #include <gweni/controls/imagePanel.h>
+#include <gweni/controls/knob.h>
 #include <gweni/controls/label.h>
 #include <gweni/controls/labelClickable.h>
 #include <gweni/controls/layout/flow.h>
