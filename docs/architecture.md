@@ -717,8 +717,8 @@ and `--scenario breadcrumb` hold it to its slots.
 CommandBar) is one row of items, each made through it: `addButton(text, icon)` (a
 `ToolButton`, a flat Button laid out as its icon and its text, which the toolbar's
 `setDisplay(IconOnly | TextOnly | IconAndText)` picks from, Qt's `toolButtonStyle`; in
-IconOnly the text is its tooltip, the tooltip it had before put aside and given back
-after), `addToggle` (one with `setIsToggle`), `addSeparator`
+IconOnly the text is its tooltip, the tooltip it had before (or one the app sets
+meanwhile, `ToolButton::setToolTipText`) put aside and given back after), `addToggle` (one with `setIsToggle`), `addSeparator`
 (a vertical `Separator`), `addDropDown` and `addSplitButton` (an
 `internal::ToolBarDropDown` and `internal::ToolBarSplitButton`, the #632 controls with
 the toolbar's Tab stop rule below) and `addControl(control, overflowText)` (anything, a
@@ -777,7 +777,8 @@ an overflowed separator a `MenuDivider` (never first, last or doubled), a drop-d
 submenu of copies of its menu's items (`MenuItem::hasMenu()` tells a submenu without
 making one; submenus are copied whole, each copied submenu's entry kept in step with
 its original as a leaf's is), a SplitButton a submenu with its main action, then
-a divider and its menu's items if it has any, and an addControl item its overflow text.
+a divider and its menu's items if it has any, and an addControl item its overflow text, whatever control it is (a Button or a
+DropDownButton added that way is a plain entry too, never pressed or copied).
 A rebuild sets the menu back to a fresh Menu's width before adding the entries, which
 widen it (`Menu::onAddItem` only grows it), so the menu is as wide as its entries, never
 the widest set it held before. The entries are
@@ -789,7 +790,8 @@ the menus, flips a checkable entry's check (`MenuItem::onPress`), then fires wha
 the item fires: a tool button's own `onPress` (a toggle flipping its state, which its
 entry's check is set from again), the SplitButton main part's, a drop-down item's
 `onPress` (so its `onMenuItemSelected`), and then the toolbar's `onOverflowItemChosen`
-with the toolbar item in `info.control`, an addControl item's only event. So the app wires
+with the toolbar item in `info.control`, an addControl item's only event (its control is not pressed, so a Switch
+added that way is not toggled). So the app wires
 each action once. Not yet: entries are brought up to date as the menu opens, not while it
 stays open, and a drop-down's own menu edits show only once the overflowed set changes.
 

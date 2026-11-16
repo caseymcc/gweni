@@ -128,15 +128,26 @@ void ToolButton::updateToolTip()
     {
         if(!m_textToolTip)
             m_appToolTip=getToolTipText();
-        setToolTipText(m_text->getText());
+        Button::setToolTipText(m_text->getText());
         m_textToolTip=true;
     }
     else if(m_textToolTip)
     {
-        setToolTipText(m_appToolTip);
+        Button::setToolTipText(m_appToolTip);
         m_appToolTip.clear();
         m_textToolTip=false;
     }
+}
+
+void ToolButton::setToolTipText(const String &text)
+{
+    // while the text is the tooltip, the app's tooltip is the one put aside
+    if(m_textToolTip)
+    {
+        m_appToolTip=text;
+        return;
+    }
+    Button::setToolTipText(text);
 }
 
 int ToolButton::imageWidth() const
@@ -861,7 +872,15 @@ void ToolBar::buildMenu(Menu *menu)
         pendingDivider=false;
         any=true;
 
-        if(ToolButton *button=gweni_cast<ToolButton>(item))
+        // an addControl item, whatever control it is (a Button or a
+        // DropDownButton among them too): its overflow text, nothing pressed
+        if(m_info[i].control)
+        {
+            MenuItem *entry=menu->addItem(m_info[i].overflowText);
+
+            addMenuEntry(entry, nullptr, item);
+        }
+        else if(ToolButton *button=gweni_cast<ToolButton>(item))
         {
             MenuItem *entry=menu->addItem(button->getText(), imageNameOf(button));
 
@@ -886,12 +905,6 @@ void ToolBar::buildMenu(Menu *menu)
 
             copyMenu(dropDown->getMenu(), parent->getMenu(), dropDown, false);
             addMenuEntry(parent, nullptr, dropDown, true);
-        }
-        else
-        {
-            MenuItem *entry=menu->addItem(m_info[i].overflowText);
-
-            addMenuEntry(entry, item, item);
         }
     }
 
@@ -926,7 +939,7 @@ void ToolBar::prepareOverflowMenu(Menu *menu)
             entry->setCheckable(original->isCheckable());
             entry->setChecked(original->isChecked());
         }
-        else if((source == item) && (indexOf(item) >= 0) && m_info[indexOf(item)].control)
+        else if(!source && !e.itemText && (indexOf(item) >= 0) && m_info[indexOf(item)].control)
             entry->setText(m_info[indexOf(item)].overflowText);
         else
         {

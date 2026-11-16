@@ -64,6 +64,9 @@ public:
 
     void setText(const String &str, bool doEvents=true) override;
     void setImage(const String &name, bool center=false) override;
+    //! In IconOnly, where the text is the tooltip, it sets the tooltip put
+    //! aside, shown once the button leaves IconOnly.
+    void setToolTipText(const String &text) override;
 
     //! What it shows of its icon and text; set by its toolbar.
     void setDisplay(ToolBarDisplay display);
@@ -258,13 +261,15 @@ public:
     //! last or after another), a drop-down a submenu holding copies of its
     //! menu's items (a SplitButton's with its main action first, then a
     //! divider if its menu has items), an addControl item a MenuItem with its
-    //! overflow text. Each
+    //! overflow text, whatever control it is (a Button or DropDownButton
+    //! added that way is no tool button: neither copied nor pressed). Each
     //! open brings every entry's text, disabled state and check up to date
     //! with its item. Choosing an entry fires what pressing its item would:
     //! a tool button's onPress (a toggle flipping its state, which the entry's
     //! check shows), the SplitButton main part's, a drop-down menu item's own
     //! onPress (so its onMenuItemSelected); then onOverflowItemChosen, with
-    //! the toolbar item in info.control (an addControl item's only event).
+    //! the toolbar item in info.control (an addControl item's only event:
+    //! its control is not pressed).
     //! \{
     //! Builds or updates the menu; the overflow button calls it as the menu
     //! opens.

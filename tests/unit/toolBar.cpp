@@ -21,7 +21,7 @@
  *  edge, where the hit test finds it and a click opens the menu. The width
  *  that shows every item counts the button AlwaysOverflow items force. A
  *  tool button's text is its tooltip only in IconOnly, a tooltip the app
- *  set put aside meanwhile and given back after.
+ *  set put aside meanwhile (or set meanwhile) and given back after.
  *
  *  The overflow menu, built as the overflow button opens it: an entry per
  *  overflowed item in order, a tool button its text and icon, a toggle a checkable
@@ -29,7 +29,13 @@
  *  a submenu of copies of its menu's items (submenus copied too), a
  *  SplitButton one with its main action, a divider and its menu's items (no
  *  divider for an empty menu), a
- *  disabled item a disabled entry, an addControl item its overflow text.
+ *  disabled item a disabled entry, an addControl item its overflow text
+ *  whatever control it is (a Button or DropDownButton added that way is
+ *  neither copied nor pressed: the toolbar's onOverflowItemChosen is its only
+ *  event). A copied submenu's entry follows its original (its text, disabled
+ *  state and check), and getMenuEntry finds a drop-down's own entry and an
+ *  original menu item's copy. A rebuilt menu is as wide as its entries, not
+ *  the widest set it held.
  *  Choosing an entry fires its item's own press once (a tool button's
  *  onPress, a toggle's onToggle, a drop-down item's onMenuItemSelected, a
  *  SplitButton's onPress) and then the toolbar's onOverflowItemChosen; the
@@ -677,6 +683,13 @@ TEST_CASE("ToolBar: a tool button keeps a tooltip of the app's own")
     scene.bar->setDisplay(controls::ToolBarDisplay::TextOnly);
     CHECK(b->getToolTipText() == "mine");
 
+    // one the app sets meanwhile is the one given back
+    scene.bar->setDisplay(controls::ToolBarDisplay::IconOnly);
+    b->setToolTipText("newer");
+    CHECK(b->getToolTipText() == "other");
+    scene.bar->setDisplay(controls::ToolBarDisplay::TextOnly);
+    CHECK(b->getToolTipText() == "newer");
+
     // with none of the app's, leaving IconOnly leaves none
     controls::ToolButton *c=button(scene.bar, "c1");
 
@@ -743,6 +756,55 @@ TEST_CASE("ToolBar: choosing an overflow entry fires its item's event, toggles k
     m.b->setDisabled(false);
     menu=m.scene.openMenu();
     CHECK_FALSE(entry(menu, "Off")->isDisabled());
+}
+
+TEST_CASE("ToolBar: an addControl'd Button or DropDownButton is a plain entry, its only event the toolbar's")
+{
+    Scene scene;
+    Handler handler;
+    ToolBar *bar=scene.bar;
+
+    controls::ToolButton *keep=button(bar, "keep");
+    bar->setOverflowPriority(keep, OverflowPriority::AlwaysShow);
+
+    controls::Button *plain=bar->newChild<controls::Button>();
+    plain->setText("Gear");
+    plain->setName("Gear");
+    plain->onPressCaller.add(&handler, &Handler::onPress);
+    bar->addControl(plain, "Settings");
+
+    controls::DropDownButton *dd=bar->newChild<controls::DropDownButton>();
+    dd->setText("Opts");
+    dd->setName("Opts");
+    dd->getMenu()->addItem("One");
+    bar->addControl(dd, "Options");
+    bar->onOverflowItemChosen.add(&handler, &Handler::onChosen);
+    scene.settle();
+    scene.setWidth(bar->minimumWidth());
+    scene.settle();
+    REQUIRE(scene.shown() == "keep +");
+
+    controls::Menu *menu=scene.openMenu();
+
+    // their overflow texts, no submenu copied
+    CHECK(entries(menu) == std::vector<std::string>{"Settings", "Options"});
+    CHECK(bar->getMenuEntry(plain) == entry(menu, "Settings"));
+    CHECK(bar->getMenuEntrySource(entry(menu, "Options")) == dd);
+
+    // choosing it presses nothing: the toolbar's event alone
+    REQUIRE(entry(menu, "Settings"));
+    entry(menu, "Settings")->onPress(event::Info(menu));
+    scene.frame();
+    CHECK(handler.chosen.calls == 1);
+    CHECK(handler.chosen.last == plain);
+    CHECK(handler.press.calls == 0);
+
+    // its overflow text, set again, shows on the next open; a disabled
+    // control's entry is disabled
+    bar->setOverflowText(plain, "Preferences");
+    plain->setDisabled(true);
+    menu=scene.openMenu();
+    CHECK(entries(menu) == std::vector<std::string>{"(off) Preferences", "Options"});
 }
 
 TEST_CASE("ToolBar: the overflow menu is built again only when the overflowed set changed")
