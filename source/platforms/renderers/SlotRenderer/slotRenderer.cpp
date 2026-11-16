@@ -2115,9 +2115,21 @@ bool SlotRenderer::moveOverlapItem(uint32_t key, const OverlapRect &before, bool
     const OverlapRect &after, bool translucent, bool sorted)
 {
     // a run moved matters only where a translucent slot is, which it shows
-    // through; a slot also where a sorted one is, which the set's closure
-    // reaches it from
+    // through, or a translucent run, which it may be behind; a slot also where
+    // a sorted one is, which the set's closure reaches it from. \a translucent
+    // counts in the cells' translucent for a slot, translucentRuns for a run.
     const bool slot=(key&OverlapIndex::kRunBit) == 0;
+    auto touches=[&](const OverlapIndex::Cell &cell)
+    {
+        return (cell.translucent > 0) || (slot ? (cell.sorted > 0) : (cell.translucentRuns > 0));
+    };
+    auto count=[&](OverlapIndex::Cell &cell, int delta)
+    {
+        if(slot)
+            cell.translucent+=delta;
+        else
+            cell.translucentRuns+=delta;
+    };
     OverlapIndex &index=m_overlap;
     bool touched=false;
     // the cells a rect reaches, [c0, c1) x [r0, r1)
@@ -2149,10 +2161,10 @@ bool SlotRenderer::moveOverlapItem(uint32_t key, const OverlapRect &before, bool
                     break;
                 }
                 if(wasTranslucent)
-                    --cell.translucent;
+                    count(cell, -1);
                 if(sorted)
                     --cell.sorted;
-                touched=touched || (cell.translucent > 0) || (slot && (cell.sorted > 0));
+                touched=touched || touches(cell);
             }
         }
     }
@@ -2165,10 +2177,10 @@ bool SlotRenderer::moveOverlapItem(uint32_t key, const OverlapRect &before, bool
             {
                 OverlapIndex::Cell &cell=index.cells[size_t(r)*index.cols+c];
 
-                touched=touched || (cell.translucent > 0) || (slot && (cell.sorted > 0));
+                touched=touched || touches(cell);
                 cell.items.push_back(key);
                 if(translucent)
-                    ++cell.translucent;
+                    count(cell, 1);
                 if(sorted)
                     ++cell.sorted;
             }
@@ -2239,6 +2251,9 @@ void SlotRenderer::updateOverlapRun(size_t textId)
 
     const OverlapRect after=runFootprint(textId);
     const uint16_t z=(textId < m_textRuns.size())?(uint16_t)runZ(m_textRuns[textId].zIndex):0;
+    // a run that draws nothing (an empty footprint) blends with nothing
+    const bool translucent=!after.empty() && levelTranslucent(m_textRuns[textId]);
+    const bool wasTranslucent=(textId < index.runTranslucent.size()) && (index.runTranslucent[textId] != 0);
     OverlapRect &before=index.runRects[textId];
 
     // a run in the set laid out in other glyph slots or another font: its
@@ -2254,12 +2269,42 @@ void SlotRenderer::updateOverlapRun(size_t textId)
             || (it->range != drawnRange(run)))
             m_sortedScheduleStale=true;
     }
-    if((memcmp(&before, &after, sizeof(OverlapRect)) == 0) && (index.runZ[textId] == z))
+    if((memcmp(&before, &after, sizeof(OverlapRect)) == 0) && (index.runZ[textId] == z)
+        && (wasTranslucent == translucent))
         return;
-    if(moveOverlapItem((uint32_t)textId|OverlapIndex::kRunBit, before, false, after, false))
+    // a translucent run moved, given another z or made so overlaps other runs
+    if(moveOverlapItem((uint32_t)textId|OverlapIndex::kRunBit, before, wasTranslucent, after, translucent)
+        || translucent || wasTranslucent)
         m_sortedScheduleStale=true;
     before=after;
     index.runZ[textId]=z;
+    if(translucent != wasTranslucent)
+    {
+        std::vector<size_t> &list=index.translucentRuns;
+        std::vector<size_t> &position=index.translucentRunPosition;
+
+        // grown by the first translucent run, so a UI without one allocates neither
+        if(translucent && (index.runTranslucent.size() <= textId))
+        {
+            index.runTranslucent.resize(m_textRuns.size(), 0);
+            position.resize(m_textRuns.size(), 0);
+        }
+        index.runTranslucent[textId]=translucent?1:0;
+        if(translucent)
+        {
+            list.push_back(textId);
+            position[textId]=list.size();
+        }
+        else
+        {
+            const size_t at=position[textId]-1;
+
+            list[at]=list.back();
+            position[list[at]]=at+1;
+            list.pop_back();
+            position[textId]=0;
+        }
+    }
 }
 
 void SlotRenderer::noteRunInIndex(size_t textId)
@@ -2290,6 +2335,13 @@ void SlotRenderer::buildOverlapIndex()
     index.slotZ.assign(m_vertexes.size()/4, 0);
     index.runRects.assign(m_textRuns.size(), OverlapRect());
     index.runZ.assign(m_textRuns.size(), 0);
+    // only the runs listed are marked, so only theirs are cleared
+    for(size_t textId:index.translucentRuns)
+    {
+        index.runTranslucent[textId]=0;
+        index.translucentRunPosition[textId]=0;
+    }
+    index.translucentRuns.clear();
     for(size_t textId:index.changedRuns)
         index.runNoted[textId]=0;
     index.changedRuns.clear();
@@ -2459,6 +2511,42 @@ void SlotRenderer::buildSortedSchedule()
                 }
             }
         }
+        // A translucent run (a text level below 1) takes the runs behind it that
+        // it overlaps, which are to show through it, as a translucent slot does:
+        // in the text pass they would be drawn in glyph-slot order, and one drawn
+        // after it would fail the depth test under its ink. It stays in the text
+        // pass itself, drawn after the sorted pass (unless something translucent
+        // in front takes it), so after every run it takes. Slots need nothing:
+        // the opaque ones are drawn before every run, and a translucent one
+        // takes the runs behind it.
+        for(size_t textId:index.translucentRuns)
+        {
+            const OverlapRect &rect=index.runRects[textId];
+            const int z=index.runZ[textId];
+            const int c0=rect.x0 >> OverlapIndex::kCellLog2;
+            const int r0=rect.y0 >> OverlapIndex::kCellLog2;
+            const int c1=std::min(((rect.x1-1) >> OverlapIndex::kCellLog2)+1, index.cols);
+            const int r1=std::min(((rect.y1-1) >> OverlapIndex::kCellLog2)+1, index.rows);
+
+            for(int r=r0; r<r1; ++r)
+            {
+                for(int c=c0; c<c1; ++c)
+                {
+                    for(uint32_t key:index.cells[size_t(r)*index.cols+c].items)
+                    {
+                        ++m_frameStats.overlapVisited;
+                        if(!(key&OverlapIndex::kRunBit))
+                            continue;
+
+                        const size_t other=key&~OverlapIndex::kRunBit;
+
+                        if((index.sortedRunFlags[other] != 2) && (index.runZ[other] < z)
+                            && index.runRects[other].overlaps(rect))
+                            addRun(other);
+                    }
+                }
+            }
+        }
     }
 
     // what was in the set and is not now
@@ -2556,12 +2644,23 @@ void SlotRenderer::buildSortedSchedule()
         }
         else
         {
+            // A group's runs are drawn by font and glyph slot, not back to front,
+            // so a translucent run (a text level below 1), which the runs behind
+            // it are to show through, is a group of its own
             m_sortedGroupRuns.clear();
             for(; (i < m_sortedOrder.size()) && (m_sortedOrder[i].second&OverlapIndex::kRunBit); ++i)
             {
                 const size_t textId=m_sortedOrder[i].second&~size_t(OverlapIndex::kRunBit);
+                const bool translucent=levelTranslucent(m_textRuns[textId]);
 
+                if(translucent && !m_sortedGroupRuns.empty())
+                    break;
                 m_sortedGroupRuns.emplace_back(m_textRuns[textId].fontData, textId);
+                if(translucent)
+                {
+                    ++i;
+                    break;
+                }
             }
             // by font, in the order the fonts were loaded (FontData::serial), the
             // same in every build, where their addresses need not be
@@ -3190,7 +3289,7 @@ void SlotRenderer::flush()
         }
         m_overlap.changedRuns.clear();
     }
-    else if((m_translucentCount > 0) && m_translucentSort)
+    else if(((m_translucentCount > 0) || (m_translucentRunCount > 0)) && m_translucentSort)
         buildOverlapIndex();
 
     // the sorted set and its schedule, which also marks the chunks and fonts whose
@@ -4812,7 +4911,11 @@ void SlotRenderer::releaseTextPrimitive(size_t primitiveId)
             m_textRunSpans.erase(primitiveId);
         if(!m_lazyPendingRuns.empty())
             m_lazyPendingRuns.erase(primitiveId);
+
+        const bool levelBefore=levelTranslucent(run);
+
         run=TextRun();
+        runLevelChanged(levelBefore, run);
     }
 
     releaseTextId(primitiveId);
@@ -4956,6 +5059,9 @@ void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::
     // text level writes the glyphs' colours alone.
     const bool withSpans=(spans != nullptr) || run.hasSpans;
 
+    // whether the run's text level made it translucent before this call
+    const bool levelBefore=levelTranslucent(run);
+
     if((run.text == text) && (run.font == font) && (run.px == px) && (run.fontData == &fontData))
     {
         const std::pair<size_t, size_t> drawnBefore=drawnRange(run);
@@ -5037,7 +5143,10 @@ void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::
         markTextDrawList(run, drawnBefore);
         // the overlap index looks again only at a run whose footprint or z can
         // have changed, not at every run re-emitted as it was
-        if(moved || boxChanged || (run.culled != culledBefore) || (drawnRange(run) != drawnBefore))
+        // and at a run whose level made it translucent or opaque
+        const bool levelChanged=runLevelChanged(levelBefore, run);
+
+        if(moved || boxChanged || (run.culled != culledBefore) || (drawnRange(run) != drawnBefore) || levelChanged)
             noteRunChanged(textId);
         return;
     }
@@ -5106,6 +5215,7 @@ void SlotRenderer::renderTextRun(size_t textId, const gweni::Font &font, gweni::
     run.font=font;
     run.px=px;
     run.color=color;
+    runLevelChanged(levelBefore, run);
 
     TextRunSpans *kept=nullptr;
 

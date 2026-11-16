@@ -31,6 +31,12 @@
  *                   through the button, as the two drawn one a frame back to
  *                   front; and a checker at 0.5 (drawn opaque at 1) shows the
  *                   fill behind it, taken after it.
+ *    text over text a run at a text level of 0.5 over an opaque run taken after
+ *                   it, and three runs at 0.5, 0.6 and 1 over one another,
+ *                   blend as the runs drawn one a frame back to front: a
+ *                   translucent run sorts the runs behind it (#713); so do a
+ *                   run given the level with its layout kept and a run moved
+ *                   under it, and back at 1 nothing is sorted.
  *    near 0         a fill and a grid at a level above 0 that rounds their
  *                   every alpha to 0 (0.001; a 0x20 fill at 0.01), and such a
  *                   fill shown again, leave the frame the fill behind gives:
@@ -699,6 +705,73 @@ TEST_CASE("Opacity: a checker at a surface level of 0.5 shows the fill behind it
         fill(prims[1], Rect(20, 20, 260, 100), Color(240, 230, 40, 255), 2)};
 
     CHECK(offBy2(drawScene(items), drawReference(items)) == 0);
+}
+
+//! The scene drawn in one frame, then one item a frame: in that order, since a
+//! run's glyph slots are taken by the first draw that lays it out
+size_t sceneOffBy2(const std::vector<Item> &items)
+{
+    const Frame scene=drawScene(items);
+    const Frame reference=drawReference(items);
+
+    return offBy2(scene, reference);
+}
+
+TEST_CASE("Opacity: a run at a text level of 0.5 shows the run behind it, taken after it")
+{
+    Ids ids;
+    const size_t front=ids.text();
+    const size_t behind=ids.text();
+    const Item f=atLevels(text(front, Point(30, 30), "HHHH", Color(250, 250, 250, 255), 6), 1.0f, 0.5f);
+    const Item b=text(behind, Point(34, 30), "HHHH", Color(240, 40, 40, 255), 1);
+
+    // the front run laid out first, so its glyph slots are first: the text
+    // pass would draw it first
+    CHECK(sceneOffBy2({f, b}) == 0);
+}
+
+TEST_CASE("Opacity: translucent runs over one another blend back to front")
+{
+    Ids ids;
+    const size_t front=ids.text();
+    const size_t middle=ids.text();
+    const size_t behind=ids.text();
+    const std::vector<Item> items{
+        atLevels(text(front, Point(30, 30), "HHHH", Color(250, 250, 250, 255), 9), 1.0f, 0.5f),
+        atLevels(text(middle, Point(33, 32), "HHHH", Color(40, 240, 40, 255), 5), 1.0f, 0.6f),
+        text(behind, Point(36, 34), "HHHH", Color(240, 40, 40, 255), 1)};
+
+    CHECK(sceneOffBy2(items) == 0);
+}
+
+TEST_CASE("Opacity: a run given a text level below 1, or moved under one, shows the run behind it")
+{
+    Ids ids;
+    const size_t front=ids.text();
+    const size_t behind=ids.text();
+    const Item opaque=text(front, Point(30, 30), "HHHH", Color(250, 250, 250, 255), 6);
+    const Item translucent=atLevels(opaque, 1.0f, 0.5f);
+    const Item b=text(behind, Point(34, 30), "HHHH", Color(240, 40, 40, 255), 1);
+    const Item away=text(behind, Point(34, 130), "HHHH", Color(240, 40, 40, 255), 1);
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
+
+    // laid out at 1, the front run's slots first, nothing sorted
+    drawScene({opaque, b});
+    CHECK(renderer.getFrameStats().sortedRuns == 0);
+
+    // the same layout at 0.5, which writes its glyphs' colours alone
+    const Frame scene=drawScene({translucent, b});
+    const Frame reference=drawReference({translucent, b});
+
+    CHECK(offBy2(scene, reference) == 0);
+
+    // the run behind moved away, then back under it
+    drawScene({translucent, away});
+    CHECK(offBy2(drawScene({translucent, b}), reference) == 0);
+
+    // and back at 1 nothing is sorted again
+    drawScene({opaque, b});
+    CHECK(renderer.getFrameStats().sortedRuns == 0);
 }
 
 TEST_CASE("Opacity: at level 1 a slot is written as by a renderer that never had a level set")

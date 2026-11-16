@@ -1428,7 +1428,7 @@ private:
     //! The sorted pass's spatial index: a grid of kCellSide device px cells over
     //! the view, each listing the slots and runs that can show whose footprint
     //! (slotFootprint, runFootprint) reaches it, and how many of them are
-    //! translucent. Built when the first translucent slot can show, then kept from
+    //! translucent. Built when the first translucent slot or run can show, then kept from
     //! the dirty slots and the changed runs (flush()), so a UI that never has one
     //! allocates none of it, and a translucent slot costs what it overlaps.
     struct OverlapIndex
@@ -1442,6 +1442,9 @@ private:
         {
             std::vector<uint32_t> items;
             uint32_t translucent=0;
+            //! the translucent runs indexed here (a text level below 1), whose
+            //! overlaps with the runs behind them the set is made from
+            uint32_t translucentRuns=0;
             //! the slots of the sorted set indexed here, opaque ones included: a
             //! slot in front of one is drawn after it (the set is closed so)
             uint32_t sorted=0;
@@ -1462,6 +1465,12 @@ private:
         std::vector<uint16_t> slotZ;
         std::vector<OverlapRect> runRects;
         std::vector<uint16_t> runZ;
+        //! whether each run was indexed as translucent (levelTranslucent, and it
+        //! draws), and those runs as a list with each one's place in it plus 1
+        //! (the two per-id vectors empty until the first translucent run)
+        std::vector<uint8_t> runTranslucent;
+        std::vector<size_t> translucentRuns;
+        std::vector<size_t> translucentRunPosition;
         //! each sorted run's font and drawn range (SlotRenderer::drawnRange) as
         //! the schedule drew it, by text id, so a run laid out again in them
         //! leaves it as it is; the set's runs alone, not a field per text id
@@ -1498,9 +1507,10 @@ private:
     //! view; empty for one that draws nothing
     OverlapRect runFootprint(size_t textId) const;
     //! Moves item \a key from \a before's cells to \a after's, the cells'
-    //! translucent and sorted counts with it (\a sorted: the slot is in the
-    //! sorted set); true if a cell either touched holds a translucent slot, or
-    //! for a slot a sorted one (other than this one as it was or is)
+    //! translucent (a slot's) or translucentRuns (a run's) and sorted counts
+    //! with it (\a sorted: the slot is in the sorted set); true if a cell either
+    //! touched holds a translucent slot, for a run a translucent run, or for a
+    //! slot a sorted one (other than this one as it was or is)
     bool moveOverlapItem(uint32_t key, const OverlapRect &before, bool wasTranslucent, const OverlapRect &after,
         bool translucent, bool sorted=false);
     //! Adds \a delta to the sorted count of the cells \a rect reaches
@@ -1669,6 +1679,27 @@ private:
         gweni::Color color;
         FontData *fontData=nullptr;
     };
+
+    //! Whether a run's text level makes its glyphs blend with what is behind
+    //! them: run.color's alpha neither 255 nor 0 (every glyph's alpha is it)
+    static bool levelTranslucent(const TextRun &run) { return (run.color.a != 0) && (run.color.a != 255); }
+    //! The runs levelTranslucent() holds for, hidden or not, so the first one
+    //! builds the overlap index as the first translucent slot does
+    size_t m_translucentRunCount=0;
+    //! A run's level was \a before (levelTranslucent) and is what \a run says
+    //! now: keeps m_translucentRunCount, and true if it changed
+    bool runLevelChanged(bool before, const TextRun &run)
+    {
+        const bool after=levelTranslucent(run);
+
+        if(after == before)
+            return false;
+        if(after)
+            ++m_translucentRunCount;
+        else
+            --m_translucentRunCount;
+        return true;
+    }
 
     //! What a run drawn with colour spans keeps beside its TextRun
     struct TextRunSpans

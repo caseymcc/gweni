@@ -1285,10 +1285,14 @@ two passes when a translucent slot can show (`SlotRenderer`, #685):
    (else the opaque pass would draw them first and their edges would blend over
    what is behind the slot they are in front of: a NodeGraph node's title-bar
    corners and pin rims, outside the marquee that sorts its frame); and the **text
-   runs behind a translucent one** that overlap it, so they show through it. Consecutive slots are a *slot
+   runs behind a translucent one** that overlap it, so they show through it, a
+   translucent slot or a **translucent run** (a text level below 1, "Control
+   opacity"; the run itself stays in the text pass unless something translucent in
+   front of it takes it, so it is drawn after the runs it took). Consecutive slots are a *slot
    group*, a draw per chunk they cross in order, its ranges in that order (a
    multi-draw draws its ranges in order; a run of consecutive ids is one range);
-   consecutive runs a *text group*, a draw per atlas and chunk of its runs. Then the
+   consecutive runs a *text group*, a draw per atlas and chunk of its runs, in glyph-slot
+   order, so a translucent run is a group of its own. Then the
    text pass draws every other run, as before.
 
 **Translucent** (`slotTranslucent()`): the alphas the slot's style outputs (a
@@ -1313,8 +1317,10 @@ and no query finds it.
 **The overlap index** (`SlotRenderer::OverlapIndex`): a grid of 64-device-px cells
 over the view, each listing the slots and runs that can show whose **footprint**
 reaches it (a slot's quad's bounds, a run's glyph quads' bounds, each cut to its clip
-box and the view) and how many of them are translucent. It is built the first time a
-translucent slot can show (so a UI that never has one allocates none of it) and then
+box and the view) and how many of them are translucent, the slots and the runs counted
+apart. It is built the first time a
+translucent slot can show, or a run at a text level below 1 is laid out
+(`m_translucentRunCount`; so a UI that never has one allocates none of it) and then
 kept from the slots whose vertexes or clip box changed and the runs noted changed
 (`noteRunChanged`: `renderText`, a show, a hide, a release, a new font; an inline
 check that costs nothing while the index is not built), each moved from its old
@@ -1322,7 +1328,8 @@ cells to its new ones; a new view rect (its size or its origin) builds it again.
 sorted set's slots in it. The **sorted set and its schedule** are built again only
 when stale: a translucent slot dirty, a sorted slot moved or given another z, a slot
 that changed reaching a cell that holds a translucent or a sorted one, a run that
-changed reaching one holding a translucent one, a run in the set laid out in other
+changed reaching one holding a translucent slot or run, a translucent run changed (moved,
+another z, made translucent or opaque), a run in the set laid out in other
 glyph slots or another font (one relaid in its slots leaves it), a new chunk size or
 switch. The build queries the cells each slot of the set covers, so it costs what the
 set overlaps, not the tree; a slot whose footprint is inside that of the slot whose
@@ -1578,17 +1585,16 @@ tab's base, where at 1 the tab and the frame are one outline. Group opacity, rul
 out above, would hide it; under per-element alpha the skin would have to draw such a
 join without the overlap.
 
-**Text over text at a text level is drawn in slot order.** The sorted pass orders the
-runs behind a translucent *slot*. A run at a text level below 1 is no slot, so where
-it overlaps another run with no translucent slot between them (a Label at a text level
-over another Label, a panel with no fill at `setOpacity(0, x)`), the two are drawn in
-the text pass's order (by font atlas, then glyph slot) with depth writes on: if the
-run in front comes first, the run behind loses its ink under the front run's (a run
-at 0.5 over an opaque one taken after it: 232 px of `HHHH` gone, against the two drawn
-back to front). With a translucent fill under the front run (its panel at a surface
-level below 1) the runs behind are sorted and nothing is lost. It is an opaque
-glyph's anti-aliased fringe over a run taken later (the #553 class), over the whole
-of the ink.
+**Text over text at a text level is sorted too** (#713). A run at a text level below 1
+is translucent with no translucent slot under it (a Label at a text level over another
+Label, a panel with no fill at `setOpacity(0, x)`), and in the text pass it would be
+drawn in glyph-slot order with depth writes on: a front run taken first would hide the
+run behind it under its ink (a run at 0.5 over an opaque one taken after it: 232 px of
+`HHHH` gone, against the two drawn back to front). So a translucent run seeds the
+sorted set as a translucent slot does ("Translucent slots: the sorted pass"): it takes
+the runs behind it that it overlaps, and is itself a text group of its own. At every
+level 1 there is no such run, so nothing changes. An opaque glyph's anti-aliased
+fringe over a run taken later (the #553 class) still loses that pixel.
 
 **Skin Controls that keep what they drew.** A level change marks
 `Background|Text`, which a Control that draws again only what its own look says
