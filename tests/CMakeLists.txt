@@ -1554,6 +1554,8 @@ if(EMSCRIPTEN)
 
     # the interactive pages, driven with real input (web/interactive.cmake)
     include(${CMAKE_CURRENT_SOURCE_DIR}/web/interactive.cmake)
+    # a phone's fingers and input method on ControlTest's window (web/touch.cmake)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/web/touch.cmake)
     # the demo's page in the URL: history, storage, a link out (web/navigation.cmake)
     include(${CMAKE_CURRENT_SOURCE_DIR}/web/navigation.cmake)
     # the hosted site, staged by tools/build_site.sh and loaded (web/site.cmake)

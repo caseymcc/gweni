@@ -26624,6 +26624,270 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_depth_view(int on)
     return state.c_str();
 }
 
+//! What the window's frames did since the last gweni_web_probe("reset"), and
+//! the last one: summed over the frames, so a gesture's every frame counts
+//! (tests/web/touch.mjs: a pan lays nothing out).
+struct WebFrameCounts
+{
+    size_t frames=0, passes=0, visited=0, slots=0, animsRun=0;
+};
+static WebFrameCounts g_webTotals, g_webLast;
+
+// After each window frame (the frame function, below)
+static void countWebFrame(gweni::controls::Canvas &canvas, gweni::renderer::Base &renderer)
+{
+    // this frame's, which previousFrameStats() keeps only as the next starts
+    const gweni::controls::LayoutStats &layout=canvas.getLayoutStats();
+    const gweni::renderer::FrameCounts counts=renderer.frameStats();
+
+    g_webLast.frames=1;
+    g_webLast.passes=size_t(std::max(0, layout.passes));
+    g_webLast.visited=layout.visited;
+    g_webLast.slots=counts.primitiveSlotsWritten+counts.textSlotsWritten;
+    g_webLast.animsRun=canvas.getUpdateStats().animsRun;
+    g_webTotals.frames+=1;
+    g_webTotals.passes+=g_webLast.passes;
+    g_webTotals.visited+=g_webLast.visited;
+    g_webTotals.slots+=g_webLast.slots;
+    g_webTotals.animsRun+=g_webLast.animsRun;
+}
+
+static std::string jsonString(const std::string &text)
+{
+    std::string out="\"";
+
+    for(const char c : text)
+    {
+        if(c == '"' || c == '\\')
+            out+=std::string("\\")+c;
+        else if(static_cast<unsigned char>(c) < 0x20)
+        {
+            char escaped[8];
+            std::snprintf(escaped, sizeof(escaped), "\\u%04x", c);
+            out+=escaped;
+        }
+        else
+            out+=c;
+    }
+    return out+"\"";
+}
+
+static std::string jsonRect(const gweni::Rect &rect)
+{
+    return "{\"x\":"+std::to_string(rect.x)+",\"y\":"+std::to_string(rect.y)+",\"w\":"+std::to_string(rect.w)
+        +",\"h\":"+std::to_string(rect.h)+"}";
+}
+
+static std::string jsonCounts(const WebFrameCounts &counts)
+{
+    return "{\"frames\":"+std::to_string(counts.frames)+",\"passes\":"+std::to_string(counts.passes)
+        +",\"visited\":"+std::to_string(counts.visited)+",\"slots\":"+std::to_string(counts.slots)
+        +",\"animsRun\":"+std::to_string(counts.animsRun)+"}";
+}
+
+static std::string jsonFloat(float value)
+{
+    char text[32];
+    std::snprintf(text, sizeof(text), "%.3f", value);
+    return text;
+}
+
+//! The presses of each Button and the onTextChanged calls of each TextBox
+//! under the window canvas since gweni_web_probe("watch"), by control id.
+struct WebWatch: public gweni::event::Handler
+{
+    std::map<size_t, int> presses, changes;
+
+    void pressed(gweni::event::Info info)
+    {
+        if(info.controlCaller)
+            ++presses[info.controlCaller->getControlId()];
+    }
+    void changed(gweni::event::Info info)
+    {
+        if(info.controlCaller)
+            ++changes[info.controlCaller->getControlId()];
+    }
+};
+static WebWatch *g_webWatch=nullptr;
+
+static void webWatch(gweni::controls::Base *control, size_t &watched)
+{
+    if(auto *button=gweni::gweni_cast<gweni::controls::Button>(control))
+    {
+        button->onPressCaller.add(g_webWatch, &WebWatch::pressed);
+        ++watched;
+    }
+    if(auto *box=gweni::gweni_cast<gweni::controls::TextBox>(control))
+    {
+        box->onTextChangedCaller.add(g_webWatch, &WebWatch::changed);
+        ++watched;
+    }
+    for(gweni::controls::Base *child : control->getActualChildren())
+        webWatch(child, watched);
+}
+
+//! A test's view of the window canvas (tests/web/touch.mjs), one JSON object
+//! for \p query:
+//!   "reset"          the frame totals zeroed: {"reset":true}
+//!   "frames"         {"total":{frames, passes, visited, slots, animsRun},
+//!                    "last":{...}}: summed over the frames since "reset",
+//!                    and the last frame's (layout passes and entries, the
+//!                    primitive and glyph slots written, animations run)
+//!   "watch"          counts every Button's presses and every TextBox's
+//!                    onTextChanged from now on: {"watched":n}
+//!   "state"          {"hovered":type|null, "tooltip":bool, "menu":rect|null
+//!                    (the context menu shown), "anims":n (registered),
+//!                    "focus":type|null, and with a focused TextBox "text",
+//!                    "composing" (its composition), "changes"}
+//!   "button <text>"  the first Button with that text: {"rect", "presses",
+//!                    "toggle", "depressed"}
+//!   "control <Type> <i>"  the i-th visible control of that type (findControl):
+//!                    {"rect" (canvas bounds), "anims" (its own), and what it
+//!                    is: "scroll":{x,y} for a ScrollControl, "number" for a
+//!                    DragNumber, "value" for a Slider, "pan":{x,y} and
+//!                    "zoom" for a ZoomPanel, "links" and "context":{x,y} for
+//!                    a NodeGraph}
+//!   "pin <label> <i>"  the i-th Pin labelled so: {"marker":{x,y} (its
+//!                    marker's centre on the canvas), "links":n}
+//!   "at <x> <y>"     {"chain":[type, ...]}: the control the canvas's hit test
+//!                    finds at that canvas point and its ancestors, up to the
+//!                    canvas
+//! or {"error": "..."}.
+extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_probe(const char *query)
+{
+    static std::string result;
+
+    const std::string text=query ? query : "";
+    std::istringstream words(text);
+    std::string what;
+
+    words>>what;
+    if(!g_canvas)
+        return "{\"error\":\"no canvas\"}";
+
+    if(what == "reset")
+    {
+        g_webTotals=WebFrameCounts();
+        result="{\"reset\":true}";
+    }
+    else if(what == "frames")
+        result="{\"total\":"+jsonCounts(g_webTotals)+",\"last\":"+jsonCounts(g_webLast)+"}";
+    else if(what == "watch")
+    {
+        size_t watched=0;
+
+        delete g_webWatch;
+        g_webWatch=new WebWatch;
+        webWatch(g_canvas, watched);
+        result="{\"watched\":"+std::to_string(watched)+"}";
+    }
+    else if(what == "state")
+    {
+        gweni::controls::Menu *menu=g_canvas->shownContextMenu();
+        gweni::controls::Base *focus=gweni::KeyboardFocus;
+
+        result="{\"hovered\":"+(gweni::HoveredControl?jsonString(gweni::HoveredControl->getTypeName()):"null")
+            +",\"tooltip\":"+(g_canvas->toolTipShown()?"true":"false")
+            +",\"menu\":"+(menu && menu->visible()?jsonRect(menu->getCanvasBounds()):"null")
+            +",\"anims\":"+std::to_string(gweni::anim::activeCount())
+            +",\"focus\":"+(focus?jsonString(focus->getTypeName()):"null");
+        if(auto *box=gweni::gweni_cast<gweni::controls::TextBox>(focus))
+        {
+            const int changes=g_webWatch?g_webWatch->changes[box->getControlId()]:0;
+
+            result+=",\"text\":"+jsonString(box->getText())+",\"composing\":"+jsonString(box->getComposition())
+                +",\"changes\":"+std::to_string(changes);
+        }
+        result+="}";
+    }
+    else if(what == "button")
+    {
+        std::string label;
+
+        std::getline(words>>std::ws, label);
+
+        gweni::controls::Button *button=buttonWithText(g_canvas, label);
+
+        if(!button)
+            return "{\"error\":\"no such button\"}";
+        result="{\"rect\":"+jsonRect(button->getCanvasBounds())
+            +",\"presses\":"+std::to_string(g_webWatch?g_webWatch->presses[button->getControlId()]:0)
+            +",\"toggle\":"+(button->getToggleState()?"true":"false")
+            +",\"depressed\":"+(button->isDepressed()?"true":"false")+"}";
+    }
+    else if(what == "control")
+    {
+        std::string type;
+        int index=0;
+
+        words>>type>>index;
+
+        gweni::controls::Base *control=findControl(g_canvas, type.c_str(), index);
+
+        if(!control)
+            return "{\"error\":\"no such control\"}";
+        result="{\"rect\":"+jsonRect(control->getCanvasBounds())
+            +",\"anims\":"+std::to_string(gweni::anim::activeCount(control));
+        if(auto *scroll=gweni::gweni_cast<gweni::controls::ScrollControl>(control))
+            result+=",\"scroll\":{\"x\":"+std::to_string(scroll->getHorizontalScrollOffset())
+                +",\"y\":"+std::to_string(scroll->getVerticalScrollOffset())+"}";
+        if(auto *number=gweni::gweni_cast<gweni::controls::DragNumber>(control))
+            result+=",\"number\":"+jsonFloat(float(number->getNumber()));
+        if(auto *slider=gweni::gweni_cast<gweni::controls::Slider>(control))
+            result+=",\"value\":"+jsonFloat(slider->getFloatValue());
+        if(auto *panel=gweni::gweni_cast<gweni::controls::ZoomPanel>(control))
+            result+=",\"pan\":{\"x\":"+jsonFloat(panel->pan().x)+",\"y\":"+jsonFloat(panel->pan().y)
+                +"},\"zoom\":"+jsonFloat(panel->zoom());
+        if(auto *graph=gweni::gweni_cast<gweni::controls::NodeGraph>(control))
+            result+=",\"links\":"+std::to_string(graph->getLinks().size())
+                +",\"context\":{\"x\":"+jsonFloat(graph->getContextMenuPosition().x)
+                +",\"y\":"+jsonFloat(graph->getContextMenuPosition().y)+"}";
+        result+="}";
+    }
+    else if(what == "pin")
+    {
+        std::string label;
+        int index=0;
+
+        words>>label>>index;
+
+        gweni::controls::Pin *pin=nullptr;
+
+        for(int i=0; gweni::controls::Base *found=findControl(g_canvas, "Pin", i); ++i)
+        {
+            auto *candidate=static_cast<gweni::controls::Pin *>(found);
+
+            if(candidate->getLabel() == label && index-- == 0)
+            {
+                pin=candidate;
+                break;
+            }
+        }
+        if(!pin)
+            return "{\"error\":\"no such pin\"}";
+
+        const gweni::Rect marker=pin->getMarkerRect();
+        const gweni::Point at=pin->localPosToCanvas(gweni::Point(marker.x+marker.w/2, marker.y+marker.h/2));
+
+        result="{\"marker\":{\"x\":"+std::to_string(at.x)+",\"y\":"+std::to_string(at.y)
+            +"},\"links\":"+std::to_string(pin->getLinks().size())+"}";
+    }
+    else if(what == "at")
+    {
+        int x=0, y=0;
+
+        words>>x>>y;
+        result="{\"chain\":[";
+        for(gweni::controls::Base *at=g_canvas->getControlAt(x, y); at; at=at->getActualParent())
+            result+=jsonString(at->getTypeName())+(at->getActualParent()?",":"");
+        result+="]}";
+    }
+    else
+        return "{\"error\":\"unknown query\"}";
+    return result.c_str();
+}
+
 //! Tells the page when the window canvas's depth view opens or closes, however
 //! (F9, Escape, --depth-view, gweni_web_depth_view), by calling
 //! Module.gweniDepthViewChanged(open) if the page set one, so its checkbox
@@ -28150,6 +28414,9 @@ int main(int argc, char *argv[])
                     gweni::capture::openDepthViewOnce(*canvas);
                 renderer->clearTarget(background);
                 canvas->renderCanvas();
+#if GWENI_EXAMPLE_WEBGL
+                countWebFrame(*canvas, *renderer);
+#endif
             });
         }
 
