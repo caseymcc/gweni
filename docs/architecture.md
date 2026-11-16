@@ -1577,6 +1577,18 @@ tab's base, where at 1 the tab and the frame are one outline. Group opacity, rul
 out above, would hide it; under per-element alpha the skin would have to draw such a
 join without the overlap.
 
+**Text over text at a text level is drawn in slot order.** The sorted pass orders the
+runs behind a translucent *slot*. A run at a text level below 1 is no slot, so where
+it overlaps another run with no translucent slot between them (a Label at a text level
+over another Label, a panel with no fill at `setOpacity(0, x)`), the two are drawn in
+the text pass's order (by font atlas, then glyph slot) with depth writes on: if the
+run in front comes first, the run behind loses its ink under the front run's (a run
+at 0.5 over an opaque one taken after it: 232 px of `HHHH` gone, against the two drawn
+back to front). With a translucent fill under the front run (its panel at a surface
+level below 1) the runs behind are sorted and nothing is lost. It is an opaque
+glyph's anti-aliased fringe over a run taken later (the #553 class), over the whole
+of the ink.
+
 **Skin Controls that keep what they drew.** A level change marks
 `Background|Text`, which a Control that draws again only what its own look says
 changed would pass over. Those hold a `skin::textured::DrawnOpacity`, the levels they

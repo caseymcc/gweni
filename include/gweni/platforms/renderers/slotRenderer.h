@@ -1658,8 +1658,9 @@ private:
         //! its glyphs lay wholly outside the clip box renderText last wrote for
         //! them (cullTextRun), so it draws nothing as a hidden run does
         bool culled=false;
-        //! counted in m_textRunsCulled: culled, not hidden and holding glyphs,
-        //! brought up to date by markTextDrawList
+        //! counted in m_textRunsCulled: culled, not hidden, holding glyphs and
+        //! at a text level above 0 (color's alpha), brought up to date by
+        //! markTextDrawList
         bool culledCounted=false;
         std::string text;
         gweni::Font font;

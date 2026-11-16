@@ -873,8 +873,9 @@ public:
     //! each clamped to [0, 1] (NaN reads as 1). It applies to everything the
     //! control contains, but a descendant with its own setting keeps it (the
     //! levels are replaced, not multiplied). Marks StateChange_Background and
-    //! StateChange_Text on exactly the controls whose effective levels changed;
-    //! it lays nothing out and calls no invalidate(). At 0 nothing of it is
+    //! StateChange_Text on exactly the controls whose effective levels changed
+    //! and that are visible() (a hidden one is marked as it is shown); it
+    //! lays nothing out and calls no invalidate(). At 0 nothing of it is
     //! drawn, but it still lays out, hit-tests and takes the focus: hide()
     //! removes a control.
     void setOpacity(float surface, float text);
