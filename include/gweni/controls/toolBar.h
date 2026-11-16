@@ -11,6 +11,7 @@
 #include <gweni/controls/base.h>
 #include <gweni/controls/button.h>
 #include <gweni/controls/dropDownButton.h>
+#include <gweni/controls/splitButton.h>
 
 #include <vector>
 
@@ -18,8 +19,8 @@ namespace gweni
 {
 namespace controls
 {
+class MenuItem;
 class Separator;
-class SplitButton;
 class ToolBar;
 
 //! What a toolbar's tool buttons show (Qt's toolButtonStyle).
@@ -78,6 +79,12 @@ public:
     void arrangeHorizontal(skin::Base *skin) override;
     void arrangeVertical(skin::Base *skin) override;
 
+    //! Its toolbar's Tab stop alone is tabable (ToolBar::getTabStop()).
+    bool isTabable() override;
+    void onKeyboardFocus() override;
+    //! Return presses it, as Space does.
+    bool onKeyReturn(bool down) override;
+
 protected:
     int imageWidth() const;
     int imageHeight() const;
@@ -106,6 +113,38 @@ public:
     ToolBar *getToolBar() const;
 
     void calculateSize(skin::Base *skin, Dim dim) override;
+    bool isTabable() override;
+    void onKeyboardFocus() override;
+
+protected:
+    //! The toolbar fills or updates the menu (ToolBar::prepareOverflowMenu).
+    void aboutToOpenMenu(Menu *menu) override;
+};
+
+//! A toolbar's drop-down item (ToolBar::addDropDown): a DropDownButton that
+//! is a Tab stop only as its toolbar's one (ToolBar::getTabStop()).
+class GWENI_EXPORT ToolBarDropDown: public DropDownButton
+{
+public:
+
+    GWENI_CONTROL(ToolBarDropDown, DropDownButton);
+
+public:
+    bool isTabable() override;
+    void onKeyboardFocus() override;
+};
+
+//! A toolbar's split button item (ToolBar::addSplitButton), a Tab stop as
+//! ToolBarDropDown is.
+class GWENI_EXPORT ToolBarSplitButton: public SplitButton
+{
+public:
+
+    GWENI_CONTROL(ToolBarSplitButton, SplitButton);
+
+public:
+    bool isTabable() override;
+    void onKeyboardFocus() override;
 };
 
 }//namespace internal
@@ -197,6 +236,59 @@ public:
 
     internal::ToolBarOverflowButton *getOverflowButton() const { return m_overflowButton; }
 
+    //! \name The overflow menu
+    //! The overflow button's Menu, built from getOverflowedItems() as it
+    //! opens, again only when the overflowed set changed since it was last
+    //! built: a tool button is a MenuItem with its text (and icon), a toggle a
+    //! checkable one, an overflowed separator a MenuDivider (never first,
+    //! last or after another), a drop-down a submenu holding copies of its
+    //! menu's items (a SplitButton's with its main action first, then a
+    //! divider), an addControl item a MenuItem with its overflow text. Each
+    //! open brings every entry's text, disabled state and check up to date
+    //! with its item. Choosing an entry fires what pressing its item would:
+    //! a tool button's onPress (a toggle flipping its state, which the entry's
+    //! check shows), the SplitButton main part's, a drop-down menu item's own
+    //! onPress (so its onMenuItemSelected); then onOverflowItemChosen, with
+    //! the toolbar item in info.control (an addControl item's only event).
+    //! \{
+    //! Builds or updates the menu; the overflow button calls it as the menu
+    //! opens.
+    void prepareOverflowMenu(Menu *menu);
+    //! The times the menu was built.
+    size_t getMenuBuildCount() const { return m_menuBuilds; }
+    //! The toolbar item (or drop-down menu item) a menu entry stands for,
+    //! null for none.
+    Base *getMenuEntrySource(const MenuItem *entry) const;
+    //! The menu entry standing for \p source (a toolbar item, or one of a
+    //! drop-down's menu items), null while it has none.
+    MenuItem *getMenuEntry(const Base *source) const;
+    gweni::event::Caller onOverflowItemChosen;
+    //! \}
+
+    //! \name The keyboard
+    //! The tool items (tool buttons, drop-downs, split buttons and the
+    //! overflow button) are one Tab stop, getTabStop(): the last one focused
+    //! while it is shown and enabled, else the first that is. Left and Right
+    //! (and Home, End) move the focus over the shown, enabled tool items in
+    //! order, the overflow button last, stopping at the ends; separators and
+    //! addControl items (which keep their own keys and Tab stop) are passed
+    //! over. Space and Return press the focused item; on the overflow button
+    //! they open the menu navigating by keyboard (DropDownButton's).
+    //! \{
+    Base *getTabStop() const;
+    //! Whether \p item is a tool item that can take the focus now.
+    bool canFocus(const Base *item) const;
+    //! A tool item took the focus: it is the Tab stop from now on.
+    void itemFocused(Base *item);
+    //! Focuses the tool item \p steps away from the focused one (the Tab
+    //! stop when none is), or the first (last) with \p toEnd; false if none.
+    bool moveFocus(int steps, bool toEnd=false);
+    bool onKeyLeft(bool down) override;
+    bool onKeyRight(bool down) override;
+    bool onKeyHome(bool down) override;
+    bool onKeyend(bool down) override;
+    //! \}
+
     //! The least width that shows every AlwaysShow item and the overflow
     //! button (the button only if some item may overflow).
     int minimumWidth() const;
@@ -232,11 +324,37 @@ protected:
     //! Whether the item has the bar's content height (not an addControl one).
     bool fillsHeight(size_t i) const;
 
+    //! A menu entry: its MenuItem's id and its source's (a toolbar item, a
+    //! SplitButton's main part, or a drop-down's menu item), and the toolbar
+    //! item it is under.
+    struct MenuEntry
+    {
+        size_t entry=0;
+        size_t source=0;
+        size_t item=0;
+    };
+    //! The tool items in focus order: the shown items that are no separator
+    //! nor addControl one, then the overflow button.
+    std::vector<Base *> toolItems() const;
+    void buildMenu(Menu *menu);
+    //! Copies \p from's items (recursively) into \p to, under \p item.
+    void copyMenu(Menu *from, Menu *to, Base *item);
+    void addMenuEntry(MenuItem *entry, Base *source, Base *item);
+    void onMenuEntryChosen(event::Info info);
+    //! A control's id, or 0.
+    static size_t idOf(const Base *control);
+
     std::vector<Base *> m_items;
     std::vector<ItemInfo> m_info;
     internal::ToolBarOverflowButton *m_overflowButton=nullptr;
     ToolBarDisplay m_display=ToolBarDisplay::IconAndText;
     size_t m_overflowSerial=0;
+    std::vector<MenuEntry> m_menuEntries;
+    //! The overflow serial the menu was built at; none yet.
+    size_t m_menuSerial=static_cast<size_t>(-1);
+    size_t m_menuBuilds=0;
+    //! The last tool item focused (by id), 0 for none.
+    size_t m_tabStop=0;
 };
 
 }//namespace controls

@@ -105,6 +105,10 @@ protected:
     //! Space, Return, Alt+Down and F4: open it with the first item
     //! highlighted, or close it if it is open.
     void toggleMenuFromKey();
+    //! Called by openMenu() just before the menu opens, the other menus
+    //! closed: a subclass may fill or update \p menu here (a toolbar's
+    //! overflow button builds its items). Nothing by default.
+    virtual void aboutToOpenMenu(Menu * /*menu*/) {}
     //! The control the menu opens below: this button (a SplitButton's arrow
     //! part gives the whole SplitButton).
     virtual Base *menuAnchor()

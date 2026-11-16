@@ -7,6 +7,7 @@
 
 #include <gweni/controls/toolBar.h>
 #include <gweni/controls/imagePanel.h>
+#include <gweni/controls/menuItem.h>
 #include <gweni/controls/separator.h>
 #include <gweni/controls/splitButton.h>
 #include <gweni/gweni.h>
@@ -31,6 +32,36 @@ GWENI_CONTROL_CONSTRUCTOR(ToolButton)
     setTextPadding(Padding(0, 0, 0, 0));
     setDefaultTextAlignment(Alignment::Left|Alignment::CenterV);
     m_text->setPlacement(Placement::Owner);
+    setKeyboardInputEnabled(true);
+    setTabable(true);
+}
+
+namespace
+{
+// The toolbar a tool item is an item (or the overflow button) of.
+ToolBar *toolBarOf(const Base *item)
+{
+    return item?gweni_cast<ToolBar>(item->getParent()):nullptr;
+}
+}
+
+bool ToolButton::isTabable()
+{
+    ToolBar *bar=toolBarOf(this);
+
+    return ParentClass::isTabable() && (!bar || bar->getTabStop() == this);
+}
+
+void ToolButton::onKeyboardFocus()
+{
+    ParentClass::onKeyboardFocus();
+    if(ToolBar *bar=toolBarOf(this))
+        bar->itemFocused(this);
+}
+
+bool ToolButton::onKeyReturn(bool down)
+{
+    return onKeySpace(down);
 }
 
 void ToolButton::setText(const String &str, bool doEvents)
@@ -191,6 +222,62 @@ void ToolBarOverflowButton::calculateSize(skin::Base *skin, Dim dim)
         m_preferredSize.height=preferredFromContent(ChevronSize+2*ToolButton::PaddingY, Dim::Y);
 }
 
+bool ToolBarOverflowButton::isTabable()
+{
+    ToolBar *bar=getToolBar();
+
+    return ParentClass::isTabable() && (!bar || bar->getTabStop() == this);
+}
+
+void ToolBarOverflowButton::onKeyboardFocus()
+{
+    ParentClass::onKeyboardFocus();
+    if(ToolBar *bar=getToolBar())
+        bar->itemFocused(this);
+}
+
+void ToolBarOverflowButton::aboutToOpenMenu(Menu *menu)
+{
+    if(ToolBar *bar=getToolBar())
+        bar->prepareOverflowMenu(menu);
+}
+
+GWENI_CONTROL_CONSTRUCTOR(ToolBarDropDown)
+{
+}
+
+bool ToolBarDropDown::isTabable()
+{
+    ToolBar *bar=toolBarOf(this);
+
+    return ParentClass::isTabable() && (!bar || bar->getTabStop() == this);
+}
+
+void ToolBarDropDown::onKeyboardFocus()
+{
+    ParentClass::onKeyboardFocus();
+    if(ToolBar *bar=toolBarOf(this))
+        bar->itemFocused(this);
+}
+
+GWENI_CONTROL_CONSTRUCTOR(ToolBarSplitButton)
+{
+}
+
+bool ToolBarSplitButton::isTabable()
+{
+    ToolBar *bar=toolBarOf(this);
+
+    return ParentClass::isTabable() && (!bar || bar->getTabStop() == this);
+}
+
+void ToolBarSplitButton::onKeyboardFocus()
+{
+    ParentClass::onKeyboardFocus();
+    if(ToolBar *bar=toolBarOf(this))
+        bar->itemFocused(this);
+}
+
 }//namespace internal
 
 ///////////////////////////////////////////////////////////////////////////
@@ -255,7 +342,7 @@ Separator *ToolBar::addSeparator()
 
 DropDownButton *ToolBar::addDropDown(const String &text, const String &icon)
 {
-    DropDownButton *button=newChild<DropDownButton>();
+    DropDownButton *button=newChild<internal::ToolBarDropDown>();
 
     button->setText(text);
     if(!icon.empty())
@@ -267,7 +354,7 @@ DropDownButton *ToolBar::addDropDown(const String &text, const String &icon)
 
 SplitButton *ToolBar::addSplitButton(const String &text, const String &icon)
 {
-    SplitButton *button=newChild<SplitButton>();
+    SplitButton *button=newChild<internal::ToolBarSplitButton>();
 
     button->setText(text);
     if(!icon.empty())
@@ -630,6 +717,364 @@ void ToolBar::handleOverflow()
 
     if(changed)
         ++m_overflowSerial;
+}
+
+///////////////////////////////////////////////////////////////////////////
+//ToolBar: the overflow menu
+
+size_t ToolBar::idOf(const Base *control)
+{
+    return control?const_cast<Base *>(control)->getControlId():0;
+}
+
+void ToolBar::addMenuEntry(MenuItem *entry, Base *source, Base *item)
+{
+    MenuEntry e;
+
+    e.entry=idOf(entry);
+    e.source=idOf(source);
+    e.item=idOf(item);
+    m_menuEntries.push_back(e);
+    entry->onMenuItemSelected.add(this, &ToolBar::onMenuEntryChosen);
+}
+
+void ToolBar::copyMenu(Menu *from, Menu *to, Base *item)
+{
+    if(!from)
+        return;
+
+    bool pendingDivider=false;
+    bool any=false;
+
+    for(Base *child : from->getChildren())
+    {
+        if(!child || child->hidden())
+            continue;
+        if(gweni_cast<MenuDivider>(child))
+        {
+            pendingDivider=any;
+            continue;
+        }
+
+        MenuItem *source=gweni_cast<MenuItem>(child);
+
+        if(!source)
+            continue;
+        if(pendingDivider)
+            to->addDivider();
+        pendingDivider=false;
+        any=true;
+
+        MenuItem *entry=to->addItem(source->getText());
+
+        // a submenu is copied whole, its items chosen as themselves
+        if(source->hasMenu())
+        {
+            copyMenu(source->getMenu(), entry->getMenu(), item);
+            addMenuEntry(entry, nullptr, item);
+            continue;
+        }
+        entry->setCheckable(source->isCheckable());
+        addMenuEntry(entry, source, item);
+    }
+}
+
+void ToolBar::buildMenu(Menu *menu)
+{
+    // the old entries go (hidden at once, deleted with the delayed deletes)
+    for(Base *child : menu->getChildren())
+    {
+        if(child)
+            child->setHidden(true);
+    }
+    menu->clearItems();
+    m_menuEntries.clear();
+
+    bool pendingDivider=false;
+    bool any=false;
+
+    for(size_t i=0; i < m_items.size(); ++i)
+    {
+        if(!m_info[i].overflowed)
+            continue;
+
+        Base *item=m_items[i];
+
+        if(m_info[i].separator)
+        {
+            pendingDivider=any;
+            continue;
+        }
+        if(pendingDivider)
+            menu->addDivider();
+        pendingDivider=false;
+        any=true;
+
+        if(ToolButton *button=gweni_cast<ToolButton>(item))
+        {
+            MenuItem *entry=menu->addItem(button->getText());
+
+            entry->setCheckable(button->isToggle());
+            addMenuEntry(entry, button, button);
+        }
+        else if(SplitButton *split=gweni_cast<SplitButton>(item))
+        {
+            MenuItem *parent=menu->addItem(split->getText());
+            Menu *submenu=parent->getMenu();
+            MenuItem *main=submenu->addItem(split->getText());
+
+            main->setCheckable(split->isToggle());
+            addMenuEntry(main, split->getMainPart(), split);
+            submenu->addDivider();
+            copyMenu(split->getMenu(), submenu, split);
+            addMenuEntry(parent, nullptr, split);
+        }
+        else if(DropDownButton *dropDown=gweni_cast<DropDownButton>(item))
+        {
+            MenuItem *parent=menu->addItem(dropDown->getText());
+
+            copyMenu(dropDown->getMenu(), parent->getMenu(), dropDown);
+            addMenuEntry(parent, nullptr, dropDown);
+        }
+        else
+        {
+            MenuItem *entry=menu->addItem(m_info[i].overflowText);
+
+            addMenuEntry(entry, item, item);
+        }
+    }
+
+    m_menuSerial=m_overflowSerial;
+    ++m_menuBuilds;
+}
+
+void ToolBar::prepareOverflowMenu(Menu *menu)
+{
+    if(!menu)
+        return;
+    if(m_menuSerial != m_overflowSerial)
+        buildMenu(menu);
+
+    // every entry as its item is now
+    for(const MenuEntry &e : m_menuEntries)
+    {
+        MenuItem *entry=gweni_cast<MenuItem>(getControlById(e.entry));
+        Base *item=getControlById(e.item);
+
+        if(!entry || !item)
+            continue;
+
+        Base *source=getControlById(e.source);
+        const Base *enabledBy=source?source:item;
+
+        entry->setDisabled(const_cast<Base *>(enabledBy)->isDisabled() || item->isDisabled());
+
+        if(MenuItem *original=gweni_cast<MenuItem>(source))
+        {
+            entry->setText(original->getText());
+            entry->setCheckable(original->isCheckable());
+            entry->setChecked(original->isChecked());
+        }
+        else if((source == item) && (indexOf(item) >= 0) && m_info[indexOf(item)].control)
+            entry->setText(m_info[indexOf(item)].overflowText);
+        else if(Button *button=gweni_cast<Button>(source))
+        {
+            if(gweni_cast<ToolButton>(button))
+                entry->setText(button->getText());
+            if(button->isToggle())
+                entry->setChecked(button->getToggleState());
+        }
+    }
+}
+
+Base *ToolBar::getMenuEntrySource(const MenuItem *entry) const
+{
+    const size_t id=idOf(entry);
+
+    for(const MenuEntry &e : m_menuEntries)
+    {
+        if(e.entry == id)
+            return getControlById(e.source?e.source:e.item);
+    }
+    return nullptr;
+}
+
+MenuItem *ToolBar::getMenuEntry(const Base *source) const
+{
+    const size_t id=idOf(source);
+
+    for(const MenuEntry &e : m_menuEntries)
+    {
+        if(e.source == id || (!e.source && e.item == id))
+            return gweni_cast<MenuItem>(getControlById(e.entry));
+    }
+    return nullptr;
+}
+
+// The entry has closed the menus and, a checkable one, flipped its check;
+// its item now does what its own press does.
+void ToolBar::onMenuEntryChosen(event::Info info)
+{
+    const size_t id=idOf(info.control);
+    const MenuEntry *found=nullptr;
+
+    for(const MenuEntry &e : m_menuEntries)
+    {
+        if(e.entry == id)
+        {
+            found=&e;
+            break;
+        }
+    }
+    if(!found)
+        return;
+
+    const MenuEntry entry=*found;
+    Base *source=getControlById(entry.source);
+    Base *item=getControlById(entry.item);
+
+    if(!item)
+        return;
+
+    if(Button *button=gweni_cast<Button>(source))
+    {
+        if(source->isDisabled())
+            return;
+        button->onPress(event::Info(button));
+    }
+
+    // its check follows the item (the press may have been refused)
+    if(MenuItem *menuEntry=gweni_cast<MenuItem>(getControlById(entry.entry)))
+    {
+        if(MenuItem *original=gweni_cast<MenuItem>(source))
+            menuEntry->setChecked(original->isChecked());
+        else if(Button *button=gweni_cast<Button>(source))
+        {
+            if(button->isToggle())
+                menuEntry->setChecked(button->getToggleState());
+        }
+    }
+
+    onOverflowItemChosen.call(this, event::Info(item));
+}
+
+///////////////////////////////////////////////////////////////////////////
+//ToolBar: the keyboard
+
+bool ToolBar::canFocus(const Base *item) const
+{
+    if(!item || item->hidden() || const_cast<Base *>(item)->isDisabled())
+        return false;
+    if(item == m_overflowButton)
+        return true;
+
+    const int i=indexOf(item);
+
+    return i >= 0 && !m_info[i].separator && !m_info[i].control;
+}
+
+std::vector<Base *> ToolBar::toolItems() const
+{
+    std::vector<Base *> items;
+
+    for(Base *item : m_items)
+    {
+        if(canFocus(item))
+            items.push_back(item);
+    }
+    if(canFocus(m_overflowButton))
+        items.push_back(m_overflowButton);
+    return items;
+}
+
+Base *ToolBar::getTabStop() const
+{
+    Base *last=getControlById(m_tabStop);
+
+    if(last && last->getParent() == this && canFocus(last))
+        return last;
+
+    const std::vector<Base *> items=toolItems();
+
+    return items.empty()?nullptr:items.front();
+}
+
+void ToolBar::itemFocused(Base *item)
+{
+    m_tabStop=idOf(item);
+}
+
+bool ToolBar::moveFocus(int steps, bool toEnd)
+{
+    const std::vector<Base *> items=toolItems();
+
+    if(items.empty())
+        return false;
+
+    Base *target=nullptr;
+
+    if(toEnd)
+        target=(steps < 0)?items.front():items.back();
+    else
+    {
+        // the tool item holding the focus (a SplitButton holds it itself)
+        Base *from=KeyboardFocus;
+
+        while(from && from->getParent() != this)
+            from=from->getParent();
+
+        const auto at=std::find(items.begin(), items.end(), from);
+
+        if(at == items.end())
+            return false;
+
+        const int index=static_cast<int>(at-items.begin())+steps;
+
+        target=items[static_cast<size_t>(gweni::clamp(index, 0, static_cast<int>(items.size())-1))];
+    }
+    target->focus();
+    return true;
+}
+
+namespace
+{
+// Whether the focus is on (or in) one of the toolbar's tool items.
+bool focusInToolItem(const ToolBar *bar)
+{
+    Base *from=KeyboardFocus;
+
+    while(from && from->getParent() != bar)
+        from=from->getParent();
+    return from && bar->canFocus(from);
+}
+}
+
+bool ToolBar::onKeyLeft(bool down)
+{
+    if(!focusInToolItem(this))
+        return false;
+    return down?moveFocus(-1):true;
+}
+
+bool ToolBar::onKeyRight(bool down)
+{
+    if(!focusInToolItem(this))
+        return false;
+    return down?moveFocus(1):true;
+}
+
+bool ToolBar::onKeyHome(bool down)
+{
+    if(!focusInToolItem(this))
+        return false;
+    return down?moveFocus(-1, true):true;
+}
+
+bool ToolBar::onKeyend(bool down)
+{
+    if(!focusInToolItem(this))
+        return false;
+    return down?moveFocus(1, true):true;
 }
 
 }//namespace controls

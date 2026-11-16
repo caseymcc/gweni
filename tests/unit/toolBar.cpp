@@ -15,13 +15,35 @@
  *  the button going once all fit. Every one of those width changes lays out
  *  in one update-phase pass, with layout verification finding nothing, and
  *  changes no preferred size of the toolbar.
+ *
+ *  The overflow menu, built as the overflow button opens it: an entry per
+ *  overflowed item in order, a tool button its text, a toggle a checkable
+ *  entry checked as it is, a separator a divider (never first), a drop-down
+ *  a submenu of copies of its menu's items (submenus copied too), a
+ *  SplitButton one with its main action, a divider and its menu's items, a
+ *  disabled item a disabled entry, an addControl item its overflow text.
+ *  Choosing an entry fires its item's own press once (a tool button's
+ *  onPress, a toggle's onToggle, a drop-down item's onMenuItemSelected, a
+ *  SplitButton's onPress) and then the toolbar's onOverflowItemChosen; the
+ *  toggle's state shows in its entry on the next open, from the menu or from
+ *  the app. The menu is built again only when the overflowed set changed.
+ *
+ *  The keys: the tool items are one Tab stop, the last focused; Left, Right,
+ *  Home and End move the focus over the shown, enabled tool items, the
+ *  overflow button last, passing over separators, disabled items and an
+ *  addControl item (whose keys are its own); Space and Return press; the
+ *  overflow button's Space opens its menu navigating by keyboard.
  */
 #include "headlessFixture.h"
 
+#include <gweni/controls/menu.h>
+#include <gweni/controls/menuItem.h>
 #include <gweni/controls/separator.h>
 #include <gweni/controls/splitButton.h>
 #include <gweni/controls/textBox.h>
 #include <gweni/controls/toolBar.h>
+#include <gweni/inputHandler.h>
+#include <gweni/platforms/platform.h>
 
 #include <doctest/doctest.h>
 
@@ -43,8 +65,20 @@ struct Scene
     controls::Base *box;
     ToolBar *bar;
 
+    float clock=nextClock();
+
+    //! The input handler keeps the last click's time and place across cases.
+    static float nextClock()
+    {
+        static float start=0.0f;
+
+        start+=1000.0f;
+        return start;
+    }
+
     Scene()
     {
+        platform::setTimeSource([this]() { return clock; });
         controls::setLayoutVerify(true);
         canvas=new controls::Canvas(&skin);
         canvas->setSize(1200, 300);
@@ -56,8 +90,35 @@ struct Scene
 
     ~Scene()
     {
+        for(int key : {keys::Shift, keys::Tab})
+            input::onKeyEvent(canvas, key, false);
+        HoveredControl=nullptr;
+        KeyboardFocus=nullptr;
+        MouseFocus=nullptr;
         delete canvas;
         controls::setLayoutVerify(false);
+        platform::setTimeSource(nullptr);
+    }
+
+    void key(int key)
+    {
+        input::onKeyEvent(canvas, key, true);
+        input::onKeyEvent(canvas, key, false);
+        frame();
+    }
+
+    //! The overflow menu, opened and laid out.
+    controls::Menu *openMenu()
+    {
+        bar->getOverflowButton()->openMenu(controls::MenuFocus::None);
+        frame();
+        return bar->getOverflowButton()->getMenu();
+    }
+
+    void closeMenu()
+    {
+        bar->getOverflowButton()->closeMenu();
+        frame();
     }
 
     const controls::LayoutStats &frame()
@@ -90,6 +151,17 @@ struct Scene
         if(!bar->getOverflowButton()->hidden())
             s+=s.empty()?"+":" +";
         return s;
+    }
+
+    //! Widens the bar a unit at a time from its minimum width until it shows
+    //! \p row.
+    void widenUntil(const std::string &row)
+    {
+        for(int width=bar->minimumWidth(); width < 1100 && shown() != row; ++width)
+        {
+            setWidth(width);
+            settle();
+        }
     }
 
     //! A container width that gives the bar exactly \p barWidth.
@@ -302,4 +374,329 @@ TEST_CASE("ToolBar: an item changed while overflowed comes back at its new size"
     CHECK(f->getWidth() == f->getPreferredSize().width);
     CHECK(f->getWidth() > width);
     CHECK(controls::layoutVerifyFailures() == failures);
+}
+
+namespace
+{
+
+//! A menu's shown entries: "text" for an item, "[x] text" / "[ ] text" for a
+//! checkable one, "(off) " before a disabled one, "text >" for a submenu, "-"
+//! for a divider.
+std::vector<std::string> entries(controls::Menu *menu)
+{
+    std::vector<std::string> out;
+
+    for(controls::Base *child : menu->getChildren())
+    {
+        if(!child || child->hidden())
+            continue;
+        if(gweni_cast<controls::MenuDivider>(child))
+        {
+            out.push_back("-");
+            continue;
+        }
+
+        controls::MenuItem *item=gweni_cast<controls::MenuItem>(child);
+
+        if(!item)
+            continue;
+
+        std::string text=item->isDisabled()?"(off) ":"";
+
+        if(item->isCheckable())
+            text+=item->isChecked()?"[x] ":"[ ] ";
+        text+=item->getText();
+        if(item->hasMenu())
+            text+=" >";
+        out.push_back(text);
+    }
+    return out;
+}
+
+controls::MenuItem *entry(controls::Menu *menu, const std::string &text)
+{
+    for(controls::Base *child : menu->getChildren())
+    {
+        controls::MenuItem *item=gweni_cast<controls::MenuItem>(child);
+
+        if(item && !item->hidden() && item->getText() == text)
+            return item;
+    }
+    return nullptr;
+}
+
+struct Counter
+{
+    int calls=0;
+    controls::Base *last=nullptr;
+
+    void hit(event::Info info)
+    {
+        ++calls;
+        last=info.control;
+    }
+};
+
+struct Handler: public event::Handler
+{
+    Counter press, toggle, dropItem, split, chosen;
+
+    void onPress(event::Info info) { press.hit(info); }
+    void onToggle(event::Info info) { toggle.hit(info); }
+    void onDropItem(event::Info info) { dropItem.hit(info); }
+    void onSplit(event::Info info) { split.hit(info); }
+    void onChosen(event::Info info) { chosen.hit(info); }
+};
+
+//! a | t (a toggle, on) dd (a drop-down) | sp (a split button) b (disabled)
+//! search: everything but `keep` Normal.
+struct MenuBar
+{
+    Scene scene;
+    Handler handler;
+    controls::ToolButton *a, *t, *b, *keep;
+    controls::DropDownButton *dd;
+    controls::SplitButton *sp;
+    controls::TextBox *search;
+    controls::MenuItem *ddSave, *ddAs;
+
+    MenuBar()
+    {
+        ToolBar *bar=scene.bar;
+
+        keep=button(bar, "keep");
+        bar->setOverflowPriority(keep, OverflowPriority::AlwaysShow);
+        bar->addSeparator();
+        a=button(bar, "a1");
+        a->onPressCaller.add(&handler, &Handler::onPress);
+        bar->addSeparator();
+        t=bar->addToggle("Bold", "", true);
+        t->setName("Bold");
+        t->onToggleCaller.add(&handler, &Handler::onToggle);
+        dd=bar->addDropDown("Export");
+        dd->setName("Export");
+        ddSave=dd->getMenu()->addItem("Save");
+        ddSave->onMenuItemSelected.add(&handler, &Handler::onDropItem);
+        dd->getMenu()->addDivider();
+        ddAs=dd->getMenu()->addItem("Save as");
+        ddAs->setCheckable(true);
+        ddAs->getMenu()->addItem("Deep");
+        bar->addSeparator();
+        sp=bar->addSplitButton("Paste");
+        sp->setName("Paste");
+        sp->onPress.add(&handler, &Handler::onSplit);
+        sp->getMenu()->addItem("Paste plain");
+        b=button(bar, "b1");
+        b->setText("Off");
+        b->setDisabled(true);
+        search=bar->newChild<controls::TextBox>();
+        search->setWidth(80);
+        search->setName("Search");
+        bar->addControl(search, "Search");
+        bar->onOverflowItemChosen.add(&handler, &Handler::onChosen);
+        scene.settle();
+        scene.setWidth(bar->minimumWidth());
+        scene.settle();
+    }
+};
+
+}//namespace
+
+TEST_CASE("ToolBar: the overflow menu holds every overflowed item in its menu form")
+{
+    MenuBar m;
+
+    CHECK(m.scene.shown() == "keep +");
+
+    controls::Menu *menu=m.scene.openMenu();
+
+    REQUIRE(menu);
+    CHECK_FALSE(menu->hidden());
+    // the separator after keep would lead the menu: not shown
+    CHECK(entries(menu) == std::vector<std::string>{"a1 button", "-", "[x] Bold", "Export >", "-",
+        "Paste >", "(off) Off", "Search"});
+
+    controls::Menu *exportMenu=entry(menu, "Export")->getMenu();
+
+    CHECK(entries(exportMenu) == std::vector<std::string>{"Save", "-", "Save as >"});
+    CHECK(entries(entry(exportMenu, "Save as")->getMenu()) == std::vector<std::string>{"Deep"});
+    CHECK(entries(entry(menu, "Paste")->getMenu()) == std::vector<std::string>{"Paste", "-", "Paste plain"});
+    CHECK(m.scene.bar->getMenuEntrySource(entry(menu, "a1 button")) == m.a);
+    CHECK(m.scene.bar->getMenuEntry(m.t) == entry(menu, "Bold"));
+}
+
+TEST_CASE("ToolBar: choosing an overflow entry fires its item's event, toggles kept in step both ways")
+{
+    MenuBar m;
+    controls::Menu *menu=m.scene.openMenu();
+
+    entry(menu, "a1 button")->onPress(event::Info(entry(menu, "a1 button")));
+    m.scene.frame();
+    CHECK(m.handler.press.calls == 1);
+    CHECK(m.handler.press.last == m.a);
+    CHECK(m.handler.chosen.calls == 1);
+    CHECK(m.handler.chosen.last == m.a);
+    CHECK(menu->hidden());
+
+    // the toggle, from the menu: off, and its entry shows it next time
+    menu=m.scene.openMenu();
+    controls::MenuItem *bold=entry(menu, "Bold");
+    bold->onPress(event::Info(bold));
+    m.scene.frame();
+    CHECK_FALSE(m.t->getToggleState());
+    CHECK(m.handler.toggle.calls == 1);
+    menu=m.scene.openMenu();
+    CHECK_FALSE(entry(menu, "Bold")->isChecked());
+    m.scene.closeMenu();
+
+    // and from the bar (the app's): the next open shows it
+    m.t->setToggleState(true);
+    menu=m.scene.openMenu();
+    CHECK(entry(menu, "Bold")->isChecked());
+
+    // a drop-down's item: its own onMenuItemSelected, once
+    entry(entry(menu, "Export")->getMenu(), "Save")->onPress(event::Info(menu));
+    m.scene.frame();
+    CHECK(m.handler.dropItem.calls == 1);
+    CHECK(m.handler.chosen.last == m.dd);
+
+    // the split button's main action
+    menu=m.scene.openMenu();
+    controls::MenuItem *paste=entry(entry(menu, "Paste")->getMenu(), "Paste");
+    paste->onPress(event::Info(paste));
+    m.scene.frame();
+    CHECK(m.handler.split.calls == 1);
+
+    // a disabled item's entry is disabled; a control's fires the toolbar's
+    // event alone
+    menu=m.scene.openMenu();
+    CHECK(entry(menu, "Off")->isDisabled());
+    const int chosen=m.handler.chosen.calls;
+    entry(menu, "Search")->onPress(event::Info(menu));
+    CHECK(m.handler.chosen.calls == chosen+1);
+    CHECK(m.handler.chosen.last == m.search);
+    CHECK(m.handler.press.calls == 1);
+
+    // enabled again: so is its entry
+    m.b->setDisabled(false);
+    menu=m.scene.openMenu();
+    CHECK_FALSE(entry(menu, "Off")->isDisabled());
+}
+
+TEST_CASE("ToolBar: the overflow menu is built again only when the overflowed set changed")
+{
+    MenuBar m;
+    ToolBar *bar=m.scene.bar;
+
+    CHECK(bar->getMenuBuildCount() == 0);
+    controls::Menu *menu=m.scene.openMenu();
+    CHECK(bar->getMenuBuildCount() == 1);
+    controls::MenuItem *first=entry(menu, "a1 button");
+
+    m.scene.closeMenu();
+    menu=m.scene.openMenu();
+    m.scene.closeMenu();
+    CHECK(bar->getMenuBuildCount() == 1);
+    CHECK(entry(menu, "a1 button") == first);
+
+    // a width that changes nothing in the set: still the same menu
+    m.scene.setWidth(bar->minimumWidth()+1);
+    m.scene.settle();
+    menu=m.scene.openMenu();
+    CHECK(bar->getMenuBuildCount() == 1);
+    m.scene.closeMenu();
+
+    // wide enough for a1: it leaves the menu
+    m.scene.widenUntil("keep | a1 +");
+    REQUIRE_FALSE(m.a->hidden());
+    menu=m.scene.openMenu();
+    CHECK(bar->getMenuBuildCount() == 2);
+    CHECK(entry(menu, "a1 button") == nullptr);
+    CHECK(entries(menu).front() == "[x] Bold");
+}
+
+TEST_CASE("ToolBar: Left and Right move the focus over the shown tool items, the overflow button last")
+{
+    MenuBar m;
+    ToolBar *bar=m.scene.bar;
+
+    // keep, a1, | Bold, Export, | Paste shown; Off and the search box gone
+    m.scene.widenUntil("keep | a1 | Bold Export | Paste +");
+    REQUIRE(m.scene.shown() == "keep | a1 | Bold Export | Paste +");
+    CHECK(bar->getTabStop() == m.keep);
+
+    m.keep->focus();
+    m.scene.frame();
+    const std::vector<controls::Base *> order{m.keep, m.a, m.t, m.dd, m.sp, bar->getOverflowButton()};
+
+    for(size_t i=1; i < order.size(); ++i)
+    {
+        m.scene.key(keys::Right);
+        CHECK(KeyboardFocus == order[i]);
+    }
+    // the end: it stays
+    m.scene.key(keys::Right);
+    CHECK(KeyboardFocus == bar->getOverflowButton());
+    for(size_t i=order.size()-1; i > 0; --i)
+    {
+        m.scene.key(keys::Left);
+        CHECK(KeyboardFocus == order[i-1]);
+    }
+    m.scene.key(keys::End);
+    CHECK(KeyboardFocus == bar->getOverflowButton());
+    m.scene.key(keys::Home);
+    CHECK(KeyboardFocus == m.keep);
+
+    // the toolbar is one Tab stop, the last focused tool item
+    m.scene.key(keys::Right);
+    m.scene.key(keys::Right);
+    CHECK(KeyboardFocus == m.t);
+    CHECK(bar->getTabStop() == m.t);
+    int tabable=0;
+    for(controls::Base *item : order)
+        tabable+=item->isTabable()?1:0;
+    CHECK(tabable == 1);
+    CHECK(m.t->isTabable());
+
+    controls::Base *outside=m.scene.canvas->newChild<controls::ToolButton>();
+    outside->focus();
+    m.scene.key(keys::Tab);
+    CHECK(KeyboardFocus == m.t);
+
+    // Space and Return press it
+    const int toggles=m.handler.toggle.calls;
+    m.scene.key(keys::Space);
+    m.scene.key(keys::Return);
+    CHECK(m.handler.toggle.calls == toggles+2);
+
+    // the overflow button's Space opens its menu navigating by keyboard
+    m.scene.key(keys::End);
+    m.scene.key(keys::Space);
+    controls::Menu *menu=bar->getOverflowButton()->getMenu();
+    CHECK_FALSE(menu->hidden());
+    CHECK(menu->isKeyboardNavigating());
+    CHECK(entries(menu) == std::vector<std::string>{"(off) Off", "Search"});
+}
+
+TEST_CASE("ToolBar: Left and Right pass over a disabled item and an addControl one")
+{
+    MenuBar m;
+
+    m.scene.setWidth(1100);
+    m.scene.settle();
+    REQUIRE(m.scene.shown() == "keep | a1 | Bold Export | Paste b1 Search");
+
+    m.sp->focus();
+    m.scene.frame();
+    // Off is disabled and the search box keeps its own keys: Paste is last
+    m.scene.key(keys::Right);
+    CHECK(KeyboardFocus == m.sp);
+    m.scene.key(keys::End);
+    CHECK(KeyboardFocus == m.sp);
+
+    // from the search box, Left is the box's own
+    m.search->focus();
+    m.scene.frame();
+    m.scene.key(keys::Left);
+    CHECK(KeyboardFocus == m.search);
 }

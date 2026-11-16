@@ -43,6 +43,8 @@ public:
     virtual void onPress(event::Info) override;
 
     Menu *getMenu();
+    //! Whether it has a submenu (getMenu() makes one).
+    bool hasMenu() const { return m_menu != nullptr; }
 
     //! The Menu it is an item of (its nearest Menu ancestor), or null.
     Menu *parentMenu() const;
