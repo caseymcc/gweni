@@ -30,6 +30,7 @@
  */
 #include "headlessFixture.h"
 
+#include <gweni/controls/dialogs/dialog.h>
 #include <gweni/controls/hexView.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/platform.h>
@@ -824,6 +825,49 @@ TEST_CASE("HexView: addresses parse as hex or decimal and goto moves the cursor"
     s.view->setGotoVisible(false);
     s.frame();
     CHECK(s.view->getViewport().y < box->bottom());
+}
+
+TEST_CASE("HexView: the goto box takes Return inside a dialog and keeps the focus for a bad address")
+{
+    Scene s(4096, 16, true);
+    namespace dialogs=::gweni::dialogs;
+    dialogs::Dialog *dialog=s.canvas->newChild<dialogs::Dialog>();
+    dialog->setDialogSize(dialogs::Extent::units(1360), dialogs::Extent::units(400));
+    controls::Button *ok=dialog->addButton("Ok", dialogs::Result::Ok);
+    dialog->setDefaultButton(ok);
+    int results=0;
+    dialog->setResultHandler([&](dialogs::Result, const String &) { ++results; });
+    dialog->setDeleteOnClose(false);
+    s.view->setParent(dialog->getContent());
+    s.view->setBounds(0, 0, 1300, 180);
+    dialog->open();
+    s.frame();
+    s.frame();
+    TextBox *box=s.view->getGotoBox();
+
+    // a refused address: the focus stays in the box, its text selected
+    box->focus();
+    s.frame();
+    s.type("zzz");
+    s.key(keys::Return);
+    CHECK(results == 0);
+    CHECK(dialog->visible());
+    CHECK(KeyboardFocus == box);
+    CHECK(box->getSelection() == "zzz");
+    CHECK(s.view->getCursor() == 0);
+
+    // typing replaces the selection; Return jumps and the dialog stays open
+    s.type("0x40");
+    REQUIRE(box->getText() == "0x40");
+    s.key(keys::Return);
+    CHECK(results == 0);
+    CHECK(dialog->visible());
+    CHECK(s.view->getCursor() == 0x40);
+    CHECK(KeyboardFocus == s.view);
+
+    // Return on the view itself still reaches the default button
+    s.key(keys::Return);
+    CHECK(results == 1);
 }
 
 TEST_CASE("HexView: hex digits edit a byte a nibble at a time and Escape drops one")

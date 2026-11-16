@@ -140,6 +140,26 @@ void HexViewPreview::arrangeVertical(skin::Base *skin)
     }
 }
 
+GWENI_CONTROL_CONSTRUCTOR(HexViewGotoBox)
+{
+}
+
+// On the release, as a TextBox commits: the release then finds the key up
+// and goes nowhere. onReturnPressed still fires, after the goto.
+bool HexViewGotoBox::onKeyReturn(bool down)
+{
+    if(down)
+        return true;
+
+    if(m_view && m_view->gotoAddress(getText()))
+        m_view->focus();
+    else
+        onSelectAll(this);
+
+    onEnter();
+    return true;
+}
+
 }//namespace internal
 
 bool HexRowMarks::operator==(const HexRowMarks &o) const
@@ -387,13 +407,13 @@ GWENI_CONTROL_CONSTRUCTOR(HexView)
     {
         PartScope part;
 
-        m_goto=newChild<TextBox>();
+        m_goto=newChild<internal::HexViewGotoBox>();
         m_preview=newChild<internal::HexViewPreview>();
     }
     m_innerPanel=inner;
     m_goto->setPlacement(Placement::Owner);
     m_goto->setPlaceholder("Go to address");
-    m_goto->onReturnPressedCaller.add(this, &HexView::onGotoReturn);
+    m_goto->m_view=this;
 
     m_preview->m_view=this;
     m_preview->setPlacement(Placement::Owner);
@@ -815,12 +835,6 @@ bool HexView::gotoAddress(const String &text)
 
     setCursor(static_cast<size_t>(offset));
     return true;
-}
-
-void HexView::onGotoReturn(event::Info)
-{
-    if(gotoAddress(m_goto->getText()))
-        focus();
 }
 
 void HexView::setGotoVisible(bool visible)

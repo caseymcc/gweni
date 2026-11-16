@@ -75,6 +75,24 @@ protected:
     void arrangeVertical(skin::Base *skin) override;
 };
 
+//! A HexView's goto-address box: a TextBox that takes Return itself. The
+//! press goes no further (a dialog's default button never sees it) and the
+//! release runs the view's goto: a jump focuses the view, a refused address
+//! keeps the focus here with the text selected, to be corrected.
+class GWENI_EXPORT HexViewGotoBox: public TextBox
+{
+public:
+    GWENI_CONTROL(HexViewGotoBox, TextBox);
+
+public:
+    bool onKeyReturn(bool down) override;
+
+private:
+    friend class controls::HexView;
+
+    HexView *m_view=nullptr;
+};
+
 }//namespace internal
 
 //! What a shown row draws under its bytes (the textured renderer's slots):
@@ -356,7 +374,6 @@ private:
     friend class internal::HexViewPreview;
 
     void onCopy(event::Info);
-    void onGotoReturn(event::Info);
     void moveBy(int64_t bytes, bool extend);
     void scrollCursorIntoView();
     bool cursorInView();
@@ -394,7 +411,7 @@ private:
     int m_pendingNibble=-1;
     std::vector<Highlight> m_highlights;
     Edit m_lastEdit;
-    TextBox *m_goto=nullptr;
+    internal::HexViewGotoBox *m_goto=nullptr;
     int m_gotoLineHeight=0;
     internal::HexViewPreview *m_preview=nullptr;
     bool m_bigEndian=false;

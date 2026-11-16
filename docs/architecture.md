@@ -4613,7 +4613,11 @@ two programs and the draws. What follows describes both together:
   focus) copies the selection as spaced hex (`"41 42 43"`) through
   `platform::setClipboardText`. A goto `TextBox` in the view's top padding takes `0x1F`,
   `$1F` or text with a hex letter as hex and plain digits as decimal (`parseAddress`), an
-  address of the data (base included) moving the cursor there on Return. **Editing**
+  address of the data (base included) moving the cursor there on Return. The box is an
+  `internal::HexViewGotoBox`, which takes Return itself (as `DragNumberTextBox` does): the
+  press goes to no parent, so a Dialog's default button never sees it, and the release
+  jumps and focuses the view, or, for an address it refuses, keeps the focus in the box
+  with its text selected. **Editing**
   (with a write): a hex digit in the hex column is the cursor byte's high nibble, shown
   in place of its first digit while the box covers only the low digit's cell, the second
   writes the byte and moves on; a printable character in the ASCII column writes that
