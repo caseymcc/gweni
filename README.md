@@ -165,6 +165,14 @@ selected one. A span between two stops is one bilinear primitive slot, drawing `
 swatches below sample) between its two stops' pixel columns: dragging a stop rewrites its
 handle and the spans beside it, a recoloured stop its swatch and those spans, and nothing else.
 
+[![A curve editor over a position's x, y and z curves, every tangent mode among their keys, one Free key selected with its tangent handles, above an evaluate() readout](docs/images/CurveEditorDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=CurveEditorDemo)
+
+**Curve editor**: keyframed function curves as in Unity's AnimationCurve window, each key Smooth,
+Linear, Constant or Free (broken or joined), with per-axis zoom and pan, a marquee, tangent handles and
+typed time and value fields. Each span is a polyline of line slots: dragging a key rewrites the spans its
+edit changes (two each side, through the Smooth neighbours' tangents) and its disc, the same at 1 000
+keys as at 10 000, and `evaluate(x)` is what the app samples.
+
 [![The inspector beside a few controls](docs/images/InspectorDemo.png)](https://caseymcc.github.io/gweni/controltest.html?control=InspectorDemo)
 
 **Inspector**: `gweni::tools::Inspector`, the library's live view of the change tracking (F12 in the

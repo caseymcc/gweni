@@ -7314,6 +7314,125 @@ shell's "Gradient editor", the README gallery) shows an opaque, a translucent an
 Constant ramp and a strip of 32 swatches sampling the first one's `evaluate()`, set again
 on its `onChanged`.
 
+## The curve editor
+
+`gweni::Curve` (`include/gweni/curve.h`) is a keyframed function curve as a value type
+with no control behind it (Unity's AnimationCurve): keys sorted by time (stably, so keys
+at one time keep the order they came in), each a value, an in and an out tangent (slopes,
+value per unit of time) and a `TangentMode`. Span k, from key k to key k+1, takes its
+shape from key k's mode: `Constant` holds key k's value up to key k+1, `Linear` is the
+straight line, and `Smooth` and `Free` are the cubic Hermite on key k's out tangent and
+key k+1's in tangent. **A key's tangents are always the ones it is drawn with**: a Free
+key keeps the ones it is given (its out tangent joined to its in tangent unless
+`setBroken`), and after each edit the curve works out every other key's in the edit's
+window, a Smooth key's as Catmull-Rom (the slope of the chord between its neighbours,
+flat at the ends), a Linear key's as the slopes of the chords to its neighbours (so a
+Hermite span runs straight into it) and a Constant key's as 0. Setting a handle on a key
+that is not Free makes it Free with the tangents it had (Unity's Auto key dragged).
+`evaluate(x)` is the first key's value before it, the last key's from it on, and span
+k's value where key k is the last key at or before x. `moveKey` keeps a key's index while
+it stays between its neighbours and otherwise passes as few keys as it must, as a
+Gradient's stop does. NaN times and values are 0.
+
+**`lastChange()`** is what the last edit changed, as a splice of span indices: the old
+spans [first, first+removed) replaced by the new [first, first+inserted), every span
+before them and after them (shifted by inserted-removed) drawing as it did. An edit of
+keys [lo, hi) can change those keys and the tangents of the keys beside them, so the
+spans [lo-2, hi+1); the curve copies the old keys of that window before the edit and
+trims, from both ends, the spans that draw as their counterparts did (the same points,
+shape and, for a Hermite span of some width, tangents), so a Smooth key's move reports
+its two spans and its neighbours' outer ones, a Linear key's its two alone, a mode change
+that keeps the shape nothing. The work is the window's, not the curve's: a reorder's
+window reaches from the key's old place to its new one. `tessellate(span, segments,
+points)` gives a span's points: a Linear span's two, a Constant one's three (the step's
+corner between them), a Hermite one's at equal steps of time. `tests/unit/curve.cpp` pins
+the model, the splices by hand and over 2000 seeded random edits (every span outside the
+splice drawing as before, the splice's ends differing).
+
+`controls::CurveEditor` (`include/gweni/controls/curveEditor.h`) edits one or more curves
+the app owns (`addCurve(curve, surface)`, drawn in `CurveCurve<i%4>` by default, x, y and
+z of a position). **Composition:** an Owner-placed `internal::CurvePlot` over a footer
+row of two `DragNumber`s, the selected key's time and value (blank, `DragNumber::setBlank`,
+and disabled unless one key is selected). The plot holds no child: its keys are not
+controls, so N keys cost no tree, no layout and no z. **The view** is an x range and a y
+range mapped onto the plot on the CPU (`curveToLocal`, `localToCurve`; x0 at the left,
+y1 at the top), the axes zoomed apart (0..10 s against 0..1) with markers and strokes the
+same size at any zoom, which is why it is not a ZoomPanel (one zoom for both axes, its
+content scaled). The wheel zooms about the cursor (`WheelStep` 1.1 a notch), Ctrl the
+time alone, Shift (the canvas's horizontal wheel) the value alone; a middle or right
+press, or a left one with Space, is ZoomPanel's pan gesture (`Base::pressGesture`, an
+`InputCapture` past `PanThreshold`, a press let go before it replayed to the canvas, so a
+right-click reaches the plot); A frames every key and F the selection (Unity's). A view
+change only bumps `viewSerial()` and marks the plot: no layout pass.
+
+**Editing**, NodeGraph's rules, from the plot (which a press focuses): a press on a key
+selects it alone, Shift adds it, Ctrl toggles it (a key Ctrl takes off is not dragged),
+then a drag (`MouseFocus` on the plot, so a double-click still arrives) moves the
+selection by the mouse's motion in curve units, Shift keeping to the axis moved most,
+keys passing others reordered (the selection, the hover and the drag follow their keys
+through each move), Escape putting every key back; a plain click on a key of a selection
+makes it the selection. A press on a selected Free key's handle (each `HandleLength` on
+screen from its key along its tangent as drawn) sets that tangent from the key to the
+mouse, both while joined. A press on empty space is a marquee (the keys it touches, added
+with Shift or Ctrl; Escape gives the selection back; let go where pressed it clears the
+selection). A double-click within `CurveHitDistance` of a curve's value at the mouse's
+time adds a key there at `evaluate()` (Unity's). Delete removes the selection, the arrows
+nudge it a plot unit's worth of time or value (Shift ten), and a right-click on a key
+selects it (unless selected) and opens the key menu (Smooth, Linear, Constant, Free,
+Broken, Delete, for the selection): a canvas Menu the editor holds by id and sets on the
+plot only for a right press on a key, so a right-click elsewhere opens none. Hit tests
+binary-search each curve's keys by time within the radius, so a hover or a press costs
+the keys near it, not the curve's. `onChanged` fires once per key a user's edit changed
+(`info.point` the curve and key), `onSelectionChanged` once per user action that changed
+the selection; the app's own calls fire nothing, and after editing a curve itself the
+app calls `curveChanged()` (`tests/unit/curveEditor.cpp`).
+
+**The log the renderer reads.** Each curve keeps an ordered log of what changed since its
+plot was last drawn (`pendingEdits()`): span splices (`Curve::lastChange()`), key
+splices (a move's range, an add, a removal) and look changes (a key's hover, selection,
+handles), and an all flag (`pendingAll()`: a new curve, the app's `curveChanged()`, a
+log past `MaxPendingEdits`). The renderer replays it, so a frame's work is what changed.
+
+**Drawing.** The textured `CurvePlot` renderer draws the background, a grid of
+`drawLine` slots at `axis::niceStep`'s ticks on each axis (minor lines `GridMinGap`
+apart, major ones `LabelGapX`/`LabelGapY` apart; `drawGrid` has one spacing for both
+axes), a label per major tick, each curve's extensions (flat from the plot's left edge to
+its first key and from its last key to the right edge) and spans, a disc per key
+(`CurveKey`, `CurveKeyHover`, `CurveKeySelected`), a selected Free key's two stems and
+discs (`CurveTangent`) and the marquee's fill and outline (`CurveMarquee`), all in the
+plot's clip box. A span is reserved its mode's most segments (16 Hermite, 1 Linear, 2
+Constant) and uses as many as its chord on screen asks (`segmentsFor()`), each segment a
+`drawLine` with its neighbours along the curve, across spans and the extensions too, cut
+to the plot on the CPU first (a cut joint without that neighbour), as a NodeGraph link's.
+**The tick labels are text runs of the plot's own skin Control** (`renderText` on text
+ids it holds), not Text children, so a zoom or pan that moves and renames them lays
+nothing out; each is drawn again only when its string, place or clip changed.
+
+**Slot order and what a change writes.** Slots draw in id order and a partly covered
+anti-aliased edge still writes depth, so a slot taken after one in front of it would lose
+the pixels under that slot's edge. The lists are taken back to front, the background,
+the grid, the marquee's fill, each curve's segments, each curve's keys, the handles'
+stems, their discs, the outline, each with spare hidden slots, and every list is given
+back and taken again when one needs more than its spares, a curve comes or goes, the
+plot is resized or the app changes a curve (the Chart's rule), so ids follow depth.
+Between those, the log is replayed onto the lists: a splice moves the per-span and
+per-key slot lists with it (a kept entry keeps its slots, a new one takes spare ones, a
+gone one's are hidden and kept spare) and marks what it inserted and the spans beside it,
+a look change its key; only what is marked is drawn, each slot only when what it would
+hold differs from what it holds. So a key drag writes the segments of the spans its edit
+changed and its disc (and its handles), a hover the two discs, a click the discs whose
+look changed, a settled frame nothing, the same at any key count (`gweni_bench`'s
+`curve-key-drag`, scaling=local); a zoom or pan draws every slot of what it reaches again
+(linear by design, as a NodeGraph's pan is) with no layout pass; adding or removing a key
+within the spares takes and gives no id (`tests/unit/curveEditorRenderer.cpp`). The plot
+keeps its scratch lists between frames, so a drag frame allocates a handful of times.
+`--scenario curve-editor` holds CurveEditorDemo's key and tangent drag frames to the ids
+of what they changed and the drag to no pixel outside the editor, the zoom and the pan to
+no layout pass and the plot's ids, and checks the ids an added and deleted key and the
+demo give back. CurveEditorDemo (the shell's "Curve editor", the README gallery) shows a
+position's x, y and z curves with every mode among their keys, a broken Free key among
+them, and a DragNumber's time with the three curves' `evaluate()` there.
+
 ## The node graph
 
 `controls::NodeGraph` (`include/gweni/controls/nodeGraph.h`) is a node editor's view:

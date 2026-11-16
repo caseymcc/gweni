@@ -80,6 +80,7 @@ SAMPLES=(
     TimelineDemo
     HexViewDemo
     GradientEditorDemo
+    CurveEditorDemo
     InspectorDemo
     ThemeEditorDemo
 )
@@ -90,23 +91,27 @@ SAMPLES=(
 # control at its own size; MarkdownDemo 75 units taller than the pane, so its
 # three images (two delivered late, one failed) show below the table;
 # GradientEditorDemo, a column of three 420-unit editors and its preview
-# strip, at the size of that column.
+# strip, at the size of that column; CurveEditorDemo, its 620x340 editor and
+# the evaluate() row under it, at their size.
 PANE_SIZE=865x545
 declare -A SAMPLE_SIZE=(
     [TextDemo]=640x480
     [MarkdownDemo]=865x620
     [KnobDemo]=430x350
     [GradientEditorDemo]=440x394
+    [CurveEditorDemo]=640x390
 )
 
 # Scripted input a sample is captured after, in place of the plain capture's
 # frames: ControlTest steps, run in order before the --shot.
 # ShowcaseWindowsDemo is shown with its context menu open, right-clicked in
 # the "Context menu" box, and the mouse on its "Paste" item; CodeViewDemo with
-# the mouse over the diff, which shows its copy button.
+# the mouse over the diff, which shows its copy button; CurveEditorDemo with
+# curve z's Free key at 8 s clicked, selected and showing its tangent handles.
 declare -A SAMPLE_STEPS=(
     [ShowcaseWindowsDemo]="--frames 3 --move 70,280 --frames 2 --click-right 70,280 --frames 3 --move 110,340 --frames 3"
     [CodeViewDemo]="--frames 3 --move 200,300 --frames 3"
+    [CurveEditorDemo]="--frames 3 --click 489,36 --frames 3"
 )
 
 # The samples are grayscale text whatever the caller's environment says: LCD
