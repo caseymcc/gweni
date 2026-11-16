@@ -78,6 +78,7 @@ SAMPLES=(
     ChartLinesDemo
     ChartAreasDemo
     TimelineDemo
+    SequencerDemo
     HexViewDemo
     GradientEditorDemo
     CurveEditorDemo

@@ -4886,6 +4886,72 @@ two programs and the draws. What follows describes both together:
   `controltest_timeline` holds the counts above, a click and an overlap, and
   `gweni_bench`'s `timeline-hover` moves the mouse onto another bar a frame among N bars
   over 100 lanes at the same cost (one slot) at any N.
+- **The sequencer: the Timeline's view, with a playhead, a time zoom and editing.**
+  `controls::Sequencer` (`include/gweni/controls/sequencer.h`) is an animation sequencer
+  or dope sheet (ImSequencer, a DCC tool's timeline): tracks of clips (time ranges in
+  seconds) and keyframes (instants), at `setFrameRate()` frames a second. **What it
+  shares with the Timeline**, and builds no second set of: the lanes, their pooled
+  captions in the fixed column, the axis row above them and the vertically scrolled
+  body are `controls::LaneView`'s, the base both derive from (it lays them out and gives
+  the lane and x geometry; the subclass gives the x range, its ticks, and what to mark
+  when the lanes' contents move); a track's clips and keys are searched as the Timeline's
+  bars are, through an `internal::LaneBarIndex` each (sorted by start, the running
+  maximum of the ends, an overlap level per clip, the later of two overlapping clips on
+  top, drawn and picked; for keys at one instant the later is picked by the walk itself);
+  and the renderer paints the stripes and grid through `skin::textured::lanes`'s
+  `Painter::paintLanes()` in the `TimelineFrame`, `TimelineLane`, `TimelineGrid` and
+  `TimelineAxis` surfaces, with the same slot lists taken back to front
+  (`lanes::Taker`). The axis is relative time: the Chart's `axis::niceStep` and
+  `valueAxisTicks`, in seconds or whole frames (`setTimeFormat`), a tick per 60 units at
+  most. **The view and the playhead:** `setTimeRange` is the sequence's range (the
+  playhead's limits, Home and End) and sets the view to it; `setViewRange`, Ctrl+wheel
+  (`zoomAt` about the cursor's time, `WheelZoomStep`) and Shift+wheel or a middle drag
+  (`panBy`, the drag an `InputCapture` from `pressGesture(2)`) move the view, x only, its
+  span `MinViewFrames` frames to four times the range. A view change computes the ticks
+  again outside any layout pass (`LaneView::computeTicks()`) and bumps
+  `getItemsSerial()`: its tick labels are the renderer's own text runs, not controls
+  (`tickLabelsAreControls()` false), so **a zoom or a pan lays nothing out**, and rewrites
+  every clip, key and label in view, the ruler and the playhead: linear in what shows,
+  by design, as a NodeGraph's pan is. The playhead is `setPlayhead` (held to the range;
+  `onPlayheadChanged` on every change, the app's too, so a readout can follow a
+  playback), scrubbed on whole frames by a press or drag in the ruler, Left and Right a
+  frame, Home and End; Space fires `onPlayToggled` and the app plays (SequencerDemo with
+  an animation registered only while playing and shown). **Editing:** the app owns the
+  model and the sequencer holds its view of it, each item with the app's id; the app's
+  own edits fire nothing. A press selects (Shift adds, Ctrl toggles; a plain press on a
+  selected item keeps the group and its release with no drag selects it alone), a drag
+  `DragThreshold` units from the press moves the selection or, from a clip's
+  `GripWidth` edge grip, resizes that clip keeping a frame; the pressed item's edges snap
+  to another clip's edge, a key or the playhead within `SnapDistance` on-screen units
+  (the nearest; searched in the tracks in view through their indexes, so its cost does
+  not follow the item count), shown by the snap guide, else its start to a whole frame,
+  and Alt or `setSnapping(false)` snaps to nothing; Escape puts every item back;
+  `onItemsMoved` fires once on a release that moved something (`getMovedItems()`). A
+  left press on empty lane space is a marquee (Shift adding, Ctrl toggling, Escape
+  restoring), Delete removes the selection through `onRemoveRequested`/`vetoRemove()`,
+  then `onRemoved`. Moving an item to another track is not supported. **The look and
+  its cost:** a clip is a `drawRoundedRect` slot in a list per track, at z+3 plus its
+  overlap level, in its surface (`SequencerClip` or the app's) with
+  `SequencerClipSelected`'s and `SequencerClipHover`'s fill blended over it on the CPU
+  and their border; a key a disc (radius half `KeySize`) in `SequencerKey` or
+  `SequencerKeySelected`, a layer in front of every clip; the marquee
+  (`SequencerMarquee`, fill and border in one translucent slot), the snap guide
+  (`SequencerSnapGuide`) and the playhead's line and ruler head (kind 7, pointing down;
+  `SequencerPlayhead`) in front of them, `depthLayers()` 11. The items are drawn again
+  only when `getItemsSerial()` moved, each slot only when it differs; a hover draws the
+  item it left and the one it reached alone, a playhead move (`getPlayheadSerial()`) its
+  two slots. The grid's slots are taken for as many ticks as the area's width can show
+  (`area.w/60+4`), and the label runs given back with the ticks, so a zoom takes no slot
+  and a width back has the slots and runs it had (`controltest_resize_each` found both).
+  So a drag frame writes the dragged items' slots and the guide's, a scrub frame the
+  playhead's, a settled frame nothing; `SlotRenderer` counts only slots whose bytes
+  changed, so the headless renderer tests (`tests/unit/sequencerRenderer.cpp`, where
+  every draw is a write) are what keep a redundant draw out. SequencerDemo is twelve
+  tracks at 24 fps with a locked first track (its Delete vetoed); `controltest_sequencer`
+  holds a clip's and a key's snapping drags, a scrub, a zoom and a pan, the deletes and
+  the playback to the counts above, and `gweni_bench`'s `sequencer-drag` drags a clip
+  along its gap among N clips over 20 tracks at the same cost (one slot) at any N (the
+  renderer still walks every clip's slot, writing none of them, when the serial moves).
 - **The drag number: scrubbed by the mouse, typed into in a box made once.**
   `controls::DragNumber` (`include/gweni/controls/dragNumber.h`, imgui's DragFloat and
   DragInt) is a `Label` whose text is its value, centred in a field of the size asked for
