@@ -33,6 +33,7 @@
 #include <gweni/controls/comboBox.h>
 #include <gweni/controls/commandPalette.h>
 #include <gweni/controls/crossSplitter.h>
+#include <gweni/controls/curveEditor.h>
 #include <gweni/controls/dataTable.h>
 #include <gweni/controls/dateEdit.h>
 #include <gweni/controls/dialogs/dialog.h>

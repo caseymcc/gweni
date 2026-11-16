@@ -136,6 +136,12 @@ public:
     void setInteger(bool integer);
     bool isInteger() const { return m_integer; }
 
+    //! A blank field shows no text (a CurveEditor's field with no one key to
+    //! show); its value, range and events are as they were, and it shows the
+    //! value again once it is not blank.
+    void setBlank(bool blank);
+    bool isBlank() const { return m_blank; }
+
     //! \p value as the field shows it (getFormat()).
     String formatNumber(double value) const;
     //! The text the edit box starts with: the value with the format's
@@ -209,6 +215,7 @@ protected:
     double m_speed=0.0;
     String m_format;
     bool m_integer=false;
+    bool m_blank=false;
 
     bool m_depressed=false;
     //! The value at the press, and the motion since then times the modifiers'

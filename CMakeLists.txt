@@ -242,6 +242,8 @@ set(GWENI_CONTROL_SOURCES
     include/gweni/controls/collapsibleList.h
     include/gweni/controls/colorButton.h
     source/controls/colorButton.cpp
+    include/gweni/controls/curveEditor.h
+    source/controls/curveEditor.cpp
     include/gweni/controls/dragNumber.h
     source/controls/dragNumber.cpp
     include/gweni/controls/gradientEditor.h

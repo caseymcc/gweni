@@ -257,7 +257,16 @@ bool DragNumber::parseNumber(const String &text, double &value)
 // Label::setText marks the Text, and lays it out again, only for a new string.
 void DragNumber::updateText()
 {
-    setText(formatNumber(m_value), false);
+    setText(m_blank?String():formatNumber(m_value), false);
+}
+
+void DragNumber::setBlank(bool blank)
+{
+    if(blank == m_blank)
+        return;
+
+    m_blank=blank;
+    updateText();
 }
 
 String DragNumber::getValue()
