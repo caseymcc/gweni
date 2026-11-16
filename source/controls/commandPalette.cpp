@@ -220,23 +220,16 @@ bool CommandPaletteField::onKeyPageDown(bool down)
     return true;
 }
 
-// The press runs the command; its release is the field's too, so it moves
-// no focus on as a TextBox's would.
+// The press runs the highlighted command, if any; press and release are the
+// field's either way, so it moves no focus on as a TextBox's would.
 bool CommandPaletteField::onKeyReturn(bool down)
 {
+    if(!m_palette)
+        return ParentClass::onKeyReturn(down);
+
     if(down)
-    {
-        m_returnTaken=m_palette && m_palette->runHighlighted();
-        return m_returnTaken || ParentClass::onKeyReturn(true);
-    }
-
-    if(m_returnTaken)
-    {
-        m_returnTaken=false;
-        return true;
-    }
-
-    return ParentClass::onKeyReturn(false);
+        m_palette->runHighlighted();
+    return true;
 }
 
 void CommandPaletteField::clearText()
@@ -278,11 +271,35 @@ GWENI_CONTROL_CONSTRUCTOR(CommandPalette)
 
 CommandPalette::~CommandPalette()
 {
+    // closed while it is whole: popupClosed gives the focus back (not in a
+    // canvas's teardown, which deletes the popup with its other children and
+    // where what popupClosed reads may be gone, as Base::dropOwnedPopups)
+    Canvas *canvas=m_popup?m_popup->getCanvas():nullptr;
+
+    if(!canvas || !canvas->releasingChildren())
+        close();
     detach();
 
     // the popup goes with its owner (Base's ~Base) and must not call back
     if(m_popup)
+    {
+        m_popup->onClose.removeHandler(this);
         m_popup->setPalette(nullptr);
+    }
+
+    if(m_list)
+    {
+        m_list->onItemPressed.removeHandler(this);
+
+        for(Base *control : m_list->getRows())
+        {
+            if(auto *row=gweni_cast<internal::CommandPaletteRow>(control))
+                row->setPalette(nullptr);
+        }
+    }
+
+    if(m_field)
+        m_field->setPalette(nullptr);
 }
 
 String CommandPalette::matchText(const Command &command)
@@ -427,7 +444,7 @@ void CommandPalette::recentRanks(std::vector<int> &ranks) const
 
 // Disabled commands are left out. An empty query: the recent ones, latest
 // first, then the rest in m_sortedOrder. Otherwise text::fuzzyRank's order,
-// equal scores by recency and then index.
+// equal scores by recency (its tie rank) and then index.
 void CommandPalette::matchCommands(std::vector<size_t> &matches) const
 {
     prepare();
@@ -461,23 +478,9 @@ void CommandPalette::matchCommands(std::vector<size_t> &matches) const
         return;
     }
 
-    text::FuzzyMatcher matcher(query);
-    std::vector<int> scores(m_commands.size(), 0);
-
-    for(size_t i=0; i < m_commands.size(); ++i)
-    {
-        if(isCommandEnabled(i) && matcher.match(m_texts[i], scores[i]))
-            matches.push_back(i);
-    }
-
-    std::sort(matches.begin(), matches.end(), [&](size_t a, size_t b)
-        {
-            if(scores[a] != scores[b])
-                return scores[a] > scores[b];
-            if(ranks[a] != ranks[b])
-                return ranks[a] < ranks[b];
-            return a < b;
-        });
+    text::fuzzyRank(query, m_texts, matches, &ranks);
+    matches.erase(std::remove_if(matches.begin(), matches.end(),
+        [this](size_t index) { return !isCommandEnabled(index); }), matches.end());
 }
 
 void CommandPalette::attach(Canvas *canvas, const String &accelerator)

@@ -379,7 +379,8 @@ void TextBox::updatePlaceholder()
     if(!m_placeholder)
         return;
 
-    const bool show=!m_placeholder->getText().empty() && !hidden() && getText().empty() && !isFocussed();
+    const bool show=!m_placeholder->getText().empty() && !hidden() && getText().empty()
+        && (!isFocussed() || placeholderWhileFocused());
 
     if(m_placeholder->hidden() == !show)
         return;

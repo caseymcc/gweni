@@ -303,9 +303,12 @@ protected:
     //! it there.
     void updateColors() override;
     //! Shows the hint if there is one, the box is visible and empty and does
-    //! not have the focus; hides it otherwise. Only ever toggles its
-    //! visibility, so nothing is laid out again.
+    //! not have the focus (or placeholderWhileFocused()); hides it otherwise.
+    //! Only ever toggles its visibility, so nothing is laid out again.
     void updatePlaceholder();
+    //! Whether the hint shows while the empty box has the focus too (a
+    //! CommandPalette's field, which always has it while open); false.
+    virtual bool placeholderWhileFocused() const { return false; }
 
     virtual bool isTextAllowed(const gweni::String &/*str*/, int /*pos*/)
     {

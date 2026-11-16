@@ -5821,7 +5821,8 @@ two programs and the draws. What follows describes both together:
 - **The command palette: commands as data, the search combo box's list, a fuzzy scorer.**
   `controls::CommandPalette` (`include/gweni/controls/commandPalette.h`) is VS Code's
   Ctrl+Shift+P: a Popup at the canvas's top centre holding a `TextBox` with the keyboard
-  focus (placeholder "Type a command") and, under it, the app's commands that match what
+  focus (its placeholder "Type a command" shown while it is empty, focused or not:
+  `TextBox::placeholderWhileFocused()`, false for every other box) and, under it, the app's commands that match what
   is typed, best first; Return runs the highlighted one.
 
   *Commands are data.* `addCommand({id, label, category, shortcut, enabled,
@@ -5857,8 +5858,8 @@ two programs and the draws. What follows describes both together:
   scattered match, a run the same letters with gaps. It is one row of a table per query
   point over the text's points, the affine gap kept as a running best, O(query × text);
   `text::FuzzyMatcher` decodes the query once and keeps its buffers across texts. The
-  palette matches against `matchText()`, `"category: label"` (the label alone without a
-  category), and sorts by score, then by recency (`setRecentFirst(true)`, the default:
+  palette ranks with `text::fuzzyRank` over `matchText()`, `"category: label"` (the label
+  alone without a category), leaves the disabled commands out, and sorts by score, then by recency (`setRecentFirst(true)`, the default:
   the last `getRecentLimit()` (10) run, the latest first), then by the order added, so
   equal scores come out the same every time. An empty query lists the recent commands
   first and then the rest by category and label (an order kept until the commands
@@ -5882,7 +5883,12 @@ two programs and the draws. What follows describes both together:
   outside, a command run and the accelerator again; however it closes, the keyboard focus
   goes back to the control that had it at the open, if still shown, unless the close gave
   it to another (a press outside on a control). A run closes first and then fires
-  `onCommand`, so a handler opening a dialog gives the focus back where it was.
+  `onCommand`, so a handler opening a dialog gives the focus back where it was. A press
+  anywhere in the popup off the field (its padding, the list's bar, the "No matching
+  commands" row) keeps the field's focus (`pressKeepsKeyboardFocus()` on the popup and
+  the list, as on the search combo box's list), and a palette deleted while open closes
+  first (the focus given back; not inside a canvas's teardown, as
+  `Base::dropOwnedPopups`), so the popup, deleted after with its owner, calls nothing.
 
   *The rows and the keys.* The list is a `VirtualList` (`internal::CommandPaletteList`)
   always `MaxShownRows` (10) rows high, so its pool never follows the query, and the
@@ -5893,8 +5899,9 @@ two programs and the draws. What follows describes both together:
   on the left, the shortcut right-aligned (`CommandPaletteShortcutText`) and the label
   filling the rest in the row's text colour; each is set only when its string changes.
   The field (`internal::CommandPaletteField`) gives Up and Down (wrapping), PageUp and
-  PageDown (a page, stopping at the ends) and Return to the palette and keeps Home, End
-  and editing; a click on a row runs its command and a real mouse move highlights it.
+  PageDown (a page, stopping at the ends) and Return to the palette (its press and its
+  release, with nothing highlighted too, so a Return never moves the focus on as a
+  single-line TextBox's release does) and keeps Home, End and editing; a click on a row runs its command and a real mouse move highlights it.
 
   *The cost.* A keystroke ranks the command data again (a decode and a table per
   command, no control touched) and goes through `rebindChanged()`: only the pooled rows

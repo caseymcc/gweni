@@ -17,7 +17,11 @@
  *  the run ones first, latest first (setRecentFirst(false) leaves them in
  *  place). A disabled command (its flag, or a predicate asked at each match)
  *  is not listed, and with nothing listed one disabled "No matching
- *  commands" row shows, which Return runs nothing on. Up and Down move the
+ *  commands" row shows, which Return runs nothing on, its press and release
+ *  leaving the field focused. A press in the popup off the field (its
+ *  padding, the list's bar, that row) keeps the field focused, and the
+ *  field's "Type a command" hint shows while it is empty and focused (a
+ *  plain TextBox's only while unfocused). Up and Down move the
  *  highlight and wrap at both ends, PageUp and PageDown move MaxShownRows and
  *  stop at the ends, Return runs the highlighted command once (onCommand with
  *  its id, after the palette closed and the focus came back), Escape closes
@@ -25,7 +29,8 @@
  *  again only the rows whose command changed and makes no control; the
  *  pool, the popup's controls, the live ids and a keystroke's binds are the
  *  same with 50 and with 5 000 commands; opening a second time makes no
- *  control; and deleting the palette takes its accelerator off the canvas.
+ *  control; deleting the palette takes its accelerator off the canvas, and
+ *  deleting it open closes it first, the focus back on the TextBox.
  */
 #include "headlessFixture.h"
 
@@ -348,6 +353,12 @@ TEST_CASE("CommandPalette: disabled commands, by flag or predicate, are not list
     scene.key(keys::Return);
     CHECK(ran.ids.empty());
     CHECK(scene.palette->isOpen());
+    // the press and the release are the field's: no Tab on, no unfocus
+    CHECK(KeyboardFocus == scene.palette->getField());
+
+    scene.canvas->inputCharacter('x');
+    scene.frame();
+    CHECK(scene.palette->getQuery() == "allx");
 }
 
 TEST_CASE("CommandPalette: Up and Down wrap, PageUp and PageDown move a page and stop, Return runs once and closes, Escape closes")
@@ -437,6 +448,97 @@ TEST_CASE("CommandPalette: a press outside it closes it, a press on a row runs t
     scene.click(at.x+row->getWidth()/2, at.y+row->getHeight()/2);
     CHECK(ran.ids == std::vector<String>({second}));
     CHECK_FALSE(scene.palette->isOpen());
+}
+
+TEST_CASE("CommandPalette: a press in the popup off the field, on its padding, the list's bar or the no-matches row, keeps the field focused")
+{
+    Scene scene;
+
+    addNumbered(scene, 50);
+    scene.palette->open();
+    scene.frame();
+    REQUIRE(KeyboardFocus == scene.palette->getField());
+
+    controls::Base *popup=scene.palette->getPopup();
+    const Point corner=popup->localPosToCanvas();
+
+    // the popup's own padding, left of the field
+    REQUIRE(scene.canvas->getControlAt(corner.x+1, corner.y+1) == popup);
+    scene.click(corner.x+1, corner.y+1);
+    CHECK(scene.palette->isOpen());
+    CHECK(KeyboardFocus == scene.palette->getField());
+
+    // the list's scroll bar (50 commands, 10 shown)
+    controls::VirtualList *list=scene.palette->getList();
+    const Point listAt=list->localPosToCanvas();
+    const int barX=listAt.x+list->getWidth()-2;
+    const int barY=listAt.y+list->getHeight()/2;
+    controls::Base *bar=scene.canvas->getControlAt(barX, barY);
+
+    REQUIRE(bar);
+    CHECK(bar != list->rowForItem(0));
+    scene.click(barX, barY);
+    CHECK(scene.palette->isOpen());
+    CHECK(KeyboardFocus == scene.palette->getField());
+
+    // the disabled "No matching commands" row
+    scene.type("zzzz");
+    REQUIRE(scene.palette->shownRowCount() == 1);
+
+    controls::Base *row=list->rowForItem(0);
+    const Point rowAt=row->localPosToCanvas();
+
+    scene.click(rowAt.x+row->getWidth()/2, rowAt.y+row->getHeight()/2);
+    CHECK(scene.palette->isOpen());
+    CHECK(KeyboardFocus == scene.palette->getField());
+
+    scene.canvas->inputCharacter('q');
+    scene.frame();
+    CHECK(scene.palette->getQuery() == "zzzzq");
+}
+
+TEST_CASE("CommandPalette: its field shows the placeholder while empty and focused, a plain TextBox's only unfocused")
+{
+    Scene scene;
+
+    scene.add("save", "Save", "File");
+    scene.box->setPlaceholder("hint");
+    scene.frame();
+    CHECK(scene.box->isPlaceholderShown());
+    scene.box->focus();
+    scene.frame();
+    CHECK_FALSE(scene.box->isPlaceholderShown());
+
+    scene.accelerator();
+    REQUIRE(KeyboardFocus == scene.palette->getField());
+    CHECK(scene.palette->getField()->isPlaceholderShown());
+
+    scene.type("s");
+    CHECK_FALSE(scene.palette->getField()->isPlaceholderShown());
+
+    scene.key(keys::Backspace);
+    REQUIRE(scene.palette->getQuery().empty());
+    CHECK(scene.palette->getField()->isPlaceholderShown());
+}
+
+TEST_CASE("CommandPalette: deleting it while open closes it first, the focus given back")
+{
+    Scene scene;
+
+    scene.add("save", "Save", "File");
+    scene.box->focus();
+    scene.accelerator();
+    REQUIRE(scene.palette->isOpen());
+    REQUIRE(KeyboardFocus == scene.palette->getField());
+
+    controls::Base *popup=scene.palette->getPopup();
+
+    delete scene.palette;
+    scene.palette=nullptr;
+    CHECK(KeyboardFocus == scene.box);
+    CHECK(scene.canvas->shownPopup() != popup);
+    scene.frame();
+    scene.frame();
 }
 
 TEST_CASE("CommandPalette: a keystroke binds only the rows whose command changed, and opening again makes no control")

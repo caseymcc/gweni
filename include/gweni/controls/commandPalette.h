@@ -51,6 +51,10 @@ public:
     //! In X the palette's width at the canvas's; in Y cut to the shown rows.
     void calculateSize(skin::Base *skin, Dim dim) override;
 
+    //! A press anywhere in it (its padding, the list's bar, the "No matching
+    //! commands" row) leaves the keyboard focus with the field.
+    bool pressKeepsKeyboardFocus() override { return true; }
+
 private:
     CommandPalette *m_palette=nullptr;
 };
@@ -67,6 +71,10 @@ public:
 public:
     //! In Y, MaxShownRows rows.
     void calculateSize(skin::Base *skin, Dim dim) override;
+
+    //! A press on it (a row, the bar) leaves the keyboard focus with the
+    //! field, as SearchComboBoxList's does.
+    bool pressKeepsKeyboardFocus() override { return true; }
 };
 
 //! A row of a CommandPalette's list, pooled and bound to a shown command:
@@ -109,8 +117,11 @@ private:
 };
 
 //! A CommandPalette's field: a TextBox whose text is the query. Up, Down,
-//! PageUp, PageDown and Return go to the palette; Escape is the canvas's
-//! (it closes the popup); Home, End and the rest stay the TextBox's.
+//! PageUp, PageDown and Return go to the palette (Return's press and release
+//! are the field's even with nothing highlighted, so it never moves the focus
+//! on as a TextBox's would); Escape is the canvas's (it closes the popup);
+//! Home, End and the rest stay the TextBox's. Its "Type a command" hint shows
+//! while it is empty, focused or not (VS Code's look).
 class GWENI_EXPORT CommandPaletteField: public TextBox
 {
 public:
@@ -118,7 +129,7 @@ public:
     GWENI_CONTROL(CommandPaletteField, TextBox);
 
 public:
-    void setPalette(CommandPalette *palette) { m_palette=palette; }
+    void setPalette(CommandPalette *palette) { m_palette=palette; updatePlaceholder(); }
 
     bool onKeyUp(bool down) override;
     bool onKeyDown(bool down) override;
@@ -132,12 +143,11 @@ public:
 
 protected:
     void onTextChanged() override;
+    bool placeholderWhileFocused() const override { return m_palette != nullptr; }
 
 private:
     CommandPalette *m_palette=nullptr;
     bool m_clearing=false;
-    //! The palette took the Return press: the release is the field's too.
-    bool m_returnTaken=false;
 };
 
 }//namespace internal
@@ -167,8 +177,9 @@ private:
 //!
 //! The list is a FilteredList over a VirtualList of pooled rows (the shared
 //! part of SearchComboBox), its matcher text::fuzzyRank over "category:
-//! label" (the label alone with no category): the query's characters in
-//! order, case-insensitively, scored by text::fuzzyMatch. Equal scores go to
+//! label" (the label alone with no category), the disabled commands then
+//! left out: the query's characters in order, case-insensitively, scored by
+//! text::fuzzyMatch. Equal scores go to
 //! the recently run commands first (with setRecentFirst(true), the default:
 //! the last getRecentLimit() run, the latest first) and then by the order
 //! they were added. An empty query lists the recent commands first, then the
@@ -222,7 +233,8 @@ public:
     //! No command highlighted or found.
     static constexpr int NoCommand=-1;
 
-    //! Takes its accelerator off the canvas.
+    //! Closes it (the focus given back) and takes its accelerator off the
+    //! canvas; the popup, deleted after by ~Base, no longer calls it.
     ~CommandPalette() override;
 
     //! Appends a command; one whose id a command has replaces it in place.
