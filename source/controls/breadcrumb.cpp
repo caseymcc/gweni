@@ -434,6 +434,13 @@ void Breadcrumb::menuItemPicked(event::Info info)
         itemClicked(info.packet->get<size_t>());
 }
 
+// A part the right edge took whole is shown but at no width: it is not
+// drawn, so the keyboard does not reach it either.
+static bool drawn(const Base *part)
+{
+    return !part->hidden() && (part->getWidth() > 0);
+}
+
 std::vector<Base *> Breadcrumb::focusOrder()
 {
     std::vector<Base *> parts;
@@ -445,13 +452,13 @@ std::vector<Base *> Breadcrumb::focusOrder()
         {
             internal::BreadcrumbItem *item=m_itemControls[i];
 
-            if(item->isClickable() && !item->hidden())
+            if(item->isClickable() && drawn(item))
                 parts.push_back(item);
         };
 
     for(size_t i=0; i < m_itemControls.size(); ++i)
     {
-        if(i == m_collapseBegin && m_collapseEnd > m_collapseBegin && !m_ellipsis->hidden())
+        if(i == m_collapseBegin && m_collapseEnd > m_collapseBegin && drawn(m_ellipsis))
             parts.push_back(m_ellipsis);
         if(!isCollapsed(i))
             add(i);
@@ -591,7 +598,33 @@ void Breadcrumb::arrange(skin::Base *skin, Dim dim)
     }
     // the focus moves outside the placement, which it changes nothing of
     passFocusOn(focused, menuFocused, begin, end);
+    if(dim == Dim::X)
+        closeUndrawnMenu();
     ParentClass::arrange(skin, dim);
+}
+
+// An ellipsis the right edge took whole keeps its menu open, anchored to
+// nothing drawn; it is closed in the next update (a close in the pass would
+// re-dirty it), after the focus it held has been handed on.
+void Breadcrumb::closeUndrawnMenu()
+{
+    if(m_ellipsis->hidden() || drawn(m_ellipsis) || !m_ellipsis->isMenuOpen())
+        return;
+
+    Canvas *canvas=getCanvas();
+
+    if(!canvas)
+        return;
+
+    const size_t id=m_ellipsis->getControlId();
+
+    canvas->post([id]()
+        {
+            auto *ellipsis=gweni_cast<internal::BreadcrumbEllipsis>(Base::getControlById(id));
+
+            if(ellipsis && !ellipsis->hidden() && !drawn(ellipsis) && ellipsis->isMenuOpen())
+                ellipsis->closeMenu();
+        });
 }
 
 // A hidden part keeps the focus until the layout ends, when the input code
@@ -607,11 +640,11 @@ void Breadcrumb::passFocusOn(Base *focused, bool menuFocused, size_t begin, size
         focused=(KeyboardFocus == m_ellipsis->getMenu())?m_ellipsis:nullptr;
     else if(KeyboardFocus != focused)
         return;
-    if(!focused || !focused->hidden())
+    if(!focused || drawn(focused))
         return;
     if(focused != m_ellipsis)
     {
-        if(!m_ellipsis->hidden())
+        if(drawn(m_ellipsis))
         {
             m_ellipsis->focus();
             return;
@@ -623,7 +656,7 @@ void Breadcrumb::passFocusOn(Base *focused, bool menuFocused, size_t begin, size
         {
             internal::BreadcrumbItem *item=m_itemControls[i];
 
-            if(!item->hidden() && item->isClickable())
+            if(drawn(item) && item->isClickable())
             {
                 item->focus();
                 return;

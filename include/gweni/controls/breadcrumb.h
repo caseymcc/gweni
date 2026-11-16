@@ -209,12 +209,18 @@ private:
     void keepFocus(bool focused);
     //! Decides the collapsed range from the width and places the parts in X.
     void handleOverflow();
-    //! After a layout hid \p focused (the part that had the focus): a
+    //! After a layout hid \p focused (the part that had the focus) or took it
+    //! whole at the right edge (shown at no width, so not drawn): a
     //! collapsed item gives it to the ellipsis, the ellipsis to the first item
-    //! it revealed of [\p begin, \p end), the range collapsed before. The
+    //! it revealed of [\p begin, \p end), the range collapsed before (each
+    //! only if drawn; else the last drawn part, keepFocus()). The
     //! focus the ellipsis's open menu held before (\p menuFocused) is handed
-    //! on as the ellipsis's, the menu left to the canvas to close.
+    //! on as the ellipsis's, the menu left to the canvas (or to
+    //! closeUndrawnMenu()) to close.
     void passFocusOn(Base *focused, bool menuFocused, size_t begin, size_t end);
+    //! Closes, in the next update, the open menu of an ellipsis the right
+    //! edge took whole (shown at no width).
+    void closeUndrawnMenu();
     //! Fills the ellipsis's menu if the collapsed labels changed.
     void updateMenu();
     void menuItemPicked(event::Info info);

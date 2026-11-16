@@ -31,7 +31,11 @@
  *  the path from a Return or a menu pick leaves the focus on a shown part,
  *  so Tab and the arrows still work, and so does a layout that hides the
  *  focused part: a collapsing item hands it to the ellipsis, a hidden
- *  ellipsis to the first item it reveals.
+ *  ellipsis to the first item it reveals. A part the right edge takes
+ *  whole (shown at no width) takes no focus from Tab, the arrows or End,
+ *  and a narrowing that clips the focused part, or the ellipsis whose open
+ *  menu has the focus, that far hands the focus to a part still drawn, in
+ *  one pass, the menu closed in the next update.
  */
 #include "headlessFixture.h"
 
@@ -1028,4 +1032,60 @@ TEST_CASE("Breadcrumb: a widening that hides the ellipsis with its menu focused 
     scene.setWidth(neededWidth(path, 1, 3));
     REQUIRE(shown(path) == std::vector<int>{0, -1, 3, 4, 5});
     CHECK(KeyboardFocus == menu);
+}
+
+TEST_CASE("Breadcrumb: a part clipped to no width takes no keyboard focus")
+{
+    Scene scene;
+    auto *path=scene.path;
+    auto *ellipsis=path->getEllipsisControl();
+    // the narrowest path: Home cut, the ellipsis and the rest past the edge
+    const int narrow=24;
+
+    path->setItems({"Home", "Projects", "gweni", "source", "controls", "base.cpp"});
+    scene.frame();
+    const int fits=neededWidth(path, 0, 0);
+    auto *home=path->getItemControl(0);
+
+    scene.setWidth(narrow);
+    REQUIRE(shown(path) == std::vector<int>{0, -1, 5});
+    REQUIRE(home->getWidth() > 0);
+    REQUIRE(ellipsis->getWidth() == 0);
+
+    // the arrows, End and the Tab stop reach no part the edge took whole
+    home->focus();
+    CHECK(path->getTabStop() == home);
+    scene.key(keys::Right);
+    CHECK(KeyboardFocus == home);
+    scene.key(keys::End);
+    CHECK(KeyboardFocus == home);
+    scene.key(keys::Return);
+    CHECK(!ellipsis->isMenuOpen());
+    REQUIRE(KeyboardFocus);
+    CHECK(KeyboardFocus->getWidth() > 0);
+
+    // a narrowing that clips the focused part whole hands the focus to a
+    // part still drawn, in one pass
+    scene.setWidth(fits);
+    path->getItemControl(3)->focus();
+    scene.setWidth(narrow);
+    CHECK(scene.canvas->getLayoutStats().passes == 1);
+    REQUIRE(KeyboardFocus);
+    CHECK(KeyboardFocus->getWidth() > 0);
+    CHECK(KeyboardFocus == home);
+
+    // and so does one that clips the ellipsis whose open menu has it; the
+    // canvas's close of the menu leaves it there
+    scene.setWidth(neededWidth(path, 1, 5));
+    REQUIRE(ellipsis->getWidth() > 0);
+    ellipsis->focus();
+    scene.key(keys::Return);
+    controls::Menu *menu=ellipsis->getMenu();
+    REQUIRE(KeyboardFocus == menu);
+    scene.setWidth(narrow);
+    CHECK(scene.canvas->getLayoutStats().passes == 1);
+    CHECK(KeyboardFocus == home);
+    scene.frame();
+    CHECK(!ellipsis->isMenuOpen());
+    CHECK(KeyboardFocus == home);
 }

@@ -676,7 +676,14 @@ hidden once the path fits (a resize, or a pick's pop that left a smaller collaps
 the next layout undoes), to the first item it reveals, also when its open menu
 holds the focus (the menu, whose anchor is now hidden, is closed by the canvas in
 the next update, `Canvas::updateAnchoredMenus`, and finds the focus gone from it,
-so it hands back nothing; a close in the pass would re-dirty it). Disabling the path closes
+so it hands back nothing; a close in the pass would re-dirty it). A part the right
+edge takes whole (shown, but placed at no width past the cut last item) is not drawn,
+so it takes no focus either: Tab, the arrows and End pass over it (so Return cannot
+open the menu of an ellipsis that is not there), and a narrowing that clips the
+focused part that far, or the ellipsis whose open menu has the focus, hands the focus
+on as a hide does, to a part still drawn (the last one before it, `keepFocus`); the
+menu of such an ellipsis is closed in the next update (`closeUndrawnMenu`, a
+`Canvas::post`, since its anchor is still shown). Disabling the path closes
 the menu, releases focus and turns off its items' keyboard and mouse input; enabling
 it restores input according to each item's click policy, including items pushed
 while disabled.
