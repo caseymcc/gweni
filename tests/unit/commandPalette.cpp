@@ -305,7 +305,7 @@ TEST_CASE("CommandPalette: an empty query lists by category and label, the recen
     CHECK(scene.shown() == std::vector<String>({"Edit: Undo", "File: Save", "View: Toggle Sidebar", "View: Zoom In"}));
 }
 
-TEST_CASE("CommandPalette: disabled commands, by flag or predicate, are not listed; nothing listed shows one disabled row")
+TEST_CASE("CommandPalette: disabled commands, by flag or predicate, are not listed and nothing listed shows one disabled row")
 {
     Scene scene;
     bool enabled=false;
