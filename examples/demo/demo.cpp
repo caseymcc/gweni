@@ -37,6 +37,7 @@
 #include "demo/dragNumber.h"
 #include "demo/knob.h"
 #include "demo/vectorField.h"
+#include "demo/gradientEditor.h"
 #include "demo/popup.h"
 #include "demo/chipBadge.h"
 #include "demo/spinner.h"
@@ -279,6 +280,7 @@ void Demo::init(const String &name)
         addDemo<KnobDemo>(cat, "KnobDemo", "Knob");
         addDemo<VectorFieldDemo>(cat, "VectorFieldDemo", "Vector field");
         addDemo<HexViewDemo>(cat, "HexViewDemo", "Hex view");
+        addDemo<GradientEditorDemo>(cat, "GradientEditorDemo", "Gradient editor");
         addDemo<MenuStripDemo>(cat, "MenuStripDemo", "Menu strip");
     }
     {

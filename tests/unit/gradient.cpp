@@ -165,7 +165,7 @@ TEST_CASE("Gradient: at a position two stops share, the later stop's colour")
     CHECK(gradient.evaluate(0.75f) == Color(228, 228, 228, 255));
 }
 
-TEST_CASE("Gradient: addStop goes after the stops at its position; addStop(t) takes evaluate(t)")
+TEST_CASE("Gradient: addStop goes after the stops at its position, and addStop(t) takes evaluate(t)")
 {
     Gradient gradient({{0.0f, grey(0)}, {0.5f, grey(1)}, {1.0f, grey(2)}});
 

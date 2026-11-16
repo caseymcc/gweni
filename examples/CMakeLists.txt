@@ -115,6 +115,8 @@ set(GWENI_DEMO_SOURCES
     demo/knob.cpp
     demo/knob.h
     demo/vectorField.cpp
+    demo/gradientEditor.cpp
+    demo/gradientEditor.h
     demo/vectorField.h
     demo/chipBadge.cpp
     demo/spinner.cpp

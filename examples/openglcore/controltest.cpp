@@ -183,7 +183,8 @@
  *                       code-view | rich-text | markdown | markdown-images |
  *                       search-combo |
  *                       reorder |
- *                       calendar | date-time | translucency (see below)
+ *                       calendar | date-time | translucency |
+ *                       gradient-editor (see below)
  *    --dump-bounds [<path>]
  *                       print the laid-out control tree as text: one line per
  *                       control, depth-first in child order, indented by depth,
@@ -924,6 +925,25 @@
  *                 back; the Labels under the overlay are blended under its
  *                 panel where it draws nothing of its own; the demo gives
  *                 its ids back. Exits non-zero if any check is no.
+ *    gradient-editor
+ *                 GradientEditorDemo's Constant ramp, the clock frozen
+ *                 (gradient-editor-drag.png): its second stop dragged right
+ *                 3 units at a time and past the third, Escape and the
+ *                 release; "200" typed into the R field of the second stop;
+ *                 a stop added on the strip at 90 % and deleted; the first
+ *                 handle double-clicked (the picker) and Escape. One line
+ *                   gradient-editor drag_within=yes|no ... ids_back=yes|no
+ *                 reports the checks: each drag frame writes no slot but the
+ *                 dragged handle's, the handles a reorder passed, the bar's
+ *                 spans beside the stop where it was and where it is and the
+ *                 position field's, and the drag changes no pixel outside
+ *                 the editor; Escape gives the stops back; each typed digit
+ *                 writes no slot but the spans beside the stop, its handle's
+ *                 and the ColorEdit's; the added stop takes ids and the
+ *                 delete gives them back; settled frames write nothing,
+ *                 with the picker open too; the demo gives its ids back.
+ *                 Two more lines list each drag and typing frame's writes.
+ *                 Exits non-zero if any check is no.
  *    chip-badge   ChipBadgeDemo, the clock frozen (chip-badge.png): the
  *                 Inbox entry's badge counted one more (the same width),
  *                 then 9 -> 10 (wider); the "Corners" button, a badge at
@@ -1842,6 +1862,7 @@
 #include <demo/knob.h>
 #include <gweni/controls/knob.h>
 #include <demo/vectorField.h>
+#include <demo/gradientEditor.h>
 #include <demo/zoomPanel.h>
 #include <demo/translucency.h>
 #include <demo/opacity.h>
@@ -1862,6 +1883,8 @@
 #include <demo/colorEdit.h>
 #include <gweni/controls/colorButton.h>
 #include <gweni/controls/colorEdit.h>
+#include <gweni/controls/gradientEditor.h>
+#include <gweni/controls/textBox.h>
 #include <demo/tabControl.h>
 #include <demo/tabOverflow.h>
 #include <demo/treeControl.h>
@@ -1966,7 +1989,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(ChartAreasDemo) X(TimelineDemo) X(ComboBoxDemo) X(SearchComboDemo) \
     X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(NavigationRailDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(TreeTableDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(CodeViewDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(SegmentedButtonsDemo) X(CalendarDemo) X(DateTimeDemo) X(SplitButtonDemo) X(BreadcrumbDemo) X(ToolBarDemo) X(StepperDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
-    X(CheckBoxDemo) X(SwitchDemo) X(SpinnerDemo) X(FieldValidationDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(RangeSliderDemo) X(DragNumberDemo) X(KnobDemo) X(VectorFieldDemo) X(HexViewDemo) X(MenuStripDemo) \
+    X(CheckBoxDemo) X(SwitchDemo) X(SpinnerDemo) X(FieldValidationDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(RangeSliderDemo) X(DragNumberDemo) X(KnobDemo) X(VectorFieldDemo) X(HexViewDemo) X(GradientEditorDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
     X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo) X(InspectorDemo) X(ThemeEditorDemo) \
@@ -2072,7 +2095,7 @@ static void printUsage(std::ostream &out)
          "                     | toolbar | range-slider | stepper | code-view\n"
          "                     | rich-text\n"
          "                     | search-combo | reorder | calendar | date-time\n"
-         "                     | translucency;\n"
+         "                     | translucency | gradient-editor;\n"
          "                     resize prints listing_settled, mirror_settled,\n"
          "                     shrink_settled and fresh_matches, interaction one\n"
          "                     yes/no per repaint check, typing its keyboard\n"
@@ -3133,7 +3156,7 @@ enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typ
     PlotLines, Knob, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
     ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented, SplitButton, ToolBar,
     Breadcrumb, RangeSlider, Stepper, CodeView, RichText, Markdown, MarkdownImages, SearchCombo, Reorder, Calendar, DateTime, Translucency,
-    OpacityRoundTrip, Opacity, HexView };
+    OpacityRoundTrip, Opacity, HexView, GradientEditor };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -3160,6 +3183,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "hide-show") scenario=Scenario::HideShow;
     else if(name == "opacity-round-trip") scenario=Scenario::OpacityRoundTrip;
     else if(name == "opacity") scenario=Scenario::Opacity;
+    else if(name == "gradient-editor") scenario=Scenario::GradientEditor;
     else if(name == "demo-labels") scenario=Scenario::DemoLabels;
     else if(name == "plot-histogram") scenario=Scenario::PlotHistogram;
     else if(name == "plot-lines") scenario=Scenario::PlotLines;
@@ -9112,6 +9136,304 @@ static void checkVectorField(Session &s, const std::string &shotDir, Interaction
     checks.check("vector_field_tab", focused && tabbed,
         std::string(focused ? "" : "the press did not focus the Y field; ")
         +(tabbed ? "" : "Tab did not move the focus to the Z field"));
+}
+
+//-----------------------------------------------------------------------------
+// --scenario gradient-editor: GradientEditorDemo's Constant ramp dragged,
+// recoloured, added to and deleted from, and its picker opened
+//
+// The bar draws every slot each time it is marked and the renderer writes only
+// the slots whose bytes differ, so each frame is held to the slots of what it
+// touched: a drag frame of a stop to its handle's, the bar's spans beside the
+// stop where it was and where it is (its flat end when first or last), the
+// handles a reorder made other stops' and the position field's (its glyphs);
+// a colour typed into the R field to the spans beside the stop, its handle and
+// the ColorEdit's own (its swatch and the field). No drag changes a pixel
+// outside the editor. An added and a deleted stop give the live ids back, and
+// a settled frame writes nothing with the picker closed and open.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+struct GradientFrame
+{
+    std::set<size_t> primitives;
+    std::set<size_t> texts;
+    size_t written=0;
+};
+
+}//namespace
+
+static void subtreeIds(gweni::controls::Base *control, std::set<size_t> &primitives, std::set<size_t> &texts);
+
+static GradientFrame gradientFrame(Session &s)
+{
+    renderFrames(s, 1);
+
+    GradientFrame frame;
+    const gweni::renderer::FrameCounts counts=s.renderer->frameStats();
+
+    for(size_t id : s.renderer->writtenPrimitiveIds())
+        frame.primitives.insert(id);
+    for(const gweni::renderer::WrittenText &text : s.renderer->writtenTextIds())
+        frame.texts.insert(text.textId);
+    frame.written=counts.primitiveSlotsWritten+counts.textSlotsWritten;
+    return frame;
+}
+
+// Whether every id \p frame wrote is in \p primitives / \p texts; the ones
+// that are not, as text, in \p outside.
+static bool writesWithin(const GradientFrame &frame, const std::set<size_t> &primitives,
+    const std::set<size_t> &texts, std::string &outside)
+{
+    bool within=true;
+
+    for(size_t id : frame.primitives)
+    {
+        if(!primitives.count(id))
+        {
+            outside+=" p"+std::to_string(id);
+            within=false;
+        }
+    }
+    for(size_t id : frame.texts)
+    {
+        if(!texts.count(id))
+        {
+            outside+=" t"+std::to_string(id);
+            within=false;
+        }
+    }
+    return within;
+}
+
+// The bar's span slots beside stop \p index of \p count: [1] the flat end
+// before the first, [2] after the last, [3+i] the span from stop i to i+1.
+static void spansBeside(gweni::controls::GradientEditor *editor, size_t index, std::set<size_t> &ids)
+{
+    const std::vector<size_t> &bar=editor->getBar()->getSkinControl()->getPrimitives();
+    const size_t count=editor->getGradient()->stopCount();
+
+    if(bar.size() < 3+count-1)
+        return;
+    if(index == 0)
+        ids.insert(bar[1]);
+    else
+        ids.insert(bar[3+index-1]);
+    if(index+1 == count)
+        ids.insert(bar[2]);
+    else
+        ids.insert(bar[3+index]);
+}
+
+static bool runGradientEditorScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    const size_t idsBefore=livePrimitiveIds();
+    gweni::controls::Base *control=addControl(s, "GradientEditorDemo");
+    auto *demo=gweni::gweni_cast<gweni::GradientEditorDemo>(control);
+
+    if(!demo || !demo->constantEditor())
+    {
+        std::cerr<<"ControlTest: gradient-editor: GradientEditorDemo has no Constant ramp\n";
+        return false;
+    }
+
+    gweni::controls::GradientEditor *editor=demo->constantEditor();
+    gweni::Gradient *gradient=editor->getGradient();
+
+    s.label="gradient-editor";
+    renderFrames(s, s.frames);
+
+    size_t idleWritten=gradientFrame(s).written;
+
+    auto settle=[&]()
+    {
+        idleWritten+=gradientFrame(s).written;
+    };
+
+    // The second stop (at 0.25) dragged right a few units at a time, then
+    // past the third (at 0.5).
+    gweni::controls::internal::GradientStopHandle *handle=editor->getHandle(1);
+    const gweni::Point grab=centreOf(handle);
+
+    mouseDown(s, grab.x, grab.y, true);
+    renderFrames(s, s.frames);
+
+    const std::vector<uint8_t> before=framePixels(s);
+    const gweni::Gradient pressed=*gradient;
+    std::string frames;
+    bool dragWithin=true, dragMoved=true, reordered=false;
+    const int strideX=editor->getStrip()->getWidth()/8;
+    const int steps[]={3, 3, 3, 3*strideX, 3};
+    gweni::Point at=grab;
+
+    for(int step : steps)
+    {
+        const size_t from=editor->getSelectedStop();
+
+        at.x+=step;
+        moveMouse(s, at.x, at.y);
+
+        const size_t to=editor->getSelectedStop();
+        std::set<size_t> primitives, texts;
+
+        subtreeIds(handle, primitives, texts);
+        for(size_t i=std::min(from, to); i <= std::max(from, to); ++i)
+            subtreeIds(editor->getHandle(i), primitives, texts);
+        spansBeside(editor, from, primitives);
+        spansBeside(editor, to, primitives);
+        subtreeIds(editor->getPositionField(), primitives, texts);
+
+        const GradientFrame frame=gradientFrame(s);
+        std::string outside;
+
+        if(!writesWithin(frame, primitives, texts, outside))
+            dragWithin=false;
+        if(frame.primitives.empty())
+            dragMoved=false;
+        if(to != from)
+            reordered=true;
+        frames+=" "+std::to_string(from)+"->"+std::to_string(to)+":prim="+std::to_string(frame.primitives.size())
+            +",text="+std::to_string(frame.texts.size())+(outside.empty()?"":",outside="+outside);
+    }
+
+    const SplitDifferences dragDiff=differencesSplit(s, before, framePixels(s), editor, editor);
+    const bool shot=shoot(s, shotDir+"/gradient-editor-drag.png");
+
+    // Escape puts it back; the release ends the drag
+    sendKey(s, "escape");
+    renderFrames(s, 1);
+
+    const bool escaped=(*gradient == pressed);
+
+    mouseUp(s, at.x, at.y);
+    renderFrames(s, s.frames);
+    settle();
+
+    // A colour typed into the R field of the second stop
+    editor->setSelectedStop(1);
+    renderFrames(s, 1);
+
+    gweni::controls::TextBox *red=editor->getColorEdit()->getField(0);
+    const gweni::Point field=centreOf(red);
+
+    clickMouse(s, field.x, field.y);
+    sendKey(s, "ctrl+a");
+    renderFrames(s, s.frames);
+    settle();
+
+    std::string typed;
+    bool typeWithin=true;
+    int typeFrames=0;
+
+    for(const char *digit : {"2", "0", "0"})
+    {
+        std::set<size_t> primitives, texts;
+
+        spansBeside(editor, 1, primitives);
+        subtreeIds(editor->getHandle(1), primitives, texts);
+        subtreeIds(editor->getColorEdit(), primitives, texts);
+        typeText(s, digit);
+
+        const GradientFrame frame=gradientFrame(s);
+        std::string outside;
+
+        if(!writesWithin(frame, primitives, texts, outside))
+            typeWithin=false;
+        ++typeFrames;
+        typed+=std::string(" ")+digit+":prim="+std::to_string(frame.primitives.size())+",text="
+            +std::to_string(frame.texts.size())+(outside.empty()?"":",outside="+outside);
+    }
+
+    const bool recoloured=gradient->stop(1).color.r == 200;
+
+    gweni::KeyboardFocus=nullptr;
+    forgetMouse(s);
+    renderFrames(s, s.frames);
+    settle();
+
+    // A stop added on the strip (at its 90 %) and deleted again
+    const size_t idsSettled=livePrimitiveIds();
+    const gweni::Point strip=editor->getStrip()->localPosToCanvas();
+    const int addX=strip.x+editor->handleLeft(0.9f)+gweni::controls::GradientEditor::HandleWidth/2;
+    const int addY=strip.y+editor->getStrip()->getHeight()/2;
+    const size_t stopsBefore=gradient->stopCount();
+
+    clickMouse(s, addX, addY);
+    renderFrames(s, s.frames);
+
+    const bool added=gradient->stopCount() == stopsBefore+1;
+    const size_t idsAdded=livePrimitiveIds();
+
+    sendKey(s, "delete");
+    renderFrames(s, s.frames);
+
+    const bool deleted=gradient->stopCount() == stopsBefore;
+    const size_t idsDeleted=livePrimitiveIds();
+
+    forgetMouse(s);
+    renderFrames(s, s.frames);
+    settle();
+
+    // The picker, opened by a double-click on the first handle: settled
+    // frames write nothing with it open, and Escape closes it
+    const gweni::Point first=centreOf(editor->getHandle(0));
+
+    doubleClickMouse(s, first.x, first.y);
+    renderFrames(s, s.frames);
+
+    const bool pickerOpen=editor->getColorEdit()->isPickerOpen();
+    const size_t openWritten=gradientFrame(s).written+gradientFrame(s).written;
+
+    sendKey(s, "escape");
+    renderFrames(s, s.frames);
+
+    const bool pickerClosed=!editor->getColorEdit()->isPickerOpen();
+
+    gweni::KeyboardFocus=nullptr;
+    forgetMouse(s);
+    renderFrames(s, s.frames);
+    settle();
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()-idsBefore;
+    const bool dragOk=dragWithin && dragMoved && reordered && dragDiff.outside == 0;
+    const bool escapeOk=escaped;
+    const bool typeOk=typeWithin && typeFrames == 3 && recoloured;
+    const bool addOk=added && deleted && idsAdded > idsSettled && idsDeleted == idsSettled;
+    const bool pickerOk=pickerOpen && pickerClosed && openWritten == 0;
+    const bool settled=idleWritten == 0;
+    const bool idsBack=idsLeft == 0;
+
+    passed=dragOk && escapeOk && typeOk && addOk && pickerOk && settled && idsBack;
+
+    std::cout<<"gradient-editor drag_within="<<(dragWithin?"yes":"no")<<" drag_moved="<<(dragMoved?"yes":"no")
+             <<" reordered="<<(reordered?"yes":"no")<<" drag_outside_pixels="<<dragDiff.outside
+             <<" escape_back="<<(escapeOk?"yes":"no")<<" type_within="<<(typeWithin?"yes":"no")
+             <<" recoloured="<<(recoloured?"yes":"no")<<" add_ids="<<(idsAdded-idsSettled)
+             <<" ids_after_delete="<<(idsDeleted == idsSettled?"same":"differ")
+             <<" picker_open="<<(pickerOpen?"yes":"no")<<" picker_open_written="<<openWritten
+             <<" picker_closed="<<(pickerClosed?"yes":"no")<<" idle_written="<<idleWritten
+             <<" ids_left="<<idsLeft<<" ids_back="<<(idsBack?"yes":"no")<<"\n";
+    std::cout<<"gradient_editor_drag"<<frames<<"\n";
+    std::cout<<"gradient_editor_type"<<typed<<"\n";
+    if(!passed)
+        std::cerr<<"ControlTest: gradient-editor: "
+                 <<(!dragOk ? "a drag frame wrote outside the stop's handle, its spans and the position field,"
+                              " did not reorder, or changed pixels outside the editor"
+                     : !escapeOk ? "Escape did not put the dragged stop back"
+                     : !typeOk ? "a colour typed into the R field wrote outside its spans, handle and ColorEdit,"
+                                 " or did not recolour the stop"
+                     : !addOk ? "an added and deleted stop did not give the live ids back"
+                     : !pickerOk ? "the picker did not open and close, or a settled frame with it open wrote slots"
+                     : !settled ? "a settled frame wrote slots"
+                     : "the demo did not give its primitive ids back")<<"\n";
+    return shot;
 }
 
 //-----------------------------------------------------------------------------
@@ -25578,6 +25900,15 @@ int main(int argc, char *argv[])
             ok=runHideShowScenario(session, which, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a hide and show did not give the demo back: a failing assertion
+            break;
+        }
+
+        case Scenario::GradientEditor:
+        {
+            bool passed=false;
+            ok=runGradientEditorScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // an edit wrote outside what it touched
             break;
         }
 

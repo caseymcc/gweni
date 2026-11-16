@@ -286,13 +286,15 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # edits, selection and code block, its images' late deliveries, the
     # toolbar's width steps, menu and keys, the translucency scenario's panel,
     # scrim and overlay, the opacity scenario's level changes and fade,
-    # the knobs' drags and typed entry and the hex view's scroll, cursor
-    # keys, copy and edit
+    # the knobs' drags and typed entry, the hex view's scroll, cursor keys,
+    # copy and edit, and the gradient editor's drags, typed colour, added
+    # stop and picker
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
             dialog toast flow switch spinner navigation-rail board field-validation segmented
             tree-table tree-table-live split-button breadcrumb toolbar range-slider stepper code-view rich-text markdown
-            markdown-images search-combo reorder calendar date-time translucency opacity knob hex-view)
+            markdown-images search-combo reorder calendar date-time translucency opacity knob hex-view
+            gradient-editor)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail" OR verify_scenario STREQUAL "knob")
@@ -752,6 +754,18 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_opacity 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario opacity --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/opacity@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # GradientEditorDemo's Constant ramp, the clock frozen (#642): each frame
+    # of a stop's drag, past another stop too, writes no slot but its handle's,
+    # the bar's spans beside it and the position field's, and changes no pixel
+    # outside the editor; Escape gives the stops back; a colour typed into the
+    # R field writes the spans beside the stop, its handle and the ColorEdit
+    # alone; an added and deleted stop give the live ids back; settled frames
+    # write nothing, with the picker open too; the demo gives its ids back
+    gweni_whole_app_test(controltest_gradient_editor 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario gradient-editor --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/gradient_editor@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # SwitchDemo, the clock stepping: a hover writes the track's slot alone,
