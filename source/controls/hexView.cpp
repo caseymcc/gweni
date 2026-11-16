@@ -441,9 +441,20 @@ void HexView::setBytesPerRow(size_t bytes)
         return;
 
     m_bytesPerRow=bytes;
-    for(size_t i=0; i < poolSize(); ++i)
-        poolRow(i)->invalidate();
+    columnsMoved();
     updateRows();
+}
+
+// A row's boxes are drawn at the columns' x, which can move while its bounds
+// stay (a view wider than its content): every pooled row is marked, as
+// CodeEditor::readMetrics marks its rows for a new cell width.
+void HexView::columnsMoved()
+{
+    for(size_t i=0; i < poolSize(); ++i)
+    {
+        poolRow(i)->invalidate();
+        poolRow(i)->addStateChange(StateChange_Background);
+    }
 }
 
 void HexView::updateRows()
@@ -477,8 +488,7 @@ void HexView::updateAddressDigits()
 
     m_addressDigits=digits;
     // The address width moves both following columns of every pooled row.
-    for(size_t i=0; i < poolSize(); ++i)
-        poolRow(i)->invalidate();
+    columnsMoved();
     invalidate();
 }
 
@@ -613,8 +623,8 @@ void HexView::calculateSize(skin::Base *skin, Dim dim)
                 text->addStateChange(StateChange_Text);
                 text->invalidate();
             }
-            row->invalidate();
         }
+        columnsMoved();
     }
     // the goto box's room above the rows, for this pass
     if(dim == Dim::X)
@@ -656,9 +666,15 @@ void HexView::setCursor(size_t offset, bool extend)
 
     m_cursor=offset;
     m_anchor=anchor;
-    scrollCursorIntoView();
+    // a drag inside one byte, a key repeated at a limit: no scroll, so no
+    // layout, unless the cursor was scrolled out of view
     if(!moved)
+    {
+        if(!cursorInView())
+            scrollCursorIntoView();
         return;
+    }
+    scrollCursorIntoView();
 
     updateMarks();
     updatePreview();
@@ -858,6 +874,35 @@ void HexView::moveBy(int64_t bytes, bool extend)
     setCursor(target, extend);
 }
 
+// The cursor's row wholly in the viewport and its byte's cells too, with no
+// scroll pending.
+bool HexView::cursorInView()
+{
+    if(m_cursor == NoByte)
+        return true;
+
+    takeBarScroll();
+
+    const Rect &viewport=getViewport();
+    const int rowHeight=getRowHeight();
+
+    if(getPendingItem() != NoItem || viewport.w <= 0 || viewport.h <= 0 || rowHeight <= 0 || m_cellWidth <= 0.f)
+        return false;
+
+    const int64_t top=static_cast<int64_t>(m_cursor/m_bytesPerRow)*rowHeight;
+    const int64_t offset=getVerticalScrollOffset();
+
+    if(top < offset || top+rowHeight > offset+viewport.h)
+        return false;
+
+    const size_t byte=m_cursor%m_bytesPerRow;
+    const int left=byteX(byte, m_cursorColumn);
+    const int right=(m_cursorColumn == Column::Hex)?getHexX()+cellX(3*byte+byte/8+2):getAsciiX()+cellX(byte+1);
+    const int horizontal=getHorizontalScrollOffset();
+
+    return left >= horizontal && right <= horizontal+viewport.w;
+}
+
 // Vertically as little as puts the cursor's row in view (by the next layout),
 // horizontally as little as puts its byte's cells in the viewport.
 void HexView::scrollCursorIntoView()
@@ -983,7 +1028,7 @@ void HexView::onMouseMoved(int x, int y, int deltaX, int deltaY)
 
 bool HexView::onChar(gweni::UnicodeChar c)
 {
-    if(m_cursor == NoByte || isReadOnly() || isDisabled())
+    if(m_cursor == NoByte || isReadOnly() || isDisabled() || KeyboardFocus != this)
         return false;
 
     if(m_cursorColumn == Column::Ascii)
@@ -1022,6 +1067,8 @@ bool HexView::onChar(gweni::UnicodeChar c)
 
 bool HexView::onKeyLeft(bool down)
 {
+    if(KeyboardFocus != this)
+        return false;
     if(down)
         moveBy(-1, input::isShiftDown());
     return true;
@@ -1029,6 +1076,8 @@ bool HexView::onKeyLeft(bool down)
 
 bool HexView::onKeyRight(bool down)
 {
+    if(KeyboardFocus != this)
+        return false;
     if(down)
         moveBy(1, input::isShiftDown());
     return true;
@@ -1036,6 +1085,8 @@ bool HexView::onKeyRight(bool down)
 
 bool HexView::onKeyUp(bool down)
 {
+    if(KeyboardFocus != this)
+        return false;
     if(down)
         moveBy(-static_cast<int64_t>(m_bytesPerRow), input::isShiftDown());
     return true;
@@ -1043,6 +1094,8 @@ bool HexView::onKeyUp(bool down)
 
 bool HexView::onKeyDown(bool down)
 {
+    if(KeyboardFocus != this)
+        return false;
     if(down)
         moveBy(static_cast<int64_t>(m_bytesPerRow), input::isShiftDown());
     return true;
@@ -1050,6 +1103,8 @@ bool HexView::onKeyDown(bool down)
 
 bool HexView::onKeyPageUp(bool down)
 {
+    if(KeyboardFocus != this)
+        return false;
     if(down)
         moveBy(-static_cast<int64_t>(pageRows()*m_bytesPerRow), input::isShiftDown());
     return true;
@@ -1057,6 +1112,8 @@ bool HexView::onKeyPageUp(bool down)
 
 bool HexView::onKeyPageDown(bool down)
 {
+    if(KeyboardFocus != this)
+        return false;
     if(down)
         moveBy(static_cast<int64_t>(pageRows()*m_bytesPerRow), input::isShiftDown());
     return true;
@@ -1064,6 +1121,8 @@ bool HexView::onKeyPageDown(bool down)
 
 bool HexView::onKeyHome(bool down)
 {
+    if(KeyboardFocus != this)
+        return false;
     if(down && m_cursor != NoByte)
         setCursor(input::isControlDown()?0:m_cursor-m_cursor%m_bytesPerRow, input::isShiftDown());
     return true;
@@ -1071,6 +1130,8 @@ bool HexView::onKeyHome(bool down)
 
 bool HexView::onKeyend(bool down)
 {
+    if(KeyboardFocus != this)
+        return false;
     if(down && m_cursor != NoByte)
     {
         const size_t rowEnd=std::min(m_cursor-m_cursor%m_bytesPerRow+m_bytesPerRow, m_size)-1;
@@ -1083,11 +1144,18 @@ bool HexView::onKeyend(bool down)
 // Only a half-typed byte takes Escape; otherwise it goes on up (a dialog).
 bool HexView::onKeyEscape(bool down)
 {
-    if(m_pendingNibble < 0)
+    if(m_pendingNibble < 0 || KeyboardFocus != this)
         return false;
     if(down)
         dropPendingNibble();
     return true;
+}
+
+// A half-typed byte is not kept for a digit typed after the focus comes back.
+void HexView::onLostKeyboardFocus()
+{
+    ParentClass::onLostKeyboardFocus();
+    dropPendingNibble();
 }
 
 // The goto box sits in the view's top padding, above the rows.

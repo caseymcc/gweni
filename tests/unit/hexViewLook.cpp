@@ -11,6 +11,8 @@
  * to the low digit. The hex and ASCII runs carry colour spans for the zero
  * bytes and the non-printable bytes in Colors.HexView, which a theme edit
  * (updateColors) reaches, and the three runs take the column colours.
+ * The pieces follow the columns when they move under rows that keep their
+ * bounds: a new address digit count and a new bytes-per-row.
  */
 #include "headlessFixture.h"
 
@@ -279,4 +281,47 @@ TEST_CASE("HexView look: zero and non-printable bytes are colour spans in the sk
     CHECK((hex->getStateChange() & controls::StateChange_Text) != 0);
     s.frame();
     CHECK(same(s.renderer.textSpans[textId][0].color, Color(1, 2, 3)));
+}
+
+TEST_CASE("HexView look: the pieces follow the columns when the address digits or the row size change")
+{
+    Scene s(4096);
+    s.data.resize(65536);
+    s.view->addHighlight(4, 9, 1);
+    s.view->setCursor(5);
+    s.frame();
+    s.frame();
+    HexViewRow *row=s.row(0);
+    const int width=row->getWidth();
+    s.checkPiece(row, 0, 0, 5, 6, tn::HexViewCursor, 3);
+    s.checkPiece(row, 1, 0, 5, 6, tn::HexViewCursor, 3);
+    s.checkPiece(row, 0, 3, 4, 9, tn::HexViewHighlight1, 0);
+
+    // 0xfff to 0xffff: one address digit more, the row as wide as before
+    REQUIRE(s.view->getAddressDigits() == 3);
+    s.view->setSource(65536, [&s](size_t offset, uint8_t *buffer, size_t count)
+        {
+            std::copy(s.data.begin()+offset, s.data.begin()+offset+count, buffer);
+        });
+    s.frame();
+    s.frame();
+    REQUIRE(s.view->getAddressDigits() == 4);
+    row=s.row(0);
+    REQUIRE(row->getWidth() == width);
+    for(size_t column=0; column < 2; ++column)
+    {
+        s.checkPiece(row, column, 0, 5, 6, tn::HexViewCursor, 3);
+        s.checkPiece(row, column, 3, 4, 9, tn::HexViewHighlight1, 0);
+    }
+
+    // 8 bytes a row: the ASCII column moves left past half the hex
+    s.view->setBytesPerRow(8);
+    s.frame();
+    s.frame();
+    row=s.row(0);
+    for(size_t column=0; column < 2; ++column)
+    {
+        s.checkPiece(row, column, 0, 5, 6, tn::HexViewCursor, 3);
+        s.checkPiece(row, column, 3, 4, 8, tn::HexViewHighlight1, 0);
+    }
 }

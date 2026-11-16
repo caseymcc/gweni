@@ -349,6 +349,7 @@ protected:
     bool onKeyPageUp(bool down) override;
     bool onKeyPageDown(bool down) override;
     bool onKeyEscape(bool down) override;
+    void onLostKeyboardFocus() override;
 
 private:
     friend class HexViewRow;
@@ -358,6 +359,8 @@ private:
     void onGotoReturn(event::Info);
     void moveBy(int64_t bytes, bool extend);
     void scrollCursorIntoView();
+    bool cursorInView();
+    void columnsMoved();
     void updateMarks();
     void writeByte(size_t offset, uint8_t value);
     void dropPendingNibble();

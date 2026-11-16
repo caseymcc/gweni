@@ -23,7 +23,10 @@
  * or a move dropping it) or as an ASCII character, through the write
  * callback and onEdited; a read-only view takes nothing. Cursor, selection
  * and highlight marks change only the rows whose own pieces moved, capped at
- * HexRowMarks::MaxHighlights a row.
+ * HexRowMarks::MaxHighlights a row. The cursor keys and typing are the
+ * view's only while it has the focus (Down in the goto box or on the endian
+ * button moves nothing), a half-typed byte goes with the focus, and a drag
+ * inside one byte or a key at a limit lays nothing out.
  */
 #include "headlessFixture.h"
 
@@ -1137,4 +1140,97 @@ TEST_CASE("HexView: the hovered byte marks its row in both columns and follows a
     CHECK(s.view->getHoveredByte() == HexView::NoByte);
     CHECK(s.row(5)->getMarks().hover == -1);
     s.checkOnePass();
+}
+
+TEST_CASE("HexView: keys only while focused, the pending nibble dropped with the focus")
+{
+    Scene s(4096, 16, true, true);
+    s.view->setSource(4096, s.reader(), s.writer());
+    s.frame();
+    s.click(s.bytePoint(0, HexView::Column::Hex));
+    REQUIRE(KeyboardFocus == s.view);
+    REQUIRE(s.view->getCursor() == 0);
+
+    // a single-line TextBox passes Up, Down, PageUp and PageDown on to its
+    // parents; the view takes none of them from the goto box
+    s.view->getGotoBox()->focus();
+    s.frame();
+    for(int key : {keys::Down, keys::PageDown, keys::Up, keys::PageUp})
+    {
+        s.key(key);
+        CHECK(s.view->getCursor() == 0);
+    }
+    CHECK(KeyboardFocus == s.view->getGotoBox());
+    // nor from the preview's endian button
+    s.view->getPreview()->getEndianButton()->focus();
+    s.frame();
+    for(int key : {keys::Down, keys::Right, keys::End})
+    {
+        s.key(key);
+        CHECK(s.view->getCursor() == 0);
+    }
+
+    // a half-typed byte is dropped as the focus leaves
+    s.click(s.bytePoint(2, HexView::Column::Hex));
+    s.type("4");
+    REQUIRE(s.view->getPendingNibble() == 4);
+    REQUIRE(s.row(0)->getHexText().substr(6, 2) == "42");
+    s.view->getGotoBox()->focus();
+    s.frame();
+    CHECK(s.view->getPendingNibble() == -1);
+    CHECK(s.row(0)->getHexText().substr(6, 2) == "02");
+    CHECK_FALSE(s.row(0)->getMarks().pendingNibble);
+    // and a digit typed once it is back starts a new byte
+    s.view->focus();
+    s.type("5");
+    CHECK(s.view->getPendingNibble() == 5);
+    CHECK(s.writes.empty());
+}
+
+TEST_CASE("HexView: a drag inside one byte and a key at a limit lay nothing out")
+{
+    Scene s(4096);
+    s.click(s.bytePoint(32, HexView::Column::Hex));
+    REQUIRE(s.view->getCursor() == 32);
+    const Point at=s.bytePoint(32, HexView::Column::Hex);
+
+    s.move(at);
+    input::onMouseClicked(s.canvas.get(), 0, true);
+    s.frame();
+    s.frame();
+    int passes=0;
+    for(int i=0; i < 4; ++i)
+    {
+        s.canvas->inputMouseMoved(at.x+(i%2), at.y, 1, 0);
+        s.frame();
+        passes+=s.canvas->getLayoutStats().passes;
+    }
+    input::onMouseClicked(s.canvas.get(), 0, false);
+    s.frame();
+    CHECK(s.view->getCursor() == 32);
+    CHECK(passes == 0);
+
+    // Left at the first byte, End at the last, repeated
+    s.view->setCursor(0);
+    s.frame();
+    s.frame();
+    s.key(keys::Left);
+    CHECK(s.canvas->getLayoutStats().passes == 0);
+    s.view->setCursor(4095);
+    s.frame();
+    s.frame();
+    REQUIRE(s.view->getCursor() == 4095);
+    s.key(keys::End);
+    CHECK(s.canvas->getLayoutStats().passes == 0);
+    s.key(keys::Right);
+    CHECK(s.canvas->getLayoutStats().passes == 0);
+
+    // the cursor scrolled out of view: a key that moves nothing brings it back
+    s.view->setVerticalScrollOffset(0);
+    s.frame();
+    s.frame();
+    REQUIRE(s.view->rowForItem(4095/16) == nullptr);
+    s.key(keys::End);
+    s.frame();
+    CHECK(s.view->rowForItem(4095/16) != nullptr);
 }

@@ -4605,7 +4605,11 @@ two programs and the draws. What follows describes both together:
   Shift+click and a drag extend it (past the rows too, to the nearest byte, scrolling the
   cursor into view), and Left/Right, Up/Down, PageUp/PageDown (the viewport's whole rows),
   Home/End (the row's) and Ctrl+Home/End (the data's) move it, Shift extending; the cursor
-  is scrolled into view both ways. Ctrl+C (`AccelOnlyFocus`: only while the view has the
+  is scrolled into view both ways (a move that moves nothing, a drag inside one byte or a
+  key at a limit, scrolls only a cursor out of view, so it lays nothing out). The keys and
+  typing are the view's only while it has the keyboard focus: a single-line TextBox passes
+  Up, Down, PageUp and PageDown on to its parents, and the goto box and the endian button
+  are the view's children. Ctrl+C (`AccelOnlyFocus`: only while the view has the
   focus) copies the selection as spaced hex (`"41 42 43"`) through
   `platform::setClipboardText`. A goto `TextBox` in the view's top padding takes `0x1F`,
   `$1F` or text with a hex letter as hex and plain digits as decimal (`parseAddress`), an
@@ -4613,7 +4617,7 @@ two programs and the draws. What follows describes both together:
   (with a write): a hex digit in the hex column is the cursor byte's high nibble, shown
   in place of its first digit while the box covers only the low digit's cell, the second
   writes the byte and moves on; a printable character in the ASCII column writes that
-  byte; Escape (or any move) drops a half-typed byte; each write reads the old byte, calls
+  byte; Escape, any move and the focus leaving drop a half-typed byte; each write reads the old byte, calls
   `write`, rebinds its row and fires `onEdited` (`info.integer` the offset, `info.point`
   (old, new), `getLastEdit()`). **Highlights:** `addHighlight(begin, end, surface)` and
   `clearHighlights()`, drawn in `HexViewHighlight<surface % 4>`; a row draws at most
@@ -4626,7 +4630,9 @@ two programs and the draws. What follows describes both together:
   panel set aside as a CodeEditor's gutter is, so the viewport does not clip them.
   **Look:** each row keeps its `HexRowMarks` (the cursor's byte and column, a pending
   nibble, the hovered byte, its piece of the selection and its highlight pieces) and
-  marks itself `StateChange_Background` only when they change, so a cursor move marks the
+  marks itself `StateChange_Background` only when they change (and every pooled row is
+  marked when the columns move, a new address digit count, row size or cell width, since
+  its bounds can stay), so a cursor move marks the
   row it leaves and the one it enters; a one-byte selection is the cursor's own box and
   draws no piece. The textured `HexViewRow` renderer has 14 fixed slots, per column a
   cursor, a hover, a selection and 4 highlights, the absent ones hidden, behind the row's
