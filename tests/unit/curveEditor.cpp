@@ -352,6 +352,42 @@ TEST_CASE("CurveEditor: a selection handler editing keys stops a press")
     CHECK(scene.events.changes == 1);
 }
 
+TEST_CASE("CurveEditor: a nested field edit ends the outer key drag")
+{
+    Scene scene;
+    struct App: event::Handler
+    {
+        void changed(event::Info)
+        {
+            if(called)
+                return;
+            called=true;
+            if(time)
+                editor->setSelectedTime(2.5);
+            else
+                editor->setSelectedValue(0.9);
+            after=*editor->getCurve(0);
+        }
+        controls::CurveEditor *editor;
+        bool called=false;
+        bool time=false;
+        Curve after;
+    } app;
+    app.editor=scene.editor;
+    scene.editor->onChanged.add(&app, &App::changed);
+    SUBCASE("time") { app.time=true; }
+    SUBCASE("value") { app.time=false; }
+    scene.press(scene.at(100, 50));
+    scene.move(scene.at(110, 40));
+    REQUIRE(app.called);
+    CHECK(!scene.editor->draggingKeys());
+    CHECK(scene.events.changes == 2);
+    scene.move(scene.at(120, 30));
+    CHECK(bool(scene.a.keys() == app.after.keys()));
+    CHECK(scene.events.changes == 2);
+    scene.release();
+}
+
 TEST_CASE("CurveEditor: the view maps curve points onto the plot, the plot over the fields")
 {
     Scene scene;
