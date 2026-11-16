@@ -390,6 +390,8 @@ set(GWENI_CONTROL_SOURCES
     source/controls/timeEdit.cpp
     include/gweni/controls/timeline.h
     source/controls/timeline.cpp
+    include/gweni/controls/toolBar.h
+    source/controls/toolBar.cpp
     include/gweni/controls/treeControl.h
     source/controls/treeControl.cpp
     include/gweni/controls/treeNode.h

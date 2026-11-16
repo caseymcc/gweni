@@ -115,6 +115,7 @@
 #include <gweni/controls/textBox.h>
 #include <gweni/controls/timeEdit.h>
 #include <gweni/controls/timeline.h>
+#include <gweni/controls/toolBar.h>
 #include <gweni/controls/toast.h>
 #include <gweni/controls/toolTip.h>
 #include <gweni/controls/treeControl.h>
