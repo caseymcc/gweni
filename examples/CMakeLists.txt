@@ -124,6 +124,8 @@ set(GWENI_DEMO_SOURCES
     demo/navigationRail.h
     demo/segmentedButtons.cpp
     demo/segmentedButtons.h
+    demo/breadcrumb.cpp
+    demo/breadcrumb.h
     demo/splitButton.cpp
     demo/splitButton.h
     demo/stepper.cpp

@@ -562,8 +562,12 @@ void Breadcrumb::handleOverflow()
     m_collapseBegin=begin;
     m_collapseEnd=end;
 
+    // Every part is cut at the right edge (only the last one can be, but for
+    // a path narrower than its first parts and the ellipsis), so none draws
+    // past it and the Breadcrumb need not clip: a clip region would change
+    // with its width and re-stamp every part's slots on each resize.
     int x=left;
-    const auto place=[&](Base *part, bool show, bool cut)
+    const auto place=[&](Base *part, bool show)
         {
             if(!part)
                 return;
@@ -572,7 +576,7 @@ void Breadcrumb::handleOverflow()
                 return;
 
             const int preferred=part->getPreferredSize().width;
-            const int w=cut?std::max(0, std::min(preferred, right-x)):preferred;
+            const int w=std::max(0, std::min(preferred, right-x));
 
             placeChild(part, x, part->getY(), w, part->getHeight());
             x+=w;
@@ -584,10 +588,10 @@ void Breadcrumb::handleOverflow()
         const bool hiddenItem=collapsed && i >= begin && i < end;
 
         // the first collapsed item's separator goes before the ellipsis
-        place(m_separators[i], !hiddenItem || i == begin, false);
+        place(m_separators[i], !hiddenItem || i == begin);
         if(collapsed && i == begin)
-            place(m_ellipsis, true, false);
-        place(m_itemControls[i], !hiddenItem, i+1 == count);
+            place(m_ellipsis, true);
+        place(m_itemControls[i], !hiddenItem);
         if(i+1 == count)
             m_lastCut=m_itemControls[i]->getWidth() < m_itemControls[i]->getPreferredSize().width;
     }

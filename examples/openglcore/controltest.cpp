@@ -178,7 +178,7 @@
  *                       node-graph | code-editor | log-view |
  *                       chip-badge | navigation-rail | flow | board |
  *                       switch | spinner | image-grid | segmented |
- *                       split-button | range-slider | stepper |
+ *                       split-button | breadcrumb | range-slider | stepper |
  *                       code-view | rich-text | markdown | markdown-images |
  *                       search-combo |
  *                       reorder |
@@ -1149,6 +1149,31 @@
  *                 closes Options, the focus back on the button and the frame
  *                 before Space back; settled frames write nothing; the demo
  *                 gives every id back. Exits non-zero if any check is no.
+ *    breadcrumb   BreadcrumbDemo, the clock frozen (breadcrumb.png), its
+ *                 label not updating: the deep path's container at the whole
+ *                 width, then narrowed to each width at which one more item
+ *                 collapses and grown back; the mouse onto Projects and off;
+ *                 at the width collapsing Projects, gweni and source, a click
+ *                 on the ellipsis and on source in its menu; a push onto the
+ *                 navigation path. One line
+ *                   breadcrumb shrink=yes|no ... ids_back=yes|no
+ *                     k1:w=N,collapsed=B..E,passes=N,prims=N,outside=N ...
+ *                 reports the checks: each narrowing collapses exactly one
+ *                 more item after the first in one pass, writing only the
+ *                 slots of the parts it hides, shows or moves and the
+ *                 ellipsis's, and changes no pixel outside the container;
+ *                 each widening gives that width's earlier frame back in one
+ *                 pass; the hover writes the item's one slot, no glyph, lays
+ *                 nothing out and changes no pixel outside it, and moving off
+ *                 gives the frame back; the menu lists Projects, gweni and
+ *                 source, filled once, and a settled frame with it open
+ *                 writes nothing; the pick fires index 3 once, closes the
+ *                 menu with the focus on the ellipsis and changes no pixel
+ *                 outside it; the push makes only the new item's and
+ *                 separator's controls and ids, writes only theirs and the
+ *                 old current item's (now a link) in one pass; settled frames
+ *                 write nothing; the demo gives every id back. Exits non-zero
+ *                 if any check is no.
  *    range-slider RangeSliderDemo, the clock frozen (range-slider.png,
  *                 range-slider-gap.png): the mouse onto the price's low thumb
  *                 and off; a drag of each price thumb toward the other, of the
@@ -1605,6 +1630,7 @@
 #include <gweni/controls/button.h>
 #include <gweni/controls/rangeSlider.h>
 #include <gweni/controls/segmentedButtons.h>
+#include <gweni/controls/breadcrumb.h>
 #include <gweni/controls/splitButton.h>
 #include <gweni/controls/dropDownButton.h>
 #include <gweni/controls/stepper.h>
@@ -1677,6 +1703,7 @@
 #include <demo/navigationRail.h>
 #include <gweni/controls/navigationRail.h>
 #include <demo/segmentedButtons.h>
+#include <demo/breadcrumb.h>
 #include <demo/splitButton.h>
 #include <demo/stepper.h>
 #include <demo/searchCombo.h>
@@ -1857,7 +1884,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(ChartAreasDemo) X(TimelineDemo) X(ComboBoxDemo) X(SearchComboDemo) \
-    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(NavigationRailDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(TreeTableDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(CodeViewDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(SegmentedButtonsDemo) X(CalendarDemo) X(DateTimeDemo) X(SplitButtonDemo) X(StepperDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
+    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(NavigationRailDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(TreeTableDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(CodeViewDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(SegmentedButtonsDemo) X(CalendarDemo) X(DateTimeDemo) X(SplitButtonDemo) X(BreadcrumbDemo) X(StepperDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(SwitchDemo) X(SpinnerDemo) X(FieldValidationDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(RangeSliderDemo) X(DragNumberDemo) X(VectorFieldDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
@@ -1960,7 +1987,7 @@ static void printUsage(std::ostream &out)
          "                     | stats-overlay | depth-view | zoom-panel\n"
          "                     | node-graph | code-editor | log-view | chip-badge\n"
          "                     | navigation-rail | flow | board | switch | spinner\n"
-         "                     | image-grid | segmented | split-button\n"
+         "                     | image-grid | segmented | split-button | breadcrumb\n"
          "                     | range-slider | stepper | code-view | rich-text\n"
          "                     | search-combo | reorder | calendar | date-time\n"
          "                     | translucency;\n"
@@ -3023,7 +3050,7 @@ enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typ
     ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, TreeTable, TreeTableLive, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
     ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented, SplitButton,
-    RangeSlider, Stepper, CodeView, RichText, Markdown, MarkdownImages, SearchCombo, Reorder, Calendar, DateTime, Translucency,
+    Breadcrumb, RangeSlider, Stepper, CodeView, RichText, Markdown, MarkdownImages, SearchCombo, Reorder, Calendar, DateTime, Translucency,
     OpacityRoundTrip, Opacity };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
@@ -3075,6 +3102,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "image-grid") scenario=Scenario::ImageGrid;
     else if(name == "segmented") scenario=Scenario::Segmented;
     else if(name == "split-button") scenario=Scenario::SplitButton;
+    else if(name == "breadcrumb") scenario=Scenario::Breadcrumb;
     else if(name == "range-slider") scenario=Scenario::RangeSlider;
     else if(name == "stepper") scenario=Scenario::Stepper;
     else if(name == "code-view") scenario=Scenario::CodeView;
@@ -14936,6 +14964,348 @@ static bool runSplitButtonScenario(Session &s, const std::string &shotDir, bool 
 }
 
 //-----------------------------------------------------------------------------
+// --scenario breadcrumb: BreadcrumbDemo, the clock frozen
+//
+// The deep path's container is narrowed from the whole path's width, one
+// step per item, to the widths at which one more item collapses into the
+// ellipsis (worked out from the parts' preferred widths, as the Breadcrumb's
+// X arrange does); each step lays out in one pass and writes only the slots
+// of the parts it hides, shows or moves and the ellipsis's, changing no pixel
+// outside the container. Growing back gives each earlier frame back. Then a
+// hover, the ellipsis's menu and a push. The demo's label is the app's reply
+// to a click: its new text is laid out, so it is off but for the pick.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+//! Records onItemClicked's indices.
+class ScenarioClicks: public gweni::event::Handler
+{
+public:
+    void clicked(gweni::event::Info info)
+    {
+        indices.push_back(info.integer);
+    }
+
+    std::vector<size_t> indices;
+};
+
+//! A path part's place: hidden or its bounds.
+struct BreadcrumbPart
+{
+    gweni::controls::Base *control;
+    bool hidden;
+    gweni::Rect bounds;
+};
+
+std::vector<BreadcrumbPart> breadcrumbParts(gweni::controls::Breadcrumb *path)
+{
+    std::vector<BreadcrumbPart> parts;
+    const auto add=[&](gweni::controls::Base *part)
+        {
+            if(part)
+                parts.push_back({part, part->hidden(), part->getBounds()});
+        };
+
+    add(path->getEllipsisControl());
+    for(size_t i=0; i < path->getItemCount(); ++i)
+    {
+        add(path->getSeparatorControl(i));
+        add(path->getItemControl(i));
+    }
+    return parts;
+}
+
+//! The width the path needs with [begin, end) collapsed.
+int breadcrumbWidth(gweni::controls::Breadcrumb *path, size_t begin, size_t end)
+{
+    const auto width=[&](size_t i)
+        {
+            gweni::controls::Base *separator=path->getSeparatorControl(i);
+
+            return path->getItemControl(i)->getPreferredSize().width
+                +(separator ? separator->getPreferredSize().width : 0);
+        };
+    int total=0;
+
+    for(size_t i=0; i < path->getItemCount(); ++i)
+    {
+        if(i < begin || i >= end)
+            total+=width(i);
+    }
+    if(end > begin)
+    {
+        gweni::controls::Base *separator=path->getSeparatorControl(begin);
+
+        total+=path->getEllipsisControl()->getPreferredSize().width
+            +(separator ? separator->getPreferredSize().width : 0);
+    }
+    const gweni::Padding &padding=path->getPadding();
+
+    return total+padding.left+padding.right;
+}
+
+}//namespace
+
+static bool runBreadcrumbScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    checks.scenario="breadcrumb";
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    gweni::controls::Base *control=addControl(s, "BreadcrumbDemo");
+    auto *demo=gweni::gweni_cast<gweni::BreadcrumbDemo>(control);
+
+    if(!demo)
+    {
+        std::cerr<<"ControlTest: breadcrumb: BreadcrumbDemo was not built\n";
+        return false;
+    }
+
+    s.label="breadcrumb";
+    renderFrames(s, s.frames);
+
+    bool ok=shoot(s, shotDir+"/breadcrumb.png");
+    gweni::controls::Breadcrumb *path=demo->deepPath();
+    auto centre=[](gweni::controls::Base *c) {
+        const gweni::Rect r=c->getCanvasBounds();
+
+        return gweni::Point(r.x+r.w/2, r.y+r.h/2);
+    };
+
+    demo->setLabelUpdates(false);
+    demo->setPathWidth(gweni::BreadcrumbDemo::MaxPathWidth);
+    renderFrames(s, 1);
+
+    std::vector<uint8_t> pixels;
+    size_t idleWork=settleCodeEditor(s, pixels);
+    const size_t count=path->getItemCount();
+    const gweni::Rect boxRect(demo->pathBox()->getCanvasBounds().x, demo->pathBox()->getCanvasBounds().y,
+        gweni::BreadcrumbDemo::MaxPathWidth, demo->pathBox()->getHeight());
+
+    // (1) narrowed one item per step: the widths at which [1, 1+k) fits
+    std::vector<std::vector<uint8_t>> steps{pixels};
+    std::vector<int> widths{gweni::BreadcrumbDemo::MaxPathWidth};
+    bool shrinkOk=path->getCollapsedEnd() == 0;
+    std::string shrinkWhat;
+
+    for(size_t k=1; k+1 < count; ++k)
+    {
+        const std::vector<BreadcrumbPart> before=breadcrumbParts(path);
+        const int width=breadcrumbWidth(path, 1, 1+k);
+
+        demo->setPathWidth(width);
+
+        const CodeEditorFrame frame=codeEditorFrame(s);
+        const std::vector<BreadcrumbPart> after=breadcrumbParts(path);
+        // the parts hidden, shown or moved, the ellipsis and the resized
+        // controls (the container and the path, which draw nothing)
+        std::set<size_t> allowedPrims, allowedTexts;
+
+        subtreeIds(path->getEllipsisControl(), allowedPrims, allowedTexts);
+        for(size_t i=0; i < before.size() && i < after.size(); ++i)
+        {
+            if(before[i].hidden != after[i].hidden || (!after[i].hidden && !(before[i].bounds == after[i].bounds)))
+                subtreeIds(after[i].control, allowedPrims, allowedTexts);
+        }
+        for(gweni::controls::Base *resized : {demo->pathBox(), static_cast<gweni::controls::Base *>(path)})
+        {
+            if(resized->getSkinControl())
+                for(size_t id : resized->getSkinControl()->getPrimitives())
+                    allowedPrims.insert(id);
+        }
+
+        const size_t outside=differencesOutsideRects(s, steps.back(), frame.pixels, {boxRect});
+        const bool stepOk=path->getCollapsedBegin() == 1 && path->getCollapsedEnd() == 1+k && frame.passes == 1
+            && !frame.primitives.empty() && idsWithin(frame.primitives, allowedPrims)
+            && idsWithin(frame.texts, allowedTexts) && outside == 0 && !path->isLastItemCut();
+
+        shrinkWhat+=" k"+std::to_string(k)+":w="+std::to_string(width)+",collapsed="
+            +std::to_string(path->getCollapsedBegin())+".."+std::to_string(path->getCollapsedEnd())+",passes="
+            +std::to_string(frame.passes)+",prims="+std::to_string(frame.primitives.size())+",outside="
+            +std::to_string(outside);
+        if(!stepOk)
+            shrinkOk=false;
+        idleWork+=settleCodeEditor(s, pixels);
+        steps.push_back(pixels);
+        widths.push_back(width);
+    }
+    checks.check("shrink", shrinkOk, "a step did not collapse exactly one more item in one pass, wrote "
+        "outside the moved parts and the ellipsis, or changed pixels outside the container:"+shrinkWhat);
+
+    // (2) growing back gives each earlier frame back
+    bool growOk=true;
+    std::string growWhat;
+
+    for(size_t k=steps.size()-1; k-- > 0;)
+    {
+        demo->setPathWidth(widths[k]);
+
+        const CodeEditorFrame frame=codeEditorFrame(s);
+
+        idleWork+=settleCodeEditor(s, pixels);
+        if(frame.passes != 1 || pixels != steps[k])
+        {
+            growOk=false;
+            growWhat+=" k"+std::to_string(k)+":passes="+std::to_string(frame.passes)+",same="
+                +(pixels == steps[k] ? "yes" : "no");
+        }
+    }
+    checks.check("grow", growOk, "growing back did not give an earlier frame back in one pass:"+growWhat);
+
+    // (3) a hover on an item writes its slot alone; off gives the frame back
+    gweni::controls::Base *projects=path->getItemControl(1);
+    const std::vector<size_t> projectSlots=projects->getSkinControl()->getPrimitives();
+    {
+        const gweni::Point at=centre(projects);
+
+        moveMouse(s, at.x, at.y);
+    }
+
+    const CodeEditorFrame hover=codeEditorFrame(s);
+    const size_t hoverOutside=differencesOutsideRects(s, pixels, hover.pixels, {projects->getCanvasBounds()});
+
+    forgetMouse(s);
+
+    const CodeEditorFrame off=codeEditorFrame(s);
+
+    checks.check("hover", gweni::HoveredControl == nullptr
+        && hover.primitives == std::set<size_t>(projectSlots.begin(), projectSlots.end()) && hover.texts.empty()
+        && hover.passes == 0 && hoverOutside == 0 && off.pixels == pixels,
+        "the hover wrote "+std::to_string(hover.primitives.size())+" primitive and "
+        +std::to_string(hover.texts.size())+" text ids (the item's "+std::to_string(projectSlots.size())
+        +" alone allowed), laid out, changed "+std::to_string(hoverOutside)
+        +" pixels outside the item, or moving off did not give the frame back");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (4) collapsed [1, 4): the ellipsis's menu lists Projects, gweni and
+    // source; a settled frame with it open writes nothing; picking source
+    // fires index 3
+    demo->setPathWidth(breadcrumbWidth(path, 1, 4));
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    const std::vector<uint8_t> beforeOpen=pixels;
+    ScenarioClicks clicks;
+    gweni::controls::internal::BreadcrumbEllipsis *ellipsis=path->getEllipsisControl();
+
+    path->onItemClicked.add(&clicks, &ScenarioClicks::clicked);
+    {
+        const gweni::Point at=centre(ellipsis);
+
+        clickMouse(s, at.x, at.y);
+    }
+    forgetMouse(s);
+    renderFrames(s, 1);
+
+    std::vector<uint8_t> openPixels;
+    const size_t openIdle=settleCodeEditor(s, openPixels);
+    std::vector<gweni::controls::MenuItem *> items;
+    std::function<void(gweni::controls::Base *)> collect=[&](gweni::controls::Base *parent) {
+        for(gweni::controls::Base *child : parent->getChildren())
+        {
+            if(auto *item=gweni::gweni_cast<gweni::controls::MenuItem>(child))
+            {
+                if(!item->hidden())
+                    items.push_back(item);
+            }
+            else
+                collect(child);
+        }
+    };
+
+    collect(ellipsis->getMenu());
+
+    std::string labels;
+
+    for(gweni::controls::MenuItem *item : items)
+        labels+=(labels.empty() ? "" : ",")+item->getText();
+    checks.check("menu_open", ellipsis->isMenuOpen() && labels == "Projects,gweni,source" && openIdle == 0
+        && path->getMenuBuildCount() == 1,
+        "the ellipsis's menu opened ("+std::string(ellipsis->isMenuOpen() ? "yes" : "no")+") with "+labels
+        +" (Projects,gweni,source expected), filled "+std::to_string(path->getMenuBuildCount())
+        +" times, and a settled frame with it open wrote or changed "+std::to_string(openIdle));
+
+    if(items.size() == 3)
+    {
+        const gweni::Point at=centre(items[2]);
+
+        clickMouse(s, at.x, at.y);
+    }
+    forgetMouse(s);
+    renderFrames(s, 1);
+
+    const CodeEditorFrame picked=codeEditorFrame(s);
+
+    // the menu gives the focus back to the ellipsis, which draws its ring
+    const size_t pickOutside=differencesOutsideRects(s, beforeOpen, picked.pixels, {ellipsis->getCanvasBounds()});
+
+    checks.check("menu_pick", clicks.indices == std::vector<size_t>{3} && !ellipsis->isMenuOpen()
+        && gweni::KeyboardFocus == ellipsis && pickOutside == 0,
+        "picking source fired "+std::to_string(clicks.indices.size())+" clicks (index 3 once expected), left the "
+        "menu "+(ellipsis->isMenuOpen() ? "open" : "closed")+", the focus "
+        +(gweni::KeyboardFocus == ellipsis ? "on the ellipsis" : "elsewhere")+", or changed "
+        +std::to_string(pickOutside)+" pixels outside the ellipsis from the frame before the open");
+    path->onItemClicked.removeHandler(&clicks);
+    if(gweni::KeyboardFocus)
+        gweni::KeyboardFocus->unfocus();
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (5) a push makes only the new item and its separator: their ids, the old
+    // current item's look (now a link) and nothing else
+    gweni::controls::Breadcrumb *navigation=demo->navigationPath();
+    gweni::controls::Base *oldCurrent=navigation->getItemControl(navigation->getItemCount()-1);
+    const size_t primsBeforePush=livePrimitiveIds();
+    const size_t textsBeforePush=liveTextIds();
+
+    navigation->push("Folder");
+
+    const CodeEditorFrame push=codeEditorFrame(s);
+    gweni::controls::Base *newItem=navigation->getItemControl(navigation->getItemCount()-1);
+    gweni::controls::Base *newSeparator=navigation->getSeparatorControl(navigation->getItemCount()-1);
+    std::set<size_t> newPrims, newTexts, pushPrims, pushTexts;
+
+    subtreeIds(newItem, newPrims, newTexts);
+    subtreeIds(newSeparator, newPrims, newTexts);
+    pushPrims=newPrims;
+    pushTexts=newTexts;
+    subtreeIds(oldCurrent, pushPrims, pushTexts);
+
+    const size_t newPrimCount=livePrimitiveIds()-primsBeforePush;
+    const size_t newTextCount=liveTextIds()-textsBeforePush;
+
+    checks.check("push", newPrimCount == newPrims.size() && newTextCount == newTexts.size()
+        && idsWithin(push.primitives, pushPrims) && idsWithin(push.texts, pushTexts) && push.passes == 1
+        && gweni::controls::getChangeStats().created == subtreeControls(newItem)+subtreeControls(newSeparator),
+        "the push made "+std::to_string(newPrimCount)+" primitive and "+std::to_string(newTextCount)
+        +" text ids (the new item's and separator's "+std::to_string(newPrims.size())+" and "
+        +std::to_string(newTexts.size())+"), "+std::to_string(gweni::controls::getChangeStats().created)
+        +" controls, wrote outside them and the old current item, or laid out in "+std::to_string(push.passes)
+        +" passes");
+    idleWork+=settleCodeEditor(s, pixels);
+    checks.check("settled", idleWork == 0, "settled frames wrote or changed "+std::to_string(idleWork));
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()+liveTextIds()-idsBefore;
+
+    checks.check("ids_back", idsLeft == 0, std::to_string(idsLeft)+" ids not given back");
+
+    passed=checks.allPassed();
+    std::cout<<"breadcrumb";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<shrinkWhat<<" hover_prims="<<hover.primitives.size()<<" push_prims="<<push.primitives.size()
+             <<" push_texts="<<push.texts.size()<<"\n";
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // --scenario stepper: StepperDemo's steppers, the clock frozen
 //
 // A step change is the looks that change, the page hidden and the one shown
@@ -23703,6 +24073,15 @@ int main(int argc, char *argv[])
             ok=runSplitButtonScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a part's hover, a click, a key or the menu did more than its part
+            break;
+        }
+
+        case Scenario::Breadcrumb:
+        {
+            bool passed=false;
+            ok=runBreadcrumbScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a collapse step, the hover, the menu or a push did more than its parts
             break;
         }
 

@@ -21,7 +21,9 @@
  *  last opened, and a pick fires onItemClicked with its index. The keys:
  *  one Tab stop at the first shown item, Left/Right/Home/End over the
  *  shown items and the ellipsis, Return and Space activate, the ellipsis
- *  opening its menu with its first item highlighted.
+ *  opening its menu with its first item highlighted; a focused part draws
+ *  BreadcrumbItemFocus's ring over an opaque fill (a border takes its fill's
+ *  alpha, so a ring round the transparent rest look would not show).
  */
 #include "headlessFixture.h"
 
@@ -377,6 +379,12 @@ TEST_CASE("Breadcrumb: theme separators and hover write only the affected parts"
     scene.canvas->inputMouseMoved(639, 199, 1, 0);
     scene.frame();
     CHECK(scene.renderer.writtenPrimitiveIds() == home->getSkinControl()->getPrimitives());
+    // the press focused it: the focus look at rest, until the focus goes
+    CHECK(KeyboardFocus == home);
+    CHECK((scene.renderer.fills.at(homeId) == skin::textured::tokyonight::BreadcrumbItemFocus.top));
+    home->unfocus();
+    scene.frame();
+    CHECK(scene.renderer.writtenPrimitiveIds() == home->getSkinControl()->getPrimitives());
     CHECK((scene.renderer.fills.at(homeId) == skin::textured::tokyonight::BreadcrumbItem.top));
 
     scene.path->setSeparatorText("/");
@@ -642,8 +650,13 @@ TEST_CASE("Breadcrumb: one Tab stop and the arrows over the shown items and the 
     scene.key(keys::Right);
     CHECK(scene.renderer.borders.at(homeId).first == 0.0f);
     CHECK(scene.renderer.borders.at(ellipsis->getSkinControl()->getPrimitives().at(0)).first > 0.0f);
+    // the ring takes its fill's alpha: the focus look has a fill of its own
+    CHECK((scene.renderer.fills.at(ellipsis->getSkinControl()->getPrimitives().at(0))
+        == skin::textured::tokyonight::BreadcrumbItemFocus.top));
+    CHECK(skin::textured::tokyonight::BreadcrumbItemFocus.top.a == 255);
 
     // disabled: no Tab stop
     path->setDisabled(true);
     CHECK(path->getTabStop() == nullptr);
 }
+

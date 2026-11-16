@@ -94,8 +94,9 @@ inline Surface SplitButtonDivider{ Line,                 Line,                  
 inline Surface BreadcrumbItem     { Color(0,0,0,0), Color(0,0,0,0), Color(0,0,0,0), RadiusSm, 0.0f };
 inline Surface BreadcrumbItemHover{ SurfHi,          SurfHi,          SurfHi,          RadiusSm, 0.0f };
 inline Surface BreadcrumbItemDown { SurfHover,       SurfHover,       SurfHover,       RadiusSm, 0.0f };
-// The keyboard focus: the state's fill with this ring round it.
-inline Surface BreadcrumbItemFocus{ Color(0,0,0,0), Color(0,0,0,0), Blue,            RadiusSm, BorderW };
+// The keyboard focus: this fill at rest (a border needs one: it takes the
+// fill's alpha) and this ring round the hover's or press's fill.
+inline Surface BreadcrumbItemFocus{ SurfHi,          SurfHi,          Blue,            RadiusSm, BorderW };
 // A toggle Button that is on: an accent-tinted fill, so it reads unlike a
 // momentary press (ButtonDown); disabled, it stays on, dimmed
 inline Surface ButtonOn         { Color(0x33,0x46,0x7a), Color(0x28,0x34,0x57), Blue,  Radius, BorderW };

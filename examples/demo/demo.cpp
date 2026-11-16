@@ -41,6 +41,7 @@
 #include "demo/switch.h"
 #include "demo/fieldValidation.h"
 #include "demo/segmentedButtons.h"
+#include "demo/breadcrumb.h"
 #include "demo/splitButton.h"
 #include "demo/stepper.h"
 #include "demo/searchCombo.h"
@@ -258,6 +259,7 @@ void Demo::init(const String &name)
         addDemo<RadioButtonDemo>(cat, "RadioButtonDemo", "Radio button");
         addDemo<SegmentedButtonsDemo>(cat, "SegmentedButtonsDemo", "Segment buttons");
         addDemo<SplitButtonDemo>(cat, "SplitButtonDemo", "Split buttons");
+        addDemo<BreadcrumbDemo>(cat, "BreadcrumbDemo", "Breadcrumb");
         addDemo<StepperDemo>(cat, "StepperDemo", "Stepper");
         addDemo<CalendarDemo>(cat, "CalendarDemo", "Calendar");
         addDemo<DateTimeDemo>(cat, "DateTimeDemo", "Date and time");

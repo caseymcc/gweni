@@ -103,8 +103,9 @@ private:
 //! rest fits or only getItemsAfterCollapse() remain after it. A collapsed
 //! item and its separator are hidden, not deleted; the first collapsed
 //! item's separator stays, before the ellipsis. If even that does not fit,
-//! the last item is cut at the Breadcrumb's right edge (clipped: gweni's
-//! Text has no ellipsis truncation).
+//! the last item is cut at the Breadcrumb's right edge (clipped by its own
+//! bounds: gweni's Text has no ellipsis truncation), and so is any part
+//! that would start past it.
 //!
 //! The keyboard (WinUI's BreadcrumbBar): one Tab stop, the focused part or
 //! else the first shown clickable item (or the ellipsis); Left/Right move
@@ -187,6 +188,9 @@ public:
 
     void calculateSize(skin::Base *skin, Dim dim) override;
     void arrange(skin::Base *skin, Dim dim) override;
+    //! Its parts are cut at its right edge, so it clips nothing: a clip
+    //! region following its width would re-stamp every part on a resize.
+    bool shouldClip() override { return false; }
 
 private:
     friend class internal::BreadcrumbItem;

@@ -660,14 +660,17 @@ gweni::Rect MenuItem::checkRect(controls::MenuItem *item)
 ///////////////////////////////////////////////////////////////////////////
 //BreadcrumbItem
 // A path item's or the ellipsis's one slot: the state's fill, with
-// BreadcrumbItemFocus's ring while it has the keyboard focus.
+// BreadcrumbItemFocus's ring while it has the keyboard focus (and its fill
+// at rest: the ring takes the fill's alpha, so it needs one).
 static void paintBreadcrumbItem(renderer::Base *renderer, size_t *primitives, controls::Button *button)
 {
     const bool enabled=!button->isDisabled();
+    const bool focused=(KeyboardFocus == button) && enabled;
     tokyonight::Surface surface=(button->isDepressed() && enabled)?tokyonight::BreadcrumbItemDown:
-        ((button->isHovered() && enabled)?tokyonight::BreadcrumbItemHover:tokyonight::BreadcrumbItem);
+        ((button->isHovered() && enabled)?tokyonight::BreadcrumbItemHover:
+        (focused?tokyonight::BreadcrumbItemFocus:tokyonight::BreadcrumbItem));
 
-    if((KeyboardFocus == button) && enabled)
+    if(focused)
     {
         surface.border=tokyonight::BreadcrumbItemFocus.border;
         surface.borderWidth=tokyonight::BreadcrumbItemFocus.borderWidth;

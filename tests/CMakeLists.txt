@@ -278,7 +278,7 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # edits, the fields' messages, the segmented buttons' selections, the
     # tree table's expands, collapses and keys, its live edits, lazy folder
     # and sort, the split and drop-down
-    # buttons' menus, the range slider's drags and keys, the
+    # buttons' menus, the breadcrumb's collapses, the range slider's drags and keys, the
     # steppers' step changes, the code view's copy button, a RichText, the
     # SearchComboBox's keystrokes, picks and chip wrap, the reorder drags'
     # looks and drops, the calendar's months and views, the date and time
@@ -289,7 +289,7 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
             dialog toast flow switch spinner navigation-rail board field-validation segmented
-            tree-table tree-table-live split-button range-slider stepper code-view rich-text markdown
+            tree-table tree-table-live split-button breadcrumb range-slider stepper code-view rich-text markdown
             markdown-images search-combo reorder calendar date-time translucency opacity)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
@@ -812,6 +812,17 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_split_button 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario split-button --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/split_button@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # BreadcrumbDemo: the deep path's container narrowed one item per step
+    # collapses one more item into the ellipsis in one pass, writing only the
+    # parts it hides, shows or moves and the ellipsis's, and growing back gives
+    # each frame back; a hover writes the item's slot alone, the ellipsis's
+    # menu lists the collapsed items and a pick fires its index, a push makes
+    # only the new item and its separator, settled frames write nothing
+    gweni_whole_app_test(controltest_breadcrumb 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario breadcrumb --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/breadcrumb@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # StepperDemo: Next writes only the steps whose looks change, the two
