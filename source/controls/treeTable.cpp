@@ -546,11 +546,16 @@ bool TreeTable::removeNode(NodeId id)
     const NodeId parent=node->parent;
     auto &siblings=childrenOf(parent);
     const auto found=std::find(siblings.begin(), siblings.end(), id);
-    // the siblings as shown: a removed selection takes the one next to it
+    const bool selected=isInSubtree(m_selectedNode, id);
+
+    // the siblings as shown: a removed selection takes the one next to it,
+    // so a stale or absent group (a collapsed parent) is sorted first
+    if(selected && isSorted())
+        getShownChildren(parent);
+
     std::vector<NodeId> *order=currentSorted(parent);
     const std::vector<NodeId> &shown=order?*order:siblings;
     const size_t index=static_cast<size_t>(std::find(shown.begin(), shown.end(), id)-shown.begin());
-    const bool selected=isInSubtree(m_selectedNode, id);
     // the splice may clamp at the list's end before the parent's new key
     // (a child count) places it again
     std::optional<AnchorScope> anchor(std::in_place, *this);

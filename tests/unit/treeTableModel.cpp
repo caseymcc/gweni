@@ -48,6 +48,8 @@
  *  its row as the content allows, and so does every combined edit.
  *  An empty lazy answer (insertNodes with none, setHasChildren false) of
  *  the top folder at the list end under a sort keeps it on top.
+ *  Removing a hidden selection, or its ancestor, under a collapsed parent
+ *  whose sorted group is stale takes its neighbour in the shown order.
  *  GWENI_TREETABLE_SEED_FIRST/COUNT extend the combined model's seed range
  *  for manual stress runs; the suite defaults to seeds 1..1000.
  */
@@ -3406,5 +3408,54 @@ TEST_CASE("TreeTable model: an empty lazy answer of the top folder at the list e
 
         CHECK(body->getVerticalScrollOffset() == std::min(target, body->getMaxVerticalScrollOffset()));
         CHECK(scene.top() == lazy);
+    }
+}
+
+TEST_CASE("TreeTable model: removing a hidden selection or its ancestor under a collapsed stale sorted group takes the next sibling as shown")
+{
+    for(const bool ancestor : {false, true})
+    {
+        CAPTURE(ancestor);
+        Scene scene;
+        Tree *tree=scene.tree;
+        Selections events;
+
+        tree->onSelectionChange.add(&events, &Selections::changed);
+        REQUIRE(tree->addNode(Root, 0) == 0);
+        REQUIRE(tree->addNode(Root, 1) == 1);
+        for(Id id : {10, 11, 12})
+            REQUIRE(tree->addNode(0, id) == id);
+        if(ancestor)
+        {
+            REQUIRE(tree->addNode(1, 100) == 100);
+            tree->setExpanded(1, true);
+        }
+        tree->setSortComparator(0, [](Id a, Id b) { return a < b; });
+        tree->setSortComparator(1, [](Id a, Id b) { return a > b; });
+        scene.settle();
+
+        const Id selection=ancestor?100:1;
+
+        REQUIRE(tree->setSelectedNode(selection));
+        tree->setSortColumn(0, controls::SortDirection::Ascending);
+        // 0 stays collapsed: its group is sorted for this generation, the
+        // selection hidden under it
+        REQUIRE(tree->moveNode(1, 0, 1));
+        REQUIRE_FALSE(tree->isExpanded(0));
+        REQUIRE(tree->getSelectedNode() == selection);
+        // a second sort leaves 0's group stale until it is asked for
+        tree->setSortColumn(1, controls::SortDirection::Ascending);
+        scene.frame();
+        events.ids.clear();
+        REQUIRE(tree->removeNode(1));
+
+        const std::vector<Id> shown=tree->getShownChildren(0);
+
+        CHECK(shown == std::vector<Id>{12, 11, 10});
+        // 1 was last as shown (12 11 10 1), so its previous sibling 10; the
+        // app's order (10 1 11 12) would give 11
+        CHECK(tree->getSelectedNode() == 10);
+        CHECK(events.ids == std::vector<Id>{10});
+        scene.frame();
     }
 }
