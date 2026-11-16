@@ -985,3 +985,47 @@ TEST_CASE("Breadcrumb: a layout that hides the focused part hands the focus on")
     scene.key(keys::Right);
     CHECK(KeyboardFocus == path->getItemControl(2));
 }
+
+TEST_CASE("Breadcrumb: a widening that hides the ellipsis with its menu focused hands the focus on")
+{
+    Scene scene;
+    auto *path=scene.path;
+    auto *ellipsis=path->getEllipsisControl();
+
+    path->setItems({"Home", "Projects", "gweni", "source", "controls", "base.cpp"});
+    scene.frame();
+    const int fits=neededWidth(path, 0, 0);
+
+    scene.setWidth(neededWidth(path, 1, 4));
+    REQUIRE(shown(path) == std::vector<int>{0, -1, 4, 5});
+
+    // the menu opened from the keyboard holds the focus
+    ellipsis->focus();
+    scene.key(keys::Return);
+    controls::Menu *menu=ellipsis->getMenu();
+    REQUIRE(!menu->hidden());
+    REQUIRE(KeyboardFocus == menu);
+
+    // widened until the path fits: the focus goes to the first item the
+    // ellipsis showed, in one pass, and stays there as the menu closes
+    scene.setWidth(fits);
+    CHECK(scene.canvas->getLayoutStats().passes == 1);
+    REQUIRE(shown(path) == std::vector<int>{0, 1, 2, 3, 4, 5});
+    CHECK(KeyboardFocus == path->getItemControl(1));
+    // the canvas closes the menu of a hidden anchor in the next update
+    scene.frame();
+    CHECK(menu->hidden());
+    CHECK(KeyboardFocus == path->getItemControl(1));
+    scene.key(keys::Right);
+    CHECK(KeyboardFocus == path->getItemControl(2));
+
+    // a narrowing that keeps the ellipsis but closes nothing leaves the
+    // menu's focus alone
+    scene.setWidth(neededWidth(path, 1, 4));
+    ellipsis->focus();
+    scene.key(keys::Return);
+    REQUIRE(KeyboardFocus == menu);
+    scene.setWidth(neededWidth(path, 1, 3));
+    REQUIRE(shown(path) == std::vector<int>{0, -1, 3, 4, 5});
+    CHECK(KeyboardFocus == menu);
+}

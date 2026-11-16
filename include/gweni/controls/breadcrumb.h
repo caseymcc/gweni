@@ -211,8 +211,10 @@ private:
     void handleOverflow();
     //! After a layout hid \p focused (the part that had the focus): a
     //! collapsed item gives it to the ellipsis, the ellipsis to the first item
-    //! it revealed of [\p begin, \p end), the range collapsed before.
-    void passFocusOn(Base *focused, size_t begin, size_t end);
+    //! it revealed of [\p begin, \p end), the range collapsed before. The
+    //! focus the ellipsis's open menu held before (\p menuFocused) is handed
+    //! on as the ellipsis's, the menu left to the canvas to close.
+    void passFocusOn(Base *focused, bool menuFocused, size_t begin, size_t end);
     //! Fills the ellipsis's menu if the collapsed labels changed.
     void updateMenu();
     void menuItemPicked(event::Info info);

@@ -673,7 +673,10 @@ and the arrows go on working after an `onItemClicked` handler navigates. A layou
 that hides the focused part hands the focus on too (`passFocusOn`, after the X
 arrange's placement): a collapsing item gives it to the ellipsis, and the ellipsis,
 hidden once the path fits (a resize, or a pick's pop that left a smaller collapse
-the next layout undoes), to the first item it reveals. Disabling the path closes
+the next layout undoes), to the first item it reveals, also when its open menu
+holds the focus (the menu, whose anchor is now hidden, is closed by the canvas in
+the next update, `Canvas::updateAnchoredMenus`, and finds the focus gone from it,
+so it hands back nothing; a close in the pass would re-dirty it). Disabling the path closes
 the menu, releases focus and turns off its items' keyboard and mouse input; enabling
 it restores input according to each item's click policy, including items pushed
 while disabled.

@@ -562,6 +562,9 @@ void Breadcrumb::calculateSize(skin::Base *skin, Dim dim)
 void Breadcrumb::arrange(skin::Base *skin, Dim dim)
 {
     Base *focused=(dim == Dim::X) && partFocused()?KeyboardFocus:nullptr;
+    // the ellipsis's open menu holds the focus for it
+    const bool menuFocused=(dim == Dim::X) && !focused && m_ellipsis->isMenuOpen()
+        && (KeyboardFocus == m_ellipsis->getMenu());
     const size_t begin=m_collapseBegin;
     const size_t end=m_collapseEnd;
 
@@ -587,16 +590,24 @@ void Breadcrumb::arrange(skin::Base *skin, Dim dim)
         }
     }
     // the focus moves outside the placement, which it changes nothing of
-    passFocusOn(focused, begin, end);
+    passFocusOn(focused, menuFocused, begin, end);
     ParentClass::arrange(skin, dim);
 }
 
 // A hidden part keeps the focus until the layout ends, when the input code
 // drops it; the keyboard stays in the path instead, on the part that now
 // shows what the hidden one did.
-void Breadcrumb::passFocusOn(Base *focused, size_t begin, size_t end)
+void Breadcrumb::passFocusOn(Base *focused, bool menuFocused, size_t begin, size_t end)
 {
-    if(!focused || !focused->hidden() || (KeyboardFocus != focused))
+    // A hidden ellipsis's menu is closed by the canvas in the next update
+    // (Canvas::updateAnchoredMenus; a close here would re-dirty the pass),
+    // handing back the focus it holds only if it still does: given on here,
+    // it stays in the path.
+    if(menuFocused)
+        focused=(KeyboardFocus == m_ellipsis->getMenu())?m_ellipsis:nullptr;
+    else if(KeyboardFocus != focused)
+        return;
+    if(!focused || !focused->hidden())
         return;
     if(focused != m_ellipsis)
     {
