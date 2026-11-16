@@ -1632,13 +1632,14 @@ private:
     //! nothing whatever their vertexes still hold. One run is therefore one dirty
     //! range per buffer for the upload.
     //
-    //! text, font and color are what the glyphs were laid out from: renderText
-    //! rebuilds the run when any of them changes, and only re-offsets it when
-    //! just position or zIndex did. A run drawn with colour spans (hasSpans,
-    //! the spans in m_textRunSpans), or drawn without them after it had some, is
-    //! not rebuilt for a new color or new spans: only the glyphs whose colour
-    //! changed are rewritten (colorTextRun). The plain call on a run that has
-    //! no spans rebuilds it for a new color, as it always did.
+    //! text and font are what the glyphs were laid out from: renderText
+    //! rebuilds the run when either changes (or its px or loaded font), and only
+    //! re-offsets it when just position or zIndex did. color is what the glyphs
+    //! were coloured with, its alpha the control's text level: a new color, and
+    //! for a run drawn with colour spans (hasSpans, the spans in
+    //! m_textRunSpans) or drawn without them after it had some new spans too,
+    //! rebuild nothing: only the glyphs whose colour changed are rewritten
+    //! (colorTextRun), with or without spans.
     //
     //! fontData is the loaded font whose atlas the glyphs sample, and the run is on
     //! its textRuns list, which keeps that font loaded; nullptr before the first
