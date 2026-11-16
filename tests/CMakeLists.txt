@@ -286,12 +286,13 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # edits, selection and code block, its images' late deliveries, the
     # toolbar's width steps, menu and keys, the translucency scenario's panel,
     # scrim and overlay, the opacity scenario's level changes and fade,
-    # and the knobs' drags and typed entry
+    # the knobs' drags and typed entry and the hex view's scroll, cursor
+    # keys, copy and edit
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
             dialog toast flow switch spinner navigation-rail board field-validation segmented
             tree-table tree-table-live split-button breadcrumb toolbar range-slider stepper code-view rich-text markdown
-            markdown-images search-combo reorder calendar date-time translucency opacity knob)
+            markdown-images search-combo reorder calendar date-time translucency opacity knob hex-view)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
         if(verify_scenario STREQUAL "navigation-rail" OR verify_scenario STREQUAL "knob")
@@ -430,6 +431,18 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     gweni_whole_app_test(controltest_virtual_list 120
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario virtual-list --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/virtual-list@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # HexViewDemo's generated view at 4 KiB and 16 MiB: the same pool, ids,
+    # one-row scroll (one row bound, one read) and cursor keys at both, Right
+    # and Down writing the cursor's slots and the preview's glyphs alone, Ctrl+C
+    # copying the selection's hex, two hex digits typed into the editable view
+    # writing the byte, firing onEdited once and writing that row's hex and
+    # ASCII runs and its cursor slots alone, settled frames writing nothing and the demo
+    # giving its ids back; exits non-zero on any failed check
+    gweni_whole_app_test(controltest_hex_view 120
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario hex-view --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/hex-view@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # VirtualListVariableDemo (wrapped rows, each its measurer's height) at

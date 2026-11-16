@@ -58,6 +58,8 @@ set(GWENI_DEMO_SOURCES
     demo/demo.h
     demo/groupBox.cpp
     demo/groupBox.h
+    demo/hexView.cpp
+    demo/hexView.h
     demo/imagePanel.cpp
     demo/imagePanel.h
     demo/inspector.cpp

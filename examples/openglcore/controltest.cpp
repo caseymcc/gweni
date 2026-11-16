@@ -169,7 +169,7 @@
  *    --scenario <name>  per-control | resize | docked | scroll | interaction |
  *                       typing | clip | text-size | scale | tooltip |
  *                       context-menu | popup | dialog | toast |
- *                       virtual-list |
+ *                       virtual-list | hex-view |
  *                       virtual-list-variable |
  *                       data-table-virtual | hide-show | demo-labels |
  *                       plot-histogram | plot-lines | knob | chart | timeline |
@@ -1454,6 +1454,34 @@
  *                 and the two controls above it, renumbers no z and lays out
  *                 in one pass with no request; the demo gives every primitive
  *                 id back. Exits non-zero if any check is no.
+ *    hex-view     HexViewDemo's generated view at 4 KiB and then 16 MiB, the
+ *                 clock frozen: a settled frame, a one-row scroll, a click on
+ *                 byte 0x21, Right, Down, three Shift+Right and Ctrl+C, then
+ *                 "4" and "2" typed into the editable view's byte 5
+ *                 (hex-view-4096.png, hex-view-16777216.png). One line per
+ *                 size
+ *                   hex-view bytes=N rows=N subtree=N prim_ids=N
+ *                          idle_slots=0 ... row_reads=1 right_prim_slots=2
+ *                          ... edit_text_slots=N ids_left=0
+ *                 gives the counters, and one line
+ *                   hex-view same_cost=yes|no settled=yes|no rows_only=yes|no
+ *                          cursor_only=yes|no copied=yes|no edited=yes|no
+ *                          ids_back=yes|no
+ *                 the checks: the pool, the subtree, the ids, the one-row
+ *                 scroll's counters (its slots less the thumb's where it
+ *                 moved) and the cursor keys' are the same at both sizes;
+ *                 settled frames write and change nothing; the scroll binds
+ *                 one row (one read), writes no more than the shown rows'
+ *                 slots and lays out in one pass; Right writes exactly the
+ *                 cursor's two slots and Down the old and new rows' four, each
+ *                 with glyphs only in the preview's values; Ctrl+C puts the
+ *                 four selected bytes' spaced hex on the clipboard; the second
+ *                 digit writes the byte through the demo's callback, fires
+ *                 onEdited once with (5, old, 0x42) and writes the row's two
+ *                 cursor slots and no more glyphs than its hex and ASCII runs
+ *                 (a changed run writes all of its glyph slots); the demo
+ *                 gives every primitive id back. Exits
+ *                 non-zero if any check is no.
  *    virtual-list-variable
  *                 VirtualListVariableDemo (a VirtualList of wrapped rows,
  *                 each its measurer's height) with 1 000 and then 100 000
@@ -1808,6 +1836,8 @@
 #include <demo/rangeSlider.h>
 #include <demo/sliderText.h>
 #include <demo/dragNumber.h>
+#include <demo/hexView.h>
+#include <gweni/controls/hexView.h>
 #include <gweni/controls/dragNumber.h>
 #include <demo/knob.h>
 #include <gweni/controls/knob.h>
@@ -1936,7 +1966,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(ChartAreasDemo) X(TimelineDemo) X(ComboBoxDemo) X(SearchComboDemo) \
     X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(NavigationRailDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(TreeTableDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(CodeViewDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(SegmentedButtonsDemo) X(CalendarDemo) X(DateTimeDemo) X(SplitButtonDemo) X(BreadcrumbDemo) X(ToolBarDemo) X(StepperDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
-    X(CheckBoxDemo) X(SwitchDemo) X(SpinnerDemo) X(FieldValidationDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(RangeSliderDemo) X(DragNumberDemo) X(KnobDemo) X(VectorFieldDemo) X(MenuStripDemo) \
+    X(CheckBoxDemo) X(SwitchDemo) X(SpinnerDemo) X(FieldValidationDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(RangeSliderDemo) X(DragNumberDemo) X(KnobDemo) X(VectorFieldDemo) X(HexViewDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
     X(UnicodeTextDemo) X(TextSizesDemo) X(TextDemo) X(LayoutDemo) X(InspectorDemo) X(ThemeEditorDemo) \
@@ -2027,7 +2057,7 @@ static void printUsage(std::ostream &out)
          "  --scenario <name>  per-control | resize | docked | scroll | interaction\n"
          "                     | typing | clip | text-size | scale | tooltip\n"
          "                     | context-menu | popup | dialog | toast\n"
-         "                     | virtual-list\n"
+         "                     | virtual-list | hex-view\n"
          "                     | virtual-list-variable\n"
          "                     | data-table-virtual | tree-table | tree-table-live\n"
          "                     | hide-show\n"
@@ -3103,7 +3133,7 @@ enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typ
     PlotLines, Knob, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
     ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented, SplitButton, ToolBar,
     Breadcrumb, RangeSlider, Stepper, CodeView, RichText, Markdown, MarkdownImages, SearchCombo, Reorder, Calendar, DateTime, Translucency,
-    OpacityRoundTrip, Opacity };
+    OpacityRoundTrip, Opacity, HexView };
 
 static bool parseScenario(const std::string &name, Scenario &scenario)
 {
@@ -3122,6 +3152,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "dialog") scenario=Scenario::Dialog;
     else if(name == "toast") scenario=Scenario::Toast;
     else if(name == "virtual-list") scenario=Scenario::VirtualList;
+    else if(name == "hex-view") scenario=Scenario::HexView;
     else if(name == "virtual-list-variable") scenario=Scenario::VirtualListVariable;
     else if(name == "data-table-virtual") scenario=Scenario::DataTableVirtual;
     else if(name == "tree-table") scenario=Scenario::TreeTable;
@@ -18752,6 +18783,349 @@ static bool runVirtualListScenario(Session &s, const std::string &shotDir, bool 
 }
 
 //-----------------------------------------------------------------------------
+// --scenario hex-view: HexViewDemo's generated view at 4 KiB and 16 MiB
+//
+// The view holds a row for each one on screen plus one, whatever the data's
+// size, and each row's slots are a fixed set (a cursor, a hover, a selection
+// and four highlight slots per column), so what a frame does is the same at
+// both sizes: the pool, the controls and ids, a one-row scroll (one row
+// bound, one read) and the cursor keys. A cursor move writes the cursor's two
+// slots (one per column) in the row it leaves and the one it enters and the
+// glyphs of the preview's values whose strings changed, nothing else; Ctrl+C
+// copies the selection's bytes as spaced hex; and in the editable view two
+// hex digits write the byte through the demo's callback, fire onEdited once
+// and write that row's hex and ASCII runs and its cursor slots alone.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+struct HexViewEditSink: gweni::event::Handler
+{
+    size_t fired=0;
+    size_t offset=0;
+    int oldValue=-1;
+    int newValue=-1;
+
+    void edited(gweni::event::Info info)
+    {
+        ++fired;
+        offset=info.integer;
+        oldValue=info.point.x;
+        newValue=info.point.y;
+    }
+};
+
+struct HexViewRun
+{
+    size_t size=0;
+    size_t rows=0;
+    size_t subtree=0;
+    size_t primIds=0;
+    size_t idleSlots=0;
+    size_t idleChanged=0;
+    size_t idsLeft=0;
+    VirtualListStep row;
+    size_t rowReads=0;
+    // the cursor keys: the primitive slots each wrote, whether those were
+    // exactly the expected cursor slots, its glyphs, whether every glyph was
+    // the preview's
+    size_t rightPrims=0, rightGlyphs=0, downPrims=0, downGlyphs=0;
+    bool rightCursorOnly=false, rightPreviewOnly=false;
+    bool downCursorOnly=false, downPreviewOnly=false;
+    bool copied=false;
+    // the edit of the editable view
+    size_t editPrims=0, editGlyphs=0;
+    bool editInRow=false, editFired=false, editWritten=false;
+};
+
+// The row's cursor slots: the first of each column's (texturedControls.h).
+std::set<size_t> hexCursorSlots(gweni::controls::HexViewRow *row)
+{
+    std::set<size_t> slots;
+
+    if(!row || !row->getSkinControl())
+        return slots;
+
+    const std::vector<size_t> &prims=row->getSkinControl()->getPrimitives();
+
+    if(prims.size() >= 2*gweni::skin::textured::HexViewRow::SlotsPerColumn)
+    {
+        slots.insert(prims[0]);
+        slots.insert(prims[gweni::skin::textured::HexViewRow::SlotsPerColumn]);
+    }
+    return slots;
+}
+
+gweni::controls::HexViewRow *hexRowOf(gweni::controls::HexView *view, size_t offset)
+{
+    return view->rowForOffset(offset);
+}
+
+// The canvas point of a byte's first hex digit.
+gweni::Point hexBytePoint(gweni::controls::HexView *view, size_t offset)
+{
+    gweni::controls::HexViewRow *row=view->rowForOffset(offset);
+
+    if(!row)
+        return gweni::Point(-1, -1);
+    return row->localPosToCanvas(gweni::Point(
+        view->byteX(offset%view->getBytesPerRow(), gweni::controls::HexView::Column::Hex)+1,
+        row->getHeight()/2));
+}
+
+}//namespace
+
+// One frame: its slot counts, and whether every primitive it wrote is in
+// \p prims (and all of them were) and every glyph run it wrote in \p texts.
+static void hexViewFrame(Session &s, const std::set<size_t> &prims, const std::set<size_t> &texts,
+    size_t &primSlots, size_t &glyphs, bool &primsExact, bool &textsInside)
+{
+    renderFrames(s, 1);
+
+    const gweni::renderer::SlotRenderer::FrameStats &gpu=s.renderer->getFrameStats();
+    std::set<size_t> written(s.renderer->writtenPrimitiveIds().begin(), s.renderer->writtenPrimitiveIds().end());
+
+    primSlots=gpu.primitiveSlotsWritten;
+    glyphs=gpu.textSlotsWritten;
+    primsExact=written == prims;
+    textsInside=glyphs > 0;
+    for(const gweni::renderer::WrittenText &text : s.renderer->writtenTextIds())
+    {
+        if(!texts.count(text.textId))
+            textsInside=false;
+    }
+}
+
+static void settleHexView(Session &s, gweni::controls::HexView *view, HexViewRun &run)
+{
+    for(int i=0; i < 2; ++i)
+    {
+        const VirtualListStep idle=virtualListFrame(s, view);
+
+        run.idleSlots+=idle.primSlots+idle.textSlots;
+        run.idleChanged+=idle.changed;
+    }
+}
+
+static bool runHexView(Session &s, const std::string &shotDir, size_t size, HexViewRun &run)
+{
+    using gweni::controls::HexView;
+    const size_t idsBefore=livePrimitiveIds();
+    gweni::controls::Base *control=addControl(s, "HexViewDemo");
+    auto *demo=gweni::gweni_cast<gweni::HexViewDemo>(control);
+
+    if(!demo || !demo->generated() || !demo->editable())
+    {
+        std::cerr<<"ControlTest: hex-view: HexViewDemo has no views\n";
+        return false;
+    }
+
+    HexView *view=demo->generated();
+    HexView *edit=demo->editable();
+
+    s.label="HexViewDemo-"+std::to_string(size);
+    demo->setDataSize(size);
+    renderFrames(s, s.frames);
+
+    run.size=size;
+    run.rows=view->getRows().size();
+    run.subtree=subtreeControls(view);
+    run.primIds=livePrimitiveIds()-idsBefore;
+    settleHexView(s, view, run);
+
+    // a one-row scroll: one row bound, one read
+    gweni::controls::Base *bar=findControl(view, "VerticalScrollBar");
+    gweni::controls::Base *thumb=bar?findControl(bar, "ScrollBarBar"):nullptr;
+    const gweni::Rect thumbBefore=thumb?thumb->getBounds():gweni::Rect();
+    const size_t readsBefore=demo->readCalls();
+
+    view->scrollByRows(1);
+    run.row=virtualListFrame(s, view);
+    run.row.thumbMoved=thumb && !(thumb->getBounds() == thumbBefore);
+    run.rowReads=demo->readCalls()-readsBefore;
+    settleHexView(s, view, run);
+
+    // the preview's value runs: the glyphs a cursor move may write
+    std::set<size_t> previewTexts;
+    std::set<size_t> unused;
+
+    for(size_t i=0; i < HexView::PreviewTypes; ++i)
+        subtreeIds(view->getPreview()->getValueControl(i), unused, previewTexts);
+
+    // a click on byte 0x21 (row 2, the second shown), then Right and Down
+    const size_t start=0x21;
+    const gweni::Point at=hexBytePoint(view, start);
+
+    clickMouse(s, at.x, at.y);
+    renderFrames(s, 1);
+    settleHexView(s, view, run);
+
+    bool exact=false;
+    std::set<size_t> expected=hexCursorSlots(hexRowOf(view, start));
+
+    sendKey(s, "right");
+    hexViewFrame(s, expected, previewTexts, run.rightPrims, run.rightGlyphs, exact, run.rightPreviewOnly);
+    run.rightCursorOnly=exact && view->getCursor() == start+1;
+    settleHexView(s, view, run);
+
+    expected=hexCursorSlots(hexRowOf(view, start+1));
+    for(size_t id : hexCursorSlots(hexRowOf(view, start+1+view->getBytesPerRow())))
+        expected.insert(id);
+    sendKey(s, "down");
+    hexViewFrame(s, expected, previewTexts, run.downPrims, run.downGlyphs, exact, run.downPreviewOnly);
+    run.downCursorOnly=exact && view->getCursor() == start+1+view->getBytesPerRow();
+    settleHexView(s, view, run);
+
+    // three bytes more selected and copied
+    for(int i=0; i < 3; ++i)
+        sendKey(s, "shift+right");
+    renderFrames(s, 1);
+    settleHexView(s, view, run);
+    gweni::platform::setClipboardText("");
+    sendKey(s, "ctrl+c");
+    renderFrames(s, 1);
+
+    std::string expectedHex;
+    static const char digits[]="0123456789ABCDEF";
+
+    for(size_t offset=view->getSelectionBegin(); offset < view->getSelectionEnd(); ++offset)
+    {
+        const uint8_t byte=gweni::HexViewDemo::generatedByte(offset);
+
+        if(!expectedHex.empty())
+            expectedHex+=' ';
+        expectedHex+=digits[byte >> 4];
+        expectedHex+=digits[byte & 15];
+    }
+    run.copied=view->getSelectionEnd()-view->getSelectionBegin() == 4
+        && gweni::platform::getClipboardText() == expectedHex;
+    settleHexView(s, view, run);
+
+    const bool shot=shoot(s, shotDir+"/hex-view-"+std::to_string(size)+".png");
+
+    // the editable view: byte 5 typed as "42"
+    HexViewEditSink sink;
+    const size_t byte=5;
+    const uint8_t old=demo->editData()[byte];
+
+    edit->onEdited.add(&sink, &HexViewEditSink::edited);
+
+    const gweni::Point editAt=hexBytePoint(edit, byte);
+
+    clickMouse(s, editAt.x, editAt.y);
+    renderFrames(s, 1);
+    settleHexView(s, view, run);
+    sendKey(s, "4");
+    renderFrames(s, 1);
+    settleHexView(s, view, run);
+
+    gweni::controls::HexViewRow *editRow=hexRowOf(edit, byte);
+    std::set<size_t> rowTexts;
+    std::set<size_t> rowPrims;
+
+    if(editRow)
+    {
+        subtreeIds(editRow->getHexControl(), unused, rowTexts);
+        subtreeIds(editRow->getAsciiControl(), unused, rowTexts);
+    }
+    sendKey(s, "2");
+    hexViewFrame(s, hexCursorSlots(editRow), rowTexts, run.editPrims, run.editGlyphs, exact, run.editInRow);
+    // no more glyphs than the row's hex and ASCII runs: a run laid out again
+    // writes every glyph slot of it (SlotRenderer diffs no glyph bytes)
+    const size_t rowGlyphs=editRow?editRow->getHexText().size()+editRow->getAsciiText().size():0;
+
+    run.editInRow=run.editInRow && exact && run.editGlyphs <= rowGlyphs;
+    run.editFired=sink.fired == 1 && sink.offset == byte && sink.oldValue == old && sink.newValue == 0x42;
+    run.editWritten=demo->editData()[byte] == 0x42 && edit->getCursor() == byte+1;
+    settleHexView(s, view, run);
+    edit->onEdited.removeHandler(&sink);
+
+    forgetMouse(s);
+    dropControl(s, control);
+    renderFrames(s, 1);
+    run.idsLeft=livePrimitiveIds()-idsBefore;
+    return shot;
+}
+
+static bool runHexViewScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    HexViewRun small, large;
+    bool ok=runHexView(s, shotDir, 4096, small);
+
+    ok=runHexView(s, shotDir, gweni::HexViewDemo::DataSize, large) && ok;
+
+    // the one-row scroll: the view's subtree and the canvas and demo above
+    // it, its shown rows' slots, one pass, one row bound (one read)
+    auto withinRows=[](const HexViewRun &run)
+    {
+        const VirtualListStep &step=run.row;
+
+        return step.passes == 1 && step.zVisited == 0 && step.requests == 0
+            && step.visited <= run.subtree+2 && step.changed <= run.subtree
+            && step.primSlots+step.textSlots > 0
+            && step.primSlots <= step.rowPrims+(step.thumbMoved?1:0) && step.textSlots <= step.rowGlyphs
+            && run.rowReads == 1;
+    };
+    // the thumb moves at 4 KiB (256 rows) and not at 16 MiB, so the scroll's
+    // slots are compared less its one slot where it moved
+    auto rowPrimSlots=[](const HexViewRun &run)
+    {
+        return run.row.primSlots-(run.row.thumbMoved?1:0);
+    };
+    const bool sameCost=small.rows == large.rows && small.subtree == large.subtree
+        && small.primIds == large.primIds && rowPrimSlots(small) == rowPrimSlots(large)
+        && small.row.textSlots == large.row.textSlots && small.row.visited == large.row.visited
+        && small.row.passes == large.row.passes && small.row.rowPrims == large.row.rowPrims
+        && small.row.rowGlyphs == large.row.rowGlyphs && small.rowReads == large.rowReads
+        && small.rightPrims == large.rightPrims && small.rightGlyphs == large.rightGlyphs
+        && small.downPrims == large.downPrims && small.downGlyphs == large.downGlyphs;
+    const bool settled=small.idleSlots == 0 && small.idleChanged == 0
+        && large.idleSlots == 0 && large.idleChanged == 0;
+    const bool rowsOnly=withinRows(small) && withinRows(large);
+    const bool cursorOnly=small.rightCursorOnly && small.downCursorOnly && large.rightCursorOnly
+        && large.downCursorOnly && small.rightPreviewOnly && small.downPreviewOnly
+        && large.rightPreviewOnly && large.downPreviewOnly;
+    const bool copied=small.copied && large.copied;
+    const bool edited=small.editInRow && small.editFired && small.editWritten
+        && large.editInRow && large.editFired && large.editWritten;
+    const bool idsBack=small.idsLeft == 0 && large.idsLeft == 0;
+
+    for(const HexViewRun *run : {&small, &large})
+    {
+        std::cout<<"hex-view bytes="<<run->size<<" rows="<<run->rows<<" subtree="<<run->subtree
+                 <<" prim_ids="<<run->primIds<<" idle_slots="<<run->idleSlots
+                 <<" idle_changed="<<run->idleChanged;
+        printVirtualListStep("row", run->row);
+        std::cout<<" row_reads="<<run->rowReads
+                 <<" right_prim_slots="<<run->rightPrims<<" right_text_slots="<<run->rightGlyphs
+                 <<" down_prim_slots="<<run->downPrims<<" down_text_slots="<<run->downGlyphs
+                 <<" edit_prim_slots="<<run->editPrims<<" edit_text_slots="<<run->editGlyphs
+                 <<" ids_left="<<run->idsLeft<<"\n";
+    }
+
+    passed=sameCost && settled && rowsOnly && cursorOnly && copied && edited && idsBack;
+
+    std::cout<<"hex-view same_cost="<<(sameCost?"yes":"no")<<" settled="<<(settled?"yes":"no")
+             <<" rows_only="<<(rowsOnly?"yes":"no")<<" cursor_only="<<(cursorOnly?"yes":"no")
+             <<" copied="<<(copied?"yes":"no")<<" edited="<<(edited?"yes":"no")
+             <<" ids_back="<<(idsBack?"yes":"no")<<"\n";
+    if(!passed)
+        std::cerr<<"ControlTest: hex-view: "
+                 <<(!sameCost ? "a frame at 16 MiB did not cost what it did at 4 KiB"
+                     : !settled ? "a settled frame wrote slots or changed controls"
+                     : !rowsOnly ? "a one-row scroll wrote more than its shown rows' slots, entered more than"
+                         " the view, bound more than one row or took more than one layout pass"
+                     : !cursorOnly ? "a cursor move wrote more than the cursor's slots and the preview's glyphs"
+                     : !copied ? "Ctrl+C did not put the selection's hex on the clipboard"
+                     : !edited ? "an edit wrote outside its row, or did not write the byte and fire onEdited once"
+                     : "the demo did not give its primitive ids back")<<"\n";
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // --scenario virtual-list-variable: VirtualListVariableDemo at 1 000 and
 // 100 000 items
 //
@@ -25141,6 +25515,15 @@ int main(int argc, char *argv[])
             ok=runMarkdownImagesScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a delivery laid out or wrote outside its block, or a texture was kept
+            break;
+        }
+
+        case Scenario::HexView:
+        {
+            bool passed=false;
+            ok=runHexViewScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a frame cost more at 16 MiB, or more than its slots: a failing assertion
             break;
         }
 

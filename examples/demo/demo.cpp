@@ -29,6 +29,7 @@
 #include "demo/contextMenu.h"
 #include "demo/plotHistogram.h"
 #include "demo/plotLines.h"
+#include "demo/hexView.h"
 #include "demo/chartTimeBars.h"
 #include "demo/timeline.h"
 #include "demo/chartLines.h"
@@ -277,6 +278,7 @@ void Demo::init(const String &name)
         addDemo<DragNumberDemo>(cat, "DragNumberDemo", "Drag number");
         addDemo<KnobDemo>(cat, "KnobDemo", "Knob");
         addDemo<VectorFieldDemo>(cat, "VectorFieldDemo", "Vector field");
+        addDemo<HexViewDemo>(cat, "HexViewDemo", "Hex view");
         addDemo<MenuStripDemo>(cat, "MenuStripDemo", "Menu strip");
     }
     {
