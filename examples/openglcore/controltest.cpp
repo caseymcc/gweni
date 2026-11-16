@@ -5496,6 +5496,8 @@ static bool runStatsOverlayScenario(Session &s, const std::string &shotDir, bool
 // them, with its surfaces changed as an editor row changes one
 // (applyToCanvas() with no relayout): it must draw what one built under them
 // draws, and the first TimelineDemo again once the defaults are given back.
+// CurveEditorDemo gets the same check for its cached spans, keys, tangent
+// handles, grid and tick labels, including no layout and a settled frame.
 //-----------------------------------------------------------------------------
 
 static bool runThemeScenario(Session &s, const std::string &shotDir, bool &passed)
@@ -5629,6 +5631,51 @@ static bool runThemeScenario(Session &s, const std::string &shotDir, bool &passe
     dropControl(s, control);
     renderFrames(s, 1);
 
+    // CurveEditor has cached spans, markers, handles, grid lines and text.
+    // Editing the theme live must match a fresh plot, without a layout pass.
+    TexturedSkin::ThemeValues curveChanged=defaults;
+    curveChanged.surfaces.at("CurveCurve0").top=gweni::Color(0xf0, 0x60, 0x80);
+    curveChanged.surfaces.at("CurveEditorGrid").top=gweni::Color(0x40, 0x60, 0x80);
+    curveChanged.surfaces.at("CurveEditorGridMajor").top=gweni::Color(0x70, 0x80, 0xa0);
+    curveChanged.surfaces.at("CurveKey").top=gweni::Color(0xff, 0xc0, 0x60);
+    curveChanged.surfaces.at("CurveKeySelected").top=gweni::Color(0xff, 0xe0, 0x80);
+    curveChanged.surfaces.at("CurveTangent").top=gweni::Color(0x70, 0xf0, 0xa0);
+    curveChanged.textColors.at("CurveEditorTickText")=gweni::Color(0xc0, 0xd0, 0xff);
+    std::vector<unsigned char> curveBefore, curveLive, curveFresh, curveBack;
+    auto addCurveDemo=[&]()
+    {
+        auto *demo=gweni::gweni_cast<gweni::CurveEditorDemo>(addControl(s, "CurveEditorDemo"));
+        if(demo)
+            demo->editor()->setSelection({{2, 2}});
+        return demo;
+    };
+    control=addCurveDemo();
+    if(!control)
+        return false;
+    renderFrames(s, settleFrames);
+    s.renderer->readPixels(s.pixels.x, s.pixels.y, curveBefore);
+    skin->applyTheme(curveChanged);
+    ThemeEditor::applyToCanvas(s.canvas, false);
+    renderFrames(s, 1);
+    const size_t curveLayout=s.canvas->getLayoutStats().passes;
+    renderFrames(s, 1);
+    const size_t curveIdle=gpu.primitiveSlotsWritten+gpu.textSlotsWritten;
+    s.renderer->readPixels(s.pixels.x, s.pixels.y, curveLive);
+    shot=shoot(s, shotDir+"/theme-06-curve-edited.png") && shot;
+    dropControl(s, control);
+    replaceCanvas(s);
+    control=addCurveDemo();
+    if(!control)
+        return false;
+    renderFrames(s, settleFrames);
+    s.renderer->readPixels(s.pixels.x, s.pixels.y, curveFresh);
+    skin->applyTheme(defaults);
+    ThemeEditor::applyToCanvas(s.canvas, false);
+    renderFrames(s, settleFrames);
+    s.renderer->readPixels(s.pixels.x, s.pixels.y, curveBack);
+    dropControl(s, control);
+    renderFrames(s, 1);
+
     auto same=[](const std::vector<unsigned char> &a, const std::vector<unsigned char> &b,
         const char *what)
     {
@@ -5655,9 +5702,15 @@ static bool runThemeScenario(Session &s, const std::string &shotDir, bool &passe
     const bool timelineBackMatches=same(timelineBack, timelineBefore,
         "TimelineDemo's defaults given back live differ from the first TimelineDemo");
     const bool timelineOk=timelineShows && timelineMatches && timelineBackMatches;
+    const bool curveMatches=same(curveLive, curveFresh,
+        "CurveEditorDemo's theme changed live differs from one built under it");
+    const bool curveBackMatches=same(curveBack, curveBefore,
+        "CurveEditorDemo's defaults given back live differ from the first CurveEditorDemo");
+    const bool curveOk=curveLive != curveBefore && curveMatches && curveBackMatches
+        && curveLayout == 0 && curveIdle == 0;
 
     passed=editShows && liveMatchesFresh && revertMatches && loadMatches && settles
-        && saved && loadedFile && valuesBack && defaultsBack && timelineOk;
+        && saved && loadedFile && valuesBack && defaultsBack && timelineOk && curveOk;
 
     std::cout<<"theme edit_prim_slots="<<editPrim<<" edit_text_slots="<<editText
              <<" settled_slots="<<settledSlots<<" edit_shows="<<(editShows?"yes":"no")
@@ -5668,7 +5721,10 @@ static bool runThemeScenario(Session &s, const std::string &shotDir, bool &passe
              <<" load_matches="<<(loadMatches?"yes":"no")
              <<" timeline_shows="<<(timelineShows?"yes":"no")
              <<" timeline_matches_fresh="<<(timelineMatches?"yes":"no")
-             <<" timeline_back="<<(timelineBackMatches?"yes":"no")<<"\n";
+             <<" timeline_back="<<(timelineBackMatches?"yes":"no")
+             <<" curve_matches_fresh="<<(curveMatches?"yes":"no")
+             <<" curve_back="<<(curveBackMatches?"yes":"no")
+             <<" curve_layout="<<curveLayout<<" curve_idle="<<curveIdle<<"\n";
     if(!passed)
         std::cerr<<"ControlTest: theme: "
                  <<(!editShows ? "the changed theme drew nothing new"

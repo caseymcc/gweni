@@ -139,7 +139,9 @@ struct CurveEditorEdit
 //! removed key's before it). onSelectionChanged fires once per user action
 //! that changed the selection. The app's own calls (setSelection(),
 //! clearSelection(), curveChanged()) fire nothing; after editing a curve
-//! itself the app calls curveChanged().
+//! itself the app calls curveChanged(). If an onChanged handler reports an
+//! app edit, the current gesture and any remaining edits in that user action
+//! stop, because their key indices may no longer identify the same keys.
 class GWENI_EXPORT CurveEditor: public Base
 {
 public:
@@ -237,8 +239,8 @@ public:
     //! \}
 
     //! \sect{Hit tests, in the plot's units}
-    //! The key whose marker is nearest \p at within KeyHitRadius (a later
-    //! curve's on a tie).
+    //! The key whose marker is nearest \p at within KeyHitRadius (the first
+    //! curve's on a tie, matching the discs' draw order).
     bool keyAt(const gweni::PointF &at, CurveKeyRef &key) const;
     //! A shown handle within HandleHitRadius of \p at: \p out says which.
     bool handleAt(const gweni::PointF &at, CurveKeyRef &key, bool &out) const;
@@ -373,8 +375,11 @@ protected:
     void onMenuMode(event::Info info);
     void onMenuBroken(event::Info info);
     void onMenuDelete(event::Info info);
+    void wheelAt(int delta, bool horizontal, const gweni::Point &mouse, bool ctrl, bool shift);
 
     std::vector<CurveEntry> m_curves;
+    //! App edits invalidate the key indices a user action is iterating over.
+    uint64_t m_modelSerial=0;
     double m_x0=0.0;
     double m_x1=1.0;
     double m_y0=0.0;

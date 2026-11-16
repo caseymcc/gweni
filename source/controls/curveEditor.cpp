@@ -261,11 +261,22 @@ public:
         m_startX0=m_editor->m_x0;
         m_startY0=m_editor->m_y0;
         m_panning=false;
+        m_ctrl=input::isControlDown();
+        m_shift=input::isShiftDown();
     }
 
     bool active() const { return m_canvas && (m_canvas->inputCapture() == this); }
     bool panning() const { return active() && m_panning; }
     bool replaying() const { return m_replaying; }
+    Point mouse() const { return m_mouse; }
+
+    void captureKey(int key, bool down) override
+    {
+        if(key == keys::Control)
+            m_ctrl=down;
+        if(key == keys::Shift)
+            m_shift=down;
+    }
 
     void captureMouseMoved(int x, int y, int /*deltaX*/, int /*deltaY*/) override
     {
@@ -301,7 +312,7 @@ public:
         if(!m_editor->visible() || m_editor->isDisabled())
             return;
 
-        m_editor->wheel(delta, dim == Dim::X);
+        m_editor->wheelAt(delta, dim == Dim::X, m_mouse, m_ctrl, m_shift);
         m_press=m_mouse;
         m_startX0=m_editor->m_x0;
         m_startY0=m_editor->m_y0;
@@ -353,6 +364,8 @@ private:
     double m_startY0=0.0;
     bool m_panning=false;
     bool m_replaying=false;
+    bool m_ctrl=false;
+    bool m_shift=false;
 };
 
 
@@ -412,6 +425,7 @@ CurveEditor::~CurveEditor()
 
 size_t CurveEditor::addCurve(Curve *curve, const String &surface)
 {
+    ++m_modelSerial;
     CurveEntry entry;
 
     entry.curve=curve;
@@ -425,6 +439,7 @@ size_t CurveEditor::addCurve(Curve *curve, const String &surface)
 
 void CurveEditor::clearCurves()
 {
+    ++m_modelSerial;
     endGesture();
     m_curves.clear();
     m_hovered=false;
@@ -450,6 +465,7 @@ void CurveEditor::curveChanged(size_t index)
     if(index >= m_curves.size())
         return;
 
+    ++m_modelSerial;
     // a gesture's keys are not the curve's now
     endGesture();
 
@@ -575,7 +591,7 @@ void CurveEditor::viewChanged()
     if(m_gesture == Gesture::None)
     {
         if(HoveredControl == m_plot)
-            hoverAt(input::getMousePosition());
+            hoverAt(m_pan->active()?m_pan->mouse():input::getMousePosition());
         else
             clearHover();
     }
@@ -886,8 +902,9 @@ bool CurveEditor::keyAt(const PointF &at, CurveKeyRef &key) const
     const double from=localToCurve(PointF(at.x-KeyHitRadius, 0.0f)).x;
     const double to=localToCurve(PointF(at.x+KeyHitRadius, 0.0f)).x;
 
-    // the last curve first, so it wins a tie: it is drawn in front
-    for(size_t curve=m_curves.size(); curve-- > 0;)
+    // Discs share a depth and the first curve's slots are drawn first under
+    // a LESS depth test, so it wins a tie.
+    for(size_t curve=0; curve<m_curves.size(); ++curve)
     {
         const Curve &c=*m_curves[curve].curve;
 
@@ -997,6 +1014,13 @@ void CurveEditor::keyMoved(size_t curve, size_t from, size_t to)
     for(size_t &key : selected)
         key=movedIndex(key, from, to);
     std::sort(selected.begin(), selected.end());
+    // A reorder changes indices, not which keys were selected at the press.
+    if(curve < m_snapshot.size())
+    {
+        for(size_t &key : m_snapshot[curve])
+            key=movedIndex(key, from, to);
+        std::sort(m_snapshot[curve].begin(), m_snapshot[curve].end());
+    }
 
     auto follow=[&](CurveKeyRef &ref)
     {
@@ -1127,6 +1151,7 @@ void CurveEditor::nudgeSelection(double dt, double dv)
     for(size_t i=0; i < order.size(); ++i)
         order[i]=i;
     sortForMotion(order, refs, dt > 0.0);
+    const uint64_t serial=m_modelSerial;
 
     // the refs are the selection's; each move renumbers the selection, so
     // the next key is looked up by its place in the sorted selection
@@ -1150,6 +1175,8 @@ void CurveEditor::nudgeSelection(double dt, double dv)
 
         if(changed)
             fireChanged(ref.curve, to);
+        if(m_modelSerial != serial)
+            break;
     }
     syncFields();
 }
@@ -1191,7 +1218,9 @@ bool CurveEditor::deleteSelection()
     if(isDisabled() || (m_gesture != Gesture::None) || (selectionSize() == 0))
         return false;
 
-    for(size_t curve=0; curve < m_curves.size(); ++curve)
+    const uint64_t serial=m_modelSerial;
+    bool stop=false;
+    for(size_t curve=0; curve < m_curves.size() && !stop; ++curve)
     {
         Curve *c=m_curves[curve].curve;
         // the highest first, so the lower indices stay
@@ -1217,6 +1246,11 @@ bool CurveEditor::deleteSelection()
             logEdit(curve, spans);
             logEdit(curve, keys);
             fireChanged(curve, key);
+            if(m_modelSerial != serial)
+            {
+                stop=true;
+                break;
+            }
         }
     }
     syncFields();
@@ -1226,6 +1260,7 @@ bool CurveEditor::deleteSelection()
 
 void CurveEditor::setSelectionMode(Curve::TangentMode mode)
 {
+    const uint64_t serial=m_modelSerial;
     for(const CurveKeyRef &ref : getSelection())
     {
         Curve *c=m_curves[ref.curve].curve;
@@ -1245,11 +1280,14 @@ void CurveEditor::setSelectionMode(Curve::TangentMode mode)
         // the handles come or go with Free
         logLook(ref.curve, ref.key);
         fireChanged(ref.curve, ref.key);
+        if(m_modelSerial != serial)
+            break;
     }
 }
 
 void CurveEditor::setSelectionBroken(bool broken)
 {
+    const uint64_t serial=m_modelSerial;
     for(const CurveKeyRef &ref : getSelection())
     {
         Curve *c=m_curves[ref.curve].curve;
@@ -1268,6 +1306,8 @@ void CurveEditor::setSelectionBroken(bool broken)
         logEdit(ref.curve, spans);
         logLook(ref.curve, ref.key);
         fireChanged(ref.curve, ref.key);
+        if(m_modelSerial != serial)
+            break;
     }
 }
 
@@ -1407,7 +1447,10 @@ void CurveEditor::pressAt(const Point &canvasPoint)
             setSelection({ref});
         if(snapshotSelection() != m_snapshot)
         {
+            const uint64_t serial=m_modelSerial;
             fireSelectionChanged();
+            if(m_modelSerial != serial)
+                return;
             // the release fires again only for a change it makes itself
             m_snapshot=snapshotSelection();
         }
@@ -1529,6 +1572,7 @@ void CurveEditor::applyDrag(double dt, double dv)
     m_dragDt=dt;
 
     bool any=false;
+    const uint64_t serial=m_modelSerial;
 
     for(size_t i : order)
     {
@@ -1542,6 +1586,8 @@ void CurveEditor::applyDrag(double dt, double dv)
             any=true;
             fireChanged(dragged.ref.curve, to);
         }
+        if((m_modelSerial != serial) || (m_gesture != Gesture::Keys))
+            break;
     }
     if(any)
     {
@@ -1679,7 +1725,7 @@ void CurveEditor::rightPressAt(const Point &canvasPoint)
 {
     CurveKeyRef ref;
 
-    if(isDisabled() || !keyAt(plotPoint(canvasPoint), ref))
+    if(isDisabled() || (m_gesture != Gesture::None) || !keyAt(plotPoint(canvasPoint), ref))
     {
         m_plot->setContextMenu(nullptr);
         return;
@@ -1689,7 +1735,13 @@ void CurveEditor::rightPressAt(const Point &canvasPoint)
     if(!isSelected(ref.curve, ref.key))
     {
         setSelection({ref});
+        const uint64_t serial=m_modelSerial;
         fireSelectionChanged();
+        if(m_modelSerial != serial)
+        {
+            m_plot->setContextMenu(nullptr);
+            return;
+        }
     }
 
     Menu *menu=getKeyMenu();
@@ -1759,20 +1811,28 @@ void CurveEditor::onMenuDelete(event::Info /*info*/)
 
 void CurveEditor::wheel(int delta, bool horizontal)
 {
+    wheelAt(delta, horizontal, input::getMousePosition(), input::isControlDown(), input::isShiftDown());
+}
+
+void CurveEditor::wheelAt(int delta, bool horizontal, const Point &mouse, bool ctrl, bool shift)
+{
     if(isDisabled())
         return;
 
     const double factor=std::pow(WheelStep, delta/60.0);
-    const PointF at=plotPoint(input::getMousePosition());
+    const PointF at=plotPoint(mouse);
 
     if(horizontal)
     {
         // Shift+wheel: the value axis alone; a real horizontal wheel nothing
-        if(input::isShiftDown())
+        if(shift)
             zoomAt(1.0, factor, at);
         return;
     }
-    if(input::isControlDown())
+    // During a capture the canvas has not turned Shift+wheel into Dim::X.
+    if(shift)
+        zoomAt(1.0, factor, at);
+    else if(ctrl)
         zoomAt(factor, 1.0, at);
     else
         zoomAt(factor, factor, at);
@@ -1804,8 +1864,10 @@ void CurveEditor::setDisabled(bool active)
 
     if(active)
     {
+        ++m_modelSerial;
         endGesture();
         m_pan->end();
+        clearHover();
     }
     ParentClass::setDisabled(active);
     m_plot->setKeyboardInputEnabled(!active);

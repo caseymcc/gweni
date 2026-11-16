@@ -27,7 +27,9 @@
  *    as at 200; a hover writing the two discs; a click's selection the discs
  *    whose look changed; a settled frame nothing; a zoom no layout pass and no
  *    slot outside the plot;
- *  - an added and a removed key, and the editor deleted, giving every id back.
+ *  - an added and a removed key, and the editor deleted, giving every id back;
+ *  - a live theme edit recolouring every visible plot layer without layout;
+ *  - a reorder reassigning tangent handle sets when the pool is full.
  */
 #include "headlessFixture.h"
 
@@ -38,6 +40,7 @@
 #include <gweni/platforms/platform.h>
 #include <gweni/skins/textured/texturedControls.h>
 #include <gweni/tools/toolSupport.h>
+#include <gweni/tools/themeEditor.h>
 
 #include <doctest/doctest.h>
 
@@ -101,10 +104,17 @@ public:
         hiddenSlots.insert(primitiveId);
     }
 
+    void renderText(size_t textId, const Font &font, Point pos, int zIndex, const String &text) override
+    {
+        textColors[textId]=drawColor;
+        StubRenderer::renderText(textId, font, pos, zIndex, text);
+    }
+
     std::map<size_t, RoundedDraw> rounded;
     std::map<size_t, LineDraw> lastLine;
     std::map<size_t, Rect> lineClip;
     std::set<size_t> hiddenSlots;
+    std::map<size_t, Color> textColors;
 };
 
 class CurveSkin: public test::StubSkin
@@ -274,6 +284,77 @@ bool near(const PointF &a, const PointF &b, float tolerance=0.01f)
 }
 
 }//namespace
+
+TEST_CASE("CurvePlot: live theme edits recolour every plot layer without layout")
+{
+    Scene scene;
+    scene.editor->setSelection({{0, 2}});
+    scene.editor->setSelectionMode(Mode::Free);
+    scene.frame();
+    auto *plot=scene.plotRenderer();
+    struct Restore
+    {
+        Restore()
+        {
+            for(auto entry : tokyonight::surfaceRegistry())
+                surfaces.push_back({entry.second, *entry.second});
+        }
+        ~Restore() { for(auto &entry : surfaces) *entry.first=entry.second; }
+        std::vector<std::pair<tokyonight::Surface *, tokyonight::Surface>> surfaces;
+    } restore;
+    const Color changed(230, 60, 100);
+    for(auto &entry : restore.surfaces)
+        entry.first->top=changed;
+    scene.skin.Colors.CurveEditor.TickText=changed;
+    tools::ThemeEditor::applyToCanvas(scene.canvas, false);
+    scene.frame();
+
+    CHECK((scene.renderer.rounded[plot->takenOrder().front()].top == changed));
+    for(size_t k=0; k<scene.curve.spanCount(); ++k)
+        for(size_t id : plot->spanPrimitives(0, k))
+            if(!scene.renderer.hiddenSlots.count(id))
+                CHECK((scene.renderer.lastLine.at(id).color == changed));
+    for(size_t id : plot->gridPrimitives())
+        if(!scene.renderer.hiddenSlots.count(id))
+            CHECK((scene.renderer.lastLine.at(id).color == changed));
+    for(size_t k=0; k<scene.curve.keyCount(); ++k)
+        CHECK((scene.renderer.rounded[plot->keyPrimitive(0, k)].top == changed));
+    const auto handles=plot->handlePrimitives(0, 2);
+    REQUIRE(handles.size() == 4);
+    CHECK((scene.renderer.lastLine.at(handles[0]).color == changed));
+    CHECK((scene.renderer.rounded.at(handles[2]).top == changed));
+    for(size_t id : plot->labelTexts())
+        CHECK((scene.renderer.textColors.at(id) == changed));
+    CHECK(scene.canvas->getLayoutStats().passes == 0);
+    scene.frame();
+    CHECK(scene.plotWritten().empty());
+}
+
+TEST_CASE("CurvePlot: a reorder reassigns a full pool of tangent handles")
+{
+    Scene scene({makeKey(1.0, 1, Mode::Free), makeKey(1.5, 1, Mode::Free),
+        makeKey(2.0, 1, Mode::Free), makeKey(2.5, 1, Mode::Free),
+        makeKey(3.0, 1, Mode::Free), makeKey(3.5, 1, Mode::Free)});
+    // Four sets, initially none used. Select four without retaking any slots.
+    scene.editor->setSelection({{0, 1}, {0, 2}, {0, 3}, {0, 4}});
+    scene.frame();
+    REQUIRE(scene.editor->shownHandleCount() == 4);
+    scene.editor->nudgeSelection(-0.6, 0.0);
+    scene.frame();
+    const auto selected=scene.editor->getSelection();
+    CHECK(selected.front().key == 0);
+    std::set<size_t> ids;
+    for(const auto &ref : selected)
+    {
+        const auto handles=scene.plotRenderer()->handlePrimitives(ref.curve, ref.key);
+        CHECK(handles.size() == 4);
+        for(size_t id : handles)
+        {
+            CHECK(!scene.renderer.hiddenSlots.count(id));
+            CHECK(ids.insert(id).second);
+        }
+    }
+}
 
 TEST_CASE("CurvePlot: the lists are taken back to front, each layer at its z")
 {

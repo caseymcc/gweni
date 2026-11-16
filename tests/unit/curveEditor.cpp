@@ -8,7 +8,7 @@
  *  - the view: a curve point at (p-x0)*scale across the plot and (y1-p)*scale
  *    down it, and back; the plot over the footer's fields;
  *  - the key hit test within KeyHitRadius on screen, at zoom 1 and 2, the
- *    nearest key winning, a key of a later curve on a tie;
+ *    nearest key winning, a key of the first curve on a tie (its disc is on top);
  *  - the wheel zooming about the cursor (the key under it stays), Ctrl the
  *    time axis alone, Shift (the canvas's horizontal wheel) the value axis
  *    alone; a right drag past PanThreshold panning by the mouse's motion, with
@@ -41,7 +41,13 @@
  *    time and value, a field's new number moving it;
  *  - a hover logging the look of the key it left and the one it took;
  *  - an editor made under a hidden parent (told it is not visible before its
- *    parts exist) showing once the parent is shown.
+ *    parts exist) showing once the parent is shown;
+ *  - a pan's hover and wheel following its captured mouse, axis modifiers
+ *    pressed during the capture, and motion continuing after a zoom;
+ *  - a reorder drag firing no selection event, a right press during a key
+ *    drag leaving it alone, and disabling clearing the hover;
+ *  - onChanged reporting an app edit via curveChanged(), safely stopping a
+ *    multi-key drag, nudge, deletion or tangent-mode/broken change.
  */
 #include "headlessFixture.h"
 
@@ -262,7 +268,7 @@ TEST_CASE("CurveEditor: a key is hit within KeyHitRadius on screen, at zoom 1 an
     REQUIRE(editor->keyAt(PointF(299.0f, 249.0f), ref));
     CHECK(ref == controls::CurveKeyRef{0, 2});
 
-    // two keys close together: the nearer; one of each curve at one point: the later curve's
+    // Two keys close together: the nearer; coincident curves: the first disc is on top.
     scene.a.addKey(1.04, 1.5);
     editor->curveChanged(0);
     editor->setView(0, 4, 0, 2);
@@ -271,7 +277,7 @@ TEST_CASE("CurveEditor: a key is hit within KeyHitRadius on screen, at zoom 1 an
     scene.b.addKey(1.0, 1.5);
     editor->curveChanged(1);
     REQUIRE(editor->keyAt(PointF(100.0f, 50.0f), ref));
-    CHECK(ref == controls::CurveKeyRef{1, 1});
+    CHECK(ref == controls::CurveKeyRef{0, 1});
 }
 
 TEST_CASE("CurveEditor: the wheel zooms about the cursor, Ctrl the time alone, Shift the value alone")
@@ -340,6 +346,126 @@ TEST_CASE("CurveEditor: a right drag pans with no menu, A and F frame the keys")
     CHECK(editor->viewX1() == doctest::Approx(1.5));
     CHECK(editor->viewY0() == doctest::Approx(1.0));
     CHECK(editor->viewY1() == doctest::Approx(2.0));
+}
+
+TEST_CASE("CurveEditor: a pan hovers and zooms at the captured mouse, including axis modifiers")
+{
+    Scene scene;
+    auto *editor=scene.editor;
+
+    scene.press(scene.at(100, 50), 2);
+    scene.move(scene.at(200, 100));
+    REQUIRE(editor->panning());
+    controls::CurveKeyRef hovered;
+    CHECK(editor->getHoveredKey(hovered));
+    CHECK(hovered == controls::CurveKeyRef{0, 1});
+
+    const CurvePoint fixed=editor->localToCurve(PointF(200, 100));
+    const double spanX=editor->viewX1()-editor->viewX0();
+    const double spanY=editor->viewY1()-editor->viewY0();
+    SUBCASE("both axes")
+    {
+        scene.canvas->inputMouseWheel(60);
+        CHECK(editor->viewX1()-editor->viewX0() == doctest::Approx(spanX/1.1));
+        CHECK(editor->viewY1()-editor->viewY0() == doctest::Approx(spanY/1.1));
+    }
+    SUBCASE("Shift pressed during the capture")
+    {
+        scene.key(keys::Shift);
+        scene.canvas->inputMouseWheel(60);
+        scene.key(keys::Shift, false);
+        CHECK(editor->viewX1()-editor->viewX0() == doctest::Approx(spanX));
+        CHECK(editor->viewY1()-editor->viewY0() == doctest::Approx(spanY/1.1));
+    }
+    SUBCASE("Ctrl pressed during the capture")
+    {
+        scene.key(keys::Control);
+        scene.canvas->inputMouseWheel(60);
+        scene.key(keys::Control, false);
+        CHECK(editor->viewX1()-editor->viewX0() == doctest::Approx(spanX/1.1));
+        CHECK(editor->viewY1()-editor->viewY0() == doctest::Approx(spanY));
+    }
+    const CurvePoint after=editor->localToCurve(PointF(200, 100));
+    CHECK(after.x == doctest::Approx(fixed.x));
+    CHECK(after.y == doctest::Approx(fixed.y));
+    // After the wheel, subsequent motion continues from the new view.
+    const double x0=editor->viewX0();
+    const double y0=editor->viewY0();
+    const double scaleX=editor->scaleX(), scaleY=editor->scaleY();
+    scene.move(scene.at(210, 110));
+    CHECK(editor->viewX0() == doctest::Approx(x0-10/scaleX));
+    CHECK(editor->viewY0() == doctest::Approx(y0+10/scaleY));
+    scene.release(2);
+}
+
+TEST_CASE("CurveEditor: a reorder drag keeps the selected keys without a selection event")
+{
+    Scene scene;
+    scene.editor->setSelection(refs({{0, 1}, {1, 1}}));
+    scene.press(scene.at(100, 50));
+    scene.move(scene.at(250, 40));
+    scene.release();
+    CHECK(scene.editor->getSelection() == refs({{0, 2}, {1, 1}}));
+    CHECK(scene.events.selections == 0);
+    CHECK(scene.events.changes == 2);
+}
+
+TEST_CASE("CurveEditor: a right press during a key drag keeps the gesture and selection")
+{
+    Scene scene;
+    scene.press(scene.at(100, 50));
+    scene.move(scene.at(120, 40));
+    scene.editor->rightPressAt(scene.at(300, 50));
+    CHECK(scene.editor->getSelection() == refs({{0, 1}}));
+    CHECK(scene.canvas->shownContextMenu() == nullptr);
+    CHECK(scene.editor->getKeyMenu() == nullptr);
+    CHECK(scene.editor->draggingKeys());
+    CHECK(scene.events.selections == 1);
+    scene.release();
+}
+
+TEST_CASE("CurveEditor: disabling drops the hovered key")
+{
+    Scene scene;
+    controls::CurveKeyRef hovered;
+    scene.move(scene.at(100, 50));
+    REQUIRE(scene.editor->getHoveredKey(hovered));
+    scene.editor->setDisabled(true);
+    scene.frame();
+    CHECK(!scene.editor->getHoveredKey(hovered));
+}
+
+TEST_CASE("CurveEditor: onChanged can report an app edit and stop the remaining user edits")
+{
+    Scene scene;
+    auto *editor=scene.editor;
+    struct App: event::Handler
+    {
+        void changed(event::Info)
+        {
+            ++calls;
+            editor->curveChanged(0);
+        }
+        controls::CurveEditor *editor;
+        int calls=0;
+    } app;
+    app.editor=editor;
+    editor->onChanged.add(&app, &App::changed);
+    editor->setSelection(refs({{0, 1}, {0, 2}}));
+
+    SUBCASE("drag")
+    {
+        scene.press(scene.at(100, 50));
+        scene.move(scene.at(110, 40));
+        CHECK(!editor->draggingKeys());
+        scene.release();
+    }
+    SUBCASE("nudge") { editor->nudgeSelection(0.1, 0.1); }
+    SUBCASE("delete") { CHECK(editor->deleteSelection()); CHECK(scene.a.keyCount() == 3); }
+    SUBCASE("mode") { editor->setSelectionMode(Mode::Constant); }
+    SUBCASE("broken") { editor->setSelectionBroken(true); }
+    CHECK(app.calls == 1);
+    CHECK(scene.events.changes == 1);
 }
 
 TEST_CASE("CurveEditor: a click selects, Shift adds, Ctrl toggles, empty space clears")

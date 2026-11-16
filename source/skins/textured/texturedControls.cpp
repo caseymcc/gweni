@@ -5376,7 +5376,7 @@ void CurvePlot::update(renderer::Base *renderer, controls::Base *baseControl)
     const unsigned int sc=baseControl->getStateChange();
     const bool levelsMoved=m_drawnOpacity.moved(renderer);
     bool all=levelsMoved || (sc&(controls::StateChange_Created|controls::StateChange_Visibility
-        |controls::StateChange_Geometry)) != 0;
+        |controls::StateChange_Geometry|controls::StateChange_Text)) != 0;
     const gweni::Rect &bounds=baseControl->getRenderBounds();
     const size_t curves=editor->curveCount();
 
@@ -5596,6 +5596,33 @@ void CurvePlot::update(renderer::Base *renderer, controls::Base *baseControl)
     {
         return editor->curveToLocal(CurvePoint{x, y});
     };
+    // Release obsolete handle owners before assigning any new ones. A key
+    // reordered into an earlier slot may need the set a later slot is holding,
+    // and the pool can be completely full. Walk only this frame's dirty keys.
+    for(size_t c=0; c<curves; ++c)
+    {
+        auto releaseHandles=[&](size_t k)
+        {
+            Key &key=m_curves[c].keys[k];
+            if(editor->showsHandles(c, k) || (key.handles >= m_handles.size()))
+                return;
+            HandleSet &set=m_handles[key.handles];
+            for(int i=0; i<4; ++i)
+                hide(set.ids[i], set.drawn[i]);
+            set.used=false;
+            key.handles=SIZE_MAX;
+        };
+        if(viewMoved)
+        {
+            for(size_t k=0; k<m_curves[c].keys.size(); ++k)
+                releaseHandles(k);
+        }
+        else
+        {
+            for(size_t k : dirtyKeys[c])
+                releaseHandles(k);
+        }
+    }
     // a span's points on the plot, at the segments its length asks for
     auto spanPoints=[&](const Curve &curve, size_t k, std::vector<PointF> &points)
     {

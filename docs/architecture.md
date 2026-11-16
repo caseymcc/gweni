@@ -7385,7 +7385,12 @@ binary-search each curve's keys by time within the radius, so a hover or a press
 the keys near it, not the curve's. `onChanged` fires once per key a user's edit changed
 (`info.point` the curve and key), `onSelectionChanged` once per user action that changed
 the selection; the app's own calls fire nothing, and after editing a curve itself the
-app calls `curveChanged()` (`tests/unit/curveEditor.cpp`).
+app calls `curveChanged()` (`tests/unit/curveEditor.cpp`). If an event handler reports an
+app edit or replaces the curves, the remaining edits in that user action stop: the
+indices they were using may no longer identify the same keys. Reordering a dragged key
+also renumbers the selection saved at its press, so changing indices alone fires no
+selection event. During a pan, wheel zoom and hover use the capture's mouse position;
+modifier presses during the capture still choose the axis.
 
 **The log the renderer reads.** Each curve keeps an ordered log of what changed since its
 plot was last drawn (`pendingEdits()`): span splices (`Curve::lastChange()`), key
@@ -7400,7 +7405,10 @@ axes), a label per major tick, each curve's extensions (flat from the plot's lef
 its first key and from its last key to the right edge) and spans, a disc per key
 (`CurveKey`, `CurveKeyHover`, `CurveKeySelected`), a selected Free key's two stems and
 discs (`CurveTangent`) and the marquee's fill and outline (`CurveMarquee`), all in the
-plot's clip box. A span is reserved its mode's most segments (16 Hermite, 1 Linear, 2
+plot's clip box. Live theme edits redraw every layer, including the tick text, through
+`ThemeEditor::applyToCanvas(canvas, false)` with no layout pass. Obsolete handle owners
+give their sets back before any dirty key takes one, even when the pool is full. A span
+is reserved its mode's most segments (16 Hermite, 1 Linear, 2
 Constant) and uses as many as its chord on screen asks (`segmentsFor()`), each segment a
 `drawLine` with its neighbours along the curve, across spans and the extensions too, cut
 to the plot on the CPU first (a cut joint without that neighbour), as a NodeGraph link's.
