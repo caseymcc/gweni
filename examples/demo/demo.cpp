@@ -66,6 +66,7 @@
 #include "demo/listBox.h"
 #include "demo/menuStrip.h"
 #include "demo/navigationRail.h"
+#include "demo/nodeGraph.h"
 #include "demo/numeric.h"
 #include "demo/pageControl.h"
 #include "demo/progressBar.h"
@@ -79,6 +80,7 @@
 #include "demo/showcaseInput.h"
 #include "demo/showcaseDisplay.h"
 #include "demo/showcaseWindows.h"
+#include "demo/showcaseGraphs.h"
 #include "demo/slider.h"
 #include "demo/rangeSlider.h"
 #include "demo/sliderText.h"
@@ -93,6 +95,7 @@
 #include "demo/unicodeText.h"
 #include "demo/virtualList.h"
 #include "demo/virtualListVariable.h"
+#include "demo/zoomPanel.h"
 #include "demo/logView.h"
 #include "demo/window.h"
 #include "demo/windowButtons.h"
@@ -209,6 +212,7 @@ void Demo::init(const String &name)
         addDemo<ShowcaseInputDemo>(cat, "ShowcaseInputDemo", "Text input");
         addDemo<ShowcaseDisplayDemo>(cat, "ShowcaseDisplayDemo", "Display & feedback");
         addDemo<ShowcaseWindowsDemo>(cat, "ShowcaseWindowsDemo", "Windows & menus");
+        addDemo<ShowcaseGraphsDemo>(cat, "ShowcaseGraphsDemo", "Canvas & graphs");
     }
     {
         controls::CollapsibleCategory *cat=list->add("Basic");
@@ -307,6 +311,13 @@ void Demo::init(const String &name)
         addDemo<CollapsibleListDemo>(cat, "CollapsibleListDemo", "Collapsible list");
         addDemo<ColorPickerDemo>(cat, "ColorPickerDemo", "Color picker");
         addDemo<ColorEditDemo>(cat, "ColorEditDemo", "Color edit");
+    }
+    {
+        controls::CollapsibleCategory *cat=list->add("Canvas");
+        cat->setName("Canvas");
+
+        addDemo<NodeGraphDemo>(cat, "NodeGraphDemo", "Node graph");
+        addDemo<ZoomPanelDemo>(cat, "ZoomPanelDemo", "Zoom panel");
     }
     // the page the PageControl shows before any is selected
     if(m_center->getPageNumber() < m_names.size())
