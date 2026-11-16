@@ -2371,14 +2371,13 @@ public:
     inline static const std::string_view name="ColorButton";
 };
 
-// controls::DragNumber: its field in one primitive (DragNumber at rest,
-// DragNumberHover hovered, DragNumberFocus with the keyboard focus,
-// DragNumberDown while pressed, DragNumberDisabled), hidden while its edit
-// box covers it; the label's Text draws the value. A hover, a press or the
-// focus rewrites that one slot.
 // A GradientEditor's bar: [0] ColorChecker's cells under the whole bar,
 // framed in GradientBarFrame's border (a checker of a transparent fill), then
-// at getZIndex()+1, a border width in from the frame, [1] a flat span of the
+// at getZIndex()+1, each the bar's whole height and drawing the frame's
+// border on its top and bottom and on a side that meets the bar's edge
+// (drawBilinearRect's edge mask: square and borderless where two spans
+// meet), so the border is max(1, snap(width)) device px at any scale,
+// [1] a flat span of the
 // first stop's colour from the bar's left to it and [2] one of the last
 // stop's colour from it to the bar's right (each hidden when it has no
 // width), and [3+i] the span from stop i to stop i+1, a bilinear fill of
@@ -2423,6 +2422,11 @@ public:
     inline static const std::string_view name="GradientStopHandle";
 };
 
+// controls::DragNumber: its field in one primitive (DragNumber at rest,
+// DragNumberHover hovered, DragNumberFocus with the keyboard focus,
+// DragNumberDown while pressed, DragNumberDisabled), hidden while its edit
+// box covers it; the label's Text draws the value. A hover, a press or the
+// focus rewrites that one slot.
 class DragNumber:public textured::ControlRegister<DragNumber>
 {
 public:

@@ -1,3 +1,7 @@
+/*
+ *  Gweni demo
+ *  See license in gweni.h
+ */
 #include "demo/gradientEditor.h"
 #include "gweni/controls/colorPicker.h"
 #include "gweni/controls/gradientEditor.h"
