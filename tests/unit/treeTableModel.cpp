@@ -49,7 +49,8 @@
  *  An empty lazy answer (insertNodes with none, setHasChildren false) of
  *  the top folder at the list end under a sort keeps it on top.
  *  Removing a hidden selection, or its ancestor, under a collapsed parent
- *  whose sorted group is stale takes its neighbour in the shown order.
+ *  whose sorted group is stale or absent takes its neighbour in the shown
+ *  order.
  *  GWENI_TREETABLE_SEED_FIRST/COUNT extend the combined model's seed range
  *  for manual stress runs; the suite defaults to seeds 1..1000.
  */
@@ -3411,10 +3412,14 @@ TEST_CASE("TreeTable model: an empty lazy answer of the top folder at the list e
     }
 }
 
-TEST_CASE("TreeTable model: removing a hidden selection or its ancestor under a collapsed stale sorted group takes the next sibling as shown")
+TEST_CASE("TreeTable model: removing a hidden selection or its ancestor under a collapsed stale or absent sorted group takes the next sibling as shown")
 {
-    for(const bool ancestor : {false, true})
+    for(int variant : {0, 1, 2, 3})
     {
+        const bool stale=variant >= 2;
+        const bool ancestor=(variant & 1) != 0;
+
+        CAPTURE(stale);
         CAPTURE(ancestor);
         Scene scene;
         Tree *tree=scene.tree;
@@ -3438,12 +3443,21 @@ TEST_CASE("TreeTable model: removing a hidden selection or its ancestor under a 
 
         REQUIRE(tree->setSelectedNode(selection));
         tree->setSortColumn(0, controls::SortDirection::Ascending);
-        // 0 stays collapsed: its group is sorted for this generation, the
-        // selection hidden under it
+        // shown once under this sort, 0 keeps a group sorted for this
+        // generation; never shown, it has none
+        if(stale)
+        {
+            tree->setExpanded(0, true);
+            scene.frame();
+            tree->setExpanded(0, false);
+            scene.frame();
+        }
+        // 0 stays collapsed, the selection hidden under it
         REQUIRE(tree->moveNode(1, 0, 1));
         REQUIRE_FALSE(tree->isExpanded(0));
         REQUIRE(tree->getSelectedNode() == selection);
-        // a second sort leaves 0's group stale until it is asked for
+        // a second sort leaves 0's group stale (or still absent) until it
+        // is asked for
         tree->setSortColumn(1, controls::SortDirection::Ascending);
         scene.frame();
         events.ids.clear();
