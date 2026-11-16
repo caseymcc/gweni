@@ -871,24 +871,21 @@ private:
 };
 
 // A Knob: [0] its body, a disc of KnobBody (KnobBodyHover, KnobBodyFocus,
-// KnobBodyPressed or KnobBodyDisabled by state) at getZIndex(); then
-// controls::Knob::ArcSegments slots of the track arc (KnobTrack's top) at z+1,
-// as many of the value arc over it (KnobValue's top, KnobValueDisabled's
-// while disabled) at z+2, the indicator (KnobIndicator's top) on the body at
-// z+1, and last one slot per tick (KnobTick's top) at z+1, so a new tick
-// count resizes the list's tail alone. Every line is a drawLine with its
-// neighbours, so a joint is blended once; the parts are placed by
-// controls::Knob::getGeometry().
+// KnobBodyPressed or KnobBodyDisabled by state) at getZIndex(); [1] the track
+// arc (KnobTrack's top) at z+1 and [2] the value arc over it (KnobValue's
+// top, KnobValueDisabled's while disabled) at z+2, each one drawArc in
+// controls::Knob::Geometry::arcRect, round-capped; [3] the indicator
+// (KnobIndicator's top) on the body at z+1, and last one slot per tick
+// (KnobTick's top) at z+1, so a new tick count resizes the list's tail
+// alone; the parts are placed by controls::Knob::getGeometry().
 //
-// The arcs are the sweep cut into equal parts. A value arc segment draws the
-// part of its own that lies between the arc's origin and the value (none:
-// hidden), its neighbours the grid points of the segments next to it while
-// those draw anything: a segment wholly covered or wholly not keeps its slot
-// as drawn when the value moves, so a value change writes the indicator, the
-// segment the value ends in and the ones it crossed. Each slot keeps what it
-// last drew: a frame that marks the control's geometry, visibility or
+// The value arc runs from the arc's origin to the value, hidden while they
+// are one (a zero sweep would draw its two caps as a dot). Each slot keeps
+// what it last drew (an arc by its angles' slot bits, arcStartBits and
+// arcSweepBits): a frame that marks the control's geometry, visibility or
 // creation, or draws at other opacity levels, draws every slot, any other
-// only one whose line or look is not the one drawn, so hover, press and focus
+// only one whose arc, line or look is not the one drawn, so a value change
+// writes the value arc and the indicator, and hover, press and focus
 // rewrite the body alone.
 class Knob:public textured::ControlRegister<Knob>
 {
@@ -896,7 +893,7 @@ public:
     static void staticInit(TexturedSkin *) { m_staticInit=true; }
 
     size_t requiredPrimitives() override { return 1; }
-    // the arcs, the ticks and the indicator at z+1, the value arc at z+2
+    // the track, the ticks and the indicator at z+1, the value arc at z+2
     size_t depthLayers() override { return 3; }
 
     void update(renderer::Base *renderer, controls::Base *baseControl) override;
@@ -924,7 +921,11 @@ private:
     void drawLine(renderer::Base *renderer, size_t index, bool all, const PointF &p0,
         const PointF &p1, const PointF *prev, const PointF *next, float thickness,
         const Color &color, int z);
-    void hide(renderer::Base *renderer, size_t index, bool all);
+    //! Draws arc slot \p index (0 the track, 1 the value) unless it holds it
+    //! already (\p all: draws it).
+    void drawArc(renderer::Base *renderer, size_t index, bool all, const Rect &rect, float startTurns,
+        float sweepTurns, float thickness, const Color &color, int z);
+    void hideArc(renderer::Base *renderer, size_t index, bool all);
 
     DrawnOpacity m_drawnOpacity;
     struct Body
@@ -936,7 +937,21 @@ private:
         int zIndex=0;
     };
     Body m_body;
-    //! [i] slot [1+i]'s line
+    //! What an arc slot holds, as last drawn.
+    struct ArcSlot
+    {
+        bool valid=false;
+        bool shown=false;
+        Rect rect;
+        uint16_t start=0;   //!< arcStartBits
+        uint16_t sweep=0;   //!< arcSweepBits, clockwise from the start
+        float thickness=0.0f;
+        Color color;
+        int zIndex=0;
+    };
+    //! [0] the track, slot [1]; [1] the value arc, slot [2]
+    ArcSlot m_arcs[2];
+    //! [i] slot [3+i]'s line: the indicator, then the ticks
     std::vector<LineSlot> m_lines;
 };
 

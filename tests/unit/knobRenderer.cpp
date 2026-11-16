@@ -7,20 +7,21 @@
  *  textured skin on a recording StubRenderer, its writes read per frame from
  *  writtenPrimitiveIds() and its lines from the stub's `lines`.
  *
- *  Its slots are the body, Knob::ArcSegments track segments, as many value
- *  segments, the indicator and one per tick, in that order; the body is a
- *  disc (radius half its side) at the knob's z, the track and the ticks at
- *  z+1, the value arc over the track at z+2 and the indicator on the body at
- *  z+1. The track is one polyline, each segment drawn with the grid points
- *  next to it as its neighbours. A value change writes the indicator and the
- *  value segments whose covered part changed alone: the one the value ends
- *  in, and those it crossed (shown or hidden); a whole segment keeps its slot
- *  and its neighbours. A bipolar knob's arc runs from the range's 0, nothing
- *  at 0. Hover, press and focus rewrite the body's slot alone, a settled
- *  frame writes nothing, the value text's glyphs are written only for a new
+ *  Its slots are the body, the track arc, the value arc, the indicator and
+ *  one per tick, in that order; the body is a disc (radius half its side,
+ *  its edges rounded from the centre each, so an odd side is not half a unit
+ *  off) at the knob's z, the track and the ticks at z+1, the value arc over
+ *  the track at z+2 and the indicator on the body at z+1. The arcs are one
+ *  drawArc each in the geometry's arcRect: the track the whole sweep, the
+ *  value arc from the arc's origin to the value, hidden at the origin. A
+ *  value change writes the indicator and the value arc alone, whichever part
+ *  of the sweep it moves through. A bipolar knob's arc runs from the range's
+ *  0. Hover, press and focus rewrite the body's slot alone, a settled frame
+ *  writes nothing, the value text's glyphs are written only for a new
  *  string, a disabled knob draws its body and value in the disabled
- *  surfaces, a hidden knob hides every slot and is drawn again once shown,
- *  and a new tick count resizes the list's tail.
+ *  surfaces, a hidden knob hides every slot and is drawn again once shown, a
+ *  new tick count resizes the list's tail, and the ticks' round caps stay
+ *  inside the dial.
  */
 #include "headlessFixture.h"
 
@@ -43,8 +44,6 @@ namespace tokyonight=skin::textured::tokyonight;
 
 namespace
 {
-
-constexpr size_t Segments=Knob::ArcSegments;
 
 //! The stub, also keeping each body's fill and border as last drawn.
 class BodyRecorder: public test::StubRenderer
@@ -108,6 +107,7 @@ struct Scene
     void frame()
     {
         renderer.lines.clear();
+        renderer.arcs.clear();
         canvas->updateCanvas();
         canvas->renderCanvas();
     }
@@ -137,18 +137,34 @@ const std::vector<size_t> &slotsOf(Knob *knob)
 }
 
 size_t bodySlot(Knob *knob) { return slotsOf(knob)[0]; }
-size_t trackSlot(Knob *knob, size_t i) { return slotsOf(knob)[1+i]; }
-size_t valueSlot(Knob *knob, size_t i) { return slotsOf(knob)[1+Segments+i]; }
-size_t indicatorSlot(Knob *knob) { return slotsOf(knob)[1+2*Segments]; }
+size_t trackSlot(Knob *knob) { return slotsOf(knob)[1]; }
+size_t valueSlot(Knob *knob) { return slotsOf(knob)[2]; }
+size_t indicatorSlot(Knob *knob) { return slotsOf(knob)[3]; }
+size_t tickSlot(Knob *knob, size_t i) { return slotsOf(knob)[4+i]; }
 
-//! The value segments [first, last] and the indicator.
-std::set<size_t> valueWrites(Knob *knob, size_t first, size_t last)
+//! The value arc and the indicator.
+std::set<size_t> valueWrites(Knob *knob)
 {
-    std::set<size_t> ids{indicatorSlot(knob)};
+    return std::set<size_t>{valueSlot(knob), indicatorSlot(knob)};
+}
 
-    for(size_t i=first; i <= last; ++i)
-        ids.insert(valueSlot(knob, i));
-    return ids;
+//! The last arc drawn in \p id this frame, or null.
+const test::StubRenderer::ArcDraw *arcOf(const Scene &scene, size_t id)
+{
+    for(auto it=scene.renderer.arcs.rbegin(); it != scene.renderer.arcs.rend(); ++it)
+    {
+        if(it->id == id)
+            return &*it;
+    }
+    return nullptr;
+}
+
+//! The share of \p knob's sweep at \p turns (drawArc's, from the top clockwise).
+double shareAt(Knob *knob, double turns)
+{
+    const double degrees=90.0-turns*360.0;
+
+    return (degrees-knob->getStartAngle())/(knob->getEndAngle()-knob->getStartAngle());
 }
 
 //! The last line drawn in \p id this frame, or null.
@@ -169,48 +185,54 @@ TEST_CASE("Knob renderer: the body, the track, the value arc, the indicator and 
     Scene scene;
     Knob *knob=scene.knob();
 
-    REQUIRE(slotsOf(knob).size() == 2+2*Segments);
+    REQUIRE(slotsOf(knob).size() == 4);
     const int z=knob->getZIndex();
     const Rect bounds=knob->getRenderBounds();
     const Knob::Geometry geometry=knob->getGeometry();
     const PointF centre(bounds.x+geometry.centre.x, bounds.y+geometry.centre.y);
 
-    // the body: a disc at the knob's z
+    // the body: a disc at the knob's z, centred on the dial
     REQUIRE(scene.renderer.bodies.count(bodySlot(knob)));
     const BodyRecorder::Body &body=scene.renderer.bodies[bodySlot(knob)];
     CHECK(body.rect.w == body.rect.h);
     CHECK(body.radius == doctest::Approx(body.rect.w*0.5f));
     CHECK(body.z == z);
     CHECK((body.fill == tokyonight::KnobBody.top));
-
-    // the track: one polyline round the sweep, its joints given
-    for(size_t i=0; i < Segments; ++i)
+    CHECK(body.rect.x+body.rect.w*0.5f == doctest::Approx(centre.x));
+    CHECK(body.rect.y+body.rect.h*0.5f == doctest::Approx(centre.y));
+    // an 80-unit dial's body is 56.67 units across: its edges rounded each
+    // from the centre, not an odd side placed from a rounded corner
+    knob->setDiameter(80);
+    scene.frame();
     {
-        CAPTURE(i);
-        const auto *line=lineOf(scene, trackSlot(knob, i));
-        REQUIRE(line);
-        CHECK(line->zIndex == z+1);
-        CHECK((line->color == tokyonight::KnobTrack.top));
-        CHECK(line->thickness == geometry.arcThickness);
-        CHECK(line->prev.has_value() == (i > 0));
-        CHECK(line->next.has_value() == (i+1 < Segments));
-        if(i > 0)
-        {
-            const auto *before=lineOf(scene, trackSlot(knob, i-1));
-            CHECK((line->p0 == before->p1));
-            CHECK((*line->prev == before->p0));
-        }
+        const Rect wide=knob->getRenderBounds();
+        const Knob::Geometry big=knob->getGeometry();
+        const PointF middle(wide.x+big.centre.x, wide.y+big.centre.y);
+        const BodyRecorder::Body &disc=scene.renderer.bodies[bodySlot(knob)];
+        CAPTURE(disc.rect.x);
+        CAPTURE(disc.rect.w);
+        CHECK(disc.rect.x+disc.rect.w*0.5f == doctest::Approx(middle.x));
+        CHECK(disc.rect.y+disc.rect.h*0.5f == doctest::Approx(middle.y));
     }
-    const PointF first=Knob::pointAt(centre, knob->getStartAngle(), geometry.arcRadius);
-    const PointF last=Knob::pointAt(centre, knob->getEndAngle(), geometry.arcRadius);
-    CHECK(lineOf(scene, trackSlot(knob, 0))->p0.x == doctest::Approx(first.x));
-    CHECK(lineOf(scene, trackSlot(knob, 0))->p0.y == doctest::Approx(first.y));
-    CHECK(lineOf(scene, trackSlot(knob, Segments-1))->p1.x == doctest::Approx(last.x));
-    CHECK(lineOf(scene, trackSlot(knob, Segments-1))->p1.y == doctest::Approx(last.y));
+    knob->setDiameter(Knob::DefaultDiameter);
+    scene.frame();
+
+    // the track: one arc over the whole sweep, its outer edge on the dial's
+    const Rect arcRect(bounds.x+geometry.arcRect.x, bounds.y+geometry.arcRect.y, geometry.arcRect.w,
+        geometry.arcRect.h);
+    const auto *track=arcOf(scene, trackSlot(knob));
+    REQUIRE(track);
+    CHECK((track->rect == arcRect));
+    CHECK((geometry.arcRect == knob->getDialRect()));
+    CHECK(track->zIndex == z+1);
+    CHECK((track->color == tokyonight::KnobTrack.top));
+    CHECK(track->thickness == geometry.arcThickness);
+    // 225 degrees is 0.625 of a turn from the top, the sweep three quarters
+    CHECK(track->startTurns == doctest::Approx(-0.375));
+    CHECK(track->sweepTurns == doctest::Approx(0.75));
 
     // at the minimum the value arc draws nothing, the indicator points at the start
-    for(size_t i=0; i < Segments; ++i)
-        CHECK_FALSE(lineOf(scene, valueSlot(knob, i)));
+    CHECK_FALSE(arcOf(scene, valueSlot(knob)));
     const auto *indicator=lineOf(scene, indicatorSlot(knob));
     REQUIRE(indicator);
     CHECK(indicator->zIndex == z+1);
@@ -220,73 +242,77 @@ TEST_CASE("Knob renderer: the body, the track, the value arc, the indicator and 
     CHECK(indicator->p1.y == doctest::Approx(tip.y));
     CHECK(const_cast<skin::Control *>(knob->getSkinControl())->depthLayers() == 3);
 
-    // ticks: one slot each at the list's tail, outside the arc
+    // ticks: one slot each at the list's tail, outside the arc, the arc's
+    // rect whole units in, each tick's round cap inside the dial
     knob->setTickCount(5);
     scene.frame();
-    REQUIRE(slotsOf(knob).size() == 2+2*Segments+5);
+    REQUIRE(slotsOf(knob).size() == 4+5);
     const Knob::Geometry ticked=knob->getGeometry();
+    const Rect dial=knob->getDialRect();
     CHECK(ticked.tickInner > ticked.arcRadius+ticked.arcThickness*0.5f);
+    CHECK(ticked.arcRect.w < dial.w);
+    CHECK(ticked.arcRect.w == ticked.arcRect.h);
+    CHECK(ticked.arcRect.x-dial.x == dial.x+dial.w-(ticked.arcRect.x+ticked.arcRect.w));
+    REQUIRE(arcOf(scene, trackSlot(knob)));
+    CHECK(arcOf(scene, trackSlot(knob))->rect.w == ticked.arcRect.w);
+    CHECK(ticked.tickOuter+ticked.tickThickness*0.5f <= dial.w*0.5f);
     for(size_t i=0; i < 5; ++i)
     {
         CAPTURE(i);
-        const auto *tick=lineOf(scene, slotsOf(knob)[2+2*Segments+i]);
+        const auto *tick=lineOf(scene, tickSlot(knob, i));
         REQUIRE(tick);
         CHECK((tick->color == tokyonight::KnobTick.top));
         CHECK(tick->zIndex == z+1);
     }
     knob->setTickCount(0);
     scene.frame();
-    CHECK(slotsOf(knob).size() == 2+2*Segments);
+    CHECK(slotsOf(knob).size() == 4);
 }
 
-TEST_CASE("Knob renderer: a value change writes the indicator and the value segments whose covered part changed")
+TEST_CASE("Knob renderer: a value change writes the indicator and the value arc alone")
 {
     Scene scene;
     Knob *knob=scene.knob();
     const int z=knob->getZIndex();
 
-    // into segment 16 (of 32), every one before it whole
     knob->setNumber(0.51);
     scene.frame();
-    for(size_t i=0; i < 16; ++i)
-    {
-        CAPTURE(i);
-        const auto *line=lineOf(scene, valueSlot(knob, i));
-        REQUIRE(line);
-        CHECK(line->zIndex == z+2);
-        CHECK((line->color == tokyonight::KnobValue.top));
-        CHECK(line->prev.has_value() == (i > 0));
-        CHECK(line->next.has_value());
-    }
-    const auto *partial=lineOf(scene, valueSlot(knob, 16));
-    REQUIRE(partial);
-    CHECK_FALSE(partial->next.has_value());
-    const PointF partialEnd=partial->p1;
+    const auto *arc=arcOf(scene, valueSlot(knob));
+    REQUIRE(arc);
+    CHECK(arc->zIndex == z+2);
+    CHECK((arc->color == tokyonight::KnobValue.top));
+    CHECK(arc->rect.w == knob->getGeometry().arcRect.w);
+    CHECK(shareAt(knob, arc->startTurns) == doctest::Approx(0.0));
+    CHECK(shareAt(knob, arc->startTurns+arc->sweepTurns) == doctest::Approx(0.51));
+    CHECK(arc->thickness == knob->getGeometry().arcThickness);
 
     // a settled frame writes nothing
     scene.frame();
     CHECK(scene.written().empty());
 
-    // inside segment 16: it and the indicator alone
-    knob->setNumber(0.52);
-    scene.frame();
-    CHECK(scene.written() == valueWrites(knob, 16, 16));
-    CHECK_FALSE((lineOf(scene, valueSlot(knob, 16))->p1 == partialEnd));
+    // a small step, a large one, back, and a value on a quarter of the sweep:
+    // the arc and the indicator alone, the arc ending at the value
+    for(double value : {0.52, 0.6, 0.52, 0.5, 0.75, 1.0, 0.25})
+    {
+        CAPTURE(value);
+        knob->setNumber(value);
+        scene.frame();
+        CHECK(scene.written() == valueWrites(knob));
+        REQUIRE(arcOf(scene, valueSlot(knob)));
+        arc=arcOf(scene, valueSlot(knob));
+        CHECK(shareAt(knob, arc->startTurns) == doctest::Approx(0.0));
+        CHECK(shareAt(knob, arc->startTurns+arc->sweepTurns) == doctest::Approx(value));
+    }
 
-    // on to segment 19: 16 now whole (with its next), 17 and 18 shown, 19 partial
-    knob->setNumber(0.6);
+    // back at the origin the arc is hidden, not a dot
+    knob->setNumber(0.0);
     scene.frame();
-    CHECK(scene.written() == valueWrites(knob, 16, 19));
-    CHECK(lineOf(scene, valueSlot(knob, 16))->next.has_value());
-
-    // back to segment 16: 17 to 19 hidden, 16 partial again
-    knob->setNumber(0.52);
-    scene.frame();
-    CHECK(scene.written() == valueWrites(knob, 16, 19));
-    for(size_t i=17; i <= 19; ++i)
-        CHECK_FALSE(lineOf(scene, valueSlot(knob, i)));
+    CHECK(scene.written() == valueWrites(knob));
+    CHECK_FALSE(arcOf(scene, valueSlot(knob)));
 
     // the same value again, or a format that keeps the string: nothing
+    knob->setNumber(0.52);
+    scene.frame();
     knob->setNumber(0.52);
     scene.frame();
     CHECK(scene.written().empty());
@@ -301,17 +327,6 @@ TEST_CASE("Knob renderer: a value change writes the indicator and the value segm
     scene.frame();
     CHECK(knob->getValueText() == "0.53");
     CHECK_FALSE(scene.renderer.writtenTextIds().empty());
-
-    // Leave an exact grid boundary in both directions. The adjacent whole
-    // segment keeps its coverage and its slot as the partial segment grows.
-    knob->setNumber(0.5);
-    scene.frame();
-    knob->setNumber(0.51);
-    scene.frame();
-    CHECK(scene.written() == valueWrites(knob, 16, 16));
-    knob->setNumber(0.5);
-    scene.frame();
-    CHECK(scene.written() == valueWrites(knob, 16, 16));
 }
 
 TEST_CASE("Knob renderer: a bipolar arc runs from the range's 0")
@@ -323,32 +338,27 @@ TEST_CASE("Knob renderer: a bipolar arc runs from the range's 0")
     knob->setBipolar(true);
     knob->setNumber(0.0);
     scene.frame();
-    for(size_t i=0; i < Segments; ++i)
-        CHECK_FALSE(lineOf(scene, valueSlot(knob, i)));
+    CHECK_FALSE(arcOf(scene, valueSlot(knob)));
 
-    // 0.5 is three quarters of the sweep: segments 16 to 23
+    // 0.5 is three quarters of the sweep: the arc from the middle to there
     knob->setNumber(0.5);
     scene.frame();
-    CHECK(scene.written() == valueWrites(knob, 16, 23));
-    CHECK_FALSE(lineOf(scene, valueSlot(knob, 16))->prev.has_value());
-    CHECK(lineOf(scene, valueSlot(knob, 23))->next.has_value());
+    CHECK(scene.written() == valueWrites(knob));
+    const auto *arc=arcOf(scene, valueSlot(knob));
+    REQUIRE(arc);
+    CHECK(arc->sweepTurns > 0.0f);
+    CHECK(shareAt(knob, arc->startTurns) == doctest::Approx(0.5));
+    CHECK(shareAt(knob, arc->startTurns+arc->sweepTurns) == doctest::Approx(0.75));
 
-    // below 0: the segments under it, those above hidden
+    // below 0: from the value up to the middle, still clockwise
     knob->setNumber(-0.5);
     scene.frame();
-    CHECK(scene.written() == valueWrites(knob, 8, 23));
-    CHECK(lineOf(scene, valueSlot(knob, 8)));
-    CHECK(lineOf(scene, valueSlot(knob, 15)));
-    CHECK_FALSE(lineOf(scene, valueSlot(knob, 16)));
-
-    // Below zero the moving endpoint is a segment's start. Leaving and
-    // returning to its grid point keeps the next whole segment untouched.
-    knob->setNumber(-0.51);
-    scene.frame();
-    CHECK(scene.written() == valueWrites(knob, 7, 7));
-    knob->setNumber(-0.5);
-    scene.frame();
-    CHECK(scene.written() == valueWrites(knob, 7, 7));
+    CHECK(scene.written() == valueWrites(knob));
+    arc=arcOf(scene, valueSlot(knob));
+    REQUIRE(arc);
+    CHECK(arc->sweepTurns > 0.0f);
+    CHECK(shareAt(knob, arc->startTurns) == doctest::Approx(0.25));
+    CHECK(shareAt(knob, arc->startTurns+arc->sweepTurns) == doctest::Approx(0.5));
 }
 
 TEST_CASE("Knob renderer: hover, press and focus rewrite the body alone, disabled draws the disabled surfaces")
@@ -392,8 +402,8 @@ TEST_CASE("Knob renderer: hover, press and focus rewrite the body alone, disable
     knob->setDisabled(true);
     scene.frame();
     CHECK((scene.renderer.bodies[bodySlot(knob)].fill == tokyonight::KnobBodyDisabled.top));
-    REQUIRE(lineOf(scene, valueSlot(knob, 0)));
-    CHECK((lineOf(scene, valueSlot(knob, 0))->color == tokyonight::KnobValueDisabled.top));
+    REQUIRE(arcOf(scene, valueSlot(knob)));
+    CHECK((arcOf(scene, valueSlot(knob))->color == tokyonight::KnobValueDisabled.top));
     CHECK((lineOf(scene, indicatorSlot(knob))->color == tokyonight::KnobValueDisabled.top));
     CHECK((knob->getValueTextControl()->getTextColor() == scene.skin.Colors.Button.Disabled));
     knob->setDisabled(false);
@@ -413,15 +423,17 @@ TEST_CASE("Knob renderer: a hidden knob hides every slot and is drawn again once
     const std::vector<size_t> &slots=slotsOf(knob);
     CHECK(scene.written() == std::set<size_t>(slots.begin(), slots.end()));
     CHECK(scene.renderer.lines.empty());
+    CHECK(scene.renderer.arcs.empty());
 
     // a value set while hidden draws once shown
     knob->setNumber(0.75);
     scene.frame();
     knob->show();
     scene.frame();
-    CHECK(lineOf(scene, valueSlot(knob, 23)));
-    CHECK_FALSE(lineOf(scene, valueSlot(knob, 24)));
-    CHECK(lineOf(scene, trackSlot(knob, 0)));
+    REQUIRE(arcOf(scene, valueSlot(knob)));
+    CHECK(shareAt(knob, arcOf(scene, valueSlot(knob))->startTurns+arcOf(scene, valueSlot(knob))->sweepTurns)
+        == doctest::Approx(0.75));
+    CHECK(arcOf(scene, trackSlot(knob)));
     scene.frame();
     CHECK(scene.written().empty());
 }

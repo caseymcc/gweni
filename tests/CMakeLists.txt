@@ -632,12 +632,17 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/plot_lines@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
-    # KnobDemo's value drags write only the changed value segments, the
-    # indicator and the new string's glyphs; hover writes the body alone,
-    # typed entry commits/cancels, settled frames write nothing and ids return
+    # KnobDemo's value drags write only the value arc, the indicator and the
+    # new string's glyphs; hover writes the body alone, typed entry
+    # commits/cancels, the value arc is its colour along its stroke and in its
+    # round end, settled frames write nothing and ids return; at scale 1 and 2
     gweni_whole_app_test(controltest_knob 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario knob --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/knob@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+    gweni_whole_app_test(controltest_knob_scale200 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario knob --require-one-pass --scale 2
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/knob_scale200@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # ChartTimeBarsDemo, ChartLinesDemo and ChartAreasDemo with their ranges

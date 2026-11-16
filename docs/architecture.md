@@ -4729,7 +4729,7 @@ two programs and the draws. What follows describes both together:
   component or the tags takes their ids and removing them gives them back.
   VectorFieldDemo has a float2, a tagged float3, a tagged integer vector of four and a
   disabled one; ShowcaseInputDemo has a tagged float3.
-- **The knob: a value on an arc, a polyline of fixed segments redrawn where its cover changed.**
+- **The knob: a value on an arc, two `drawArc` slots.**
   `controls::Knob` (`include/gweni/controls/knob.h`, imgui-knobs, an audio plug-in's knob)
   is a dial of `setDiameter` units (48 by default) with an optional caption above it
   (`setCaption`) and the value's text under it (`setShowValue`, on by default), both
@@ -4757,32 +4757,41 @@ two programs and the draws. What follows describes both together:
   shown and hidden), `EditHeight` high across the dial, the value selected; the box calls
   its owner through `internal::TypedEntryOwner` (`commitEdit`, `cancelEdit`, in
   `dragNumber.h`), which both controls implement, so Return or a lost focus commits,
-  Escape cancels and text that is no number leaves the value. **The look:** the textured
+  Escape cancels and text that is no number leaves the value. A move within
+  `MinCentreDistance` forgets the angle, so the move out of it, on whichever side, takes
+  the angle afresh rather than summing half a turn to an end. **The look:** the textured
   `Knob` renderer keeps one list of slots: the body disc (one `drawRoundedRect`, radius
-  half its side, `KnobBody`, `-Hover`, `-Pressed`, `-Focus`, `-Disabled`) at z, the track
-  arc's `ArcSegments` (32) `drawLine` segments (`KnobTrack`) at z+1, the value arc's 32
-  (`KnobValue`, `KnobValueDisabled`) over them at z+2, the indicator across the body
+  half its side, its left and right edges each `lround(centre ∓ radius)`, so a body of a
+  fractional radius stays centred on the dial; `KnobBody`, `-Hover`, `-Pressed`,
+  `-Focus`, `-Disabled`) at z, the track arc (`KnobTrack`) at z+1, the value arc
+  (`KnobValue`, `KnobValueDisabled`) over it at z+2, the indicator across the body
   (`KnobIndicator`) at z+1 and the ticks (`setTickCount`, `KnobTick`) in an outer ring at
-  z+1, the tick slots at the list's tail (`depthLayers()` 3; the text colours
-  `KnobValueText` and `KnobCaptionText`). Both arcs are polylines over one grid of 33
-  points along the sweep, each segment drawn with its neighbours so a joint blends once.
-  Value segment i draws its part of `[i/32, (i+1)/32]` between the arc's origin (the
-  start, or the range's 0 for `setBipolar(true)`) and the value, and is hidden outside
-  it; a wholly covered one keeps its grid neighbours even where the value sits exactly
-  on a grid point (the fixed origin and a partial end are caps), so its slot never
-  changes as the value moves past. A value change therefore writes the indicator, the
-  segment the value ends in and those it crossed, and the new string's glyphs; a hover,
-  press or focus the body's slot alone; a settled frame nothing (each slot's last
-  endpoints, neighbours, thickness, colour and z cached, as PlotLines' are).
-  **The segment count**: a chord over 270/32 = 8.4 degrees lies at most
-  `r(1-cos 4.2°) = 0.0027 r` inside the circle, where `r` is the arc's centre radius
-  (`Knob::getGeometry`: half the dial less half the stroke, `max(2, side/12)`): 0.05 device
-  px for a 40-unit dial at scale 1 and 0.20 px for an 80-unit one at scale 2, so the arc
-  looks round across 40 to 80 units at scales 1 and 2 (16 segments would be 0.79 px at
-  80 units and scale 2, a visible facet; 24 0.35 px). No arc primitive is needed.
-  KnobDemo (the shell's "Knob", the README gallery) has a vertical knob with value text,
-  an angular one with ticks, a bipolar one (-1..1), an integer one (0..10) and a disabled
-  one; `controltest_knob` (`--scenario knob`) holds its drags, hover, typed entry and ids.
+  z+1, their round caps inside the dial (`tickOuter` half the dial less half a tick's
+  thickness), the tick slots at the list's tail (`depthLayers()` 3; the text colours
+  `KnobValueText` and `KnobCaptionText`). Both arcs are one `renderer::Base::drawArc`
+  each (style 5, kind 9; → "Arcs (style 5, kind 9)"), in `Knob::Geometry::arcRect`, the
+  dial's square less the tick ring (a tick's length rounded to whole units, plus a
+  unit's gap), whose inscribed circle is the arcs' outer edge, `max(2, side/12)` thick:
+  the track the whole sweep, the value arc from its origin (the start, or the range's 0
+  for `setBipolar(true)`) to the value, drawn clockwise from whichever end comes first
+  (the knob's degrees run anticlockwise from the right, drawArc's turns clockwise from
+  the top: `(90 - degrees)/360`), and hidden while the value is at its origin (a zero
+  sweep would draw its two caps as a dot). The arc's coverage is the exact distance to
+  the ring and its round caps, so the stroke has no joint to leave a hole in and ends
+  round at every value. (It was first a polyline of 32 `drawLine` segments with
+  neighbours, from before `drawArc`; the joint between the last whole segment and the
+  partial one let the track show through, and a value on a 1/32 grid point ended flat.)
+  Each arc slot keeps its last rect, angles as their slot bits (`arcStartBits`,
+  `arcSweepBits`), thickness, colour and z, and each line slot its endpoints, thickness,
+  colour and z, as PlotLines' segments are: a value change writes the value arc and the
+  indicator (one or neither when the step keeps its bits or pixels) and the new
+  string's glyphs; a hover, press or focus the body's slot alone; a settled frame
+  nothing. KnobDemo (the shell's "Knob", the README gallery) has a vertical knob with
+  value text, an angular one with ticks, a bipolar one (-1..1), an integer one (0..10)
+  and a disabled one; `controltest_knob` and `controltest_knob_scale200` (`--scenario
+  knob`) hold its drags, hover, typed entry and ids, and that every pixel along the
+  value arc's stroke and in its round end is the value colour at values on, just past
+  and between 1/32 grid points, on the 80- and 48-unit dials.
 - **Attached children: a badge on its anchor's corner.** `Base::attachTo(anchor, corner,
   offset)` makes a control a child of the anchor's own list (never an inner panel's or a
   LayoutItem's), `Placement::Owner`, centred on that corner of the anchor's bounds and

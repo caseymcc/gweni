@@ -392,15 +392,24 @@ Knob::Geometry Knob::getGeometry() const
     geometry.centre=PointF(dial.x+half, dial.y+half);
     geometry.arcThickness=std::max(2.0f, side/12.0f);
 
-    float outer=half;
+    // the arcs' outer edge, a whole number of units in from the dial's
+    int inset=0;
 
     if(m_tickCount > 0)
     {
-        geometry.tickOuter=half;
-        geometry.tickInner=half-std::max(3.0f, side/10.0f);
+        const float length=std::round(std::max(3.0f, side/10.0f));
+
         geometry.tickThickness=1.0f;
-        outer=geometry.tickInner-1.0f;
+        // a tick's round cap reaches half its thickness past its end
+        geometry.tickOuter=half-geometry.tickThickness*0.5f;
+        geometry.tickInner=half-length;
+        inset=int(length)+1;
     }
+    geometry.arcRect=Rect(dial.x+inset, dial.y+inset, std::max(0, dial.w-2*inset),
+        std::max(0, dial.h-2*inset));
+
+    const float outer=std::max(0.0f, half-float(inset));
+
     geometry.arcRadius=std::max(0.0f, outer-geometry.arcThickness*0.5f);
     geometry.bodyRadius=std::max(0.0f,
         geometry.arcRadius-geometry.arcThickness*0.5f-std::max(2.0f, side/16.0f));
@@ -513,8 +522,14 @@ void Knob::onMouseMoved(int x, int y, int /*deltaX*/, int /*deltaY*/)
     {
         double angle;
 
+        // at the centre the angle means nothing: forget it, so the move out
+        // of it, on whichever side, takes the angle afresh rather than
+        // summing half a turn
         if(!mouseAngle(x, y, angle))
+        {
+            m_haveAngle=false;
             return;
+        }
         if(!m_haveAngle)
         {
             m_lastAngle=angle;

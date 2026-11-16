@@ -74,9 +74,6 @@ public:
     static constexpr double FineFactor=0.1;
     //! PageUp's and PageDown's step, in key steps.
     static constexpr double PageFactor=10.0;
-    //! The line segments of the track arc and of the value arc over it, the
-    //! sweep cut into equal parts (the textured renderer's polylines).
-    static constexpr int ArcSegments=32;
     //! The dial's side when none is set.
     static constexpr int DefaultDiameter=48;
     //! The gap between the dial and its caption or value text.
@@ -175,6 +172,10 @@ public:
     struct Geometry
     {
         PointF centre;
+        //! The square the arcs are drawn in (renderer::Base::drawArc): their
+        //! outer edge is its inscribed circle, the dial's rect less the tick
+        //! ring, whole units in from it.
+        Rect arcRect;
         float arcRadius=0.0f;      //!< the arcs' centre line
         float arcThickness=0.0f;
         float bodyRadius=0.0f;
@@ -182,7 +183,7 @@ public:
         float indicatorOuter=0.0f; //!< to this far
         float indicatorThickness=0.0f;
         float tickInner=0.0f;      //!< a tick from this far (no ticks: 0)
-        float tickOuter=0.0f;
+        float tickOuter=0.0f;      //!< to this far, its round cap inside the dial
         float tickThickness=0.0f;
     };
     Geometry getGeometry() const;

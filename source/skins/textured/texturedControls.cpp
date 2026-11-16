@@ -3141,16 +3141,6 @@ void PlotLines::update(renderer::Base *renderer, controls::Base *baseControl)
 
 ///////////////////////////////////////////////////////////////////////////
 //Knob
-void Knob::hide(renderer::Base *renderer, size_t index, bool all)
-{
-    LineSlot &drawn=m_lines[index];
-
-    if(all || !drawn.valid || drawn.shown)
-        renderer->hidePrimitive(m_primitives[1+index]);
-    drawn.valid=true;
-    drawn.shown=false;
-}
-
 void Knob::drawLine(renderer::Base *renderer, size_t index, bool all, const PointF &p0,
     const PointF &p1, const PointF *prev, const PointF *next, float thickness, const Color &color,
     int z)
@@ -3165,7 +3155,7 @@ void Knob::drawLine(renderer::Base *renderer, size_t index, bool all, const Poin
         return;
 
     renderer->setDrawColor(color);
-    renderer->drawLine(m_primitives[1+index], p0, p1, thickness, z, prev, next);
+    renderer->drawLine(m_primitives[3+index], p0, p1, thickness, z, prev, next);
     drawn.valid=true;
     drawn.shown=true;
     drawn.p0=p0;
@@ -3179,18 +3169,49 @@ void Knob::drawLine(renderer::Base *renderer, size_t index, bool all, const Poin
     drawn.zIndex=z;
 }
 
+void Knob::hideArc(renderer::Base *renderer, size_t index, bool all)
+{
+    ArcSlot &drawn=m_arcs[index];
+
+    if(all || !drawn.valid || drawn.shown)
+        renderer->hidePrimitive(m_primitives[1+index]);
+    drawn.valid=true;
+    drawn.shown=false;
+}
+
+void Knob::drawArc(renderer::Base *renderer, size_t index, bool all, const Rect &rect, float startTurns,
+    float sweepTurns, float thickness, const Color &color, int z)
+{
+    ArcSlot &drawn=m_arcs[index];
+    const uint16_t start=renderer::arcStartBits(startTurns);
+    const uint16_t sweep=renderer::arcSweepBits(sweepTurns);
+
+    if(!all && drawn.valid && drawn.shown && (drawn.rect == rect) && (drawn.start == start)
+        && (drawn.sweep == sweep) && (drawn.thickness == thickness) && (drawn.color == color)
+        && (drawn.zIndex == z))
+        return;
+
+    renderer->drawArc(m_primitives[1+index], rect, startTurns, sweepTurns, thickness, color, z);
+    drawn.valid=true;
+    drawn.shown=true;
+    drawn.rect=rect;
+    drawn.start=start;
+    drawn.sweep=sweep;
+    drawn.thickness=thickness;
+    drawn.color=color;
+    drawn.zIndex=z;
+}
+
 void Knob::update(renderer::Base *renderer, controls::Base *baseControl)
 {
     controls::Knob *knob=static_cast<controls::Knob *>(baseControl);
-    constexpr size_t segments=controls::Knob::ArcSegments;
     const size_t ticks=static_cast<size_t>(knob->getTickCount());
-    // the track's segments, the value's, the indicator, the ticks
-    const size_t valueFirst=segments;
-    const size_t indicator=2*segments;
-    const size_t tickFirst=indicator+1;
+    // the indicator, the ticks
+    const size_t indicator=0;
+    const size_t tickFirst=1;
     const size_t lines=tickFirst+ticks;
 
-    resizePlotPrimitives(renderer, m_primitives, 1+lines);
+    resizePlotPrimitives(renderer, m_primitives, 3+lines);
     // a slot new to the list holds nothing known
     m_lines.resize(lines);
 
@@ -3210,6 +3231,11 @@ void Knob::update(renderer::Base *renderer, controls::Base *baseControl)
                 renderer->hidePrimitive(id);
             m_body.valid=true;
             m_body.shown=false;
+            for(ArcSlot &arc : m_arcs)
+            {
+                arc.valid=true;
+                arc.shown=false;
+            }
             for(LineSlot &line : m_lines)
             {
                 line.valid=true;
@@ -3220,6 +3246,8 @@ void Knob::update(renderer::Base *renderer, controls::Base *baseControl)
         {
             // drawn again once shown, which marks the visibility
             m_body.valid=false;
+            for(ArcSlot &arc : m_arcs)
+                arc.valid=false;
             for(LineSlot &line : m_lines)
                 line.valid=false;
         }
@@ -3245,9 +3273,11 @@ void Knob::update(renderer::Base *renderer, controls::Base *baseControl)
     else if(knob->isHovered())
         surface=&tokyonight::KnobBodyHover;
 
-    const int side=std::max(0, int(std::lround(geometry.bodyRadius*2.0f)));
-    const Rect body(int(std::lround(centre.x-side*0.5f)), int(std::lround(centre.y-side*0.5f)), side,
-        side);
+    // its edges rounded on their own, so an odd side stays centred
+    const int left=int(std::lround(centre.x-geometry.bodyRadius));
+    const int top=int(std::lround(centre.y-geometry.bodyRadius));
+    const int side=std::max(0, int(std::lround(centre.x+geometry.bodyRadius))-left);
+    const Rect body(left, top, side, side);
 
     if(all || !m_body.valid || !m_body.shown || !(m_body.rect == body) || (m_body.zIndex != z)
         || !sameSurface(m_body.surface, *surface))
@@ -3261,58 +3291,35 @@ void Knob::update(renderer::Base *renderer, controls::Base *baseControl)
         m_body.zIndex=z;
     }
 
-    // the arcs' grid: point i of segments+1 along the sweep
+    // the arcs: drawArc's turns run from the top clockwise, the knob's
+    // degrees from the right anticlockwise
     const double start=knob->getStartAngle();
     const double sweep=knob->getEndAngle()-start;
-    const float radius=geometry.arcRadius;
+    const Rect arcRect(bounds.x+geometry.arcRect.x, bounds.y+geometry.arcRect.y, geometry.arcRect.w,
+        geometry.arcRect.h);
     const float thickness=geometry.arcThickness;
-    auto at=[&](double share) { return controls::Knob::pointAt(centre, start+share*sweep, radius); };
-    std::vector<PointF> grid(segments+1);
-
-    for(size_t i=0; i <= segments; ++i)
-        grid[i]=at(double(i)/segments);
-
-    const Color &track=tokyonight::KnobTrack.top;
-
-    for(size_t i=0; i < segments; ++i)
-        drawLine(renderer, i, all, grid[i], grid[i+1], i > 0?&grid[i-1]:nullptr,
-            i+1 < segments?&grid[i+2]:nullptr, thickness, track, z+1);
-
-    // the value arc: each segment's part between the origin and the value
-    const double origin=knob->sweepShare(knob->getArcOrigin());
-    const double value=knob->sweepShare(knob->getNumber());
-    const double low=std::min(origin, value);
-    const double high=std::max(origin, value);
-    const Color &valueColor=(disabled?tokyonight::KnobValueDisabled:tokyonight::KnobValue).top;
-    auto covered=[&](size_t i, double &from, double &to)
+    // the arc between two shares of the sweep, drawn clockwise
+    auto arcBetween=[&](size_t index, double from, double to, const Color &color, int zIndex)
     {
-        from=std::max(double(i)/segments, low);
-        to=std::min(double(i+1)/segments, high);
-        return to > from;
+        double first=(90.0-(start+from*sweep))/360.0;
+        double last=(90.0-(start+to*sweep))/360.0;
+
+        if(last < first)
+            std::swap(first, last);
+        drawArc(renderer, index, all, arcRect, float(first), float(last-first), thickness, color, zIndex);
     };
 
-    for(size_t i=0; i < segments; ++i)
-    {
-        double from, to;
+    arcBetween(0, 0.0, 1.0, tokyonight::KnobTrack.top, z+1);
 
-        if(!covered(i, from, to))
-        {
-            hide(renderer, valueFirst+i, all);
-            continue;
-        }
+    // the value arc, from the origin to the value
+    const double origin=knob->sweepShare(knob->getArcOrigin());
+    const double value=knob->sweepShare(knob->getNumber());
+    const Color &valueColor=(disabled?tokyonight::KnobValueDisabled:tokyonight::KnobValue).top;
 
-        // Whole segments keep their grid neighbours even when the moving
-        // endpoint is exactly on a grid point. Toggling a neighbour there
-        // would rewrite a whole segment whose coverage never changed. The
-        // fixed origin is a cap; a partial endpoint is a cap too.
-        const bool fromGrid=(from == double(i)/segments);
-        const bool toGrid=(to == double(i+1)/segments);
-        const bool hasPrev=fromGrid && (i > 0) && (from != origin);
-        const bool hasNext=toGrid && (i+1 < segments) && (to != origin);
-
-        drawLine(renderer, valueFirst+i, all, fromGrid?grid[i]:at(from), toGrid?grid[i+1]:at(to),
-            hasPrev?&grid[i-1]:nullptr, hasNext?&grid[i+2]:nullptr, thickness, valueColor, z+2);
-    }
+    if(value == origin)
+        hideArc(renderer, 1, all);
+    else
+        arcBetween(1, origin, value, valueColor, z+2);
 
     // the indicator, across the body at the value's angle
     {

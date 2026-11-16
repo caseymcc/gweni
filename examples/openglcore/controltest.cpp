@@ -691,9 +691,11 @@
  *
  *    knob         KnobDemo, the clock frozen: hover, press and focus write
  *                 the body alone; every vertical, fine and angular drag
- *                 writes only the indicator, value segments whose coverage
- *                 changed and the new value string's glyphs. A kept value
- *                 writes nothing; no pixel changes outside the knob.
+ *                 writes only the indicator, the value arc and the new
+ *                 value string's glyphs. A kept value writes nothing; no
+ *                 pixel changes outside the knob. The value arc's centre
+ *                 line and round end are its colour at grid, near-grid and
+ *                 mid-segment values (80 and 48 unit dials).
  *                 Double-click, "7" and Return commit, Escape cancels,
  *                 settled frames write nothing, and all primitive and text
  *                 ids come back (knob.png). One line gives each drag frame's
@@ -9784,25 +9786,10 @@ static bool runKnobScenario(Session &s, const std::string &shotDir, bool &passed
         const double after=field->getNumber();
         const gweni::String now=field->getValueText();
         const size_t outside=differencesOutside(s, pixelsBefore, framePixels(s), field);
-        const size_t indicator=slots[1+2*Knob::ArcSegments];
+        // the value arc's one slot and the indicator's
         std::vector<size_t> allowed;
         if(after != before)
-        {
-            allowed.push_back(indicator);
-            // Coverage is a length in segment units, independent of the
-            // renderer's polyline cache. Unchanged lengths keep their slots.
-            const double from=(before-field->getMin())/(field->getMax()-field->getMin())
-                *Knob::ArcSegments;
-            const double to=(after-field->getMin())/(field->getMax()-field->getMin())
-                *Knob::ArcSegments;
-            for(int i=0; i < Knob::ArcSegments; ++i)
-            {
-                const double was=std::clamp(from-i, 0.0, 1.0);
-                const double is=std::clamp(to-i, 0.0, 1.0);
-                if(was != is)
-                    allowed.push_back(slots[1+Knob::ArcSegments+i]);
-            }
-        }
+            allowed={slots[2], slots[3]};
         size_t written=0;
         const size_t stray=slotsOutside(s, allowed, written);
         frames<<" "<<field->getCaption()<<":"<<after<<",prim="<<written
@@ -9818,8 +9805,8 @@ static bool runKnobScenario(Session &s, const std::string &shotDir, bool &passed
         else
         {
             ++changed;
-            // Device-pixel snapping can keep the indicator or a short
-            // partial segment in place during a fine step.
+            // Device-pixel snapping can keep the indicator in place, and
+            // the arc's slot bits the arc, during a fine step.
             bounded=bounded && written <= allowed.size();
         }
         if(now == shown)
@@ -9838,8 +9825,8 @@ static bool runKnobScenario(Session &s, const std::string &shotDir, bool &passed
         steady();
     };
 
-    // Start exactly on a segment boundary, move by units and cross several
-    // boundaries, then return to the press. Fine steps also keep the string.
+    // Move by units through a quarter of the sweep, then return to the
+    // press. Fine steps also keep the string.
     for(int i=1; i <= 12; ++i)
         dragTo(knob, grab.x, grab.y-i);
     dragTo(knob, grab.x, grab.y);
@@ -9914,13 +9901,93 @@ static bool runKnobScenario(Session &s, const std::string &shotDir, bool &passed
         "Escape did not keep 7 and restore the committed frame");
     steady();
     checks.check("drag_slots", changed > 0 && alone && bounded && textBounded && sameText > 0,
-        "expected indicator, changed value segments and new string's glyphs only:"+frames.str());
+        "expected the indicator, the value arc and the new string's glyphs only:"+frames.str());
     checks.check("kept_nothing", kept > 0 && keptNothing,
         "a drag keeping its value wrote slots:"+frames.str());
     checks.check("drag_pixels", pixelsLocal, "a drag changed pixels outside its knob:"+frames.str());
     checks.check("settled", idleSlots == 0 && idleChanges == 0,
         "settled frames wrote "+std::to_string(idleSlots)+" slots, changed "
         +std::to_string(idleChanges)+" controls");
+
+    // The value arc's stroke is whole along its length, ending in a round
+    // cap: every pixel nearest a point of the stroke between the ends (as far
+    // across it as such a pixel is wholly inside), and the one half the stroke less 1.5 px past the moving end along
+    // the arc (inside the cap by at least half a pixel), is the value colour
+    // (each channel within 2), never the track's or the body's. At a value on
+    // a 1/32 grid point of the sweep, just past one and between two, for the
+    // 80-unit Vertical knob and the 48-unit Integer one.
+    std::ostringstream coverage;
+    size_t arcMisses=0;
+    {
+        const gweni::Color &want=gweni::skin::textured::tokyonight::KnobValue.top;
+        const auto pixels=[&]() { return framePixels(s); };
+        for(Knob *field : {demo->vertical(), demo->integer()})
+        {
+            const double range=field->getMax()-field->getMin();
+            for(double share : {0.25, 0.25+0.004, 0.25+1.0/64.0, 0.75, 0.5+1.0/32.0+0.004})
+            {
+                const double value=field->getMin()+share*range;
+                field->setNumber(value);
+                renderFrames(s, 2);
+                const auto frame=pixels();
+                const Knob::Geometry geometry=field->getGeometry();
+                const gweni::Point origin=field->localPosToCanvas();
+                const int left=gweni::renderer::Base::snap(float(origin.x+geometry.arcRect.x), s.scale);
+                const int right=gweni::renderer::Base::snap(float(origin.x+geometry.arcRect.x
+                    +geometry.arcRect.w), s.scale);
+                const int top=gweni::renderer::Base::snap(float(origin.y+geometry.arcRect.y), s.scale);
+                const int bottom=gweni::renderer::Base::snap(float(origin.y+geometry.arcRect.y
+                    +geometry.arcRect.h), s.scale);
+                const double cx=(left+right)*0.5, cy=(top+bottom)*0.5;
+                const double stroke=std::max(1, gweni::renderer::Base::snap(geometry.arcThickness, s.scale));
+                const double radius=std::min(right-left, bottom-top)*0.5-stroke*0.5;
+                const double shown=field->sweepShare(field->getNumber());
+                const double start=field->getStartAngle();
+                const double sweep=field->getEndAngle()-start;
+                size_t misses=0;
+                auto miss=[&](double x, double y)
+                {
+                    const int px=int(std::floor(x)), py=int(std::floor(y));
+                    if(px < 0 || py < 0 || px >= s.pixels.x || py >= s.pixels.y)
+                        return true;
+                    const uint8_t *p=&frame[(size_t(py)*s.pixels.x+px)*4];
+                    return std::abs(p[0]-int(want.r)) > 2 || std::abs(p[1]-int(want.g)) > 2
+                        || std::abs(p[2]-int(want.b)) > 2;
+                };
+                // the centre line, a point every half device px of arc
+                const double length=std::fabs(sweep)*3.14159265358979/180.0*radius*shown;
+                const int points=std::max(2, int(length*2.0));
+                // and across the stroke as far as a nearest pixel is still
+                // covered whole (its centre half a px inside an edge)
+                const double across=std::max(0.0, stroke*0.5-1.21);
+                for(int i=1; i < points; ++i)
+                {
+                    const double degrees=(start+sweep*shown*double(i)/points)*3.14159265358979/180.0;
+                    for(double offset=-across; offset <= across+1e-9; offset+=0.25)
+                    {
+                        const double r=radius+offset;
+                        if(miss(cx+r*std::cos(degrees), cy-r*std::sin(degrees)))
+                            ++misses;
+                    }
+                }
+                // past the moving end along the arc's tangent, inside the cap
+                {
+                    const double degrees=(start+sweep*shown)*3.14159265358979/180.0;
+                    const double past=stroke*0.5-1.5;
+                    // the direction the arc runs on in: clockwise for a negative sweep
+                    const double turn=sweep < 0.0?-1.0:1.0;
+                    const double tx=-std::sin(degrees)*turn, ty=-std::cos(degrees)*turn;
+                    if(past >= 0.5 && miss(cx+radius*std::cos(degrees)+tx*past,
+                        cy-radius*std::sin(degrees)+ty*past))
+                        ++misses;
+                }
+                coverage<<" "<<field->getCaption()<<"@"<<share<<"="<<misses;
+                arcMisses+=misses;
+            }
+        }
+    }
+    checks.check("arc_cover", arcMisses == 0,
+        "value arc pixels not in its colour (knob@share=misses):"+coverage.str());
 
     const bool shot=shoot(s, shotDir+"/knob.png");
     forgetMouse(s);
@@ -9930,7 +9997,7 @@ static bool runKnobScenario(Session &s, const std::string &shotDir, bool &passed
         "the demo leaked primitive or text ids");
     passed=checks.allPassed();
     std::cout<<"knob"<<frames.str()<<" kept="<<kept<<" changed="<<changed<<" same_text="<<sameText
-             <<" idle_slots="<<idleSlots<<" idle_changed="<<idleChanges;
+             <<" idle_slots="<<idleSlots<<" idle_changed="<<idleChanges<<" arc_misses="<<arcMisses;
     for(const auto &result : checks.results)
         std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
     std::cout<<"\n";

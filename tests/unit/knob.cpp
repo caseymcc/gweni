@@ -372,6 +372,12 @@ TEST_CASE("Knob: an angular drag follows the mouse round the arc and never jumps
     scene.press(scene.onCircle(knob, 90.0));
     scene.move(scene.dialCentre(knob));
     CHECK(knob->getNumber() == 0.5);
+    // and coming out of it on the other side takes the angle afresh: no jump
+    // of half a turn to an end
+    scene.move(scene.onCircle(knob, -90.0));
+    CHECK(knob->getNumber() == 0.5);
+    scene.move(scene.onCircle(knob, -75.0));
+    CHECK(knob->getNumber() == doctest::Approx(0.5-15.0/270.0).epsilon(0.01));
     scene.release();
 }
 
