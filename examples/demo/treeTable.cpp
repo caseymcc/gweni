@@ -178,7 +178,9 @@ void TreeTableDemo::build()
     m_table->onNodeActivated.add(this, &TreeTableDemo::onNodeActivated);
     m_table->onChildrenRequested.add(this, &TreeTableDemo::onChildrenRequested);
 
-    // a header click sorts by the column, folders first
+    // a header click sorts by the column, folders first (a node with
+    // children: a folder Remove emptied keeps its name and size but sorts
+    // among the files)
     for(int column=0; column < 3; ++column)
         m_table->setSortComparator(column, [this, column](size_t a, size_t b) { return less(column, a, b); });
     m_table->setFoldersFirst(true);
@@ -317,6 +319,10 @@ void TreeTableDemo::addFile()
     m_names[id]="new-file-"+std::to_string(id-FirstAdded+1)+".txt";
     if(m_table->insertNode(parent, static_cast<size_t>(-1), id) != id)
         return;
+    // a folder Remove emptied is a collapsed leaf to the table, which the
+    // setExpanded above left as it was: open it onto the new file
+    if(parent != controls::TreeTable::Root)
+        m_table->setExpanded(parent, true);
     m_table->setSelectedNode(id);
     m_table->scrollToItem(m_table->itemForNode(id));
     showSelection();

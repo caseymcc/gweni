@@ -46,6 +46,8 @@
  *  addNode with an expander, removeNode and resetChildren under a
  *  child-count sort at the list's end keep the first shown node, as near
  *  its row as the content allows, and so does every combined edit.
+ *  An empty lazy answer (insertNodes with none, setHasChildren false) of
+ *  the top folder at the list end under a sort keeps it on top.
  *  GWENI_TREETABLE_SEED_FIRST/COUNT extend the combined model's seed range
  *  for manual stress runs; the suite defaults to seeds 1..1000.
  */
@@ -3350,4 +3352,59 @@ TEST_CASE("TreeTable model: a collapse leaves a selection hidden already on its 
     scene.frame();
     CHECK(tree->getSelectedNode() == folder);
     CHECK(selections.ids == std::vector<Id>{folder});
+}
+
+TEST_CASE("TreeTable model: an empty lazy answer of the top folder at the list end under a sort keeps it on top")
+{
+    // with the folder's key 2 while advertised and 0.5 as a leaf, the empty
+    // answer moves it up the sorted group while the end clamps the offset;
+    // the edit's one anchor puts the folder back on top, either way it comes
+    for(int how : {0, 1})
+    {
+        CAPTURE(how);
+        Scene scene;
+        Tree *tree=scene.tree;
+        std::map<Id, double> bytes;
+
+        for(Id id=0; id < 13; ++id)
+        {
+            bytes[id]=1.0;
+            REQUIRE(tree->addNode(Root, id) == id);
+        }
+        const Id lazy=30;
+
+        bytes[lazy]=0.5;
+        REQUIRE(tree->addNode(Root, lazy, true) == lazy);
+        for(Id id=13; id < 21; ++id)
+        {
+            bytes[id]=3.0;
+            REQUIRE(tree->addNode(Root, id) == id);
+        }
+        tree->setSortComparator(0, [tree, &bytes](Id a, Id b)
+            {
+                const auto key=[tree, &bytes](Id id) { return tree->getNode(id)->hasChildren?2.0:bytes.at(id); };
+
+                return key(a) < key(b);
+            });
+        tree->setSortColumn(0, controls::SortDirection::Ascending);
+        tree->setExpanded(lazy, true);   // asks; no answer yet: a placeholder under it
+        scene.settle();
+
+        controls::VirtualList *body=tree->getVirtualBody();
+
+        body->setVerticalScrollOffset(body->getMaxVerticalScrollOffset());
+        scene.settle();
+        REQUIRE(scene.top() == lazy);
+        const int into=body->getVerticalScrollOffset()%20;
+
+        if(how == 0)
+            REQUIRE(tree->insertNodes(lazy, 0, std::vector<Id>{}));
+        else
+            tree->setHasChildren(lazy, false);
+        scene.frame();
+        const int target=static_cast<int>(tree->itemForNode(lazy))*20+into;
+
+        CHECK(body->getVerticalScrollOffset() == std::min(target, body->getMaxVerticalScrollOffset()));
+        CHECK(scene.top() == lazy);
+    }
 }

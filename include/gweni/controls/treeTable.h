@@ -256,8 +256,9 @@ public:
 
     //! The selection is a node: it stays on it across expand, collapse and
     //! scroll and moves. A move under a collapsed parent keeps the selected
-    //! node with NoItem until it shows again. Collapsing an ancestor moves
-    //! it to that ancestor, firing
+    //! node with NoItem until it shows again. Collapsing an ancestor of
+    //! a shown selection moves it to that ancestor (a hidden one stays on
+    //! its node), firing
     //! onSelectionChange (DataTable's caller) with the id as the info's
     //! `integer` (NoNode for none) and the row showing it, if any, as its
     //! `control`. A click on a row and the row keys select its node, firing
