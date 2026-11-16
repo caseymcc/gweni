@@ -6350,8 +6350,9 @@ in, shared (`std::shared_ptr`) by every block and document showing it.
 - *The resolver:* `MarkdownDocument::setImageResolver((url) -> handle)` (and
   `MarkdownView`'s) is asked for a paragraph that is one image (`![alt](src)`, spaces
   aside; `internal::MarkdownImage::isImageParagraph`) when its block is built or its source
-  changes, and for every image shown when a new resolver is set. No resolver, or a null
-  handle, keeps the alt text. A block the diff keeps keeps its handle, its look and its
+  changes, and for every image shown when a new resolver is set, once per source
+  whatever it answers (a null answer is not asked for again on a Changed match or a new
+  font). No resolver, or a null handle, keeps the alt text. A block the diff keeps keeps its handle, its look and its
   texture; one Changed with the same source keeps its handle (only its alt text set); a
   paragraph turned from an image into text or back is built anew
   (`MarkdownBlockControl::shows`).
@@ -6363,7 +6364,11 @@ in, shared (`std::shared_ptr`) by every block and document showing it.
   box, Stretch, the alt text emptied, so a selection through it copies nothing of it:
   shown with no spans, it holds no slot and lays out the same whether the block was shown
   all along or shown after it was filled in while hidden (`controltest_hide_show_each`);
-  bytes the renderer cannot decode draw its missing image there).
+  bytes the renderer cannot decode draw its missing image there). The bytes are loaded at
+  a longest side of at most `MarkdownImage::MaxImageSide` (2048 image px, the largest image
+  page), so a wider screenshot is reduced through its mip chain instead of failing; the
+  panel loads them again whenever the handle it shows is another one or its serial moved
+  (a serial counts one handle's changes, so two handles filled once each have the same).
   A notification that changes the look or the box calls `invalidate()` and marks the
   background of that block alone, so the next layout enters it, its ancestors and the
   blocks below it (moved, their subtrees not entered) in one pass

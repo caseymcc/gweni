@@ -364,20 +364,27 @@ public:
     //! (loadedTextureCount()) until its freeTexture, and its bytes kept in
     //! textureBytes
     gweni::Texture::Status loadTexture(gweni::Texture &texture, const uint8_t *bytes, size_t size,
-        int) override
+        int maxSize) override
     {
         if(textureStatus != gweni::Texture::Status::Loaded)
             return textureStatus;
         texture.dataIndex=nextTexture++;
         textureBytes[texture.dataIndex]=std::vector<uint8_t>(bytes, bytes+(bytes?size:0));
+        textureMaxSizes[texture.dataIndex]=maxSize;
         return textureStatus;
     }
     size_t loadedTextureCount() const override { return textureBytes.size(); }
-    void freeTexture(const gweni::Texture &texture) override { textureBytes.erase(texture.dataIndex); }
+    void freeTexture(const gweni::Texture &texture) override
+    {
+        textureBytes.erase(texture.dataIndex);
+        textureMaxSizes.erase(texture.dataIndex);
+    }
     gweni::TextureData getTextureData(const gweni::Texture &) const override { return gweni::TextureData(); }
 
     //! The textures loaded from memory and not freed, by Texture::dataIndex
     std::map<size_t, std::vector<uint8_t>> textureBytes;
+    //! The maxSize each of those was loaded with
+    std::map<size_t, int> textureMaxSizes;
     size_t nextTexture=0;
 
     //! Ids this renderer handed out and has not been given back, per bank.

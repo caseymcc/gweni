@@ -224,6 +224,11 @@ public:
     //! A paragraph of one image span and nothing but spaces
     static bool isImageParagraph(const text::MarkdownBlock &block);
 
+    //! The longest side the bytes are loaded at, in image px: a larger image
+    //! is reduced to it (the block scales it down to its width anyway), so a
+    //! wide screenshot does not fail past the renderer's largest image page
+    static constexpr int MaxImageSide=2048;
+
     void setBlock(const text::MarkdownBlock &block) override;
     bool shows(const text::MarkdownBlock &block) const override { return isImageParagraph(block); }
 
@@ -265,6 +270,10 @@ protected:
     int m_imageWidth=0;
     int m_imageHeight=0;
     uint64_t m_shownSerial=0;
+    //! m_shownSerial for a handle whose bytes were never loaded here
+    static constexpr uint64_t NoSerial=~uint64_t(0);
+    //! whether the resolver was asked for m_source (its answer may be null)
+    bool m_resolved=false;
     MarkdownText *m_alt=nullptr;
     ImagePanel *m_image=nullptr;
 };

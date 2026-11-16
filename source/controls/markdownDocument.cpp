@@ -529,7 +529,8 @@ void MarkdownImage::setBlock(const text::MarkdownBlock &block)
 
     const String source=image?image->src:String();
 
-    if(!m_watch.handle() || (source != m_source))
+    // asked once per source (a null answer too), and again for a new one
+    if(!m_resolved || (source != m_source))
     {
         m_source=source;
         resolve();
@@ -543,8 +544,12 @@ void MarkdownImage::resolve()
     MarkdownDocument *document=documentOf(this);
     std::shared_ptr<ImageHandle> handle=document?document->resolveImage(m_source):nullptr;
 
+    m_resolved=true;
     if(handle != m_watch.handle())
     {
+        // a serial counts one handle's changes: another handle's bytes are
+        // loaded whatever its serial
+        m_shownSerial=NoSerial;
         if(handle)
             m_watch.reset(handle, [this](ImageHandle &changed) { handleChanged(changed); });
         else
@@ -585,7 +590,7 @@ void MarkdownImage::applyHandle(bool mark)
             m_image->setPlacement(Placement::Owner);
         }
         if(lookChanged || (serial != m_shownSerial))
-            m_image->setImageData(handle->bytes().data(), handle->bytes().size());
+            m_image->setImageData(handle->bytes().data(), handle->bytes().size(), MaxImageSide);
         m_image->setHidden(false);
     }
     else if(m_image)

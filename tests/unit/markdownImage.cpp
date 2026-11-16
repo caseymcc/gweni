@@ -462,8 +462,52 @@ TEST_CASE("Markdown image: over the image the alt text stays empty across edits"
     CHECK((image->getLook() == Look::Image));
     CHECK(image->getAltText()->getText().empty());
     CHECK(image->getHeight() == 30);
+    // the panel shows b.png's bytes now, a.png's given back: both handles
+    // have one change each, so their serials alone do not tell them apart
+    REQUIRE(scene.renderer.textureBytes.size() == 1);
+    CHECK(scene.renderer.textureBytes.begin()->second == pngHeader(60, 30));
 
     // another alt text over it
     scene.show("![third](b.png)\n");
     CHECK(image->getAltText()->getText().empty());
+}
+
+TEST_CASE("Markdown image: the bytes are loaded at a longest side the renderer can hold")
+{
+    Scene scene;
+    Resolver resolver;
+
+    scene.document->setImageResolver(resolver.function());
+    scene.show("![wide](wide.png)\n");
+    // a screenshot wider than the largest image page: kept at MaxImageSide,
+    // not failed (the block scales it down to its width anyway)
+    resolver.handles["wide.png"]->setBytes(pngHeader(2600, 120));
+    scene.settle();
+
+    MarkdownImage *image=scene.block<MarkdownImage>(0);
+
+    CHECK((image->getLook() == Look::Image));
+    REQUIRE(scene.renderer.textureMaxSizes.size() == 1);
+    CHECK(scene.renderer.textureMaxSizes.begin()->second == MarkdownImage::MaxImageSide);
+    CHECK(MarkdownImage::MaxImageSide == 2048);
+}
+
+TEST_CASE("Markdown image: a source resolved to no handle is not asked for again")
+{
+    Scene scene;
+    Resolver resolver;
+
+    scene.document->setImageResolver(resolver.function());
+    scene.show("![alt](none)\n");
+    CHECK(resolver.asks["none"] == 1);
+    CHECK((scene.block<MarkdownImage>(0)->getLook() == Look::Alt));
+
+    // a Changed match of the same source (another alt text): not asked again
+    scene.show("![other alt](none)\n");
+    CHECK(resolver.asks["none"] == 1);
+    CHECK(scene.block<MarkdownImage>(0)->getAltText()->getText() == "other alt");
+
+    // a new resolver asks again
+    scene.document->setImageResolver(resolver.function());
+    CHECK(resolver.asks["none"] == 2);
 }
