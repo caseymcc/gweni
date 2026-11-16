@@ -1396,6 +1396,27 @@
  *                 own slots, whose clip box the taller column changes);
  *                 settled frames write nothing; the demo gives every id
  *                 back. Exits non-zero if any check is no.
+ *    command-palette CommandPaletteDemo, the clock frozen (command-palette.png):
+ *                 Ctrl+Shift+P, Down and Return; then at the demo's first 50
+ *                 commands and at those and 4 950 "Tasks: Run Task NNNN"
+ *                 more, the palette opened and "h" then "i" typed. One line
+ *                   command-palette opens_top_centre=yes|no ... ids_back=yes|no
+ *                          keystroke_50: prims=N ... keystroke_5000: ...
+ *                 reports the checks: the open puts the popup at the canvas's
+ *                 top centre, CanvasTopInset down, inside the canvas, the
+ *                 field focused, changing no pixel outside it; a settled
+ *                 frame with it open writes nothing; Down writes the two
+ *                 rows' ids alone and changes no pixel outside them; Return
+ *                 runs the highlighted command (the demo's label naming it),
+ *                 closes the palette and gives the frame before opening back
+ *                 but the label; the "i"'s frame writes, renders, changes,
+ *                 binds and lays out the same at both counts, with the same
+ *                 pool, popup controls and shown commands and no id made, in
+ *                 one pass entering no more than the popup and the canvas,
+ *                 writing inside the popup alone and no more glyphs than its
+ *                 shown rows and field hold; settled frames write nothing;
+ *                 the demo gives every id back. Exits non-zero if any check
+ *                 is no.
  *    calendar     CalendarDemo, the clock frozen (calendar.png, calendar_year.png),
  *                 the demo's selection label not updating: the mouse onto the
  *                 single calendar's 18th, on to the 19th and off, a click on
