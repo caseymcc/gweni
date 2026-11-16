@@ -592,9 +592,11 @@ public:
     void getMarqueeRect(PointF &min, PointF &max) const;
 
     //! A left press on empty space (no node, link or pin under it, Space not
-    //! held) is the marquee; any other press is the ZoomPanel's. A right press
-    //! anywhere on the graph sets getContextMenuPosition().
+    //! held) is the marquee; any other press is the ZoomPanel's.
     InputCapture *pressGesture(int button) override;
+    //! A context menu opening on the graph, or on a node or link in it (a
+    //! right press, a long press), sets getContextMenuPosition() to its point.
+    void contextMenuOpening(const Point &at) override;
 
     //! Removes the selection as Delete does: for each selected node,
     //! onNodeRemoveRequested (\p info.control the node; vetoRemove() keeps it),
@@ -616,9 +618,10 @@ public:
     //! control in a node's body takes the keys): removeSelection().
     bool onKeyDelete(bool down) override;
 
-    //! Where, in graph units, the last right press on the graph was, or the
-    //! point openContextMenuAt() opened the menu at: what a context menu's
-    //! handler places a new node at.
+    //! Where, in graph units, the last context menu on the graph or on a node
+    //! or link in it opened (a right press, a long press), or the point
+    //! openContextMenuAt() opened the menu at: what a context menu's handler
+    //! places a new node at.
     const PointF &getContextMenuPosition() const { return m_contextPosition; }
     //! Opens the graph's own context menu (setContextMenu()) at the graph
     //! point \p at, as a right-click there would (a link dropped where no node
@@ -739,6 +742,8 @@ protected:
     internal::NodeGraphMarqueeFill *m_marqueeFill=nullptr;
     bool m_removeVetoed=false;
     PointF m_contextPosition;
+    //! openContextMenuAt() is opening the menu at its own graph point
+    bool m_placingMenu=false;
     //! while getControlAt() walks: the tested point in graph units
     PointF m_hitPoint;
     bool m_hitTesting=false;

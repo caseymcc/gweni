@@ -20,11 +20,23 @@
  *  nothing; an input capture set when a finger goes down gets that finger's
  *  every event (captureTouch) and nothing on the canvas does, and one set
  *  mid-gesture takes the finger with no tap replayed; a control panned
- *  deleted mid-drag leaves the drag harmless.
+ *  deleted mid-drag leaves the drag harmless. Lifted while moving, a drag
+ *  flings on: the list goes on scrolling, each frame by no more than the
+ *  one before, about the speed times Canvas::FlingTimeConstant in all, and
+ *  stops within a bounded number of frames with no animation left; at the
+ *  end of the range it stops there at once; a finger held still before the
+ *  lift flings nothing; a finger put down stops a fling, and its lift is no
+ *  tap. Held still for Canvas::LongPressSeconds, and not before, a finger
+ *  opens the context menu of the control under it with its corner at the
+ *  finger, and the lift chooses nothing (nothing is even hit-tested); one
+ *  moved past the slop is no long press, nor one lifted sooner, whose delay
+ *  goes with it.
  */
 #include "headlessFixture.h"
 
+#include <gweni/anim.h>
 #include <gweni/controls/button.h>
+#include <gweni/controls/menu.h>
 #include <gweni/controls/scrollControl.h>
 #include <gweni/controls/zoomPanel.h>
 #include <gweni/inputHandler.h>
@@ -101,7 +113,8 @@ struct Scene: public event::Handler
     DragTarget *dragTarget=nullptr;
     int presses=0;
     int rowPresses=0;
-    float clock=10.0f;
+    double clock=10.0;
+    controls::Menu *menu=nullptr;
 
     Scene()
     {
@@ -115,6 +128,9 @@ struct Scene: public event::Handler
         button->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
         button->setBounds(10, 10, 80, 30);
         button->onPressCaller.add(this, &Scene::pressed);
+        menu=button->createContextMenu();
+        menu->addItem("One");
+        menu->addItem("Two");
 
         dragTarget=canvas->newChild<DragTarget>();
         dragTarget->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
@@ -165,9 +181,27 @@ struct Scene: public event::Handler
 
     void frame()
     {
-        clock+=1.0f;
+        step(1.0);
+    }
+
+    void step(double seconds)
+    {
+        clock+=seconds;
         canvas->updateCanvas();
         canvas->renderCanvas();
+    }
+
+    // a finger dragged from `at` by `by` a move, `moves` moves a 60th of a
+    // second apart, each followed by a frame, and lifted in the last one's
+    void flick(const PointF &at, const PointF &by, int moves)
+    {
+        canvas->inputTouch(0, TouchPhase::Down, at.x, at.y);
+        for(int i=1; i <= moves; ++i)
+        {
+            step(1.0/60.0);
+            canvas->inputTouch(0, TouchPhase::Move, at.x+by.x*i, at.y+by.y*i);
+        }
+        canvas->inputTouch(0, TouchPhase::Up, at.x+by.x*moves, at.y+by.y*moves);
     }
 
     // canvas units of a point in the scroll control
@@ -365,4 +399,181 @@ TEST_CASE("Touch: a ScrollControl deleted mid-drag leaves the drag harmless")
     canvas->inputTouch(0, TouchPhase::Up, at.x, at.y-40.0f);
     CHECK(scene.panel->pan().y == pan.y);
     CHECK(canvas->inputCapture() == nullptr);
+}
+
+TEST_CASE("Touch: a drag lifted while moving flings on, slowing to a stop with no animation left")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+
+    // 10 units a 60th: 600 units a second, up the list
+    scene.flick(scene.inScroll(60.0f, 100.0f), PointF(0.0f, -10.0f), 6);
+
+    const int lifted=scene.scroll->getVerticalScrollOffset();
+
+    CHECK(lifted == 60);
+    CHECK(anim::activeCount(scene.scroll) == 1);
+
+    int frames=0;
+    int last=lifted;
+    int lastStep=1000;
+    bool slowing=true;
+
+    while(anim::activeCount(scene.scroll) && frames < 600)
+    {
+        scene.step(1.0/60.0);
+        ++frames;
+
+        const int stepped=scene.scroll->getVerticalScrollOffset()-last;
+
+        // whole units each frame, so a step may be one more than the last
+        if(stepped < 0 || stepped > lastStep+1)
+            slowing=false;
+        lastStep=stepped;
+        last=scene.scroll->getVerticalScrollOffset();
+    }
+
+    // it goes about speed*FlingTimeConstant, less what is left under StopFlingSpeed
+    const int travelled=last-lifted;
+
+    CHECK(slowing);
+    CHECK(frames < 120);
+    CHECK(travelled >= 180);
+    CHECK(travelled <= int(600*controls::Canvas::FlingTimeConstant));
+    CHECK(anim::activeCount(scene.scroll) == 0);
+    CHECK(scene.rowPresses == 0);
+
+    // settled: the next frames move nothing
+    scene.step(1.0/60.0);
+    CHECK(scene.scroll->getVerticalScrollOffset() == last);
+    CHECK(canvas->inputCapture() == nullptr);
+}
+
+TEST_CASE("Touch: a finger put down stops a fling, and its lift is no tap")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+    const PointF at=scene.inScroll(60.0f, 100.0f);
+
+    scene.flick(at, PointF(0.0f, -10.0f), 6);
+    scene.step(1.0/60.0);
+    scene.step(1.0/60.0);
+    REQUIRE(anim::activeCount(scene.scroll) == 1);
+
+    canvas->inputTouch(0, TouchPhase::Down, at.x, at.y);
+    CHECK(anim::activeCount(scene.scroll) == 0);
+
+    const int stopped=scene.scroll->getVerticalScrollOffset();
+
+    scene.step(1.0/60.0);
+    scene.step(1.0/60.0);
+    CHECK(scene.scroll->getVerticalScrollOffset() == stopped);
+    canvas->inputTouch(0, TouchPhase::Up, at.x, at.y);
+    CHECK(scene.rowPresses == 0);
+    CHECK(canvas->inputCapture() == nullptr);
+
+    // the next one is a tap again
+    scene.frame();
+    canvas->inputTouch(0, TouchPhase::Down, at.x, at.y);
+    canvas->inputTouch(0, TouchPhase::Up, at.x, at.y);
+    CHECK(scene.rowPresses == 1);
+}
+
+TEST_CASE("Touch: a finger held still before its lift flings nothing")
+{
+    Scene scene;
+    const PointF at=scene.inScroll(60.0f, 100.0f);
+    controls::Canvas *canvas=scene.canvas;
+
+    canvas->inputTouch(0, TouchPhase::Down, at.x, at.y);
+    for(int i=1; i <= 6; ++i)
+    {
+        scene.step(1.0/60.0);
+        canvas->inputTouch(0, TouchPhase::Move, at.x, at.y-10.0f*i);
+    }
+    // 0.15 s still: the window's samples are where the finger rests
+    for(int i=0; i < 9; ++i)
+        scene.step(1.0/60.0);
+    canvas->inputTouch(0, TouchPhase::Up, at.x, at.y-60.0f);
+    CHECK(anim::activeCount(scene.scroll) == 0);
+    scene.step(1.0/60.0);
+    CHECK(scene.scroll->getVerticalScrollOffset() == 60);
+}
+
+TEST_CASE("Touch: a fling stops at the end of the range")
+{
+    Scene scene;
+    const int maxOffset=scene.scroll->getMaxVerticalScrollOffset();
+
+    scene.scroll->setVerticalScrollOffset(maxOffset-80);
+    scene.frame();
+    scene.flick(scene.inScroll(60.0f, 100.0f), PointF(0.0f, -10.0f), 6);
+    CHECK(scene.scroll->getVerticalScrollOffset() == maxOffset-20);
+
+    int frames=0;
+
+    while(anim::activeCount(scene.scroll) && frames < 600)
+    {
+        scene.step(1.0/60.0);
+        ++frames;
+    }
+    CHECK(scene.scroll->getVerticalScrollOffset() == maxOffset);
+    // stopped by the end, well before its speed fell away
+    CHECK(frames < 20);
+}
+
+TEST_CASE("Touch: a long press opens the context menu at the finger after the delay and its lift chooses nothing")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+
+    canvas->inputTouch(0, TouchPhase::Down, 30.0f, 20.0f);
+    scene.step(controls::Canvas::LongPressSeconds-0.01);
+    CHECK(canvas->shownContextMenu() == nullptr);
+    scene.step(0.01);
+    REQUIRE(canvas->shownContextMenu() == scene.menu);
+    CHECK(canvas->contextMenuOwner() == scene.button);
+
+    const Point origin=scene.menu->localPosToCanvas();
+
+    CHECK(origin.x == 30);
+    CHECK(origin.y == 20);
+
+    // moved and lifted over the menu: nothing chosen, nothing pressed, nothing
+    // under the finger so much as hit-tested
+    const size_t hitTests=input::hitTestVisits();
+
+    canvas->inputTouch(0, TouchPhase::Move, 60.0f, 40.0f);
+    canvas->inputTouch(0, TouchPhase::Up, 60.0f, 40.0f);
+    CHECK(input::hitTestVisits() == hitTests);
+    scene.frame();
+    CHECK(canvas->shownContextMenu() == scene.menu);
+    CHECK(scene.presses == 0);
+    CHECK(canvas->inputCapture() == nullptr);
+}
+
+TEST_CASE("Touch: a finger moved past the slop or lifted before the delay is no long press, and the next waits its own delay")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+
+    canvas->inputTouch(0, TouchPhase::Down, 30.0f, 20.0f);
+    canvas->inputTouch(0, TouchPhase::Move, 30.0f+controls::Canvas::TouchSlop, 20.0f);
+    scene.step(1.0);
+    CHECK(canvas->shownContextMenu() == nullptr);
+    canvas->inputTouch(0, TouchPhase::Up, 30.0f+controls::Canvas::TouchSlop, 20.0f);
+
+    // lifted at half the delay and put down again: the first finger's delay
+    // is gone with it, and the second one waits its own whole delay
+    canvas->inputTouch(0, TouchPhase::Down, 30.0f, 20.0f);
+    scene.step(controls::Canvas::LongPressSeconds/2);
+    canvas->inputTouch(0, TouchPhase::Up, 30.0f, 20.0f);
+    CHECK(scene.presses == 1);
+    canvas->inputTouch(0, TouchPhase::Down, 30.0f, 20.0f);
+    scene.step(controls::Canvas::LongPressSeconds*0.75);
+    CHECK(canvas->shownContextMenu() == nullptr);
+    scene.step(controls::Canvas::LongPressSeconds*0.25);
+    CHECK(canvas->shownContextMenu() == scene.menu);
+    canvas->inputTouch(0, TouchPhase::Up, 30.0f, 20.0f);
+    CHECK(scene.presses == 1);
 }

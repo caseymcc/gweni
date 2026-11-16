@@ -1208,11 +1208,6 @@ InputCapture *NodeGraph::pressGesture(int button)
 {
     Canvas *canvas=getCanvas();
 
-    // where a context menu opened by this press places what it adds; the
-    // ZoomPanel gives an unmoved right press back as a click, which opens it
-    if(button == 1)
-        m_contextPosition=canvasToGraph(PointF(input::getMousePosition()));
-
     if((button == 0) && canvas && !isDisabled() && !input::isKeyDown(keys::Space) && !m_marquee->active()
         && !m_linkDrag->active() && emptyAt(input::getMousePosition()))
     {
@@ -1289,11 +1284,22 @@ void NodeGraph::openContextMenuAt(const PointF &at)
     if(!canvas || !getContextMenu())
         return;
 
-    m_contextPosition=at;
-
     const PointF local=graphToLocal(at);
 
+    // the graph point as given, not the whole canvas point the menu opens at,
+    // set before the menu's handler reads it
+    m_contextPosition=at;
+    m_placingMenu=true;
     canvas->showContextMenu(this, localPosToCanvas(Point(int(std::floor(local.x)), int(std::floor(local.y)))));
+    m_placingMenu=false;
+}
+
+// Where the menu opens, by a right press (the ZoomPanel gives an unmoved one
+// back as a click) or a long press, on the graph or on a node or link in it.
+void NodeGraph::contextMenuOpening(const Point &at)
+{
+    if(!m_placingMenu)
+        m_contextPosition=canvasToGraph(PointF(at));
 }
 
 bool NodeGraph::marqueeActive() const

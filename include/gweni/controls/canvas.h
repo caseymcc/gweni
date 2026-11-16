@@ -831,7 +831,11 @@ public:
     /// point, a left press and release there), and a finger moved TouchSlop or
     /// more pans, per axis, the nearest control under the down point whose
     /// touchPan() moves along it, keeping it until the lift; a pan delivers no
-    /// press. Every touch ends with inputMouseLeave(), so nothing stays hovered
+    /// press. Lifted while moving, a pan flings on, slowing to a stop, and the
+    /// next finger down anywhere on the canvas stops it (and is no tap). Held
+    /// still for LongPressSeconds, it opens the context menu of the control
+    /// under it (contextMenuOwnerFor()) at the finger, and its lift does
+    /// nothing more. Every touch ends with inputMouseLeave(), so nothing stays hovered
     /// and no tooltip's delay starts from one. An input capture set at the
     /// down (the depth view) gets the finger instead (captureTouch). Returns
     /// whether the UI took it, as a press there would.
@@ -839,6 +843,18 @@ public:
     /// How far a finger moves, in logical units, before a touch is a pan, not
     /// a tap.
     static constexpr float TouchSlop=8.0f;
+    /// How long a finger stays within TouchSlop before it is a long press.
+    static constexpr double LongPressSeconds=0.5;
+    /// A fling's speed is the finger's over its last FlingWindowSeconds
+    /// before the lift, and it flings only at MinFlingSpeed logical units a
+    /// second or more (at most MaxFlingSpeed on each axis). Its speed falls
+    /// by e every FlingTimeConstant seconds, so it goes speed*FlingTimeConstant
+    /// units in all, and it stops under StopFlingSpeed.
+    static constexpr double FlingWindowSeconds=0.1;
+    static constexpr float MinFlingSpeed=50.0f;
+    static constexpr float MaxFlingSpeed=8000.0f;
+    static constexpr double FlingTimeConstant=0.325;
+    static constexpr float StopFlingSpeed=10.0f;
     bool inputQuit() override
     {
         return false;

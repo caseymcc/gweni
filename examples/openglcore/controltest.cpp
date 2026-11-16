@@ -998,10 +998,13 @@
  *                 (touch-list.png): a tap on ButtonDemo's "Toggle Me" and on
  *                 "With Tooltip" (the clock then run 1.5 s); a drag over
  *                 VirtualListDemo's rows as far as a wheel notch scrolls,
- *                 one back 2.5 units a move and a tap on a row; a drag on
- *                 SliderDemo's thumb; one on ZoomPanelDemo's empty content;
- *                 one on a NodeGraphDemo node's title bar and one on the
- *                 graph's empty space. One line
+ *                 one back 2.5 units a move, two flicks (the clock stepping,
+ *                 the second stopped by a finger put down) and a tap on a
+ *                 row; a drag on SliderDemo's thumb; one on ZoomPanelDemo's
+ *                 empty content; one on a NodeGraphDemo node's title bar, a
+ *                 right click and a long press on the graph's empty space
+ *                 and a drag there; a long press on ContextMenuDemo's
+ *                 Document box (touch-long-press.png). One line
  *                   touch tap=yes|no ... ids_back=yes|no
  *                 reports the checks: a tap presses its button once, leaves
  *                 nothing hovered and shows no tooltip; the frame with the
@@ -1011,11 +1014,19 @@
  *                 slots than the wheel notch and draws its frame, and its
  *                 lift presses no row; the slow drag scrolls by nothing
  *                 under the slop and then by the finger's whole units; a
- *                 tap presses the row under it once; the thumb, the node
- *                 and the panel and the graph (no marquee) follow the
- *                 finger, the pan laying nothing out; settled frames write
- *                 nothing; the demos give their ids back. Exits non-zero if
- *                 any check is no.
+ *                 tap presses the row under it once; the flick flings on
+ *                 after the lift, each frame writing the list's ids alone in
+ *                 one pass, and stops in fewer than 120 frames with no
+ *                 animation left, a settled frame running none, and a finger
+ *                 put down stops the second, its lift pressing nothing; the
+ *                 thumb, the node and the panel and the graph (no marquee)
+ *                 follow the finger, the pan laying nothing out; the long
+ *                 press on the graph sets the menu's graph point the right
+ *                 click did; the one on the Document box opens its menu at
+ *                 the finger in the frame drawn LongPressSeconds after the
+ *                 down, and its lift neither closes it nor chooses an item;
+ *                 settled frames write nothing; the demos give their ids
+ *                 back. Exits non-zero if any check is no.
  *    chip-badge   ChipBadgeDemo, the clock frozen (chip-badge.png): the
  *                 Inbox entry's badge counted one more (the same width),
  *                 then 9 -> 10 (wider); the "Corners" button, a badge at
@@ -1801,6 +1812,7 @@
 #include <gweni/platforms/renderers/slotRenderer.h>
 #include <gweni/gweni.h>
 #include <gweni/inputHandler.h>
+#include <gweni/anim.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/skins/textured/texturedSkin.h>
 #include <gweni/skins/textured/tokyoNight.h>
@@ -25709,11 +25721,13 @@ static bool checkTeardown(Session &s, const std::vector<std::string> &controls,
 
 //-----------------------------------------------------------------------------
 // --scenario touch: a finger through Canvas::inputTouch, the clock frozen
+// but for the flings and long presses
 //
 // A tap is a click where the finger went down, then the mouse gone, so
 // nothing stays hovered and no tooltip's delay starts; a drag pans the
 // nearest control under the down point that can move along each axis, in
-// whole units for a ScrollControl, the fractions kept, and presses nothing; a
+// whole units for a ScrollControl, the fractions kept, and presses nothing,
+// and lifted while moving flings on; one held still opens the context menu; a
 // control that keeps the drag (a Slider's thumb, a node's title bar) gets a
 // mouse drag.
 //-----------------------------------------------------------------------------
@@ -25826,6 +25840,8 @@ static bool runTouchScenario(Session &s, const std::string &shotDir, bool &passe
     // presses no row; a slow drag keeps its fractions; a tap presses one row
     int wheelOffset=0;
     size_t wheelWritten=0, dragWritten=0, dragVisited=0;
+    int flingFrames=0, flingTravel=0;
+    int longPressFrames=0;
     {
         gweni::controls::Base *control=addControl(s, "VirtualListDemo");
         auto *demo=gweni::gweni_cast<gweni::VirtualListDemo>(control);
@@ -25919,6 +25935,83 @@ static bool runTouchScenario(Session &s, const std::string &shotDir, bool &passe
         renderFrames(s, 1);
         checks.check("drag_fractions", followed,
             "a drag of 2.5 units a move scrolled by"+slow+" (0 under the slop, then the whole units wanted)");
+        idleWork+=settleCodeEditor(s, pixels);
+
+        // a flick: the list flings on after the lift, each frame costing no
+        // more than the wheel notch, until it stops with no animation left
+        // and a settled frame runs none; a finger put down stops the next one
+        s.freezeClock=false;
+        list->setVerticalScrollOffset(0);
+        renderFrames(s, 1);
+
+        const auto flick=[&]()
+        {
+            touchDown(s, 0, float(at.x), float(at.y));
+            for(int i=1; i <= 6; ++i)
+            {
+                touchMove(s, 0, float(at.x), float(at.y-10*i));
+                renderFrames(s, 1);
+            }
+            touchUp(s, 0);
+        };
+
+        std::set<size_t> listPrims, listTexts;
+
+        subtreeIds(list, listPrims, listTexts);
+        flick();
+
+        const int liftedAt=list->getVerticalScrollOffset();
+        const size_t flinging=gweni::anim::activeCount(list);
+        size_t flingMost=0;
+        bool flingWithin=true;
+
+        while(gweni::anim::activeCount(list) && flingFrames < 300)
+        {
+            const CodeEditorFrame frame=codeEditorFrame(s);
+
+            flingMost=std::max(flingMost, frame.visited);
+            if(!idsWithin(frame.primitives, listPrims) || !idsWithin(frame.texts, listTexts)
+                || frame.passes > 1 || frame.visited > allowed)
+                flingWithin=false;
+            ++flingFrames;
+        }
+        flingTravel=list->getVerticalScrollOffset()-liftedAt;
+
+        const CodeEditorFrame flungSettled=codeEditorFrame(s);
+        const size_t flungAnims=s.canvas->getUpdateStats().animsRun;
+
+        checks.check("fling",
+            flinging == 1 && flingFrames < 120 && flingTravel > 0 && flingWithin
+                && gweni::anim::activeCount(list) == 0 && flungSettled.written == 0 && flungAnims == 0
+                && demo->m_pressed->getText() == "Pressed: none",
+            "a flick at 600 units a second registered "+std::to_string(flinging)+" animations (1 wanted), flung "
+            +std::to_string(flingTravel)+" units over "+std::to_string(flingFrames)+" frames (fewer than 120 wanted), "
+            "its frames wrote outside the list's ids or entered up to "+std::to_string(flingMost)+" controls ("
+            +std::to_string(allowed)+" allowed, in one pass), the settled frame wrote "+std::to_string(flungSettled.written)+" and ran "
+            +std::to_string(flungAnims)+" animations, or a row was pressed");
+
+        flick();
+        renderFrames(s, 3);
+
+        const bool flungAgain=gweni::anim::activeCount(list) == 1;
+
+        touchDown(s, 0, float(at.x), float(at.y));
+
+        const int stoppedAt=list->getVerticalScrollOffset();
+
+        renderFrames(s, 3);
+
+        const bool stopped=gweni::anim::activeCount(list) == 0 && list->getVerticalScrollOffset() == stoppedAt;
+
+        touchUp(s, 0);
+        renderFrames(s, 1);
+        checks.check("fling_stopped",
+            flungAgain && stopped && demo->m_pressed->getText() == "Pressed: none",
+            std::string(flungAgain?"":"the second flick did not fling; ")+(stopped?"":"a finger put down did not stop it; ")
+            +"its lift said \""+demo->m_pressed->getText()+"\"");
+        s.freezeClock=true;
+        forgetMouse(s);
+        renderFrames(s, 1);
         idleWork+=settleCodeEditor(s, pixels);
 
         // a tap presses the row under it, once
@@ -26059,6 +26152,37 @@ static bool runTouchScenario(Session &s, const std::string &shotDir, bool &passe
                 }
                 return false;
             }, at);
+        // a long press there sets the menu's graph point, as a right press does
+        s.freezeClock=false;
+        clickMouse(s, at.x, at.y, GLFW_MOUSE_BUTTON_RIGHT);
+        renderFrames(s, 1);
+
+        const bool rightMenu=s.canvas->shownContextMenu() != nullptr;
+        const gweni::PointF rightPoint=graph->getContextMenuPosition();
+
+        sendKey(s, "escape");
+        forgetMouse(s);
+        renderFrames(s, 1);
+        graph->openContextMenuAt(gweni::PointF(-500.0f, -500.0f));
+        sendKey(s, "escape");
+        renderFrames(s, 1);
+        touchDown(s, 0, float(at.x), float(at.y));
+        renderFrames(s, 31);
+        touchUp(s, 0);
+        renderFrames(s, 1);
+
+        const bool longMenu=s.canvas->shownContextMenu() != nullptr;
+        const gweni::PointF longPoint=graph->getContextMenuPosition();
+
+        checks.check("graph_long_press",
+            rightMenu && longMenu && longPoint == rightPoint,
+            "a right press opened "+std::string(rightMenu?"a":"no")+" menu at graph point ("
+            +std::to_string(rightPoint.x)+", "+std::to_string(rightPoint.y)+"), a long press "
+            +(longMenu?"a":"no")+" menu at ("+std::to_string(longPoint.x)+", "+std::to_string(longPoint.y)+")");
+        sendKey(s, "escape");
+        renderFrames(s, 1);
+        s.freezeClock=true;
+
         const gweni::PointF pan=graph->pan();
         bool marquee=false;
 
@@ -26076,6 +26200,59 @@ static bool runTouchScenario(Session &s, const std::string &shotDir, bool &passe
         dropControl(s, control);
     }
 
+    // (6) ContextMenuDemo: a finger held still on the Document box opens its
+    // menu at the finger after exactly Canvas::LongPressSeconds of frames, and
+    // the lift chooses nothing
+    {
+        gweni::controls::Base *control=addControl(s, "ContextMenuDemo");
+        auto *demo=gweni::gweni_cast<gweni::ContextMenuDemo>(control);
+        gweni::controls::Base *document=control?findControl(control, "GroupBox"):nullptr;
+
+        if(!demo || !document || !document->getContextMenu())
+        {
+            std::cerr<<"ControlTest: touch: ContextMenuDemo has no Document box\n";
+            return false;
+        }
+
+        s.label="touch-context-menu";
+        renderFrames(s, s.frames);
+
+        const std::string chosen=demo->m_chosen->getText();
+        const gweni::Point at=centreOf(document);
+
+        s.freezeClock=false;
+        touchDown(s, 0, float(at.x), float(at.y));
+
+        // the clock steps after each frame, so frame 1 is drawn at the down's
+        // time and the one drawn LongPressSeconds later is one past their count
+        const int wanted=int(std::lround(gweni::controls::Canvas::LongPressSeconds/g_frameStep))+1;
+
+        while(!s.canvas->shownContextMenu() && longPressFrames < 3*wanted)
+        {
+            renderFrames(s, 1);
+            ++longPressFrames;
+        }
+
+        gweni::controls::Menu *menu=s.canvas->shownContextMenu();
+        const gweni::Point origin=menu?menu->localPosToCanvas():gweni::Point(-1, -1);
+
+        touchMove(s, 0, float(at.x+20), float(at.y+30));
+        touchUp(s, 0);
+        renderFrames(s, 1);
+        s.freezeClock=true;
+        ok=shoot(s, shotDir+"/touch-long-press.png") && ok;
+        checks.check("long_press",
+            menu == document->getContextMenu() && longPressFrames == wanted && origin.x == at.x && origin.y == at.y
+                && s.canvas->shownContextMenu() == menu && demo->m_chosen->getText() == chosen,
+            "a finger held on the Document box opened "+std::string(menu?"its":"no")+" menu after "
+            +std::to_string(longPressFrames)+" frames ("+std::to_string(wanted)+" wanted) at ("
+            +std::to_string(origin.x)+", "+std::to_string(origin.y)+"), the finger at ("+std::to_string(at.x)+", "
+            +std::to_string(at.y)+"), or its lift closed it or chose \""+demo->m_chosen->getText()+"\"");
+        sendKey(s, "escape");
+        renderFrames(s, 1);
+        dropControl(s, control);
+    }
+
     forgetMouse(s);
     renderFrames(s, 1);
 
@@ -26088,7 +26265,9 @@ static bool runTouchScenario(Session &s, const std::string &shotDir, bool &passe
     for(const auto &result : checks.results)
         std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
     std::cout<<" wheel_offset="<<wheelOffset<<" wheel_written="<<wheelWritten
-             <<" drag_written="<<dragWritten<<" drag_visited="<<dragVisited<<"\n";
+             <<" drag_written="<<dragWritten<<" drag_visited="<<dragVisited
+             <<" fling_frames="<<flingFrames<<" fling_travel="<<flingTravel
+             <<" long_press_frames="<<longPressFrames<<"\n";
     return ok;
 }
 

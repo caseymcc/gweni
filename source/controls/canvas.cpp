@@ -1793,6 +1793,9 @@ void Canvas::showContextMenu(Base *owner, const Point &at)
 {
     closePopup();
 
+    for(Base *control=owner; control && (control != this); control=control->getParent())
+        control->contextMenuOpening(at);
+
     // the handler may fill the menu in, or replace or clear it
     owner->onContextMenu.call(owner);
 
@@ -2442,6 +2445,9 @@ bool Canvas::inputTouch(int id, TouchPhase phase, float x, float y)
         if(m_touchId >= 0)
             return true;
 
+        // a finger put down stops what earlier ones flung
+        const bool stoppedFling=internal::TouchGesture::stopFlings(this) > 0;
+
         if(m_inputCapture)
         {
             m_touchId=id;
@@ -2481,7 +2487,7 @@ bool Canvas::inputTouch(int id, TouchPhase phase, float x, float y)
         m_touchMode=TouchMode::Gesture;
         if(!m_touchGesture)
             m_touchGesture=std::make_unique<internal::TouchGesture>(this);
-        m_touchGesture->start(target, PointF(x, y));
+        m_touchGesture->start(target, PointF(x, y), stoppedFling);
         setInputCapture(m_touchGesture.get());
         // as a press there would be: a control's, or anything under a modal
         return (target && (target != this)) || (topModal() != nullptr);

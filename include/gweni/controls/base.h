@@ -942,6 +942,12 @@ public:
     //! False (the default) leaves the touch to the canvas's gesture, a tap or
     //! a pan (touchPan()).
     virtual bool keepsTouchDrag() const { return false; }
+    //! A context menu is opening at \p at (canvas coordinates) for this
+    //! control or a descendant (Canvas::showContextMenu, from a right press or
+    //! a long press, calls it on the owner and each ancestor, nearest first,
+    //! before onContextMenu): where a NodeGraph places what its menus add.
+    //! Does nothing by default.
+    virtual void contextMenuOpening(const Point & /*at*/) {}
     //! A finger dragged \p delta (this control's own units; the content
     //! follows the finger) over it: moves what it shows by as much of that as
     //! it can and returns what it moved, (0, 0) (the default) when it moves

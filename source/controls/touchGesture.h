@@ -9,6 +9,8 @@
 
 #include <gweni/controls/canvas.h>
 
+#include <vector>
+
 namespace gweni
 {
 namespace controls
@@ -24,9 +26,17 @@ namespace internal
 //! down point (the touched one, then its actual parents) whose touchPan()
 //! moves along it, which keeps the axis until the lift. The finger's motion
 //! is summed per axis in canvas units, and what a control did not move (a
-//! ScrollControl's fractions of a unit) is kept for the next move. Either
-//! way the lift ends with inputMouseLeave(). Every other input is dropped
-//! while it holds the canvas.
+//! ScrollControl's fractions of a unit) is kept for the next move. Lifted
+//! while moving (Canvas::MinFlingSpeed or faster over its last
+//! Canvas::FlingWindowSeconds), the controls it panned fling on: an
+//! animation each, slowing exponentially (Canvas::FlingTimeConstant) on the
+//! canvas clock, until under Canvas::StopFlingSpeed or at the end of their
+//! range; any finger put down on the canvas stops every fling there. Held
+//! still for Canvas::LongPressSeconds (within the slop), it is a long press:
+//! the context menu of the control under it (Canvas::contextMenuOwnerFor)
+//! opens at the finger, and the lift does nothing more. Either way the lift
+//! ends with inputMouseLeave(). Every other input is dropped while it holds
+//! the canvas.
 class TouchGesture: public InputCapture
 {
 public:
@@ -34,8 +44,12 @@ public:
     explicit TouchGesture(Canvas *canvas): m_canvas(canvas) {}
 
     //! A finger went down at \p at (canvas units) on \p target (the control
-    //! the canvas's hit test found there, or null).
-    void start(Base *target, const PointF &at);
+    //! the canvas's hit test found there, or null); \p stoppedFling: the
+    //! down stopped a fling, so its lift is no tap.
+    void start(Base *target, const PointF &at, bool stoppedFling);
+
+    //! Stops every fling on \p canvas; returns how many there were.
+    static size_t stopFlings(Canvas *canvas);
 
     bool active() const { return m_canvas && (m_canvas->inputCapture() == this); }
     bool panning() const { return m_panning; }
@@ -61,6 +75,10 @@ private:
 
     void move(const PointF &at);
     void lift(bool cancelled);
+    //! The long press's timer: opens the context menu under the finger.
+    void longPress();
+    //! Starts the flings of the axes' controls from the finger's speed.
+    void fling();
     //! Gives each control an axis went to what is pending on it; an axis
     //! whose control is gone or hidden goes to none again.
     void panLatched();
@@ -73,6 +91,18 @@ private:
     PointF m_down;
     PointF m_last;
     bool m_panning=false;
+    //! the down stopped a fling, or the long press opened a menu: no tap
+    bool m_noTap=false;
+    bool m_longPressed=false;
+    TimerHandle m_longPressTimer;
+    //! The finger's recent points (Canvas::FlingWindowSeconds and one more),
+    //! on platform::getTimeInSeconds(), for the fling's speed.
+    struct Sample
+    {
+        double time;
+        PointF at;
+    };
+    std::vector<Sample> m_samples;
     Axis m_axes[2];
 };
 

@@ -740,8 +740,10 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     # A finger through Canvas::inputTouch (#615): a tap presses its button
     # once and leaves nothing hovered or tooltipped, a drag over a list scrolls
     # it by the finger's distance at no more than a wheel notch's cost and
-    # presses no row, fractions kept, and a Slider's thumb, a ZoomPanel and a
-    # NodeGraph's node and empty space follow the finger
+    # presses no row, fractions kept, a flick flings on and stops with no
+    # animation left (a finger put down stops it), a Slider's thumb, a
+    # ZoomPanel and a NodeGraph's node and empty space follow the finger, and
+    # a long press opens a context menu at the finger after exactly its delay
     gweni_whole_app_test(controltest_touch 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario touch --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/touch@VARIANT@
