@@ -21,7 +21,8 @@
  *  leaving the field focused. A press in the popup off the field (its
  *  padding, the list's bar, that row) keeps the field focused, and the
  *  field's "Type a command" hint shows while it is empty and focused (a
- *  plain TextBox's only while unfocused). Up and Down move the
+ *  plain TextBox's only while unfocused). Tab and Shift+Tab are the field's
+ *  and move no focus out of the open palette. Up and Down move the
  *  highlight and wrap at both ends, PageUp and PageDown move MaxShownRows and
  *  stop at the ends, Return runs the highlighted command once (onCommand with
  *  its id, after the palette closed and the focus came back), Escape closes
@@ -519,6 +520,36 @@ TEST_CASE("CommandPalette: its field shows the placeholder while empty and focus
     scene.key(keys::Backspace);
     REQUIRE(scene.palette->getQuery().empty());
     CHECK(scene.palette->getField()->isPlaceholderShown());
+}
+
+TEST_CASE("CommandPalette: Tab and Shift+Tab in the open palette keep the focus in its field, and Escape gives it back")
+{
+    Scene scene;
+
+    scene.add("save", "Save", "File");
+    scene.add("open", "Open", "File");
+    scene.box->focus();
+    scene.accelerator();
+    REQUIRE(KeyboardFocus == scene.palette->getField());
+
+    scene.key(keys::Tab);
+    CHECK(scene.palette->isOpen());
+    CHECK(KeyboardFocus == scene.palette->getField());
+
+    input::onKeyEvent(scene.canvas, keys::Shift, true);
+    scene.key(keys::Tab);
+    input::onKeyEvent(scene.canvas, keys::Shift, false);
+    CHECK(scene.palette->isOpen());
+    CHECK(KeyboardFocus == scene.palette->getField());
+
+    // a character still reaches the query, not the app's box
+    scene.type("o");
+    CHECK(scene.palette->getQuery() == "o");
+    CHECK(scene.box->getText().empty());
+
+    scene.key(keys::Escape);
+    CHECK_FALSE(scene.palette->isOpen());
+    CHECK(KeyboardFocus == scene.box);
 }
 
 TEST_CASE("CommandPalette: deleting it while open closes it first, the focus given back")

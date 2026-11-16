@@ -119,7 +119,8 @@ private:
 //! A CommandPalette's field: a TextBox whose text is the query. Up, Down,
 //! PageUp, PageDown and Return go to the palette (Return's press and release
 //! are the field's even with nothing highlighted, so it never moves the focus
-//! on as a TextBox's would); Escape is the canvas's (it closes the popup);
+//! on as a TextBox's would); Tab and Shift+Tab are taken and do nothing, so
+//! the focus never leaves the open palette for a control behind it; Escape is the canvas's (it closes the popup);
 //! Home, End and the rest stay the TextBox's. Its "Type a command" hint shows
 //! while it is empty, focused or not (VS Code's look).
 class GWENI_EXPORT CommandPaletteField: public TextBox
@@ -136,6 +137,7 @@ public:
     bool onKeyPageUp(bool down) override;
     bool onKeyPageDown(bool down) override;
     bool onKeyReturn(bool down) override;
+    bool onKeyTab(bool down) override;
 
     //! Empties it with no edit (no query, no onTextChanged, the history
     //! cleared).

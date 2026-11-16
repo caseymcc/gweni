@@ -232,6 +232,16 @@ bool CommandPaletteField::onKeyReturn(bool down)
     return true;
 }
 
+// Taken, both ways: the palette has one focusable control, and a Tab moving
+// the focus behind the open popup would leave it open and deaf to keys.
+bool CommandPaletteField::onKeyTab(bool down)
+{
+    if(!m_palette)
+        return ParentClass::onKeyTab(down);
+
+    return true;
+}
+
 void CommandPaletteField::clearText()
 {
     if(getText().empty())

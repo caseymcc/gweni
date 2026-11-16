@@ -5901,7 +5901,9 @@ two programs and the draws. What follows describes both together:
   The field (`internal::CommandPaletteField`) gives Up and Down (wrapping), PageUp and
   PageDown (a page, stopping at the ends) and Return to the palette (its press and its
   release, with nothing highlighted too, so a Return never moves the focus on as a
-  single-line TextBox's release does) and keeps Home, End and editing; a click on a row runs its command and a real mouse move highlights it.
+  single-line TextBox's release does), takes Tab and Shift+Tab and does nothing with
+  them (the palette has one focusable control, and a Tab to an app control behind the
+  open popup would leave it open and deaf to keys), and keeps Home, End and editing; a click on a row runs its command and a real mouse move highlights it.
 
   *The cost.* A keystroke ranks the command data again (a decode and a table per
   command, no control touched) and goes through `rebindChanged()`: only the pooled rows
