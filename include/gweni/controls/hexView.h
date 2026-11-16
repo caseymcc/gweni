@@ -8,12 +8,15 @@
 #define _gweni_controls_hexview_h_
 
 #include <gweni/controls/text.h>
+#include <gweni/controls/textBox.h>
 #include <gweni/controls/virtualList.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <vector>
 
 namespace gweni
 {
@@ -21,6 +24,39 @@ namespace controls
 {
 
 class HexView;
+
+//! What a shown row draws under its bytes (the textured renderer's slots):
+//! the cursor's byte, the selection's bytes and up to MaxHighlights
+//! highlight pieces, each a range of the row's bytes [begin, end), drawn in
+//! both columns. A row compares them as they change and marks itself
+//! (StateChange_Background) only when its own differ.
+struct GWENI_EXPORT HexRowMarks
+{
+    static constexpr size_t MaxHighlights=4;
+
+    struct Piece
+    {
+        uint8_t begin=0;
+        uint8_t end=0;
+        uint8_t surface=0;  //!< HexViewHighlight0..3
+
+        bool operator==(const Piece &o) const
+        {
+            return begin == o.begin && end == o.end && surface == o.surface;
+        }
+    };
+
+    int cursor=-1;              //!< the cursor's byte in the row, or -1
+    bool cursorInAscii=false;   //!< the column typing goes to
+    bool pendingNibble=false;   //!< a hex digit typed: the box is on the low digit
+    uint8_t selectionBegin=0;   //!< the selected bytes, empty when equal
+    uint8_t selectionEnd=0;
+    uint8_t highlightCount=0;
+    std::array<Piece, MaxHighlights> highlights{};
+
+    bool operator==(const HexRowMarks &o) const;
+    bool operator!=(const HexRowMarks &o) const { return !(*this == o); }
+};
 
 //! A pooled HexView row. The view binds it to a byte offset, and places its
 //! three mono Text runs in fixed columns. An app does not construct rows.
@@ -40,11 +76,13 @@ public:
     internal::Text *getAddressControl() const { return m_address; }
     internal::Text *getHexControl() const { return m_hex; }
     internal::Text *getAsciiControl() const { return m_ascii; }
+    const HexRowMarks &getMarks() const { return m_marks; }
 
 private:
     friend class HexView;
 
     void bind(size_t offset);
+    void updateMarks();
 
     HexView *m_view=nullptr;
     size_t m_offset=VirtualList::NoItem;
@@ -53,6 +91,7 @@ private:
     internal::Text *m_address=nullptr;
     internal::Text *m_hex=nullptr;
     internal::Text *m_ascii=nullptr;
+    HexRowMarks m_marks;
 
 protected:
     void arrangeHorizontal(skin::Base *skin) override;
@@ -80,6 +119,8 @@ public:
 
     static constexpr size_t NoByte=VirtualList::NoItem;
     static constexpr int RowPadY=2;
+    //! Units between the goto box and the rows.
+    static constexpr int GotoGap=4;
 
     enum class Column { Hex, Ascii };
     struct ByteHit
@@ -126,11 +167,102 @@ public:
     HexViewRow *rowForOffset(size_t offset) const;
     void calculateSize(skin::Base *skin, Dim dim) override;
 
+    //! The cursor's byte (NoByte for an empty source) and the selection's
+    //! other end. The selection is every byte from the anchor to the cursor,
+    //! both included, so it is never empty while there is a cursor.
+    size_t getCursor() const { return m_cursor; }
+    size_t getAnchor() const { return m_anchor; }
+    Column getCursorColumn() const { return m_cursorColumn; }
+    size_t getSelectionBegin() const { return std::min(m_anchor, m_cursor); }
+    //! One past the last selected byte (0 with no cursor).
+    size_t getSelectionEnd() const { return m_cursor == NoByte?0:std::max(m_anchor, m_cursor)+1; }
+    //! Moves the cursor to \p offset (clamped to the data) and scrolls it into
+    //! view; \p extend keeps the anchor, otherwise the anchor follows. Any
+    //! half-typed byte is dropped.
+    void setCursor(size_t offset, bool extend=false);
+    void setCursorColumn(Column column);
+    void selectRange(size_t begin, size_t end);
+    //! The selection as space-separated hex ("41 42 43"), "" with no cursor.
+    String getSelectedHex() const;
+    //! platform::setClipboardText(getSelectedHex()), as Ctrl+C does.
+    void copy();
+    //! The rows a page key moves: the whole rows in the viewport, at least 1.
+    size_t pageRows() const;
+
+    //! Moves the cursor to the address (the base address included), parsed
+    //! by parseAddress; false (nothing moved) for text that is no address of
+    //! the data. Return in the goto box calls it with the box's text.
+    bool gotoAddress(const String &text);
+    //! "0x1F", "$1F" and text with a hex letter are hex, plain digits decimal;
+    //! false for anything else, an empty text or one past 64 bits.
+    static bool parseAddress(const String &text, uint64_t &address);
+    //! The goto-address box above the rows (shown by default).
+    TextBox *getGotoBox() const { return m_goto; }
+    void setGotoVisible(bool visible);
+    bool isGotoVisible() const { return !m_goto->hidden(); }
+
+    //! Ranges the rows draw under their bytes in both columns, in the
+    //! HexViewHighlight<surface % 4> surface. A row draws at most
+    //! HexRowMarks::MaxHighlights of them, the earliest added; [begin, end)
+    //! is clipped to the data. Each row bind scans them all, so they are for
+    //! a few structures, not thousands.
+    struct Highlight
+    {
+        size_t begin=0;
+        size_t end=0;
+        unsigned surface=0;
+    };
+    void addHighlight(size_t begin, size_t end, unsigned surface);
+    void clearHighlights();
+    const std::vector<Highlight> &getHighlights() const { return m_highlights; }
+
+    //! The nibble typed into the cursor's byte (the high one), or -1.
+    int getPendingNibble() const { return m_pendingNibble; }
+
+    //! A byte written by typing (the write callback called first):
+    //! info.integer the offset, info.point (old, new). getLastEdit() too.
+    struct Edit
+    {
+        size_t offset=NoByte;
+        uint8_t oldValue=0;
+        uint8_t newValue=0;
+    };
+    const Edit &getLastEdit() const { return m_lastEdit; }
+    gweni::event::Caller onEdited;
+    //! The cursor or the selection moved (never from setSource's clamping).
+    gweni::event::Caller onCursorChanged;
+
+    bool AccelOnlyFocus() override { return true; }
+
 protected:
     Size contentSize() const override;
+    void contentsPlaced(skin::Base *skin) override;
+
+    void onMouseClickLeft(int x, int y, bool down) override;
+    void onMouseMoved(int x, int y, int deltaX, int deltaY) override;
+    bool onChar(gweni::UnicodeChar c) override;
+    bool onKeyLeft(bool down) override;
+    bool onKeyRight(bool down) override;
+    bool onKeyUp(bool down) override;
+    bool onKeyDown(bool down) override;
+    bool onKeyHome(bool down) override;
+    bool onKeyend(bool down) override;
+    bool onKeyPageUp(bool down) override;
+    bool onKeyPageDown(bool down) override;
+    bool onKeyEscape(bool down) override;
 
 private:
     friend class HexViewRow;
+
+    void onCopy(event::Info);
+    void onGotoReturn(event::Info);
+    void moveBy(int64_t bytes, bool extend);
+    void scrollCursorIntoView();
+    void updateMarks();
+    void writeByte(size_t offset, uint8_t value);
+    void dropPendingNibble();
+    ByteHit byteNear(Point local) const;
+    int gotoHeight() const;
 
     void updateRows();
     void updateAddressDigits();
@@ -147,6 +279,15 @@ private:
     Font m_metricsFont;
     const renderer::Base *m_metricsRenderer=nullptr;
     unsigned m_metricsSerial=0;
+
+    size_t m_cursor=NoByte;
+    size_t m_anchor=NoByte;
+    Column m_cursorColumn=Column::Hex;
+    int m_pendingNibble=-1;
+    std::vector<Highlight> m_highlights;
+    Edit m_lastEdit;
+    TextBox *m_goto=nullptr;
+    int m_gotoLineHeight=0;
 };
 
 }//namespace controls

@@ -13,10 +13,23 @@
  * mono role and metric serial drive the columns and row height. At 4 KiB
  * and 16 MiB the pool/controls/ids and one-row read work are the same, rows
  * still showing their item keep it, and deleting the view releases its ids.
+ * The cursor: a click in either column places it, Shift+click and a drag
+ * (past the rows too, clamped) extend it, a gap places nothing; every cursor
+ * key with and without Shift, clamped at both ends and at a partial last
+ * row, scrolled into view vertically and sideways. Ctrl+C copies the
+ * selection as spaced hex only while the view has the focus; addresses
+ * parse as hex or decimal, goto moves the cursor and the box sits above the
+ * rows. Typing writes a byte nibble by nibble (the pending one shown, Escape
+ * or a move dropping it) or as an ASCII character, through the write
+ * callback and onEdited; a read-only view takes nothing. Cursor, selection
+ * and highlight marks change only the rows whose own pieces moved, capped at
+ * HexRowMarks::MaxHighlights a row.
  */
 #include "headlessFixture.h"
 
 #include <gweni/controls/hexView.h>
+#include <gweni/inputHandler.h>
+#include <gweni/platforms/platform.h>
 
 #include <doctest/doctest.h>
 
@@ -30,6 +43,8 @@
 using namespace gweni;
 using controls::HexView;
 using controls::HexViewRow;
+using controls::HexRowMarks;
+using controls::TextBox;
 
 namespace
 {
@@ -79,20 +94,29 @@ struct Scene
     int requests=0;
     bool renderLayout=false;
 
-    explicit Scene(size_t size, size_t bytesPerRow=16): sourceSize(size)
+    double clock=10.0;
+    std::vector<std::tuple<size_t, uint8_t>> writes;
+
+    explicit Scene(size_t size, size_t bytesPerRow=16, bool gotoBox=false): sourceSize(size)
     {
+        platform::setTimeSource([this]() { return clock; });
         skin.setDefaultMonoFont("test-mono", 11.f);
         canvas=std::make_unique<controls::Canvas>(&skin);
         canvas->setSize(1400, 600);
         view=canvas->newChild<HexView>();
         view->setBounds(11, 13, 1300, 180);
         view->setBytesPerRow(bytesPerRow);
+        view->setGotoVisible(gotoBox);
         view->setSource(size, reader());
         frame();
     }
 
     ~Scene()
     {
+        input::onMouseClicked(canvas.get(), 0, false);
+        input::onKeyEvent(canvas.get(), keys::Shift, false);
+        input::onKeyEvent(canvas.get(), keys::Control, false);
+        platform::setTimeSource(nullptr);
         HoveredControl=nullptr;
         KeyboardFocus=nullptr;
         MouseFocus=nullptr;
@@ -140,6 +164,77 @@ struct Scene
     }
 
     void clearReads() { reads.clear(); }
+
+    HexView::Write writer()
+    {
+        return [this](size_t offset, uint8_t byte)
+            {
+                writes.push_back({offset, byte});
+                overrides[offset]=byte;
+            };
+    }
+
+    //! The canvas point of a byte's first cell (its first hex digit's cell
+    //! or its ASCII cell), a unit in and at its row's middle.
+    Point bytePoint(size_t offset, HexView::Column column) const
+    {
+        const Rect viewport=view->getViewport();
+        const size_t bpr=view->getBytesPerRow();
+        const int64_t y=static_cast<int64_t>(offset/bpr)*view->getRowHeight()
+            -view->getVerticalScrollOffset()+view->getRowHeight()/2;
+        const int x=view->byteX(offset%bpr, column)-view->getHorizontalScrollOffset()+1;
+
+        return view->localPosToCanvas(Point(viewport.x+x, viewport.y+static_cast<int>(y)));
+    }
+
+    void move(Point at)
+    {
+        canvas->inputMouseMoved(at.x, at.y, 0, 0);
+    }
+
+    //! A press and release a second after the last, so never a double-click.
+    void click(Point at, bool shift=false)
+    {
+        clock+=1.0;
+        move(at);
+        if(shift)
+            input::onKeyEvent(canvas.get(), keys::Shift, true);
+        input::onMouseClicked(canvas.get(), 0, true);
+        input::onMouseClicked(canvas.get(), 0, false);
+        if(shift)
+            input::onKeyEvent(canvas.get(), keys::Shift, false);
+        frame();
+    }
+
+    void key(int key, bool shift=false, bool control=false)
+    {
+        if(shift)
+            input::onKeyEvent(canvas.get(), keys::Shift, true);
+        if(control)
+            input::onKeyEvent(canvas.get(), keys::Control, true);
+        input::onKeyEvent(canvas.get(), key, true);
+        input::onKeyEvent(canvas.get(), key, false);
+        if(control)
+            input::onKeyEvent(canvas.get(), keys::Control, false);
+        if(shift)
+            input::onKeyEvent(canvas.get(), keys::Shift, false);
+        frame();
+    }
+
+    void type(const char *text)
+    {
+        for(const char *c=text; *c; ++c)
+            canvas->inputCharacter(static_cast<UnicodeChar>(*c));
+        frame();
+    }
+
+    void ctrlChar(char c)
+    {
+        canvas->inputModifierKey(keys::Control, true);
+        canvas->inputCharacter(static_cast<UnicodeChar>(c));
+        canvas->inputModifierKey(keys::Control, false);
+        frame();
+    }
 };
 
 }//namespace
@@ -472,4 +567,423 @@ TEST_CASE("HexView: deletion releases the row subtree and ids")
     CHECK(skin.liveControls == controls);
     CHECK(renderer.doubleAcquired == 0);
     CHECK(renderer.doubleReleased == 0);
+}
+
+TEST_CASE("HexView: clicks place the cursor and Shift-click and drag extend it")
+{
+    Scene s(4096);
+    using Column=HexView::Column;
+    CHECK(s.view->getCursor() == 0);
+    CHECK(s.view->getSelectionBegin() == 0);
+    CHECK(s.view->getSelectionEnd() == 1);
+
+    s.click(s.bytePoint(37, Column::Hex));
+    CHECK(s.view->getCursor() == 37);
+    CHECK(s.view->getAnchor() == 37);
+    CHECK(s.view->getCursorColumn() == Column::Hex);
+    CHECK(KeyboardFocus == s.view);
+
+    s.click(s.bytePoint(18, Column::Ascii), true);
+    CHECK(s.view->getCursor() == 18);
+    CHECK(s.view->getAnchor() == 37);
+    CHECK(s.view->getCursorColumn() == Column::Ascii);
+    CHECK(s.view->getSelectionBegin() == 18);
+    CHECK(s.view->getSelectionEnd() == 38);
+
+    // a press on a gap between two bytes places nothing
+    Point gap=s.bytePoint(5, Column::Hex);
+    gap.x+=static_cast<int>(2*s.view->getCellWidth());
+    s.click(gap);
+    CHECK(s.view->getCursor() == 18);
+    CHECK(s.view->getAnchor() == 37);
+
+    // a drag from byte 3: over the gap after byte 9 (nearest, byte 9 or 10),
+    // onto byte 40, then below the last shown row (clamped to the data)
+    s.clock+=1.0;
+    s.move(s.bytePoint(3, Column::Hex));
+    input::onMouseClicked(s.canvas.get(), 0, true);
+    s.frame();
+    CHECK(s.view->getCursor() == 3);
+    CHECK(s.view->getAnchor() == 3);
+    s.move(s.bytePoint(40, Column::Hex));
+    s.frame();
+    CHECK(s.view->getCursor() == 40);
+    CHECK(s.view->getAnchor() == 3);
+    const Rect viewport=s.view->getViewport();
+    const Point below=s.view->localPosToCanvas(Point(viewport.x+s.view->getHexX(), viewport.y+viewport.h+50));
+    s.move(below);
+    s.frame();
+    const size_t shown=static_cast<size_t>((viewport.h+50)/s.view->getRowHeight());
+    CHECK(s.view->getCursor() == shown*16);
+    CHECK(s.view->getAnchor() == 3);
+    input::onMouseClicked(s.canvas.get(), 0, false);
+    s.frame();
+    // released: moving again selects nothing more
+    s.move(s.bytePoint(1, Column::Hex));
+    s.frame();
+    CHECK(s.view->getCursor() == shown*16);
+    // the drag scrolled the cursor's row into view
+    CHECK(s.view->rowForOffset(s.view->getCursor()) != nullptr);
+    s.checkOnePass();
+}
+
+TEST_CASE("HexView: cursor keys move clamp and extend with Shift")
+{
+    Scene s(1000);
+    s.click(s.bytePoint(20, HexView::Column::Hex));
+    REQUIRE(s.view->getCursor() == 20);
+    const size_t page=s.view->pageRows();
+    CHECK(page == static_cast<size_t>(s.view->getViewportHeight()/s.view->getRowHeight()));
+
+    s.key(keys::Right);
+    CHECK(s.view->getCursor() == 21);
+    s.key(keys::Left);
+    s.key(keys::Left);
+    CHECK(s.view->getCursor() == 19);
+    s.key(keys::Down);
+    CHECK(s.view->getCursor() == 35);
+    s.key(keys::Up);
+    CHECK(s.view->getCursor() == 19);
+    s.key(keys::Up);
+    CHECK(s.view->getCursor() == 3);
+    s.key(keys::Up);
+    CHECK(s.view->getCursor() == 0);
+    s.key(keys::Left);
+    CHECK(s.view->getCursor() == 0);
+    s.key(keys::PageDown);
+    CHECK(s.view->getCursor() == page*16);
+    s.key(keys::PageUp);
+    CHECK(s.view->getCursor() == 0);
+    s.view->setCursor(37);
+    s.key(keys::End);
+    CHECK(s.view->getCursor() == 47);
+    s.key(keys::Home);
+    CHECK(s.view->getCursor() == 32);
+    CHECK(s.view->getAnchor() == 32);
+
+    // the last row holds 1000-992 = 8 bytes: End stops at the data's end
+    s.key(keys::End, false, true);
+    CHECK(s.view->getCursor() == 999);
+    CHECK(s.view->rowForOffset(999) != nullptr);
+    s.view->setCursor(994);
+    s.key(keys::End);
+    CHECK(s.view->getCursor() == 999);
+    s.key(keys::Down);
+    CHECK(s.view->getCursor() == 999);
+    s.key(keys::Right);
+    CHECK(s.view->getCursor() == 999);
+    s.key(keys::PageDown);
+    CHECK(s.view->getCursor() == 999);
+    s.key(keys::Home, false, true);
+    CHECK(s.view->getCursor() == 0);
+    CHECK(s.view->getVerticalScrollOffset() == 0);
+
+    // Shift keeps the anchor with every key
+    s.view->setCursor(100);
+    s.key(keys::Right, true);
+    s.key(keys::Down, true);
+    CHECK(s.view->getAnchor() == 100);
+    CHECK(s.view->getCursor() == 117);
+    s.key(keys::End, true);
+    CHECK(s.view->getCursor() == 127);
+    s.key(keys::Home, true);
+    CHECK(s.view->getCursor() == 112);
+    s.key(keys::Up, true);
+    s.key(keys::Left, true);
+    CHECK(s.view->getCursor() == 95);
+    CHECK(s.view->getSelectionBegin() == 95);
+    CHECK(s.view->getSelectionEnd() == 101);
+    s.key(keys::PageDown, true);
+    CHECK(s.view->getCursor() == 95+page*16);
+    s.key(keys::PageUp, true);
+    CHECK(s.view->getCursor() == 95);
+    s.key(keys::End, true, true);
+    CHECK(s.view->getCursor() == 999);
+    CHECK(s.view->getAnchor() == 100);
+    s.key(keys::Home, true, true);
+    CHECK(s.view->getCursor() == 0);
+    CHECK(s.view->getAnchor() == 100);
+    // a key without Shift collapses the selection
+    s.key(keys::Right);
+    CHECK(s.view->getCursor() == 1);
+    CHECK(s.view->getAnchor() == 1);
+    s.checkOnePass();
+}
+
+TEST_CASE("HexView: the cursor is scrolled into view vertically and sideways")
+{
+    Scene s(16*1024*1024);
+    s.view->setSize(300, 120);
+    s.frame();
+    s.view->focus();
+    s.view->setCursor(5000*16+15);
+    s.frame();
+    REQUIRE(s.view->rowForOffset(5000*16+15) != nullptr);
+    const Rect viewport=s.view->getViewport();
+    const int rowTop=static_cast<int>(5000*static_cast<int64_t>(s.view->getRowHeight())
+        -s.view->getVerticalScrollOffset());
+    CHECK(rowTop >= 0);
+    CHECK(rowTop+s.view->getRowHeight() <= viewport.h);
+    const int hscroll=s.view->getHorizontalScrollOffset();
+    CHECK(s.view->byteX(15, HexView::Column::Hex) >= hscroll);
+    // byte 15's two digits end at cell 3*15+1+2 = 48
+    CHECK(s.view->getHexX()+static_cast<int>(std::floor(48*7.25)) <= hscroll+viewport.w);
+    s.key(keys::Home);
+    CHECK(s.view->getHorizontalScrollOffset() <= s.view->byteX(0, HexView::Column::Hex));
+    s.checkOnePass();
+}
+
+TEST_CASE("HexView: Ctrl+C copies the selection as spaced hex and only when focused")
+{
+    Scene s(300);
+    s.overrides[0x11]=0xab;
+    s.view->dataChanged(0x11, 0x12);
+    platform::setClipboardText("before");
+    // not focused: the accelerator walk must not reach the view
+    s.ctrlChar('c');
+    CHECK(platform::getClipboardText() == "before");
+
+    s.click(s.bytePoint(0x10, HexView::Column::Hex));
+    s.ctrlChar('c');
+    CHECK(platform::getClipboardText() == "10");
+    s.click(s.bytePoint(0x13, HexView::Column::Ascii), true);
+    CHECK(s.view->getSelectedHex() == "10 AB 12 13");
+    s.ctrlChar('c');
+    CHECK(platform::getClipboardText() == "10 AB 12 13");
+
+    // more than one read's worth, backwards from the anchor
+    s.view->selectRange(0, 300);
+    const String all=s.view->getSelectedHex();
+    CHECK(all.size() == 300*3-1);
+    CHECK(all.substr(0, 9) == "00 01 02 ");
+    CHECK(all.substr(all.size()-5) == "2A 2B");
+
+    Scene empty(0);
+    CHECK(empty.view->getCursor() == HexView::NoByte);
+    CHECK(empty.view->getSelectedHex() == "");
+    platform::setClipboardText("kept");
+    empty.view->copy();
+    CHECK(platform::getClipboardText() == "kept");
+}
+
+TEST_CASE("HexView: addresses parse as hex or decimal and goto moves the cursor")
+{
+    uint64_t a=0;
+    CHECK(HexView::parseAddress("0x1F", a));
+    CHECK(a == 0x1f);
+    CHECK(HexView::parseAddress("$ff", a));
+    CHECK(a == 0xff);
+    CHECK(HexView::parseAddress("  1a ", a));
+    CHECK(a == 0x1a);
+    CHECK(HexView::parseAddress("100", a));
+    CHECK(a == 100);
+    CHECK(HexView::parseAddress("0xFFFFFFFFFFFFFFFF", a));
+    CHECK(a == UINT64_MAX);
+    CHECK(HexView::parseAddress("18446744073709551615", a));
+    CHECK(a == UINT64_MAX);
+    for(const char *bad : {"", "  ", "0x", "$", "12g", "-1", "0x10000000000000000", "18446744073709551616"})
+    {
+        INFO(bad);
+        CHECK_FALSE(HexView::parseAddress(bad, a));
+    }
+
+    Scene s(4096, 16, true);
+    CHECK(s.view->isGotoVisible());
+    TextBox *box=s.view->getGotoBox();
+    // the box above the rows, in the view's top padding
+    CHECK(box->getY() == 0);
+    CHECK(box->getHeight() > 0);
+    CHECK(s.view->getViewport().y >= box->bottom()+HexView::GotoGap);
+    s.view->setBaseAddress(0x1000);
+    s.frame();
+    CHECK(s.view->gotoAddress("0x1800"));
+    CHECK(s.view->getCursor() == 0x800);
+    s.frame();
+    CHECK(s.view->rowForOffset(0x800) != nullptr);
+    CHECK(s.view->gotoAddress("4096"));
+    CHECK(s.view->getCursor() == 0);
+    CHECK_FALSE(s.view->gotoAddress("0xfff"));
+    CHECK_FALSE(s.view->gotoAddress("0x2000"));
+    CHECK_FALSE(s.view->gotoAddress("zz"));
+    CHECK(s.view->getCursor() == 0);
+
+    // typed into the box, Return jumps and gives the view the focus
+    s.click(box->localPosToCanvas(Point(4, box->getHeight()/2)));
+    CHECK(KeyboardFocus == box);
+    s.type("0x1A05");
+    s.key(keys::Return);
+    CHECK(s.view->getCursor() == 0xa05);
+    CHECK(KeyboardFocus == s.view);
+    s.checkOnePass();
+
+    s.view->setGotoVisible(false);
+    s.frame();
+    CHECK(s.view->getViewport().y < box->bottom());
+}
+
+TEST_CASE("HexView: hex digits edit a byte a nibble at a time and Escape drops one")
+{
+    Scene s(64);
+    s.view->setSource(64, s.reader(), s.writer());
+    s.frame();
+    std::vector<std::tuple<size_t, size_t, int, int>> edits;
+    struct Sink: event::Handler
+    {
+        std::vector<std::tuple<size_t, size_t, int, int>> *edits;
+        void edited(event::Info info)
+        {
+            auto *view=static_cast<HexView *>(info.controlCaller);
+            CHECK(view->getLastEdit().offset == info.integer);
+            edits->push_back({info.integer, view->getLastEdit().newValue, info.point.x, info.point.y});
+        }
+    } sink;
+    sink.edits=&edits;
+    s.view->onEdited.add(&sink, &Sink::edited);
+
+    s.click(s.bytePoint(17, HexView::Column::Hex));
+    s.type("a");
+    CHECK(s.view->getPendingNibble() == 10);
+    CHECK(s.writes.empty());
+    CHECK(s.view->getCursor() == 17);
+    CHECK(s.row(1)->getHexText().substr(3, 2) == "A1");
+    CHECK(s.row(1)->getMarks().pendingNibble);
+    s.type("B");
+    CHECK(s.view->getPendingNibble() == -1);
+    CHECK(s.writes == std::vector<std::tuple<size_t, uint8_t>>{{17, 0xab}});
+    CHECK(edits == std::vector<std::tuple<size_t, size_t, int, int>>{{17, 0xab, 0x11, 0xab}});
+    CHECK(s.view->getCursor() == 18);
+    CHECK(s.row(1)->getHexText().substr(3, 5) == "AB 12");
+    CHECK_FALSE(s.row(1)->getMarks().pendingNibble);
+
+    // not hex, and Escape with nothing half-typed, are not taken
+    CHECK_FALSE(static_cast<controls::Base *>(s.view)->onChar('g'));
+    CHECK_FALSE(static_cast<controls::Base *>(s.view)->onKeyEscape(true));
+    s.type("7");
+    CHECK(s.row(1)->getHexText().substr(6, 2) == "72");
+    s.key(keys::Escape);
+    CHECK(s.view->getPendingNibble() == -1);
+    CHECK(s.row(1)->getHexText().substr(6, 2) == "12");
+    CHECK(s.view->getCursor() == 18);
+    // a cursor move drops it too
+    s.type("c");
+    s.key(keys::Right);
+    CHECK(s.view->getPendingNibble() == -1);
+    CHECK(s.row(1)->getHexText().substr(6, 2) == "12");
+    CHECK(s.writes.size() == 1);
+
+    // the last byte is written and the cursor stays on it
+    s.view->setCursor(63);
+    s.type("0f");
+    CHECK(s.writes.back() == std::tuple<size_t, uint8_t>{63, 0x0f});
+    CHECK(s.view->getCursor() == 63);
+
+    // the ASCII column writes a typed character
+    s.click(s.bytePoint(32, HexView::Column::Ascii));
+    s.type("Hi");
+    CHECK(s.writes.size() == 4);
+    CHECK(s.writes[2] == std::tuple<size_t, uint8_t>{32, 'H'});
+    CHECK(s.writes[3] == std::tuple<size_t, uint8_t>{33, 'i'});
+    CHECK(s.row(2)->getAsciiText().substr(0, 2) == "Hi");
+    CHECK(s.row(2)->getHexText().substr(0, 5) == "48 69");
+    CHECK(s.view->getCursor() == 34);
+    CHECK(edits.size() == 4);
+    s.checkOnePass();
+}
+
+TEST_CASE("HexView: a view with no write callback refuses typing")
+{
+    Scene s(64);
+    REQUIRE(s.view->isReadOnly());
+    int fired=0;
+    struct Sink: event::Handler
+    {
+        int *fired;
+        void edited(event::Info) { ++*fired; }
+    } sink;
+    sink.fired=&fired;
+    s.view->onEdited.add(&sink, &Sink::edited);
+    s.click(s.bytePoint(5, HexView::Column::Hex));
+    const String hex=s.row(0)->getHexText();
+    CHECK_FALSE(static_cast<controls::Base *>(s.view)->onChar('a'));
+    s.canvas->inputCharacter('a');
+    s.frame();
+    CHECK(s.view->getPendingNibble() == -1);
+    CHECK(s.row(0)->getHexText() == hex);
+    s.click(s.bytePoint(5, HexView::Column::Ascii));
+    CHECK_FALSE(static_cast<controls::Base *>(s.view)->onChar('Z'));
+    s.canvas->inputCharacter('Z');
+    s.frame();
+    CHECK(s.view->getCursor() == 5);
+    CHECK(fired == 0);
+    CHECK(s.writes.empty());
+}
+
+TEST_CASE("HexView: cursor selection and highlight marks touch only rows they change")
+{
+    Scene s(4096);
+    using controls::StateChange_Background;
+    s.view->setCursor(20);
+    s.frame();
+    const auto marked=[&s]()
+        {
+            std::set<size_t> rows;
+            for(auto *row : s.view->getRows())
+            {
+                if(!row->hidden() && (row->getStateChange() & StateChange_Background))
+                    rows.insert(s.view->itemForRow(row));
+            }
+            return rows;
+        };
+
+    CHECK(s.row(1)->getMarks().cursor == 4);
+    CHECK(s.row(1)->getMarks().selectionBegin == 4);
+    CHECK(s.row(1)->getMarks().selectionEnd == 5);
+
+    // within a row: that row alone
+    s.view->setCursor(22);
+    CHECK(marked() == std::set<size_t>{1});
+    s.frame();
+    // to another row: the two rows
+    s.view->setCursor(70);
+    CHECK(marked() == std::set<size_t>{1, 4});
+    s.frame();
+    CHECK(s.row(1)->getMarks().cursor == -1);
+    CHECK(s.row(4)->getMarks().cursor == 6);
+    // extending down three rows marks those whose pieces changed
+    s.view->setCursor(118, true);
+    CHECK(marked() == std::set<size_t>{4, 5, 6, 7});
+    s.frame();
+    CHECK(s.row(5)->getMarks().selectionBegin == 0);
+    CHECK(s.row(5)->getMarks().selectionEnd == 16);
+    CHECK(s.row(7)->getMarks().selectionEnd == 7);
+    // one byte further: only the cursor's row
+    s.view->setCursor(119, true);
+    CHECK(marked() == std::set<size_t>{7});
+    s.frame();
+    // nothing changed: nothing marked, and a settled frame does nothing
+    s.view->setCursor(119, true);
+    CHECK(marked().empty());
+    s.frame();
+    CHECK(controls::getChangeStats().controls == 0);
+
+    // highlights: clipped per row, at most MaxHighlights, the earliest kept
+    s.view->addHighlight(30, 40, 1);
+    CHECK(marked() == std::set<size_t>{1, 2});
+    s.frame();
+    CHECK(s.row(1)->getMarks().highlightCount == 1);
+    CHECK(s.row(1)->getMarks().highlights[0].begin == 14);
+    CHECK(s.row(1)->getMarks().highlights[0].end == 16);
+    CHECK(s.row(1)->getMarks().highlights[0].surface == 1);
+    CHECK(s.row(2)->getMarks().highlights[0].end == 8);
+    for(unsigned i=0; i < 5; ++i)
+        s.view->addHighlight(48+i, 50+i, i+6);
+    s.frame();
+    CHECK(s.row(3)->getMarks().highlightCount == HexRowMarks::MaxHighlights);
+    CHECK(s.row(3)->getMarks().highlights[0].surface == 2);
+    CHECK(s.row(3)->getMarks().highlights[3].begin == 3);
+    s.view->clearHighlights();
+    CHECK(marked() == std::set<size_t>{1, 2, 3});
+    s.frame();
+    CHECK(s.row(3)->getMarks().highlightCount == 0);
+    s.checkOnePass();
 }
