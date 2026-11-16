@@ -44,6 +44,7 @@
 #include <gweni/controls/dropDownButton.h>
 #include <gweni/controls/dragNumber.h>
 #include <gweni/controls/dragger.h>
+#include <gweni/controls/filteredList.h>
 #include <gweni/controls/groupBox.h>
 #include <gweni/controls/heightIndex.h>
 #include <gweni/controls/hexView.h>

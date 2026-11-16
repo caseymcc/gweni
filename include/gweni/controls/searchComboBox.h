@@ -11,6 +11,7 @@
 #include <gweni/controls/button.h>
 #include <gweni/controls/chip.h>
 #include <gweni/controls/comboBox.h>
+#include <gweni/controls/filteredList.h>
 #include <gweni/controls/menu.h>
 #include <gweni/controls/textBox.h>
 #include <gweni/controls/virtualList.h>
@@ -372,7 +373,7 @@ public:
     internal::SearchComboBoxField *getField() const { return m_field; }
     //! What the shown options are matched against: the field's text since
     //! its last edit, empty while the list is closed or was opened unedited.
-    const String &getQuery() const { return m_query; }
+    const String &getQuery() const { return m_filter.query(); }
     //! The text of the disabled row shown when no option matches.
     static const char *noMatchesText() { return "No matches"; }
 
@@ -421,20 +422,20 @@ public:
     //! those the query matches, every option for an empty one. The list may
     //! show one row after them that is no option: the Add row
     //! (isAddRowShown()), or with no match and no free text "No matches".
-    const std::vector<size_t> &getShownOptions() const { return m_matches; }
+    const std::vector<size_t> &getShownOptions() const { return m_filter.matches(); }
     bool isAddRowShown() const { return m_addRow; }
     //! Whether the Add row is the highlighted one.
-    bool isAddRowHighlighted() const { return m_addRow && (m_highlightPos == m_matches.size()); }
+    bool isAddRowHighlighted() const { return m_addRow && (m_filter.highlightPosition() == m_filter.matches().size()); }
     //! The open list's rows: the shown options and the row after them.
     size_t shownRowCount() const;
     //! The option the keys move through the open list, or NoOption.
-    int getHighlightedIndex() const { return m_highlight; }
+    int getHighlightedIndex() const { return m_filter.highlightedOption(); }
     //! Highlights option \p index (shown in the list), scrolling it into
     //! view; NoOption takes the highlight away.
     void setHighlightedIndex(int index);
     //! How many times the list's binder has filled a row, since the box was
     //! made: what a keystroke binds again, for tests and tools.
-    size_t getRowBindCount() const { return m_rowBinds; }
+    size_t getRowBindCount() const { return m_filter.bindCount(); }
 
     void onPress(event::Info info) override;
     bool onKeyUp(bool down) override;
@@ -551,17 +552,6 @@ protected:
     //! The shown options (m_matches) for the query, and whether the "No
     //! matches" row shows in their place.
     void matchOptions();
-    //! The list told the shown rows' count, and the pooled rows that showed
-    //! another row before (\p previous, each position's rowKey()) bound
-    //! again, and the Add row; every other row only its highlight.
-    void rebindChanged(const std::vector<size_t> &previous);
-    //! The rows the keys and the mouse highlight: the shown options and the
-    //! Add row.
-    size_t highlightableCount() const;
-    //! What the row at \p position shows: an option's index, or a key for
-    //! the Add row or the "No matches" row.
-    size_t rowKey(size_t position) const;
-    void rowKeys(std::vector<size_t> &keys) const;
     //! Where the highlight starts for a query: the first row that takes it.
     size_t firstHighlight() const;
     //! Picks what the row at \p position shows.
@@ -580,9 +570,6 @@ protected:
     //! text not picked yet becomes a pick (\p added true), and the caller
     //! fires onSelectionChange once its own work is done.
     bool commitCustom(const String &text, bool &added);
-    //! Highlights the shown option at \p position (VirtualList::NoItem for
-    //! none), scrolling it into view with \p scroll.
-    void highlightPosition(size_t position, bool scroll);
     //! Picks option \p index from the list: selects it and closes the list.
     void pick(int index, bool doEvents);
     //! Multi-select: option \p index picked if it was not, taken away if it
@@ -607,8 +594,6 @@ protected:
     void fireSelectionChange(int index);
     void rowPressed(event::Info info);
     void bindRow(Base *row, size_t item);
-    //! Moves the highlight by \p step through the shown options, wrapping.
-    void stepHighlight(int step);
     //! A row was moved over: its option becomes the highlight, not scrolled
     //! to (it is on screen).
     void rowHovered(internal::SearchComboBoxRow *row);
@@ -620,9 +605,10 @@ protected:
     int optionsTextWidth();
 
     std::vector<Option> m_options;
-    //! Each option's label lower-cased, the query matched against them.
-    std::vector<String> m_lowerLabels;
-    std::vector<size_t> m_matches;
+    //! The shared list part: each option's label lower-cased, the query, the
+    //! shown options (matched by substring), the Add or "No matches" row
+    //! after them, the highlight and the rows' binding.
+    FilteredList m_filter;
     //! The position in m_matches of the option whose label is the query, or
     //! VirtualList::NoItem.
     size_t m_exactPos=VirtualList::NoItem;
@@ -648,15 +634,8 @@ protected:
     //! (m_selected NoOption).
     bool m_held=false;
     Option m_heldOption;
-    //! The highlighted option and its place in m_matches (NoItem for none).
-    int m_highlight=NoOption;
-    size_t m_highlightPos=VirtualList::NoItem;
-
     bool m_filterable=false;
     internal::SearchComboBoxField *m_field=nullptr;
-    String m_query;
-    String m_lowerQuery;
-    size_t m_rowBinds=0;
 
     //! Multi-select: the picks in order, each its option (NoOption for free
     //! text, or held), whether it is free text, its option's label and name
