@@ -754,6 +754,7 @@ void CurveEditor::setCurveSelection(size_t curve, std::vector<size_t> selected)
 
     if(old == selected)
         return;
+    ++m_selectionSerial;
 
     // the keys in one and not the other change their look
     std::vector<size_t> changed;
@@ -1152,6 +1153,9 @@ void CurveEditor::nudgeSelection(double dt, double dv)
         order[i]=i;
     sortForMotion(order, refs, dt > 0.0);
     const uint64_t serial=m_modelSerial;
+    // an onChanged handler may set the selection: the ranks below are the
+    // selection's at the start, so the loop stops there too
+    const uint64_t selectionSerial=m_selectionSerial;
 
     // the refs are the selection's; each move renumbers the selection, so
     // the next key is looked up by its place in the sorted selection
@@ -1175,7 +1179,7 @@ void CurveEditor::nudgeSelection(double dt, double dv)
 
         if(changed)
             fireChanged(ref.curve, to);
-        if(m_modelSerial != serial)
+        if((m_modelSerial != serial) || (m_selectionSerial != selectionSerial))
             break;
     }
     syncFields();
@@ -1414,10 +1418,10 @@ void CurveEditor::pressAt(const Point &canvasPoint)
     CurveKeyRef ref;
     bool out=false;
 
-    m_press=at;
+    // in the curve's units, so a zoom mid-gesture keeps the press where it was
+    m_pressAt=localToCurve(at);
     m_mouse=at;
     m_moved=false;
-    m_cancelled=false;
     m_snapshot=snapshotSelection();
 
     if(handleAt(at, ref, out))
@@ -1492,16 +1496,17 @@ void CurveEditor::dragTo(const Point &canvasPoint)
     case Gesture::None:
         return;
     case Gesture::Marquee:
-        if(!m_moved && (std::fabs(m_mouse.x-m_press.x) < PanThreshold)
-            && (std::fabs(m_mouse.y-m_press.y) < PanThreshold))
+        if(!m_moved && (std::fabs(m_mouse.x-pressPoint().x) < PanThreshold)
+            && (std::fabs(m_mouse.y-pressPoint().y) < PanThreshold))
             return;
         m_moved=true;
         updateMarquee();
         return;
     case Gesture::Keys:
     {
-        float dx=m_mouse.x-m_press.x;
-        float dy=m_mouse.y-m_press.y;
+        const PointF press=pressPoint();
+        float dx=m_mouse.x-press.x;
+        float dy=m_mouse.y-press.y;
 
         // Shift keeps to the axis the mouse moved most along
         if(input::isShiftDown())
@@ -1596,10 +1601,16 @@ void CurveEditor::applyDrag(double dt, double dv)
     }
 }
 
+PointF CurveEditor::pressPoint() const
+{
+    return curveToLocal(m_pressAt);
+}
+
 void CurveEditor::updateMarquee()
 {
-    const PointF min(std::min(m_press.x, m_mouse.x), std::min(m_press.y, m_mouse.y));
-    const PointF max(std::max(m_press.x, m_mouse.x), std::max(m_press.y, m_mouse.y));
+    const PointF press=pressPoint();
+    const PointF min(std::min(press.x, m_mouse.x), std::min(press.y, m_mouse.y));
+    const PointF max(std::max(press.x, m_mouse.x), std::max(press.y, m_mouse.y));
     std::vector<std::vector<size_t>> found;
 
     keysIn(min, max, found);
@@ -1619,10 +1630,11 @@ Rect CurveEditor::getMarqueeRect() const
     if((m_gesture != Gesture::Marquee) || !m_moved)
         return Rect();
 
-    const int x0=int(std::floor(std::min(m_press.x, m_mouse.x)));
-    const int y0=int(std::floor(std::min(m_press.y, m_mouse.y)));
-    const int x1=int(std::ceil(std::max(m_press.x, m_mouse.x)));
-    const int y1=int(std::ceil(std::max(m_press.y, m_mouse.y)));
+    const PointF press=pressPoint();
+    const int x0=int(std::floor(std::min(press.x, m_mouse.x)));
+    const int y0=int(std::floor(std::min(press.y, m_mouse.y)));
+    const int x1=int(std::ceil(std::max(press.x, m_mouse.x)));
+    const int y1=int(std::ceil(std::max(press.y, m_mouse.y)));
 
     return Rect(x0, y0, x1-x0, y1-y0);
 }
@@ -1791,6 +1803,8 @@ void CurveEditor::rightPressAt(const Point &canvasPoint)
 
 void CurveEditor::onMenuMode(event::Info info)
 {
+    if(isDisabled())
+        return;
     if(info.packet && info.packet->isInt())
         setSelectionMode(Curve::TangentMode(info.packet->get<int>()));
 }
@@ -1800,12 +1814,13 @@ void CurveEditor::onMenuBroken(event::Info info)
 {
     MenuItem *item=gweni_cast<MenuItem>(info.controlCaller);
 
-    if(item)
+    if(item && !isDisabled())
         setSelectionBroken(item->isChecked());
 }
 
 void CurveEditor::onMenuDelete(event::Info /*info*/)
 {
+    // deleteSelection() refuses a disabled editor itself
     deleteSelection();
 }
 
@@ -1822,13 +1837,10 @@ void CurveEditor::wheelAt(int delta, bool horizontal, const Point &mouse, bool c
     const double factor=std::pow(WheelStep, delta/60.0);
     const PointF at=plotPoint(mouse);
 
-    if(horizontal)
-    {
-        // Shift+wheel: the value axis alone; a real horizontal wheel nothing
-        if(shift)
-            zoomAt(1.0, factor, at);
+    // Shift+wheel (Dim::X from the canvas): the value axis alone; a real
+    // horizontal wheel nothing
+    if(horizontal && !shift)
         return;
-    }
     // During a capture the canvas has not turned Shift+wheel into Dim::X.
     if(shift)
         zoomAt(1.0, factor, at);
@@ -1836,6 +1848,10 @@ void CurveEditor::wheelAt(int delta, bool horizontal, const Point &mouse, bool c
         zoomAt(factor, 1.0, at);
     else
         zoomAt(factor, factor, at);
+    // a gesture under way goes on from the view it now has: dragged keys stay
+    // under the cursor and a marquee keeps its press on the same point
+    if((m_gesture != Gesture::None) && (gweni::MouseFocus == m_plot))
+        dragTo(mouse);
 }
 
 bool CurveEditor::draggingKeys() const
@@ -1868,6 +1884,9 @@ void CurveEditor::setDisabled(bool active)
         endGesture();
         m_pan->end();
         clearHover();
+        // the key menu's owner is the plot, which stays enabled: taking it from
+        // the plot closes it, or its items would edit a disabled editor
+        m_plot->setContextMenu(nullptr);
     }
     ParentClass::setDisabled(active);
     m_plot->setKeyboardInputEnabled(!active);

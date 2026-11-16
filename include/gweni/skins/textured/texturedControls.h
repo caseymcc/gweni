@@ -1530,7 +1530,8 @@ public:
 // - the grid: a vertical drawLine per time tick and a horizontal one per
 //   value tick, at the minor step (axis::niceStep for lines GridMinGap units
 //   apart) in CurveEditorGrid's top colour and the major step (LabelGapX and
-//   LabelGapY apart) in CurveEditorGridMajor's, 1 unit thick, at z+1; a
+//   LabelGapY apart) in CurveEditorGridMajor's, LineThickness thick (as the
+//   curves: 2 device px at scale 1), at z+1; a
 //   label per major tick (axis::formatValue), its own text run in the skin's
 //   CurveEditor.TickText, the time labels along the bottom edge and the value
 //   labels along the left one, at z+1, so the grid is behind them and the
@@ -1559,8 +1560,9 @@ public:
 // change marks its key; only what is marked is drawn, and each slot only
 // when what it would hold differs from what it holds, so a key drag writes
 // the segments of the spans it changed, its disc and its handles. A frame
-// that marks the plot's geometry, visibility or creation, a new view
-// (viewSerial()), opacity levels or the editor's pendingAll() draws every
+// that marks the plot's geometry, visibility, creation or text (a theme
+// edit, ThemeEditor::applyToCanvas()), a new view (viewSerial()), opacity
+// levels or the editor's pendingAll() draws every
 // slot of what it reaches. When a list needs more than its spare slots, or a
 // curve comes or goes, every list is given back and taken again (Chart's
 // rule), so the slots stay in id order back to front: slots draw in id order,
@@ -1658,7 +1660,6 @@ private:
         //! hidden slots of the curve's segment and key lists
         std::vector<size_t> segmentSpare;
         std::vector<size_t> keySpare;
-        std::vector<Slot> spareDrawn;
     };
 
     struct HandleSet

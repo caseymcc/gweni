@@ -47,7 +47,14 @@
  *  - a reorder drag firing no selection event, a right press during a key
  *    drag leaving it alone, and disabling clearing the hover;
  *  - onChanged reporting an app edit via curveChanged(), safely stopping a
- *    multi-key drag, nudge, deletion or tangent-mode/broken change.
+ *    multi-key drag, nudge, deletion or tangent-mode/broken change, and one
+ *    setting or clearing the selection stopping a nudge;
+ *  - a wheel zoom during a key drag keeping the key under the cursor, and
+ *    during a marquee keeping its press on the same curve point;
+ *  - disabling closing the key menu, whose items then change nothing.
+ *  Every press moves the scene's clock on first: the last click's point and
+ *  time are process-wide, so a press where the case before pressed would
+ *  otherwise be a double-click.
  */
 #include "headlessFixture.h"
 
@@ -135,7 +142,17 @@ struct Scene
         frame();
     }
 
+    //! A press of its own: the clock moves on first, since the last click's
+    //! point and time are process-wide and a press at the place a test before
+    //! pressed would be a double-click.
     void press(const Point &to, int button=0)
+    {
+        clock+=1.0;
+        pressNow(to, button);
+    }
+
+    //! A press with the clock where it is (a double-click's second press).
+    void pressNow(const Point &to, int button=0)
     {
         move(to);
         canvas->inputMouseButton(button, true);
@@ -148,20 +165,18 @@ struct Scene
         frame();
     }
 
-    //! A single click: the clock moves on first, so it is never a double-click.
+    //! A single click, never a double-click.
     void click(const Point &to, int button=0)
     {
-        clock+=1.0;
         press(to, button);
         release(button);
     }
 
     void doubleClick(const Point &to)
     {
-        clock+=1.0;
         press(to);
         release();
-        press(to);
+        pressNow(to);
         release();
     }
 
@@ -468,6 +483,107 @@ TEST_CASE("CurveEditor: onChanged can report an app edit and stop the remaining 
     CHECK(scene.events.changes == 1);
 }
 
+TEST_CASE("CurveEditor: an onChanged handler setting the selection stops a nudge")
+{
+    Scene scene;
+    auto *editor=scene.editor;
+    struct App: event::Handler
+    {
+        void changed(event::Info)
+        {
+            ++calls;
+            if(clear)
+                editor->clearSelection();
+            else
+                editor->setSelection({controls::CurveKeyRef{0, 0}});
+        }
+        controls::CurveEditor *editor;
+        bool clear=false;
+        int calls=0;
+    } app;
+    app.editor=editor;
+    editor->onChanged.add(&app, &App::changed);
+    editor->setSelection(refs({{0, 1}, {0, 2}}));
+
+    SUBCASE("set") { app.clear=false; }
+    SUBCASE("clear") { app.clear=true; }
+    // forward: key 2 moves first, its handler sets the selection, key 1 stays
+    editor->nudgeSelection(0.1, 0.0);
+    CHECK(app.calls == 1);
+    CHECK(scene.events.changes == 1);
+    CHECK(scene.a.key(2).time == doctest::Approx(2.1));
+    CHECK(scene.a.key(1).time == doctest::Approx(1.0));
+    CHECK(scene.a.key(0).time == doctest::Approx(0.0));
+}
+
+TEST_CASE("CurveEditor: a wheel zoom during a key drag keeps the key under the cursor")
+{
+    Scene scene;
+    controls::CurveEditor *editor=scene.editor;
+
+    scene.press(scene.at(100, 50));
+    scene.move(scene.at(150, 50));
+    REQUIRE(editor->draggingKeys());
+    CHECK(scene.a.key(1).time == doctest::Approx(1.5));
+    scene.canvas->inputMouseWheel(60);
+    scene.frame();
+    REQUIRE(editor->scaleX() > 100.0);
+    // the zoom is about the cursor: the key is still under it
+    CHECK(scene.a.key(1).time == doctest::Approx(1.5));
+    scene.move(scene.at(170, 40));
+    const CurvePoint mouse=editor->localToCurve(PointF(170, 40));
+    CHECK(scene.a.key(1).time == doctest::Approx(mouse.x));
+    CHECK(scene.a.key(1).value == doctest::Approx(mouse.y));
+    scene.release();
+}
+
+TEST_CASE("CurveEditor: a wheel zoom during a marquee keeps its press on the curve point")
+{
+    Scene scene;
+    controls::CurveEditor *editor=scene.editor;
+
+    scene.press(scene.at(250, 120));
+    const CurvePoint press=editor->localToCurve(PointF(250, 120));
+    scene.move(scene.at(280, 100));
+    REQUIRE(editor->marqueeActive());
+    scene.canvas->inputMouseWheel(60);
+    scene.frame();
+    REQUIRE(editor->scaleX() > 100.0);
+    const PointF corner=editor->curveToLocal(press);
+    const Rect rect=editor->getMarqueeRect();
+
+    CHECK(rect.x == int(std::floor(corner.x)));
+    CHECK(rect.y+rect.h == int(std::ceil(corner.y)));
+    CHECK(rect.x+rect.w == 280);
+    scene.release();
+}
+
+TEST_CASE("CurveEditor: disabling closes the key menu, whose items then edit nothing")
+{
+    Scene scene;
+    controls::CurveEditor *editor=scene.editor;
+
+    scene.click(scene.at(300, 50), 1);
+    controls::Menu *menu=editor->getKeyMenu();
+    REQUIRE(menu != nullptr);
+    REQUIRE(scene.canvas->shownContextMenu() == menu);
+
+    editor->setDisabled(true);
+    scene.frame();
+    CHECK(scene.canvas->shownContextMenu() == nullptr);
+
+    for(controls::Base *child : menu->getChildren())
+    {
+        if(auto *item=gweni_cast<controls::MenuItem>(child))
+        {
+            if(item->getText() == "Linear")
+                item->onMenuItemSelected.call(item);
+        }
+    }
+    CHECK((scene.a.key(3).mode == Mode::Constant));
+    CHECK(scene.events.changes == 0);
+}
+
 TEST_CASE("CurveEditor: a click selects, Shift adds, Ctrl toggles, empty space clears")
 {
     Scene scene;
@@ -546,7 +662,6 @@ TEST_CASE("CurveEditor: a marquee selects what it touches, logging only the keys
     CHECK(scene.events.selections == 0);
 
     // a marquee let go fires once
-    scene.clock+=1.0;
     scene.press(scene.at(150, 10));
     scene.move(scene.at(320, 100));
     scene.release();
@@ -555,7 +670,6 @@ TEST_CASE("CurveEditor: a marquee selects what it touches, logging only the keys
 
     // Shift adds to the selection
     scene.key(keys::Shift, true);
-    scene.clock+=1.0;
     scene.press(scene.at(30, 170));
     scene.move(scene.at(70, 190));
     scene.release();
@@ -614,7 +728,6 @@ TEST_CASE("CurveEditor: a key drag moves the selection, past a neighbour too, Es
 
     // Shift keeps to the axis moved most; two keys move together
     scene.key(keys::Shift, true);
-    scene.clock+=1.0;
     scene.press(scene.at(200, 150));
     CHECK(editor->getSelection() == refs({{0, 1}, {0, 2}}));
     scene.move(scene.at(230, 140));
@@ -645,7 +758,6 @@ TEST_CASE("CurveEditor: a selected Free key's handle drags its tangent, joined u
     CHECK(out.y == doctest::Approx(150.0f));
     CHECK(in.x == doctest::Approx(200.0f-controls::CurveEditor::HandleLength));
 
-    scene.clock+=1.0;
     scene.press(scene.at(240, 150));
     CHECK(editor->draggingTangent());
     scene.move(scene.at(240, 110));
@@ -659,7 +771,6 @@ TEST_CASE("CurveEditor: a selected Free key's handle drags its tangent, joined u
     editor->setSelectionBroken(true);
     CHECK(scene.a.key(2).broken);
     editor->handlePositions(0, 2, in, out);
-    scene.clock+=1.0;
     scene.press(scene.at(in.x, in.y));
     REQUIRE(editor->draggingTangent());
     scene.move(scene.at(160, 150));

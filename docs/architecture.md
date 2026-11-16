@@ -7380,14 +7380,18 @@ time adds a key there at `evaluate()` (Unity's). Delete removes the selection, t
 nudge it a plot unit's worth of time or value (Shift ten), and a right-click on a key
 selects it (unless selected) and opens the key menu (Smooth, Linear, Constant, Free,
 Broken, Delete, for the selection): a canvas Menu the editor holds by id and sets on the
-plot only for a right press on a key, so a right-click elsewhere opens none. Hit tests
+plot only for a right press on a key, so a right-click elsewhere opens none (disabling
+the editor takes it from the plot, which closes it). Hit tests
 binary-search each curve's keys by time within the radius, so a hover or a press costs
 the keys near it, not the curve's. `onChanged` fires once per key a user's edit changed
 (`info.point` the curve and key), `onSelectionChanged` once per user action that changed
 the selection; the app's own calls fire nothing, and after editing a curve itself the
 app calls `curveChanged()` (`tests/unit/curveEditor.cpp`). If an event handler reports an
 app edit or replaces the curves, the remaining edits in that user action stop: the
-indices they were using may no longer identify the same keys. Reordering a dragged key
+indices they were using may no longer identify the same keys; a nudge, which takes
+its keys by their rank in the selection, stops too when a handler sets the selection.
+A drag or a marquee keeps its press in curve units, so a wheel zoom during it leaves the
+dragged keys under the cursor and the marquee's corner on its point. Reordering a dragged key
 also renumbers the selection saved at its press, so changing indices alone fires no
 selection event. During a pan, wheel zoom and hover use the capture's mouse position;
 modifier presses during the capture still choose the axis.

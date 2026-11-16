@@ -209,8 +209,11 @@ struct Scene
         frame();
     }
 
+    //! The clock moves on first: the last click is process-wide, and a press
+    //! where a test before pressed would otherwise be a double-click.
     void press(const Point &to)
     {
+        clock+=1.0;
         move(to);
         canvas->inputMouseButton(0, true);
         frame();
@@ -224,7 +227,6 @@ struct Scene
 
     void click(const Point &to)
     {
-        clock+=1.0;
         press(to);
         release();
     }
@@ -620,7 +622,6 @@ TEST_CASE("CurvePlot: a hover writes two discs, a click the discs whose look cha
     CHECK(scene.written().empty());
 
     // a press selects the hovered key: its disc alone
-    scene.clock+=1.0;
     scene.press(scene.at(scene.drawn(2, 0.5)));
     CHECK((scene.plotWritten() == std::set<size_t>{plot->keyPrimitive(0, 2)}));
     scene.release();

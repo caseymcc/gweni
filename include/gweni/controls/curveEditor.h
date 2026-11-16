@@ -141,7 +141,10 @@ struct CurveEditorEdit
 //! clearSelection(), curveChanged()) fire nothing; after editing a curve
 //! itself the app calls curveChanged(). If an onChanged handler reports an
 //! app edit, the current gesture and any remaining edits in that user action
-//! stop, because their key indices may no longer identify the same keys.
+//! stop, because their key indices may no longer identify the same keys; a
+//! nudge stops too when a handler sets the selection. A wheel zoom during a
+//! drag or a marquee keeps its press on the same point of the curve, so the
+//! dragged keys stay under the cursor.
 class GWENI_EXPORT CurveEditor: public Base
 {
 public:
@@ -363,6 +366,8 @@ protected:
     //! The canvas point in the plot's units.
     gweni::PointF plotPoint(const gweni::Point &canvasPoint) const;
     void updateMarquee();
+    //! The press in the plot's units, in the view as it is now.
+    gweni::PointF pressPoint() const;
     void endGesture();
     //! A pan for a press of \p button (CurvePlot::pressGesture()), or null.
     InputCapture *startPan(int button);
@@ -380,6 +385,9 @@ protected:
     std::vector<CurveEntry> m_curves;
     //! App edits invalidate the key indices a user action is iterating over.
     uint64_t m_modelSerial=0;
+    //! Moved by every change of the selection (the user's or the app's), so
+    //! a loop over the selection's ranks stops when a handler changes it.
+    uint64_t m_selectionSerial=0;
     double m_x0=0.0;
     double m_x1=1.0;
     double m_y0=0.0;
@@ -405,11 +413,12 @@ protected:
     };
 
     Gesture m_gesture=Gesture::None;
-    //! the press in the plot's units
-    gweni::PointF m_press;
+    //! the press in the curve's units: a zoom or pan mid-gesture keeps it
+    //! on the point of the curve it was made at
+    CurvePoint m_pressAt;
+    //! the mouse in the plot's units
     gweni::PointF m_mouse;
     bool m_moved=false;
-    bool m_cancelled=false;
     //! Shift or Ctrl held at a marquee's press; a plain press on a key of a
     //! selection (made the selection on a release without a move)
     bool m_additive=false;
