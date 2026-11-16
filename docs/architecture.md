@@ -7474,11 +7474,11 @@ the shipped theme with `"strict": true` added):
 
 ```
 theme strict: 267 of 271 surfaces not set: Badge, BreadcrumbItem, BreadcrumbItemDown, ...
-theme strict: 101 of 103 text colors not set: AxisTagText, BadgeText, BreadcrumbCurrentText, ...
+theme strict: 103 of 105 text colors not set: AxisTagText, BadgeText, BreadcrumbCurrentText, ...
 ```
 
 (`theme strict: all 271 surfaces set` for a kind with no gaps, and a single
-`theme strict: all 271 surfaces and 103 text colors set` when there are none at all). A
+`theme strict: all 271 surfaces and 105 text colors set` when there are none at all). A
 rejected value counts as not set. A surface that is transparent at rest on purpose
 (`WindowButton`, `SelectableHover`: a transparent fill hides the slot) is magenta too
 until the theme sets it to `[0,0,0,0]`; the theme has not said what it looks like. The

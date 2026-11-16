@@ -12,6 +12,7 @@
 #include <gweni/platforms/platformTypes.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 namespace gweni
@@ -49,6 +50,24 @@ constexpr int FuzzyGapExtend=1;
 //! Whether \p query matches \p text (above), its score in \p score (left as
 //! it was when it does not match).
 GWENI_EXPORT bool fuzzyMatch(const String &query, const String &text, int &score);
+
+//! fuzzyMatch() for one query over many texts: the query decoded once and
+//! the buffers kept between texts, so a match allocates nothing once they
+//! have grown to the longest text.
+class GWENI_EXPORT FuzzyMatcher
+{
+public:
+    explicit FuzzyMatcher(const String &query);
+
+    //! As fuzzyMatch(query, text, score).
+    bool match(const String &text, int &score);
+
+private:
+    std::vector<uint32_t> m_query;
+    std::vector<uint32_t> m_text;
+    std::vector<int> m_row;
+    std::vector<int> m_next;
+};
 
 //! The indices of \p texts that \p query matches, best score first; equal
 //! scores in the order of \p tieRank (lower first, when given: one value per

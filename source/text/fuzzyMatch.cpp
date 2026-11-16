@@ -196,17 +196,16 @@ void decodeQuery(const String &query, std::vector<uint32_t> &points)
 
 }//namespace
 
-bool fuzzyMatch(const String &query, const String &text, int &score)
+FuzzyMatcher::FuzzyMatcher(const String &query)
 {
-    std::vector<uint32_t> queryPoints;
-    std::vector<uint32_t> textPoints;
-    std::vector<int> row;
-    std::vector<int> next;
+    decodeQuery(query, m_query);
+}
 
-    decodeQuery(query, queryPoints);
-    decode(text, textPoints);
+bool FuzzyMatcher::match(const String &text, int &score)
+{
+    decode(text, m_text);
 
-    const int best=bestScore(queryPoints, textPoints, row, next);
+    const int best=bestScore(m_query, m_text, m_row, m_next);
 
     if(best == NoMatch)
         return false;
@@ -215,24 +214,22 @@ bool fuzzyMatch(const String &query, const String &text, int &score)
     return true;
 }
 
+bool fuzzyMatch(const String &query, const String &text, int &score)
+{
+    return FuzzyMatcher(query).match(text, score);
+}
+
 void fuzzyRank(const String &query, const std::vector<String> &texts, std::vector<size_t> &matches,
     const std::vector<int> *tieRank)
 {
-    std::vector<uint32_t> queryPoints;
-    std::vector<uint32_t> textPoints;
-    std::vector<int> row;
-    std::vector<int> next;
+    FuzzyMatcher matcher(query);
     std::vector<int> scores(texts.size(), NoMatch);
 
-    decodeQuery(query, queryPoints);
     matches.clear();
 
     for(size_t i=0; i < texts.size(); ++i)
     {
-        decode(texts[i], textPoints);
-        scores[i]=bestScore(queryPoints, textPoints, row, next);
-
-        if(scores[i] != NoMatch)
+        if(matcher.match(texts[i], scores[i]))
             matches.push_back(i);
     }
 

@@ -31,6 +31,7 @@
 #include <gweni/controls/colorEdit.h>
 #include <gweni/controls/colorPicker.h>
 #include <gweni/controls/comboBox.h>
+#include <gweni/controls/commandPalette.h>
 #include <gweni/controls/crossSplitter.h>
 #include <gweni/controls/dataTable.h>
 #include <gweni/controls/dateEdit.h>

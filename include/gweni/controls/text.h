@@ -35,7 +35,9 @@ enum class SkinTextColor
     ErrorText,      //!< Colors.ErrorText, a TextBox's error message
     HelperText,     //!< Colors.HelperText, a TextBox's helper text
     CodePlain,      //!< Colors.CodeEditor's Plain token colour, a CodeEditor line's
-    SearchComboRefused  //!< Colors.SearchComboRefusedText, a refused free-text value
+    SearchComboRefused, //!< Colors.SearchComboRefusedText, a refused free-text value
+    CommandPaletteCategory, //!< Colors.CommandPaletteCategoryText, a palette row's category
+    CommandPaletteShortcut  //!< Colors.CommandPaletteShortcutText, a palette row's shortcut
 };
 
 class GWENI_EXPORT Text: public controls::Base

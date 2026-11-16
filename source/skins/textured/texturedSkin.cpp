@@ -559,6 +559,8 @@ std::unordered_map<std::string, gweni::Color*> TexturedSkin::textColorRegistry()
         {"AxisTagText",&Colors.AxisTagText},
         {"BadgeText",&Colors.BadgeText},
         {"SearchComboRefusedText",&Colors.SearchComboRefusedText},
+        {"CommandPaletteCategoryText",&Colors.CommandPaletteCategoryText},
+        {"CommandPaletteShortcutText",&Colors.CommandPaletteShortcutText},
         {"ChipNeutralText",&Colors.Chip.Neutral},{"ChipAccentText",&Colors.Chip.Accent},
         {"ChipSuccessText",&Colors.Chip.Success},{"ChipWarningText",&Colors.Chip.Warning},
         {"ChipDangerText",&Colors.Chip.Danger},
@@ -1460,6 +1462,9 @@ void TexturedSkin::setThemeColors()
     Colors.BadgeText=BgDark;
     // a refused free-text value in a SearchComboBox's field
     Colors.SearchComboRefusedText=tokyonight::Red;
+    // a CommandPalette row's category and shortcut, dimmer than its label
+    Colors.CommandPaletteCategoryText=FgDark;
+    Colors.CommandPaletteShortcutText=Muted;
     // a Chip's text is its tone's or palette entry's full colour (its fill and
     // border are that colour faded into the background)
     Colors.Chip.Neutral=FgDark;

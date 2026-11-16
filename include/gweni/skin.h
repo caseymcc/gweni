@@ -419,6 +419,10 @@ public:
         //! A free-text SearchComboBox's field showing a text its
         //! onCustomValue handler refused.
         gweni::Color SearchComboRefusedText{0xc0, 0x00, 0x00};
+        //! A CommandPalette row's category ("View:") and its shortcut text,
+        //! both dimmer than its label.
+        gweni::Color CommandPaletteCategoryText{0x80, 0x80, 0x80};
+        gweni::Color CommandPaletteShortcutText{0x80, 0x80, 0x80};
 
         //! A RichText's links, at rest and hovered.
         struct RichText_t

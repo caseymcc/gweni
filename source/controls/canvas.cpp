@@ -1529,7 +1529,8 @@ void Canvas::updatePopup()
         m_popupIsMenu=false;
         m_contextMenu=nullptr;
     }
-    else if(!m_popupAnchor->visible() || m_popupAnchor->isDisabled())
+    // a CanvasTop popup has no anchor
+    else if(m_popupAnchor && (!m_popupAnchor->visible() || m_popupAnchor->isDisabled()))
         closePopup();
     else if(!m_popupIsMenu)
         static_cast<Popup *>(m_popup)->followAnchor();
@@ -1589,7 +1590,9 @@ void Canvas::enterFollowers()
     if(!layoutEntryCounted())
         return;
 
-    if(m_popup && !m_popupIsMenu && !m_popup->hidden())
+    // one with no anchor (CanvasTop) follows the canvas alone, whose new
+    // size invalidates it
+    if(m_popup && !m_popupIsMenu && m_popupAnchor && !m_popup->hidden())
         m_popup->invalidate();
 
     for(Menu *menu : m_anchoredMenus)

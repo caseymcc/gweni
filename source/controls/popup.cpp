@@ -68,7 +68,7 @@ void Popup::open(Base *anchor, PopupPlacement side)
     if(!canvas)
         return;
 
-    canvas->showPopup(this, anchor, side);
+    canvas->showPopup(this, (side == PopupPlacement::CanvasTop)?nullptr:anchor, side);
 }
 
 void Popup::close()
@@ -154,7 +154,9 @@ Point Popup::placement(const Rect &anchor, const Point &size, const Rect &area,
     Point pos;
     bool left=false;
 
-    if(side == PopupPlacement::Below)
+    if(side == PopupPlacement::CanvasTop)
+        pos=Point(area.x+(area.w-size.x)/2, area.y+CanvasTopInset);
+    else if(side == PopupPlacement::Below)
     {
         pos=Point(anchor.x, anchor.y+anchor.h+gap);
 

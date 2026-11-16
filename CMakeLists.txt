@@ -358,6 +358,8 @@ set(GWENI_CONTROL_SOURCES
     include/gweni/controls/scrollControl.h
     source/controls/scrollControl.cpp
     include/gweni/controls/reorderable.h
+    include/gweni/controls/commandPalette.h
+    source/controls/commandPalette.cpp
     include/gweni/controls/filteredList.h
     source/controls/filteredList.cpp
     include/gweni/controls/searchComboBox.h

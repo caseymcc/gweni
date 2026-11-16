@@ -31,7 +31,13 @@ enum class PopupPlacement
     //! Left of the anchor, top edges aligned: Right mirrored. On its right
     //! where it would run past the left edge, bottom edges aligned where it
     //! would run past the bottom. Popup::open(anchor, Left) puts a popup there.
-    Left
+    Left,
+    //! At the canvas's top centre, Popup::CanvasTopInset below its top edge,
+    //! kept inside it (a command palette, VS Code's place). The popup has no
+    //! anchor: Popup::open(control, CanvasTop) shows it on \p control's
+    //! canvas with none (Canvas::popupAnchor() null), so a press anywhere
+    //! outside it closes it, and no anchor's hide, disable or deletion does.
+    CanvasTop
 };
 
 //! A panel the canvas shows over everything else next to an anchor control
@@ -83,11 +89,15 @@ public:
 
     //! The logical units between the anchor and the popup.
     static constexpr int Gap=2;
+    //! The logical units between the canvas's top edge and a CanvasTop popup.
+    static constexpr int CanvasTopInset=32;
 
     //! Shows it next to \p anchor, closing the popup or context menu the
     //! canvas showed before; onOpen fires once it is shown. Opening it again
     //! for another anchor moves it there (onClose, then onOpen). A null or
     //! canvas-less anchor opens nothing.
+    //! CanvasTop: \p anchor only names the canvas, and the popup is shown
+    //! with no anchor.
     virtual void open(Base *anchor, PopupPlacement side=PopupPlacement::Below);
     //! Hides it, as setHidden(true) does.
     virtual void close();
