@@ -1271,7 +1271,7 @@ Every primitive slot writes depth (`GL_LESS`, Vulkan's `depthWriteEnable`), and 
 glyphs are drawn after every slot. So, before #685, a translucent slot hid the text
 behind it instead of dimming it (its depth rejected the glyphs), and a slot behind a
 translucent one showed through it only if its id was lower. `flush()` now draws in
-two passes when a translucent slot can show (`SlotRenderer`, #685):
+two passes when a translucent slot or run can show (`SlotRenderer`, #685, #713):
 
 1. **The opaque pass**: the chunk draws above ("Only the slots that can show are
    drawn"), less the slots the sorted pass draws.

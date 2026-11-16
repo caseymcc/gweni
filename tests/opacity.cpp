@@ -709,7 +709,7 @@ TEST_CASE("Opacity: a checker at a surface level of 0.5 shows the fill behind it
 
 //! The scene drawn in one frame, then one item a frame: in that order, since a
 //! run's glyph slots are taken by the first draw that lays it out
-size_t sceneOffBy2(const std::vector<Item> &items)
+static size_t sceneOffBy2(const std::vector<Item> &items)
 {
     const Frame scene=drawScene(items);
     const Frame reference=drawReference(items);
