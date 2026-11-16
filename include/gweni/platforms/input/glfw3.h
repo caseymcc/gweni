@@ -352,6 +352,75 @@ public:
         return used;
     }
 
+    //! A touch point at window coordinates \a x, \a y (as GLFW's cursor
+    //! position), mapped to logical units as the mouse is but with the
+    //! fractions kept (Canvas::inputTouch).
+    bool processTouch(int id, TouchPhase phase, double x, double y)
+    {
+        if(!m_eventCaller)
+            return false;
+
+        return m_eventCaller->inputTouch(id, phase,
+            static_cast<float>(windowToLogical(x, m_windowSize.x, m_framebufferSize.x, m_scale)),
+            static_cast<float>(windowToLogical(y, m_windowSize.y, m_framebufferSize.y, m_scale)));
+    }
+
+    //! A key pressed and released at once, for a key a text field reports
+    //! with no key event (a phone keyboard's Backspace).
+    bool processKeyTap(unsigned char key)
+    {
+        if(!m_eventCaller)
+            return false;
+
+        const bool used=m_eventCaller->inputModifierKey(key, true);
+        m_eventCaller->inputModifierKey(key, false);
+        return used;
+    }
+
+    //! Typed text no key event delivered (a phone keyboard's): one
+    //! character, as processCharEvent's with no Ctrl+letter before it.
+    bool processTypedCharacter(UnicodeChar character)
+    {
+        if(!m_eventCaller)
+            return false;
+
+        m_controlChord=false;
+        return m_eventCaller->inputCharacter(character);
+    }
+
+    //! In a browser page, makes the page's touches and its hidden text
+    //! field's input (platform::useBrowserInput) this translator's, for the
+    //! canvas it was initialize()d with: call it with true once with the
+    //! window an app shows (never a capture), and false before this
+    //! translator goes. Elsewhere it does nothing.
+    void useBrowserInput(bool on)
+    {
+        platform::BrowserInput input;
+
+        if(on)
+        {
+            input.touch=[this](int id, TouchPhase phase, double x, double y) { processTouch(id, phase, x, y); };
+            input.character=[this](UnicodeChar character) { processTypedCharacter(character); };
+            input.key=[this](unsigned char key) { processKeyTap(key); };
+            input.compositionUpdate=[this](const String &text, int caret)
+            {
+                if(m_eventCaller)
+                    m_eventCaller->inputCompositionUpdate(text, caret);
+            };
+            input.compositionCommit=[this](const String &text)
+            {
+                if(m_eventCaller)
+                    m_eventCaller->inputCompositionCommit(text);
+            };
+            input.compositionCancel=[this]()
+            {
+                if(m_eventCaller)
+                    m_eventCaller->inputCompositionCancel();
+            };
+        }
+        platform::useBrowserInput(std::move(input));
+    }
+
 protected:
 
     // Makes the gweni modifiers match the bits GLFW says are held, pressing

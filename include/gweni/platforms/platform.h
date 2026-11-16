@@ -9,6 +9,7 @@
 #define _gweni_platform_h_
 
 #include <gweni/platforms/commonPlatform.h>
+#include <gweni/platforms/inputEvent.h>
 
 #include <cstdint>
 #include <functional>
@@ -137,6 +138,32 @@ GWENI_EXPORT void setTextInputRect(bool active, const Rect &caretDeviceRect);
 //! What setTextInputRect() calls instead of the platform's, for a test; an
 //! empty function gives the platform's back.
 GWENI_EXPORT void setTextInputHandler(std::function<void(bool active, const Rect &caretDeviceRect)> handler);
+
+//! What a browser page's own listeners hand an app (useBrowserInput): the
+//! touches on its canvas, the text its hidden text field takes that no
+//! keydown delivered (a phone's keyboard, an input method) and that field's
+//! composition. A touch's \p x, \p y are CSS px from the canvas's top-left
+//! (GLFW's window coordinates there); a \p caret is in bytes into \p text.
+struct BrowserInput
+{
+    std::function<void(int id, TouchPhase phase, double x, double y)> touch;
+    std::function<void(UnicodeChar character)> character;
+    //! a key pressed and released (Backspace, for deleteContentBackward)
+    std::function<void(unsigned char key)> key;
+    std::function<void(const String &text, int caret)> compositionUpdate;
+    std::function<void(const String &text)> compositionCommit;
+    std::function<void()> compositionCancel;
+};
+
+//! In a browser page, takes the canvas's touches and a hidden text field's
+//! input for \p input (input::GLFW3::useBrowserInput installs its own):
+//! touch listeners on the window that keep every touch from emscripten-glfw's
+//! one-finger mouse, the text field setTextInputRect() focuses at the caret,
+//! and a key listener that keeps an input method's keystrokes (keyCode 229,
+//! "Process", "Unidentified") from emscripten-glfw. An \p input with no
+//! touch function removes them all. Elsewhere, and under node, it does
+//! nothing (docs/architecture.md -> "Touch and the input method").
+GWENI_EXPORT void useBrowserInput(BrowserInput input);
 
 //
 // The URL and the history

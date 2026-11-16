@@ -486,6 +486,9 @@ public:
     //! scroll and metrics, cut to the viewport: empty when its line or
     //! column is scrolled out.
     Rect getCaretBounds() const;
+    //! Asks for the platform's text input at the caret
+    //! (platform::setTextInputRect) while it has the focus and takes edits.
+    void reportTextInput();
     //! One frame of the caret's blink (its animation's).
     void updateCaretBlink() override;
     double nextCaretBlinkTime() override { return m_caretBlink.nextEdge(this); }

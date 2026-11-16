@@ -891,6 +891,9 @@ int main(int argc, char *argv[])
     else
     {
         g_glfwInput.initialize(canvas);
+        // a page's touches and text field (nothing natively); g_glfwInput
+        // outlives the window
+        g_glfwInput.useBrowserInput(true);
 
         glfwSetKeyCallback(ctx.window, key_callback);
         glfwSetCharCallback(ctx.window, char_callback);

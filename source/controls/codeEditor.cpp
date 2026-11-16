@@ -484,6 +484,10 @@ GWENI_CONTROL_CONSTRUCTOR(CodeEditor)
 CodeEditor::~CodeEditor()
 {
     m_document.removeObserver(m_observer);
+    // deleted with the focus: the platform's text input is handed back, as
+    // when the focus leaves
+    if(KeyboardFocus == this && !m_readOnly)
+        platform::setTextInputRect(false, Rect());
 }
 
 void CodeEditor::setText(const String &text)
@@ -1179,7 +1183,34 @@ void CodeEditor::syncSelection()
 void CodeEditor::caretChanged()
 {
     if(!m_readOnly)
+    {
         addStateChange(StateChange_Caret);
+        reportTextInput();
+    }
+}
+
+// The caret in device px of the framebuffer (the viewport's top-left while it
+// is scrolled out), from the last layout, as TextBox::reportTextInput gives
+// its own: where a page's text field stands for an input method's window.
+void CodeEditor::reportTextInput()
+{
+    if(m_readOnly || !isFocussed())
+        return;
+
+    Rect caret=getCaretBounds();
+
+    if(caret.w <= 0 || caret.h <= 0)
+        caret=Rect(getViewport().x, getViewport().y, 1, std::max(m_lineHeight, 1));
+
+    Canvas *canvas=getCanvas();
+    const float scale=canvas?canvas->scale():1.0f;
+    const Point origin=localPosToCanvas(Point(caret.x, caret.y));
+    const auto snap=[scale](int v) { return static_cast<int>(std::floor(v*scale+0.5f)); };
+    const int x=snap(origin.x);
+    const int y=snap(origin.y);
+
+    platform::setTextInputRect(true, Rect(x, y, std::max(1, snap(origin.x+caret.w)-x),
+        std::max(1, snap(origin.y+caret.h)-y)));
 }
 
 void CodeEditor::syncCurrentLine()
@@ -1725,12 +1756,17 @@ void CodeEditor::setReadOnly(bool readOnly)
     m_readOnly=readOnly;
     m_undo.seal();
 
+    // a read-only editor takes no text: a phone keyboard it opened closes
+    if(m_readOnly && isFocussed())
+        platform::setTextInputRect(false, Rect());
+
     if(m_readOnly)
         m_caretBlink.stop(this);
     else if(isFocussed())
     {
         m_caretBlink.keepLit(this);
         m_caretBlink.start(this);
+        reportTextInput();
     }
 
     syncCurrentLine();
@@ -2094,6 +2130,8 @@ void CodeEditor::onKeyboardFocus()
 void CodeEditor::onLostKeyboardFocus()
 {
     ParentClass::onLostKeyboardFocus();
+    if(!m_readOnly)
+        platform::setTextInputRect(false, Rect());
     m_caretBlink.stop(this);
     m_undo.seal();
     m_escapeArmed=false;

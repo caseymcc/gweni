@@ -59,7 +59,7 @@ select { background: #24283b; color: #c0caf5; border: 1px solid #414868; border-
 .app { display: flex; flex-direction: column; overflow: hidden; }
 .app header { flex: 0 0 auto; }
 #canvas-container { flex: 1 1 auto; min-height: 0; position: relative; overflow: hidden; }
-canvas { display: block; outline: none; }
+canvas { display: block; outline: none; touch-action: none; }
 #output { flex: 0 0 64px; box-sizing: border-box; height: 64px; margin: 0; padding: 4px 16px;
           overflow: auto; white-space: pre-wrap; font: 12px monospace; color: #565f89;
           border-top: 1px solid #292e42; }
