@@ -932,6 +932,19 @@ void ToolBar::prepareOverflowMenu(Menu *menu)
     if((m_menuSerial != m_overflowSerial) || (m_menuBuiltFor != idOf(menu)))
         buildMenu(menu);
 
+    std::vector<Menu *> resizedMenus;
+    const auto setText=[&](MenuItem *entry, const String &text)
+    {
+        if(entry->getText() == text)
+            return;
+
+        entry->setText(text);
+        Menu *parent=entry->parentMenu();
+
+        if(parent && std::find(resizedMenus.begin(), resizedMenus.end(), parent) == resizedMenus.end())
+            resizedMenus.push_back(parent);
+    };
+
     // every entry as its item is now
     for(const MenuEntry &e : m_menuEntries)
     {
@@ -948,30 +961,51 @@ void ToolBar::prepareOverflowMenu(Menu *menu)
 
         if(MenuItem *original=gweni_cast<MenuItem>(source))
         {
-            entry->setText(original->getText());
+            setText(entry, original->getText());
             entry->setCheckable(original->isCheckable());
             entry->setChecked(original->isChecked());
         }
         else if(!source && !e.itemText && (indexOf(item) >= 0) && m_info[indexOf(item)].control)
-            entry->setText(m_info[indexOf(item)].overflowText);
+            setText(entry, m_info[indexOf(item)].overflowText);
         else
         {
             // a drop-down's or a SplitButton's own entry, and its main action's
             if(e.itemText)
             {
                 if(SplitButton *split=gweni_cast<SplitButton>(item))
-                    entry->setText(split->getText());
+                    setText(entry, split->getText());
                 else if(Button *button=gweni_cast<Button>(item))
-                    entry->setText(button->getText());
+                    setText(entry, button->getText());
             }
             if(Button *button=gweni_cast<Button>(source))
             {
                 if(gweni_cast<ToolButton>(button))
-                    entry->setText(button->getText());
-                if(button->isToggle())
-                    entry->setChecked(button->getToggleState());
+                    setText(entry, button->getText());
+                entry->setCheckable(button->isToggle());
+                entry->setChecked(button->isToggle() && button->getToggleState());
             }
         }
+    }
+
+    // Menu::onAddItem sizes the item to its content before docking stretches
+    // it, then grows the menu by that width plus its icon/edge allowance.
+    // A cached entry's new text needs the same sizing, starting fresh so a
+    // shorter label can shrink the menu too. This is before openNextTo() and
+    // its layout pass; entries stay put, and unchanged menus are untouched.
+    for(Menu *resized : resizedMenus)
+    {
+        int width=FreshMenuWidth;
+
+        for(Base *child : resized->getChildren())
+        {
+            MenuItem *entry=gweni_cast<MenuItem>(child);
+
+            if(!entry || entry->hidden())
+                continue;
+            entry->sizeToContents();
+            width=std::max(width, entry->getWidth()+10+32);
+        }
+        resized->setWidth(width);
     }
 }
 

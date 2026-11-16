@@ -264,8 +264,11 @@ public:
     //! divider if its menu has items), an addControl item a MenuItem with its
     //! overflow text, whatever control it is (a Button or DropDownButton
     //! added that way is no tool button: neither copied nor pressed). Each
-    //! open brings every entry's text, disabled state and check up to date
-    //! with its item. Choosing an entry fires what pressing its item would:
+    //! open brings every entry's text, disabled state, checkability and check
+    //! up to date with its item (a button no longer toggling loses its check).
+    //! A changed text resizes its menu from the contents, growing or
+    //! shrinking it without replacing the cached entries; copied submenus
+    //! follow the same rule. Choosing an entry fires what pressing its item would:
     //! a tool button's onPress (a toggle flipping its state, which the entry's
     //! check shows), the SplitButton main part's, a drop-down menu item's own
     //! onPress (so its onMenuItemSelected); then onOverflowItemChosen, with

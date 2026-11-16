@@ -47,7 +47,10 @@
  *  toggle's state shows in its entry on the next open, from the menu or from
  *  the app. The menu is built again only when the overflowed set changed;
  *  each open brings a drop-down's, a split button's and its main action's
- *  text up to date.
+ *  text up to date. A tool button or SplitButton main action changed to a
+ *  toggle becomes checkable; one no longer toggling loses its check. Changed
+ *  labels grow or shrink their cached menus without replacing entries,
+ *  including copied and nested submenus, in one pass verified headless.
  *
  *  The keys: the tool items are one Tab stop, the last focused; Left, Right,
  *  Home and End move the focus over the shown, enabled tool items, the
@@ -631,6 +634,152 @@ TEST_CASE("ToolBar: a rebuilt overflow menu is as wide as its entries, not the w
     scene.settle();
     CHECK(scene.openMenu()->getWidth() == fresh);
     CHECK(bar->getMenuBuildCount() == 3);
+}
+
+TEST_CASE("ToolBar: cached button entries follow changes of toggle mode in both directions")
+{
+    MenuBar m;
+    const size_t failures=controls::layoutVerifyFailures();
+    controls::Button *source=m.a;
+    bool wasToggle=false;
+
+    SUBCASE("tool button becomes a toggle") {}
+    SUBCASE("tool button stops toggling") { wasToggle=true; }
+    SUBCASE("SplitButton main action becomes a toggle") { source=m.sp->getMainPart(); }
+    SUBCASE("SplitButton main action stops toggling")
+    {
+        source=m.sp->getMainPart();
+        wasToggle=true;
+    }
+
+    const auto setToggle=[&](bool toggle)
+    {
+        if(source == m.sp->getMainPart())
+            m.sp->setIsToggle(toggle);
+        else
+            source->setIsToggle(toggle);
+    };
+    const auto setState=[&](bool on)
+    {
+        if(source == m.sp->getMainPart())
+            m.sp->setToggleState(on);
+        else
+            source->setToggleState(on);
+    };
+    setToggle(wasToggle);
+    setState(wasToggle);
+    m.scene.openMenu();
+    controls::MenuItem *cached=m.scene.bar->getMenuEntry(source);
+
+    REQUIRE(cached);
+    CHECK(cached->isCheckable() == wasToggle);
+    CHECK(cached->isChecked() == wasToggle);
+    m.scene.closeMenu();
+    setToggle(!wasToggle);
+    setState(true);
+    m.scene.openMenu();
+    CHECK(m.scene.bar->getMenuEntry(source) == cached);
+    CHECK(m.scene.bar->getMenuBuildCount() == 1);
+    CHECK(cached->isCheckable() == !wasToggle);
+    CHECK(cached->isChecked() == !wasToggle);
+
+    // Choosing the reused entry follows the current toggle mode.
+    cached->onPress(event::Info(cached));
+    m.scene.frame();
+    CHECK(source->getToggleState() == wasToggle);
+    m.scene.openMenu();
+    CHECK_FALSE(cached->isChecked());
+    m.scene.closeMenu();
+    CHECK(m.scene.frame().passes == 0);
+    CHECK(controls::layoutVerifyFailures() == failures);
+}
+
+TEST_CASE("ToolBar: refreshed labels resize cached menus both ways without rebuilding entries")
+{
+    MenuBar m;
+    const size_t failures=controls::layoutVerifyFailures();
+    controls::Base *source=m.a;
+
+    SUBCASE("tool button") {}
+    SUBCASE("addControl overflow text") { source=m.search; }
+    SUBCASE("drop-down parent") { source=m.dd; }
+    SUBCASE("SplitButton parent and main action") { source=m.sp; }
+    SUBCASE("copied drop-down item") { source=m.ddSave; }
+    SUBCASE("copied submenu parent") { source=m.ddAs; }
+    SUBCASE("nested copied submenu item") { source=entry(m.ddAs->getMenu(), "Deep"); }
+
+    const auto textOf=[&]()
+    {
+        return source == m.search ? m.scene.bar->getOverflowText(source)
+            : source == m.sp ? m.sp->getText() : gweni_cast<controls::Button>(source)->getText();
+    };
+    const auto setText=[&](const String &text)
+    {
+        if(source == m.search)
+            m.scene.bar->setOverflowText(source, text);
+        else if(source == m.sp)
+            m.sp->setText(text);
+        else
+            gweni_cast<controls::Button>(source)->setText(text);
+    };
+    const auto open=[&](controls::Menu *measured)
+    {
+        m.scene.closeMenu();
+        controls::Menu *top=m.scene.openMenu();
+
+        checkOnePass(m.scene.canvas->getLayoutStats());
+        if(measured != top)
+        {
+            // A hidden submenu has not been arranged. Assert its actual
+            // width only after showing it, never on a stale preferred size.
+            measured->openAt(Point(300, 0));
+            checkOnePass(m.scene.frame());
+        }
+        CHECK(m.scene.frame().passes == 0);
+    };
+
+    m.scene.openMenu();
+    controls::MenuItem *cached=m.scene.bar->getMenuEntry(source);
+
+    REQUIRE(cached);
+    controls::Menu *measured=cached->parentMenu();
+    REQUIRE(measured);
+    open(measured);
+    const int originalWidth=measured->getWidth();
+    const String originalText=textOf();
+    controls::MenuItem *splitMain=m.scene.bar->getMenuEntry(m.sp->getMainPart());
+    controls::Menu *splitMenu=splitMain->parentMenu();
+    open(splitMenu);
+    const int splitWidth=splitMenu->getWidth();
+
+    m.scene.closeMenu();
+    setText("An action renamed to a much much much much much longer label");
+    open(measured);
+    const int longWidth=measured->getWidth();
+
+    CHECK(longWidth > originalWidth);
+    CHECK(m.scene.bar->getMenuEntry(source) == cached);
+    CHECK(m.scene.bar->getMenuBuildCount() == 1);
+    if(source == m.sp)
+    {
+        open(splitMenu);
+        CHECK(splitMenu->getWidth() > splitWidth);
+        CHECK(m.scene.bar->getMenuEntry(m.sp->getMainPart()) == splitMain);
+    }
+
+    m.scene.closeMenu();
+    setText(originalText);
+    open(measured);
+    CHECK(measured->getWidth() < longWidth);
+    CHECK(measured->getWidth() == originalWidth);
+    CHECK(m.scene.bar->getMenuEntry(source) == cached);
+    CHECK(m.scene.bar->getMenuBuildCount() == 1);
+    if(source == m.sp)
+    {
+        open(splitMenu);
+        CHECK(splitMenu->getWidth() == splitWidth);
+    }
+    CHECK(controls::layoutVerifyFailures() == failures);
 }
 
 TEST_CASE("ToolBar: an overflow entry has its tool button's icon, and an empty split button no divider")

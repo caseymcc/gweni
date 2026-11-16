@@ -787,9 +787,14 @@ A rebuild sets the menu back to a fresh Menu's width before adding the entries, 
 widen it (`Menu::onAddItem` only grows it), so the menu is as wide as its entries, never
 the widest set it held before. The entries are
 mapped to their items by control ids. Each open brings every entry's text (a drop-down's and a
-SplitButton's submenu entry and the main action's included), disabled state
-and check up to date with its item, so a toggle the app turned while it was overflowed
-shows in the next open, and a disabled item's entry is disabled. Choosing an entry closes
+SplitButton's submenu entry and the main action's included), disabled state,
+checkability and check up to date with its item. A tool button or SplitButton main
+action changed to a toggle becomes checkable; one no longer toggling loses its check.
+A changed label resizes the menu holding its entry from the current contents, growing
+or shrinking it without replacing entries, including copied submenus. Only menus whose
+entry text changed are resized, before the opening layout pass. So a toggle the app
+turned while it was overflowed shows in the next open, and a disabled item's entry is
+disabled. Choosing an entry closes
 the menus, flips a checkable entry's check (`MenuItem::onPress`), then fires what pressing
 the item fires: a tool button's own `onPress` (a toggle flipping its state, which its
 entry's check is set from again), the SplitButton main part's, a drop-down item's
@@ -797,7 +802,8 @@ entry's check is set from again), the SplitButton main part's, a drop-down item'
 with the toolbar item in `info.control`, an addControl item's only event (its control is not pressed, so a Switch
 added that way is not toggled). So the app wires
 each action once. Not yet: entries are brought up to date as the menu opens, not while it
-stays open, and a drop-down's own menu edits show only once the overflowed set changes.
+stays open, and changes to a drop-down's menu structure (adding, removing or reordering
+items) show only once the overflowed set changes.
 
 **The keyboard.** The tool items (tool buttons, drop-downs, split buttons and the overflow
 button) are one Tab stop, `getTabStop()`: the last focused while it is shown and enabled
