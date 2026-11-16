@@ -5,7 +5,8 @@
  *
  *  ToolBar's overflow on the StubRenderer. A toolbar whose container is wide
  *  enough shows every item and no overflow button; its preferred width is
- *  every item's and its minimumWidth() the AlwaysShow items' and the button's.
+ *  the width that shows every item but the AlwaysOverflow ones (with the
+ *  button they force) and its minimumWidth() the AlwaysShow items' and the button's.
  *  As the container narrows, the Normal items overflow from the end one at a
  *  time, hidden, the overflow button shown at the right end with the row
  *  keeping its room; AlwaysShow items and an addControl item with no overflow
@@ -19,8 +20,8 @@
  *  Below minimumWidth() the overflow button stays at the toolbar's right
  *  edge, where the hit test finds it and a click opens the menu. The width
  *  that shows every item counts the button AlwaysOverflow items force. A
- *  tool button keeps a tooltip the app set, its text being its tooltip only
- *  in IconOnly.
+ *  tool button's text is its tooltip only in IconOnly, a tooltip the app
+ *  set put aside meanwhile and given back after.
  *
  *  The overflow menu, built as the overflow button opens it: an entry per
  *  overflowed item in order, a tool button its text and icon, a toggle a checkable
@@ -542,7 +543,7 @@ TEST_CASE("ToolBar: the overflow menu holds every overflowed item in its menu fo
 
     controls::Menu *exportMenu=entry(menu, "Export")->getMenu();
 
-    CHECK(entries(exportMenu) == std::vector<std::string>{"Save", "-", "Save as >"});
+    CHECK(entries(exportMenu) == std::vector<std::string>{"Save", "-", "[ ] Save as >"});
     CHECK(entries(entry(exportMenu, "Save as")->getMenu()) == std::vector<std::string>{"Deep"});
     CHECK(entries(entry(menu, "Paste")->getMenu()) == std::vector<std::string>{"Paste", "-", "Paste plain"});
     CHECK(m.scene.bar->getMenuEntrySource(entry(menu, "a1 button")) == m.a);
@@ -565,6 +566,60 @@ TEST_CASE("ToolBar: each open brings a drop-down's, a split button's and its mai
         "Insert >", "(off) Off", "Search"});
     REQUIRE(entry(menu, "Insert"));
     CHECK(entries(entry(menu, "Insert")->getMenu()) == std::vector<std::string>{"Insert", "-", "Paste plain"});
+}
+
+TEST_CASE("ToolBar: a copied submenu's entry in a drop-down's overflow submenu follows its original")
+{
+    MenuBar m;
+    controls::Menu *menu=m.scene.openMenu();
+
+    REQUIRE(entry(menu, "Export"));
+    // the drop-down's own entry, and the copy of its submenu item
+    CHECK(m.scene.bar->getMenuEntry(m.dd) == entry(menu, "Export"));
+    REQUIRE(entry(entry(menu, "Export")->getMenu(), "Save as"));
+    CHECK(m.scene.bar->getMenuEntry(m.ddAs) == entry(entry(menu, "Export")->getMenu(), "Save as"));
+    CHECK(m.scene.bar->getMenuEntrySource(m.scene.bar->getMenuEntry(m.ddAs)) == m.ddAs);
+
+    m.scene.closeMenu();
+    m.ddAs->setText("Save copy");
+    m.ddAs->setDisabled(true);
+    menu=m.scene.openMenu();
+    CHECK(m.scene.bar->getMenuBuildCount() == 1);
+    CHECK(entries(entry(menu, "Export")->getMenu()) == std::vector<std::string>{"Save", "-", "(off) [ ] Save copy >"});
+}
+
+TEST_CASE("ToolBar: a rebuilt overflow menu is as wide as its entries, not the widest set it held")
+{
+    Scene scene;
+    ToolBar *bar=scene.bar;
+
+    button(bar, "a1");
+    bar->addButton("a much longer button name", "")->setName("wide");
+    button(bar, "b1");
+    scene.settle();
+
+    const int full=bar->fullWidth();
+
+    // only b1 overflowed: the menu a fresh one's width
+    scene.setWidth(full-10);
+    scene.settle();
+    REQUIRE(scene.shown() == "a1 wide +");
+
+    int fresh=scene.openMenu()->getWidth();
+
+    scene.closeMenu();
+
+    // the long name overflowed too, widening the menu
+    scene.setWidth(bar->minimumWidth());
+    scene.settle();
+    CHECK(scene.openMenu()->getWidth() > fresh);
+    scene.closeMenu();
+
+    // b1 alone again: back to the fresh width
+    scene.setWidth(full-10);
+    scene.settle();
+    CHECK(scene.openMenu()->getWidth() == fresh);
+    CHECK(bar->getMenuBuildCount() == 3);
 }
 
 TEST_CASE("ToolBar: an overflow entry has its tool button's icon, and an empty split button no divider")
@@ -616,11 +671,20 @@ TEST_CASE("ToolBar: a tool button keeps a tooltip of the app's own")
     b->setImage("test16.png");
     CHECK(b->getToolTipText() == "mine");
 
-    // in IconOnly the text is the tooltip, and back it is cleared
+    // in IconOnly the text is the tooltip, and back the app's comes back
     scene.bar->setDisplay(controls::ToolBarDisplay::IconOnly);
     CHECK(b->getToolTipText() == "other");
     scene.bar->setDisplay(controls::ToolBarDisplay::TextOnly);
-    CHECK(b->getToolTipText().empty());
+    CHECK(b->getToolTipText() == "mine");
+
+    // with none of the app's, leaving IconOnly leaves none
+    controls::ToolButton *c=button(scene.bar, "c1");
+
+    c->setImage("test16.png");
+    scene.bar->setDisplay(controls::ToolBarDisplay::IconOnly);
+    CHECK(c->getToolTipText() == "c1 button");
+    scene.bar->setDisplay(controls::ToolBarDisplay::IconAndText);
+    CHECK(c->getToolTipText().empty());
 }
 
 TEST_CASE("ToolBar: choosing an overflow entry fires its item's event, toggles kept in step both ways")

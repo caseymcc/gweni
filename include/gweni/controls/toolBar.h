@@ -89,13 +89,15 @@ protected:
     int imageWidth() const;
     int imageHeight() const;
     int contentWidth() const;
-    //! The text's tooltip in IconOnly; otherwise none, unless the app set
-    //! one of its own.
+    //! The text is the tooltip in IconOnly; the tooltip it had before (the
+    //! app's own, or none) is put aside meanwhile and given back after.
     void updateToolTip();
 
     ToolBarDisplay m_display=ToolBarDisplay::IconAndText;
     //! Whether the tooltip is the text, set by updateToolTip().
     bool m_textToolTip=false;
+    //! The tooltip put aside while the text is the tooltip.
+    String m_appToolTip;
 };
 
 namespace internal
@@ -165,8 +167,10 @@ public:
 //! height), the content height; a separator takes SeparatorSlot units with
 //! its rule in the middle, SeparatorInset short of the top and bottom.
 //!
-//! Its preferred width is every item's, and its height the tallest item's,
-//! wherever they are: what overflows changes no preferred size. Its minimum
+//! Its preferred width is the width that shows every item but the
+//! AlwaysOverflow ones (fullWidth(): those items left out, the overflow
+//! button they force counted), and its height the tallest item's, wherever
+//! they are: what overflows changes no preferred size. Its minimum
 //! width (minimumWidth()) is the AlwaysShow items' and the overflow button's.
 //!
 //! The overflow is decided in its X arrange, once its width is final, as
@@ -197,6 +201,9 @@ public:
     //! content's top and bottom.
     static constexpr int SeparatorSlot=9;
     static constexpr int SeparatorInset=3;
+    //! The overflow menu's width as it is rebuilt: a fresh Menu's, which its
+    //! items widen.
+    static constexpr int FreshMenuWidth=10;
 
     //! A tool button showing \p text and the image \p icon, as the display
     //! says.
@@ -297,7 +304,8 @@ public:
     bool onKeyend(bool down) override;
     //! \}
 
-    //! The width that shows every item: its preferred width with no width
+    //! The width that shows every item but the AlwaysOverflow ones, and the
+    //! overflow button if there are any: its preferred width with no width
     //! asked for (a Fixed toolbar's preferred width is its request).
     int fullWidth() const;
     //! The least width that shows every AlwaysShow item and the overflow

@@ -122,15 +122,19 @@ void ToolButton::updateToolTip()
 {
     const bool iconOnly=imageShows() && !textShows() && !m_text->getText().empty();
 
-    // an app's own tooltip is left alone; only the one set here is cleared
+    // the app's own tooltip is put aside while the text is the tooltip, and
+    // given back after
     if(iconOnly)
     {
+        if(!m_textToolTip)
+            m_appToolTip=getToolTipText();
         setToolTipText(m_text->getText());
         m_textToolTip=true;
     }
     else if(m_textToolTip)
     {
-        setToolTipText(String());
+        setToolTipText(m_appToolTip);
+        m_appToolTip.clear();
         m_textToolTip=false;
     }
 }
@@ -813,7 +817,9 @@ void ToolBar::copyMenu(Menu *from, Menu *to, Base *item, bool dividerFirst)
         if(source->hasMenu())
         {
             copyMenu(source->getMenu(), entry->getMenu(), item, false);
-            addMenuEntry(entry, nullptr, item);
+            // kept in step with its original as a leaf is (choosing it only
+            // opens its submenu, so its source is never pressed)
+            addMenuEntry(entry, source, item);
             continue;
         }
         entry->setCheckable(source->isCheckable());
@@ -830,6 +836,9 @@ void ToolBar::buildMenu(Menu *menu)
             child->setHidden(true);
     }
     menu->clearItems();
+    // as wide as a fresh Menu, which its items widen (Menu::onAddItem only
+    // grows it, so the widest set it ever held would stay)
+    menu->setWidth(FreshMenuWidth);
     m_menuEntries.clear();
 
     bool pendingDivider=false;
@@ -906,7 +915,7 @@ void ToolBar::prepareOverflowMenu(Menu *menu)
         if(!entry || !item)
             continue;
 
-        Base *source=getControlById(e.source);
+        Base *source=e.source?getControlById(e.source):nullptr;
         const Base *enabledBy=source?source:item;
 
         entry->setDisabled(const_cast<Base *>(enabledBy)->isDisabled() || item->isDisabled());
@@ -983,7 +992,7 @@ void ToolBar::onMenuEntryChosen(event::Info info)
         return;
 
     const MenuEntry entry=*found;
-    Base *source=getControlById(entry.source);
+    Base *source=entry.source?getControlById(entry.source):nullptr;
     Base *item=getControlById(entry.item);
 
     if(!item)

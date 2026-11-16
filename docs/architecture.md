@@ -717,7 +717,8 @@ and `--scenario breadcrumb` hold it to its slots.
 CommandBar) is one row of items, each made through it: `addButton(text, icon)` (a
 `ToolButton`, a flat Button laid out as its icon and its text, which the toolbar's
 `setDisplay(IconOnly | TextOnly | IconAndText)` picks from, Qt's `toolButtonStyle`; in
-IconOnly the text is its tooltip), `addToggle` (one with `setIsToggle`), `addSeparator`
+IconOnly the text is its tooltip, the tooltip it had before put aside and given back
+after), `addToggle` (one with `setIsToggle`), `addSeparator`
 (a vertical `Separator`), `addDropDown` and `addSplitButton` (an
 `internal::ToolBarDropDown` and `internal::ToolBarSplitButton`, the #632 controls with
 the toolbar's Tab stop rule below) and `addControl(control, overflowText)` (anything, a
@@ -735,8 +736,9 @@ goes when the bar is too narrow, from the end one at a time, `AlwaysOverflow` is
 the menu (so its button shows at any width). An addControl item with no overflow text has
 no menu form and stays as an AlwaysShow one. A separator has no priority: it shows only
 between two shown items with no shown separator since the first, so the row never starts
-or ends with one nor shows two together. The preferred width is every item's
-(`fullWidth()`) and the height the tallest item's, whatever is shown, so no overflow
+or ends with one nor shows two together. The preferred width (`fullWidth()`) is the
+width that shows every item but the AlwaysOverflow ones, with the overflow button they
+force, and the height the tallest item's, whatever is shown, so no overflow
 changes a preferred size; `minimumWidth()` is the AlwaysShow items' and the button's.
 Below that, when even the AlwaysShow items do not fit, the overflow button stays at the
 bar's right edge, inside it, so the menu stays in reach of the mouse (the hit test enters
@@ -773,8 +775,12 @@ the overflowed items in order, and built again only when the overflowed set chan
 `getMenuBuildCount()`): a tool button an entry with its text and icon, a toggle a checkable entry,
 an overflowed separator a `MenuDivider` (never first, last or doubled), a drop-down a
 submenu of copies of its menu's items (`MenuItem::hasMenu()` tells a submenu without
-making one; submenus are copied whole), a SplitButton a submenu with its main action, then
-a divider and its menu's items if it has any, and an addControl item its overflow text. The entries are
+making one; submenus are copied whole, each copied submenu's entry kept in step with
+its original as a leaf's is), a SplitButton a submenu with its main action, then
+a divider and its menu's items if it has any, and an addControl item its overflow text.
+A rebuild sets the menu back to a fresh Menu's width before adding the entries, which
+widen it (`Menu::onAddItem` only grows it), so the menu is as wide as its entries, never
+the widest set it held before. The entries are
 mapped to their items by control ids. Each open brings every entry's text (a drop-down's and a
 SplitButton's submenu entry and the main action's included), disabled state
 and check up to date with its item, so a toggle the app turned while it was overflowed
