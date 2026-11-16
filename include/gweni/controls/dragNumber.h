@@ -16,14 +16,30 @@ namespace gweni
 namespace controls
 {
 
-class DragNumber;
-
 namespace internal
 {
 
-//! The TextBoxNumeric a DragNumber swaps in to type a value: Return commits
-//! it and gives the focus back to the DragNumber (a TextBox's Return would tab
-//! to the next control), Escape cancels it. It draws as a TextBox.
+//! What a DragNumberTextBox tells the control it types a value for (a
+//! DragNumber, a Knob): Return's release commits the edit and Escape's press
+//! cancels it, each giving the keyboard focus back to the owner (\p refocus
+//! true). A lost focus is the owner's to watch, through the box's
+//! onLostFocusCaller.
+class GWENI_EXPORT TypedEntryOwner
+{
+public:
+
+    virtual void commitEdit(bool refocus=true)=0;
+    virtual void cancelEdit(bool refocus=true)=0;
+
+protected:
+
+    ~TypedEntryOwner()=default;
+};
+
+//! The TextBoxNumeric a DragNumber (or a Knob) swaps in to type a value:
+//! Return commits it and gives the focus back to its owner (a TextBox's
+//! Return would tab to the next control), Escape cancels it. It draws as a
+//! TextBox.
 class GWENI_EXPORT DragNumberTextBox: public TextBoxNumeric
 {
 public:
@@ -35,15 +51,16 @@ public:
     bool onKeyReturn(bool down) override;
     bool onKeyEscape(bool down) override;
     //! Up and Down stay in the box: unhandled, they would reach the
-    //! DragNumber behind it and step its value.
+    //! owner behind it and step its value.
     bool onKeyUp(bool /*down*/) override { return true; }
     bool onKeyDown(bool /*down*/) override { return true; }
 
-    void setOwner(DragNumber *owner) { m_owner=owner; }
+    void setOwner(TypedEntryOwner *owner) { m_owner=owner; }
+    TypedEntryOwner *getOwner() const { return m_owner; }
 
 private:
 
-    DragNumber *m_owner=nullptr;
+    TypedEntryOwner *m_owner=nullptr;
 };
 
 }//namespace internal
@@ -73,7 +90,7 @@ private:
 //! StateChange_Text raised, only when the formatted string changes, so a drag
 //! frame that keeps it marks nothing; hover, press, focus and the edit box
 //! repaint the field alone (redraw()).
-class GWENI_EXPORT DragNumber: public Label
+class GWENI_EXPORT DragNumber: public Label, public internal::TypedEntryOwner
 {
 public:
 
@@ -134,9 +151,9 @@ public:
     //! Applies the edit box's text (if it is a number) and hides the box;
     //! \p refocus gives the keyboard focus back to the field, else the box
     //! just drops it. Nothing when not editing.
-    void commitEdit(bool refocus=true);
+    void commitEdit(bool refocus=true) override;
     //! Hides the edit box, the value as it was.
-    void cancelEdit(bool refocus=true);
+    void cancelEdit(bool refocus=true) override;
     bool isEditing() const { return m_editing; }
     //! Null until the first beginEdit().
     internal::DragNumberTextBox *getEditBox() const { return m_editBox; }

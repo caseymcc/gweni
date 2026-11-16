@@ -41,7 +41,9 @@
  *  holds one conversion of a double. The textured renderer draws the field
  *  DragNumber at rest, DragNumberHover hovered, DragNumberDown pressed,
  *  DragNumberFocus focused and DragNumberDisabled disabled, one slot, and a
- *  disabled field takes no drag.
+ *  disabled field takes no drag. The edit box serves any owner through
+ *  internal::TypedEntryOwner, not only a DragNumber: on a plain owner Return's
+ *  release commits and Escape's press cancels, each with the focus back, once.
  */
 #include "headlessFixture.h"
 
@@ -1098,4 +1100,54 @@ TEST_CASE("DragNumber: Elastic in X, docked Left, the edit box keeps its width, 
     scene.key(keys::Escape);
     CHECK(field->getWidth() == wide);
     CHECK(field->getText() == "123456789.000");
+}
+
+namespace
+{
+
+//! A typed-entry owner that is no DragNumber (as a Knob is), counting the calls.
+struct EntryOwner: public controls::internal::TypedEntryOwner
+{
+    int commits=0;
+    int cancels=0;
+    bool refocused=false;
+
+    void commitEdit(bool refocus) override { ++commits; refocused=refocus; }
+    void cancelEdit(bool refocus) override { ++cancels; refocused=refocus; }
+};
+
+}//namespace
+
+TEST_CASE("DragNumber: the edit box commits and cancels through any TypedEntryOwner")
+{
+    Scene scene;
+    auto *box=scene.canvas->newChild<controls::internal::DragNumberTextBox>();
+    EntryOwner owner;
+
+    box->setOwner(&owner);
+    CHECK(box->getOwner() == &owner);
+    box->setPos(20, 20);
+    scene.frame();
+    box->focus();
+
+    scene.type("12");
+    // Return commits on its release alone
+    scene.hold(keys::Return, true);
+    CHECK(owner.commits == 0);
+    scene.hold(keys::Return, false);
+    CHECK(owner.commits == 1);
+    CHECK(owner.cancels == 0);
+    CHECK(owner.refocused);
+
+    // Escape cancels on its press alone
+    owner.refocused=false;
+    box->focus();
+    scene.hold(keys::Escape, true);
+    CHECK(owner.cancels == 1);
+    scene.hold(keys::Escape, false);
+    CHECK(owner.cancels == 1);
+    CHECK(owner.commits == 1);
+    CHECK(owner.refocused);
+
+    box->setOwner(nullptr);
 }
