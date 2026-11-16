@@ -2389,8 +2389,8 @@ two programs and the draws. What follows describes both together:
   - LCD text: no dual-source blending, so grayscale, with the one warning of "GLES
     tree" above.
 
-  Touch, pointer events and an IME are not handled: a page loads on a phone, but only
-  the mouse and the keyboard drive it. Building for wasm32 also showed two struct layouts that only agreed on
+  Touch and an input method are the page's own listeners' (see "Touch and the input
+  method" below), not emscripten-glfw's one-finger mouse. Building for wasm32 also showed two struct layouts that only agreed on
   x86-64 by luck, both fixed: freetype-gl's `vertex_buffer_t` with and without
   `FREETYPE_GL_USE_VAO` (now gone: freetype-gl has no VAO and one `vertex_buffer_t`
   in every tree), and
@@ -8498,6 +8498,142 @@ capture, a test and the bench do not, so what they paste never depends on the ho
   Ctrl+letter accelerator ran twice (a paste pasted twice, Ctrl+Z undid two steps).
   `input::GLFW3::processCharEvent` drops a char that follows a Ctrl+letter press
   (`tests/unit/clipboardBackend.cpp`).
+
+## Touch and the input method
+
+A phone drives a page with a finger and a soft keyboard. Both go into the canvas
+through platform-neutral calls (`IInputEvent::inputTouch` and
+`inputCompositionUpdate`/`Commit`/`Cancel`, `include/gweni/platforms/inputEvent.h`),
+tested natively on the stepped clock (`tests/unit/touchInput.cpp`,
+`tests/unit/textBoxComposition.cpp`, ControlTest's `--scenario touch` and
+`--scenario ime`); the page only feeds them (`web_touch`, `tests/web/touch.mjs`).
+Native touchscreens have no feeder yet: desktop GLFW has no touch API.
+
+### Touch gestures (`Canvas::inputTouch`)
+
+- **One finger.** `inputTouch(id, phase, x, y)` (logical units, fractions kept;
+  `TouchPhase::Down`, `Move`, `Up`, `Cancel`) tracks the first finger down until its up
+  or cancel, and takes and ignores every other finger's events meanwhile. An
+  `InputCapture` set at the down (the depth view) gets the finger instead
+  (`InputCapture::captureTouch`, ignoring by default).
+- **A drag a control keeps.** On the down the canvas hit-tests the point. If the
+  control there or an ancestor says `Base::keepsTouchDrag()`, the finger is a
+  left-button mouse drag: a move to the point and a press, its moves, a release where
+  it lifts, so the control's own drag and its `pressGesture()` run as for the mouse.
+  Those that do: every `Dragger` (a Slider's thumb, a Window's title bar, a splitter, a
+  scroll bar's thumb, a Resizer), `DragNumber`, `Knob`, the colour picker's boxes and
+  strips, `GradientEditor`'s strip and handles, `internal::NodeTitleBar`, `Pin`, and a
+  `TextBox` only while it has the keyboard focus (a drag in a focused box selects; over
+  an unfocused one it scrolls what holds it).
+- **Tap, pan, fling, long press.** Otherwise the canvas's `internal::TouchGesture`
+  (`source/controls/touchGesture.cpp`) takes the canvas's input until the lift:
+  - a lift within `Canvas::TouchSlop` (8 units) of the down is a **tap**: a move to the
+    down point, a left press and release there, in the lift's frame (so a tap shows
+    no pressed look while the finger is down);
+  - a finger moved `TouchSlop` or more **pans**: per axis, the nearest control under
+    the down point whose `Base::touchPan(delta)` moves along it, latched until the
+    lift (so a horizontal ScrollControl inside a vertical one each take their own
+    axis). `touchPan` returns what it moved: a `ScrollControl` moves its offsets in
+    whole units and stops at its range's ends (`VirtualList`, `DataTable`'s virtual
+    body and `LogView`, which detaches as a wheel up does, inherit it, so a pan over
+    100 000 items binds only the rows coming into view), a `ZoomPanel` (so a
+    `NodeGraph`) its pan; the gesture keeps what was not moved, so a slow drag adds
+    up. A pan delivers no press, so a drag that starts on a button scrolls and fires
+    nothing, and a pan frame costs what a wheel step to the same offset costs;
+  - lifted while moving, a pan **flings**: the finger's speed over its last
+    `FlingWindowSeconds` (0.1 s), from `MinFlingSpeed` (50 units/s) up to
+    `MaxFlingSpeed` per axis, falling by e every `FlingTimeConstant` (0.325 s) on the
+    canvas clock, one `anim::` animation per flinging control calling its `touchPan`,
+    each axis stopping under `StopFlingSpeed` (10 units/s) or at its range's end, so a
+    settled UI runs nothing; the next finger down anywhere on the canvas stops every
+    fling and is no tap;
+  - held still within the slop for `LongPressSeconds` (0.5 s, a canvas timer) it is a
+    **long press**: the context menu of the control under it
+    (`Canvas::contextMenuOwnerFor`) opens at the finger (`showContextMenu`, placed by
+    `Menu::placement`), and the lift does nothing more. It never goes through a right
+    press, which a ZoomPanel takes for a pan. `Base::contextMenuOpening(at)`, called on
+    the owner and its ancestors by `showContextMenu` whichever way the menu opens, is
+    where a `NodeGraph` sets `getContextMenuPosition()`, so a long press and a right
+    press give the same point.
+- **No hover from a finger.** Every touch ends with `inputMouseLeave()`, so nothing
+  stays hovered after a lift and no tooltip's delay starts from one.
+
+### The input method (`TextBox`)
+
+- **The composition.** `TextBox::setComposition(text, caret)` shows an input method's
+  composing text in place of the selection, or at the caret, with the caret `caret`
+  bytes into it and an underline under exactly its glyphs
+  (`getCompositionBounds()`; the textured skin's fourth TextBox primitive, taken the
+  first time one is drawn, at the text's z as the selection is). It is not in
+  `getText()`, not on the undo stack and fires no `onTextChanged`.
+  `commitComposition(text)` leaves the text, caret, undo step and events that typing
+  the text leaves; `cancelComposition()`, Escape and an empty update give back the
+  text, caret and selection it began from. A key, a character, a caret move, an edit,
+  an undo or the focus leaving commits what is pending first; the app's `setText()`
+  drops it. A `PasswordTextBox` shows none and types the commit
+  (`TextBox::allowsComposition()`). `Canvas::inputComposition*` hands them to the
+  keyboard-focused control (`Base::onCompositionUpdate`/`Commit`/`Cancel`): a control
+  that takes no composition (a `CodeEditor`, a plain control) gets a commit as typed
+  characters.
+- **Asking for the keyboard.** A text control calls
+  `platform::setTextInputRect(active, caretDeviceRect)` as it gains and loses the
+  keyboard focus and as its caret moves (`TextBox::reportTextInput`,
+  `CodeEditor::reportTextInput`; read-only editors never ask), the caret in device px
+  of the framebuffer. Natively it does nothing (`setTextInputHandler` replaces it for
+  a test); in a page it focuses or blurs the hidden textarea below.
+
+### The page side (`platform::useBrowserInput`)
+
+`input::GLFW3::useBrowserInput(true)`, called by OpenGLCore's and ControlTest's
+windows after `initialize(canvas)`, installs `platform::BrowserInput` (touch,
+character, key tap and composition functions onto the translator's `processTouch`,
+`processTypedCharacter`, `processKeyTap` and the canvas's composition calls); in a
+page `source/platforms/crossPlatform.cpp` (`gweni_js_input_listen`) then adds, in
+`Module.gweniInput` (with counts a test reads: the textarea's focuses and blurs and
+the touches handed on):
+
+- **Touch listeners** on `window`, in the capture phase and not passive, which stop
+  every touch event there, so none reaches emscripten-glfw's canvas and document
+  listeners (its one-finger left-button mouse, which never sent a cursor-leave), and
+  hand those that start on the canvas to `gweni_platform_touch` in CSS px from the
+  canvas's top-left (GLFW's window coordinates, mapped to logical units as the mouse
+  is), preventing their defaults (the browser's scrolling, zooming and compatibility
+  mouse events). A touch elsewhere keeps its defaults, so the page's own links and
+  checkboxes still get their clicks. The canvas gets `touch-action: none`, as the
+  pages' CSS also says. No Pointer Events: cancelling a `pointerdown` does not stop
+  the touch events emscripten-glfw listens to.
+- **A hidden textarea** (transparent, 16 px so iOS does not zoom into it,
+  `autocapitalize`, `autocorrect` and `autocomplete` off, no pointer events) that
+  `setTextInputRect` moves to the caret (so an input method's candidate window stands
+  there) and focuses synchronously, inside the input call, so inside the tap's own
+  `touchend` (or the click's) task: iOS opens a keyboard only from a user gesture's
+  task. Going inactive blurs it once the task's calls are done, so a focus moving from
+  one box to another does not close and reopen a phone's keyboard. Its `input` event
+  of type `insertCompositionText` is a composition update (the caret from its
+  selection), `compositionend` a commit (or, empty, a cancel), its `beforeinput`
+  `insertText` the characters no keydown delivered (a phone keyboard, an input
+  method's predictions), `deleteContentBackward`/`Forward` and the line breaks a key
+  tap of Backspace, Delete and Return; it is emptied after each, so it never holds
+  text.
+- **A key guard** on `window`, in the capture phase: an input method's keystrokes
+  (keyCode 229, `"Process"`, `"Unidentified"`, any `isComposing`) never reach
+  emscripten-glfw, whose Backspace would delete from the box while the composition
+  deletes from itself, and while the textarea has the focus a keydown that types one
+  code point without Ctrl or Meta has its default prevented, so the textarea never
+  types what emscripten-glfw's keydown already typed. Desktop typing therefore still
+  comes through keydown as before. Ctrl and Meta keys are left alone: the clipboard
+  rides on the copy, cut and paste events that follow them, and the clipboard's
+  listeners count the textarea as gweni's.
+- **emscripten-glfw's focus test**: its `Context::onKeyDown` drops every key while an
+  element other than the canvas has the focus, so `GLFW3.isAnyElementFocused` is
+  wrapped not to count the textarea. That is a port internal: without it the page
+  says so in one stderr line, and `web_touch`'s desktop check and `web_input`'s typing
+  checks fail.
+
+`Dead` keys are left to emscripten-glfw: Chromium on Linux and Windows sends the
+composed character on the next keydown, and where a browser composes it instead
+(macOS) the composition path takes it. Out of scope so far: pinch zoom, multi-finger
+scroll, touch selection handles, a pressed look during a tap, edge overscroll.
 
 ## Images from memory: the loaders, ImagePanel's modes, the image grid
 

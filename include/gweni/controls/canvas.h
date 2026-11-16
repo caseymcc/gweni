@@ -828,12 +828,13 @@ public:
     /// The cursor left the window: nothing on this canvas is hovered any more
     /// (input::onMouseLeft), so the next update phase hides its tooltip.
     bool inputMouseLeave() override;
-    /// A touch point (docs/architecture.md -> "Touch"). One finger is tracked:
-    /// the first down, until its up or cancel; every other finger's events are
-    /// taken and ignored meanwhile. On its down the canvas hit-tests the point
-    /// (getControlAt). If the control there or an ancestor keepsTouchDrag(), the
-    /// finger is a left-button mouse drag (a move to the point and a press,
-    /// its moves, a release where it lifts), so a control's own drag and its
+    /// A touch point (docs/architecture.md -> "Touch and the input method").
+    /// One finger is tracked: the first down, until its up or cancel; every
+    /// other finger's events are taken and ignored meanwhile. On its down
+    /// the canvas hit-tests the point (getControlAt). If the control there or
+    /// an ancestor keepsTouchDrag(), the finger is a left-button mouse drag
+    /// (a move to the point and a press, its moves, a release where it
+    /// lifts), so a control's own drag and its
     /// pressGesture() run as for the mouse. Otherwise the canvas's touch
     /// gesture takes the canvas's input (setInputCapture) until the lift: a
     /// lift within TouchSlop units of the down is a tap (a move to the down
