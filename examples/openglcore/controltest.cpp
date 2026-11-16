@@ -1187,6 +1187,36 @@
  *                 old current item's (now a link) in one pass; settled frames
  *                 write nothing; the demo gives every id back. Exits non-zero
  *                 if any check is no.
+ *    toolbar      ToolBarDemo, the clock frozen (toolbar.png, toolbar-bold.png),
+ *                 its label not updating: the editor toolbar at its full width
+ *                 (every item shown, no overflow button), then narrowed a step
+ *                 at a time (each step's width found by halving) until only
+ *                 its AlwaysShow items and the search box are left, widened
+ *                 back through the same widths; the mouse onto Cut and off;
+ *                 at the narrowest width a click on the overflow button, on
+ *                 its Bold entry, the button again (the menu open), again
+ *                 (closed), Bold turned off by the app and the menu opened and
+ *                 closed, Bold on again, then the full width; at a width with
+ *                 three items in the menu New focused, Right to the overflow
+ *                 button and once more, then Left back. One line
+ *                   toolbar full_row=yes|no ... ids_back=yes|no steps=N
+ *                     <width>:ok|FAIL,moved=<index>,passes=N,prims=N,texts=N ...
+ *                 reports the checks: each step moves exactly one item into
+ *                 the menu in one pass, writing no slot but the moved items'
+ *                 (a separator it hid included), the overflow button's and the
+ *                 bar's own (a write outside them is listed after the index
+ *                 as /<Type>#<id>), 8 steps down to 4 items; widening gives
+ *                 each width's frame back byte for byte and hides the button;
+ *                 the hover writes Cut's slot alone, lays nothing out, and
+ *                 moving off gives the frame back; Bold's entry is checkable,
+ *                 choosing it turns Bold on and closes the menu, the next open
+ *                 shows it checked and the one after the app's change
+ *                 unchecked, and the wide bar shows it on with no pixel
+ *                 changed outside it; settled frames write nothing with the
+ *                 menu open and closed; Right visits every shown tool item
+ *                 (not the separators or the search box) to the overflow
+ *                 button and stays there, Left goes back the same way; the
+ *                 demo gives every id back. Exits non-zero if any check is no.
  *    range-slider RangeSliderDemo, the clock frozen (range-slider.png,
  *                 range-slider-gap.png): the mouse onto the price's low thumb
  *                 and off; a drag of each price thumb toward the other, of the
@@ -1645,6 +1675,7 @@
 #include <gweni/controls/segmentedButtons.h>
 #include <gweni/controls/breadcrumb.h>
 #include <gweni/controls/splitButton.h>
+#include <gweni/controls/toolBar.h>
 #include <gweni/controls/dropDownButton.h>
 #include <gweni/controls/stepper.h>
 #include <gweni/controls/calendar.h>
@@ -1718,6 +1749,7 @@
 #include <demo/segmentedButtons.h>
 #include <demo/breadcrumb.h>
 #include <demo/splitButton.h>
+#include <demo/toolBar.h>
 #include <demo/stepper.h>
 #include <demo/searchCombo.h>
 #include <demo/calendar.h>
@@ -1899,7 +1931,7 @@ static void content_scale_callback(GLFWwindow *window, float, float)
     X(ShowcaseDisplayDemo) X(ShowcaseWindowsDemo) \
     X(ButtonDemo) X(LabelDemo) X(LabelMultilineDemo) X(ProgressBarDemo) \
     X(GroupBoxDemo) X(ImagePanelDemo) X(StatusBarDemo) X(SeparatorDemo) X(PlotHistogramDemo) X(PlotLinesDemo) X(ChartTimeBarsDemo) X(ChartLinesDemo) X(ChartAreasDemo) X(TimelineDemo) X(ComboBoxDemo) X(SearchComboDemo) \
-    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(NavigationRailDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(TreeTableDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(CodeViewDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(SegmentedButtonsDemo) X(CalendarDemo) X(DateTimeDemo) X(SplitButtonDemo) X(BreadcrumbDemo) X(StepperDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
+    X(TextBoxDemo) X(ListBoxDemo) X(SelectableDemo) X(NavigationRailDemo) X(VirtualListDemo) X(VirtualListVariableDemo) X(DataTableDemo) X(DataTableVirtualDemo) X(TreeTableDemo) X(CodeEditorDemo) X(CodeEditorFormDemo) X(CodeViewDemo) X(LogViewDemo) X(ContextMenuDemo) X(PopupDemo) X(ChipBadgeDemo) X(SegmentedButtonsDemo) X(CalendarDemo) X(DateTimeDemo) X(SplitButtonDemo) X(BreadcrumbDemo) X(ToolBarDemo) X(StepperDemo) X(DialogDemo) X(LargeDialogDemo) X(ToastDemo) X(CrossSplitterDemo) X(RadioButtonDemo) \
     X(CheckBoxDemo) X(SwitchDemo) X(SpinnerDemo) X(FieldValidationDemo) X(NumericDemo) X(SliderDemo) X(SliderTextDemo) X(RangeSliderDemo) X(DragNumberDemo) X(KnobDemo) X(VectorFieldDemo) X(MenuStripDemo) \
     X(WindowDemo) X(WindowButtonsDemo) X(TreeControlDemo) X(PropertiesDemo) X(TabControlDemo) X(TabCloseDemo) X(TabOverflowDemo) \
     X(ScrollControlDemo) X(PageControlDemo) X(CollapsibleListDemo) X(ColorPickerDemo) X(ColorEditDemo) \
@@ -3064,7 +3096,7 @@ static bool runSteps(Session &s, const std::vector<Step> &steps, const std::stri
 enum class Scenario { None, PerControl, Resize, Docked, Scroll, Interaction, Typing, Clip, TextSize, Scale,
     ToolTip, ContextMenu, Popup, Dialog, Toast, VirtualList, VirtualListVariable, DataTableVirtual, TreeTable, TreeTableLive, HideShow, DemoLabels, PlotHistogram,
     PlotLines, Knob, Chart, Timeline, Inspector, Theme, StatsOverlay, DepthView, ZoomPanel, NodeGraph, CodeEditor, LogView,
-    ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented, SplitButton,
+    ChipBadge, NavigationRail, Flow, Board, Switch, Spinner, FieldValidation, ImageGrid, Segmented, SplitButton, ToolBar,
     Breadcrumb, RangeSlider, Stepper, CodeView, RichText, Markdown, MarkdownImages, SearchCombo, Reorder, Calendar, DateTime, Translucency,
     OpacityRoundTrip, Opacity };
 
@@ -3119,6 +3151,7 @@ static bool parseScenario(const std::string &name, Scenario &scenario)
     else if(name == "segmented") scenario=Scenario::Segmented;
     else if(name == "split-button") scenario=Scenario::SplitButton;
     else if(name == "breadcrumb") scenario=Scenario::Breadcrumb;
+    else if(name == "toolbar") scenario=Scenario::ToolBar;
     else if(name == "range-slider") scenario=Scenario::RangeSlider;
     else if(name == "stepper") scenario=Scenario::Stepper;
     else if(name == "code-view") scenario=Scenario::CodeView;
@@ -15628,6 +15661,400 @@ static bool runBreadcrumbScenario(Session &s, const std::string &shotDir, bool &
 }
 
 //-----------------------------------------------------------------------------
+// --scenario toolbar: ToolBarDemo's editor toolbar, the clock frozen
+//
+// The container the toolbar fills is narrowed until one more item goes into
+// the overflow menu, a step at a time, from the full row to the AlwaysShow
+// items and the search box (which has no menu form) alone, and widened back.
+// A step's frame may write the moved item's (and a separator it hid or
+// showed), the overflow button's and the bar's own slots, nothing else: every
+// other item keeps its place. The demo's label is the app's reply to an
+// action: its new text is laid out, so it is off throughout. The mouse is off
+// the canvas between the inputs.
+//-----------------------------------------------------------------------------
+
+namespace
+{
+
+// The toolbar's shown items that are no separator.
+size_t shownToolItems(gweni::controls::ToolBar *bar)
+{
+    size_t shown=0;
+
+    for(gweni::controls::Base *item : bar->getItems())
+    {
+        if(!item->hidden() && !gweni::gweni_cast<gweni::controls::Separator>(item))
+            ++shown;
+    }
+    return shown;
+}
+
+// The shown menu entry of `menu` captioned `text`, or null.
+gweni::controls::MenuItem *menuEntry(gweni::controls::Menu *menu, const std::string &text)
+{
+    for(gweni::controls::Base *child : menu->getChildren())
+    {
+        auto *item=gweni::gweni_cast<gweni::controls::MenuItem>(child);
+
+        if(item && !item->hidden() && item->getText() == text)
+            return item;
+    }
+    return nullptr;
+}
+
+}//namespace
+
+static bool runToolBarScenario(Session &s, const std::string &shotDir, bool &passed)
+{
+    s.freezeClock=true;
+
+    InteractionChecks checks;
+    checks.scenario="toolbar";
+
+    const size_t idsBefore=livePrimitiveIds()+liveTextIds();
+    gweni::controls::Base *control=addControl(s, "ToolBarDemo");
+    auto *demo=gweni::gweni_cast<gweni::ToolBarDemo>(control);
+
+    if(!demo)
+    {
+        std::cerr<<"ControlTest: toolbar: ToolBarDemo was not built\n";
+        return false;
+    }
+
+    s.label="toolbar";
+    demo->setLabelUpdates(false);
+
+    gweni::controls::ToolBar *bar=demo->editorBar();
+    gweni::controls::internal::ToolBarOverflowButton *more=bar->getOverflowButton();
+    auto centre=[](gweni::controls::Base *c) {
+        const gweni::Rect r=c->getCanvasBounds();
+
+        return gweni::Point(r.x+r.w/2, r.y+r.h/2);
+    };
+
+    // the full row: every item shown, no overflow button
+    renderFrames(s, s.frames);
+    demo->setBarWidth(bar->fullWidth());
+    renderFrames(s, s.frames);
+
+    bool ok=shoot(s, shotDir+"/toolbar.png");
+    std::vector<uint8_t> pixels;
+    size_t idleWork=settleCodeEditor(s, pixels);
+    const size_t allItems=shownToolItems(bar);
+
+    checks.check("full_row", allItems == 12 && more->hidden(), "the full width showed "
+        +std::to_string(allItems)+" items (12 expected) and the overflow button "+(more->hidden() ? "hidden" : "shown"));
+
+    // (1) narrowed a step at a time: the width at which one more item goes
+    // found by halving, from a settled frame one unit wider, then the step
+    std::vector<int> widths{demo->getBarWidth()};
+    std::vector<std::vector<uint8_t>> frames{pixels};
+    bool stepsOk=true;
+    std::string stepsWhat;
+    std::set<size_t> barOwn;
+
+    for(size_t id : bar->getSkinControl()->getPrimitives())
+        barOwn.insert(id);
+
+    for(int step=0; step < 20; ++step)
+    {
+        const size_t shown=shownToolItems(bar);
+        int hi=demo->getBarWidth();    // shows `shown`
+        int lo=1;
+
+        demo->setBarWidth(lo);
+        renderFrames(s, 1);
+        if(shownToolItems(bar) == shown)
+            break;      // nothing more can go
+        // the least width that still shows `shown`
+        while(hi-lo > 1)
+        {
+            const int mid=(lo+hi)/2;
+
+            demo->setBarWidth(mid);
+            renderFrames(s, 1);
+            if(shownToolItems(bar) == shown)
+                hi=mid;
+            else
+                lo=mid;
+        }
+        demo->setBarWidth(hi);
+        renderFrames(s, 1);
+        idleWork+=settleCodeEditor(s, pixels);
+        widths.push_back(hi);
+        frames.push_back(pixels);
+
+        // the step: one unit narrower
+        std::vector<bool> hidden;
+
+        for(gweni::controls::Base *item : bar->getItems())
+            hidden.push_back(item->hidden());
+        demo->setBarWidth(hi-1);
+
+        const CodeEditorFrame frame=codeEditorFrame(s);
+        std::set<size_t> allowedPrims=barOwn, allowedTexts;
+        std::string movedWhat;
+
+        subtreeIds(more, allowedPrims, allowedTexts);
+        for(size_t i=0; i < hidden.size(); ++i)
+        {
+            gweni::controls::Base *item=bar->getItems()[i];
+
+            if(hidden[i] == item->hidden())
+                continue;
+            subtreeIds(item, allowedPrims, allowedTexts);
+            if(!gweni::gweni_cast<gweni::controls::Separator>(item))
+                movedWhat+=(movedWhat.empty() ? "" : "+")+std::to_string(i);
+        }
+
+        // what it wrote outside them, by owner, for the report
+        std::function<void(gweni::controls::Base *)> owners=[&](gweni::controls::Base *c) {
+            if(c->getSkinControl())
+                for(size_t id : c->getSkinControl()->getPrimitives())
+                    if(frame.primitives.count(id) && !allowedPrims.count(id))
+                        movedWhat+=std::string("/")+c->getTypeName()+"#"+std::to_string(id);
+            for(gweni::controls::Base *child : c->getChildren())
+                owners(child);
+        };
+        owners(s.canvas);
+
+        const bool stepOk=shownToolItems(bar) == shown-1 && frame.passes == 1 && !more->hidden()
+            && idsWithin(frame.primitives, allowedPrims) && idsWithin(frame.texts, allowedTexts);
+
+        stepsWhat+=" "+std::to_string(hi-1)+":"+(stepOk ? "ok" : "FAIL")+",moved="+movedWhat+",passes="+std::to_string(frame.passes)
+            +",prims="+std::to_string(frame.primitives.size())+",texts="+std::to_string(frame.texts.size());
+        if(!stepOk)
+            stepsOk=false;
+    }
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    const size_t narrowest=shownToolItems(bar);
+
+    // the AlwaysShow file group and the search box are left
+    checks.check("shrink", stepsOk && narrowest == 4 && widths.size() == 9,
+        "narrowing the bar a step at a time did not move one item per step into the menu in one pass, "
+        "writing only the moved items', the overflow button's and the bar's slots, down to the 4 items that "
+        "stay ("+std::to_string(narrowest)+" left after "+std::to_string(widths.size()-1)+" steps, 8 expected):"
+        +stepsWhat);
+
+    // (2) widened back: each earlier width's frame, byte for byte
+    bool growOk=true;
+    std::string growWhat;
+
+    for(size_t i=widths.size(); i > 0; --i)
+    {
+        demo->setBarWidth(widths[i-1]);
+        renderFrames(s, 1);
+
+        std::vector<uint8_t> again;
+
+        idleWork+=settleCodeEditor(s, again);
+        if(again != frames[i-1])
+        {
+            growOk=false;
+            growWhat+=" "+std::to_string(widths[i-1]);
+        }
+    }
+    idleWork+=settleCodeEditor(s, pixels);
+    checks.check("grow", growOk && more->hidden(), "widening the bar back did not give the frame at each width "
+        "back, or left the overflow button shown; differing at:"+growWhat);
+
+    // (3) a hover on a tool button: its slots alone, nothing laid out, and
+    // moving off gives the frame back
+    gweni::controls::Base *cut=nullptr;
+
+    for(gweni::controls::Base *item : bar->getItems())
+    {
+        auto *button=gweni::gweni_cast<gweni::controls::ToolButton>(item);
+
+        if(button && button->getText() == "Cut")
+            cut=button;
+    }
+
+    std::set<size_t> cutPrims, cutTexts;
+
+    if(cut)
+        subtreeIds(cut, cutPrims, cutTexts);
+    {
+        const gweni::Point at=centre(cut ? cut : control);
+
+        moveMouse(s, at.x, at.y);
+    }
+
+    const CodeEditorFrame hover=codeEditorFrame(s);
+
+    forgetMouse(s);
+
+    const CodeEditorFrame off=codeEditorFrame(s);
+    const size_t cutSlots=cut ? cut->getSkinControl()->getPrimitives().size() : 0;
+
+    checks.check("hover", cut && !hover.primitives.empty() && hover.primitives.size() <= cutSlots
+        && idsWithin(hover.primitives, cutPrims) && idsWithin(hover.texts, cutTexts) && hover.passes == 0
+        && hover.changed <= subtreeControls(cut) && off.pixels == pixels,
+        "the hover on Cut wrote "+std::to_string(hover.primitives.size())+" primitive ids (its "
+        +std::to_string(cutSlots)+" alone allowed) or text ids outside it, marked "+std::to_string(hover.changed)
+        +" controls (its "+std::to_string(subtreeControls(cut))+" allowed), laid out ("+std::to_string(hover.passes)
+        +" passes), or moving off did not give the frame back ("+(off.pixels == pixels ? "it did" : "it did not")+")");
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (4) the narrowest bar: Bold chosen from the overflow menu shows checked
+    // on the next open, a settled frame writes nothing with the menu open and
+    // closed, and Bold shows on in the bar once it is wide again
+    gweni::controls::ToolButton *bold=demo->boldToggle();
+
+    demo->setBarWidth(widths.back()-1);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    const gweni::Point moreAt=centre(more);
+
+    clickMouse(s, moreAt.x, moreAt.y);
+    forgetMouse(s);
+    renderFrames(s, 1);
+
+    gweni::controls::Menu *menu=more->getMenu();
+    gweni::controls::MenuItem *entry=menuEntry(menu, "Bold");
+    const bool firstOpen=more->isMenuOpen() && entry && entry->isCheckable() && !entry->isChecked();
+
+    if(entry)
+    {
+        const gweni::Point at=centre(entry);
+
+        clickMouse(s, at.x, at.y);
+        forgetMouse(s);
+    }
+    renderFrames(s, 1);
+
+    const bool chose=!more->isMenuOpen() && bold->getToggleState();
+
+    idleWork+=settleCodeEditor(s, pixels);
+    clickMouse(s, moreAt.x, moreAt.y);
+    forgetMouse(s);
+    renderFrames(s, 1);
+    entry=menuEntry(menu, "Bold");
+
+    const bool checkedNext=more->isMenuOpen() && entry && entry->isChecked();
+    std::vector<uint8_t> openPixels;
+    const size_t openIdle=settleCodeEditor(s, openPixels);
+
+    clickMouse(s, moreAt.x, moreAt.y);
+    forgetMouse(s);
+    renderFrames(s, 1);
+
+    // and the other way: the app turns it off while it is in the menu, and
+    // the next open shows that, then on again
+    bold->setToggleState(false);
+    clickMouse(s, moreAt.x, moreAt.y);
+    forgetMouse(s);
+    renderFrames(s, 1);
+    entry=menuEntry(menu, "Bold");
+
+    const bool appSynced=more->isMenuOpen() && entry && !entry->isChecked();
+
+    clickMouse(s, moreAt.x, moreAt.y);
+    forgetMouse(s);
+    bold->setToggleState(true);
+    renderFrames(s, 1);
+
+    std::vector<uint8_t> closedPixels;
+    const size_t closedIdle=settleCodeEditor(s, closedPixels);
+
+    checks.check("menu_settled", openIdle == 0 && closedIdle == 0 && !more->isMenuOpen(),
+        "a settled frame wrote or changed "+std::to_string(openIdle)+" with the menu open and "
+        +std::to_string(closedIdle)+" closed");
+
+    demo->setBarWidth(widths.front());
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+    shoot(s, shotDir+"/toolbar-bold.png");
+
+    const size_t boldDiff=differencesInsideRect(s, frames.front(), pixels, bold->getCanvasBounds());
+    const size_t boldOutside=differencesOutsideRects(s, frames.front(), pixels, {bold->getCanvasBounds()});
+
+    checks.check("toggle", firstOpen && chose && checkedNext && appSynced && !bold->hidden() && bold->getToggleState()
+        && boldDiff > 0 && boldOutside == 0,
+        std::string("the menu's Bold entry was checkable and unchecked: ")+(firstOpen ? "yes" : "no")
+        +", choosing it turned Bold on and closed the menu: "+(chose ? "yes" : "no")+", the next open showed it "
+        "checked: "+(checkedNext ? "yes" : "no")+", the open after the app turned it off showed it unchecked: "
+        +(appSynced ? "yes" : "no")+", the wide bar showed Bold on ("+std::to_string(boldDiff)
+        +" pixels changed in it, "+std::to_string(boldOutside)+" outside it)");
+
+    // Bold off again, from the bar
+    {
+        const gweni::Point at=centre(bold);
+
+        clickMouse(s, at.x, at.y);
+        forgetMouse(s);
+    }
+    if(gweni::KeyboardFocus)
+        gweni::KeyboardFocus->unfocus();
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    // (5) a bar with items in the menu: Right moves the focus over the shown
+    // tool items, the overflow button last, and stays there; Left goes back
+    demo->setBarWidth(widths[3]-1);
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+
+    std::vector<gweni::controls::Base *> expected;
+
+    for(gweni::controls::Base *item : bar->getItems())
+    {
+        if(bar->canFocus(item))
+            expected.push_back(item);
+    }
+    expected.push_back(more);
+
+    std::vector<gweni::controls::Base *> visitedRight{bar->getItems().front()}, visitedLeft;
+
+    bar->getItems().front()->focus();
+    renderFrames(s, 1);
+    for(size_t i=0; i < expected.size(); ++i)
+    {
+        sendKey(s, "right");
+        renderFrames(s, 1);
+        if(i+1 < expected.size())
+            visitedRight.push_back(gweni::KeyboardFocus);
+    }
+
+    const bool stayed=gweni::KeyboardFocus == more;
+
+    for(size_t i=1; i < expected.size(); ++i)
+    {
+        sendKey(s, "left");
+        renderFrames(s, 1);
+        visitedLeft.insert(visitedLeft.begin(), gweni::KeyboardFocus);
+    }
+    visitedLeft.push_back(more);
+
+    checks.check("keys", visitedRight == expected && stayed && visitedLeft == expected,
+        "Right and Left did not move the focus over the "+std::to_string(expected.size()-1)
+        +" shown tool items to the overflow button and back (or Right left it)");
+
+    if(gweni::KeyboardFocus)
+        gweni::KeyboardFocus->unfocus();
+    renderFrames(s, 1);
+    idleWork+=settleCodeEditor(s, pixels);
+    checks.check("settled", idleWork == 0, "settled frames wrote or changed "+std::to_string(idleWork));
+
+    dropControl(s, control);
+    renderFrames(s, 1);
+
+    const size_t idsLeft=livePrimitiveIds()+liveTextIds()-idsBefore;
+
+    checks.check("ids_back", idsLeft == 0, std::to_string(idsLeft)+" ids not given back");
+
+    passed=checks.allPassed();
+    std::cout<<"toolbar";
+    for(const auto &result : checks.results)
+        std::cout<<" "<<result.first<<"="<<(result.second?"yes":"no");
+    std::cout<<" steps="<<(widths.size()-1)<<stepsWhat<<" hover_prims="<<hover.primitives.size()<<"\n";
+    return ok;
+}
+
+//-----------------------------------------------------------------------------
 // --scenario stepper: StepperDemo's steppers, the clock frozen
 //
 // A step change is the looks that change, the page hidden and the one shown
@@ -24413,6 +24840,15 @@ int main(int argc, char *argv[])
             ok=runBreadcrumbScenario(session, shotDir, passed);
             if(ok && !passed)
                 ok=false;   // a collapse step, the hover, the menu or a push did more than its parts
+            break;
+        }
+
+        case Scenario::ToolBar:
+        {
+            bool passed=false;
+            ok=runToolBarScenario(session, shotDir, passed);
+            if(ok && !passed)
+                ok=false;   // a width step moved other than one item or wrote outside it, or a key, the menu or a hover did more
             break;
         }
 

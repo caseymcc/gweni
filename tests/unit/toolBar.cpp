@@ -303,7 +303,7 @@ TEST_CASE("ToolBar: AlwaysShow and AlwaysOverflow items, and a control with no m
     checkOnePass(scene.frame());
     CHECK(scene.shown() == "c1 s1 +");
 
-    // narrower still: the AlwaysShow items stay, cut by the toolbar
+    // narrower still: the AlwaysShow items stay, past the toolbar's edge
     scene.setWidth(bar->minimumWidth()/2);
     checkOnePass(scene.frame());
     CHECK(scene.shown() == "c1 s1 +");

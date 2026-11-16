@@ -130,6 +130,8 @@ set(GWENI_DEMO_SOURCES
     demo/breadcrumb.h
     demo/splitButton.cpp
     demo/splitButton.h
+    demo/toolBar.cpp
+    demo/toolBar.h
     demo/stepper.cpp
     demo/stepper.h
     demo/searchCombo.cpp

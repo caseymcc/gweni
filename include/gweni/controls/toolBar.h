@@ -174,9 +174,9 @@ public:
 //! hidden. A separator never starts or ends the shown row, nor follows another
 //! shown separator. An addControl item with no overflow text has no menu form
 //! and is never overflowed, as an AlwaysShow item; when the AlwaysShow items
-//! alone do not fit, they are placed at their widths all the same and the
-//! toolbar (which clips its children) cuts them at its right edge, the
-//! overflow button then holding the rest of the row past them.
+//! alone do not fit, they are placed at their widths all the same, past the
+//! toolbar's right edge (it does not clip, shouldClip(): an ancestor that
+//! does cuts them), the overflow button after them.
 class GWENI_EXPORT ToolBar: public Base
 {
 public:
@@ -289,6 +289,9 @@ public:
     bool onKeyend(bool down) override;
     //! \}
 
+    //! The width that shows every item: its preferred width with no width
+    //! asked for (a Fixed toolbar's preferred width is its request).
+    int fullWidth() const;
     //! The least width that shows every AlwaysShow item and the overflow
     //! button (the button only if some item may overflow).
     int minimumWidth() const;
@@ -296,6 +299,11 @@ public:
     void calculateSize(skin::Base *skin, Dim dim) override;
     void arrange(skin::Base *skin, Dim dim) override;
     void onChildRemoved(Base *child) override;
+    //! It does not clip its items (Label's way): a clip box of its bounds
+    //! would be every item's, so each width change would give every shown
+    //! item a new one, and only the moved items may change. The items are
+    //! placed inside it but for the AlwaysShow ones that do not fit.
+    bool shouldClip() override { return false; }
 
 protected:
     struct ItemInfo

@@ -44,6 +44,7 @@
 #include "demo/segmentedButtons.h"
 #include "demo/breadcrumb.h"
 #include "demo/splitButton.h"
+#include "demo/toolBar.h"
 #include "demo/stepper.h"
 #include "demo/searchCombo.h"
 #include "demo/calendar.h"
@@ -261,6 +262,7 @@ void Demo::init(const String &name)
         addDemo<SegmentedButtonsDemo>(cat, "SegmentedButtonsDemo", "Segment buttons");
         addDemo<SplitButtonDemo>(cat, "SplitButtonDemo", "Split buttons");
         addDemo<BreadcrumbDemo>(cat, "BreadcrumbDemo", "Breadcrumb");
+        addDemo<ToolBarDemo>(cat, "ToolBarDemo", "Toolbar");
         addDemo<StepperDemo>(cat, "StepperDemo", "Stepper");
         addDemo<CalendarDemo>(cat, "CalendarDemo", "Calendar");
         addDemo<DateTimeDemo>(cat, "DateTimeDemo", "Date and time");

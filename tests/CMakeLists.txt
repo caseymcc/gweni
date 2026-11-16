@@ -284,13 +284,13 @@ if(TARGET ControlTest AND NOT EMSCRIPTEN)
     # looks and drops, the calendar's months and views, the date and time
     # fields' steps, commits and calendar popup, and a MarkdownView's
     # edits, selection and code block, its images' late deliveries, the
-    # translucency scenario's panel,
+    # toolbar's width steps, menu and keys, the translucency scenario's panel,
     # scrim and overlay, the opacity scenario's level changes and fade,
     # and the knobs' drags and typed entry
     foreach(verify_scenario interaction resize scale clip tooltip context-menu stats-overlay
             depth-view zoom-panel node-graph virtual-list-variable code-editor log-view chip-badge
             dialog toast flow switch spinner navigation-rail board field-validation segmented
-            tree-table tree-table-live split-button breadcrumb range-slider stepper code-view rich-text markdown
+            tree-table tree-table-live split-button breadcrumb toolbar range-slider stepper code-view rich-text markdown
             markdown-images search-combo reorder calendar date-time translucency opacity knob)
         string(REPLACE "-" "_" verify_name "${verify_scenario}")
         set(verify_flags)
@@ -837,6 +837,18 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
     gweni_whole_app_test(controltest_breadcrumb 60
         COMMAND $<TARGET_FILE:ControlTest> --headless --scenario breadcrumb --require-one-pass
             --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/breadcrumb@VARIANT@
+        WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
+
+    # ToolBarDemo: the editor toolbar's container narrowed a step at a time
+    # moves one item into the overflow menu per step in one pass, writing only
+    # the moved item's, the overflow button's and the bar's slots, and widened
+    # back gives each frame back; a tool button's hover writes its slot alone;
+    # Bold chosen from the menu shows checked on the next open and on in the
+    # wide bar; settled frames write nothing, the menu open or closed; Right
+    # and Left move the focus over the shown items to the overflow button
+    gweni_whole_app_test(controltest_toolbar 60
+        COMMAND $<TARGET_FILE:ControlTest> --headless --scenario toolbar --require-one-pass
+            --shot-dir ${CMAKE_CURRENT_BINARY_DIR}/toolbar@VARIANT@
         WORKING_DIRECTORY ${GWENI_SOURCE_DIR})
 
     # StepperDemo: Next writes only the steps whose looks change, the two

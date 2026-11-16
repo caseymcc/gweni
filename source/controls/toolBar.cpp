@@ -345,6 +345,9 @@ DropDownButton *ToolBar::addDropDown(const String &text, const String &icon)
     DropDownButton *button=newChild<internal::ToolBarDropDown>();
 
     button->setText(text);
+    // a tool button's room, the chevron's kept on the right
+    button->setTextPadding(gweni::Padding(ToolButton::SidePadding, 0,
+        ToolButton::SidePadding+DropDownButton::ChevronRoom, 0));
     if(!icon.empty())
         button->setImage(icon);
     button->setDock(DockPosition::None);
@@ -357,6 +360,7 @@ SplitButton *ToolBar::addSplitButton(const String &text, const String &icon)
     SplitButton *button=newChild<internal::ToolBarSplitButton>();
 
     button->setText(text);
+    button->getMainPart()->setTextPadding(gweni::Padding(ToolButton::SidePadding, 0, ToolButton::SidePadding, 0));
     if(!icon.empty())
         button->setImage(icon);
     button->setDock(DockPosition::None);
@@ -539,6 +543,13 @@ int ToolBar::rowWidth(std::vector<bool> &shown) const
     return width;
 }
 
+int ToolBar::fullWidth() const
+{
+    std::vector<bool> shown(m_items.size(), true);
+
+    return rowWidth(shown)+getPadding().left+getPadding().right;
+}
+
 int ToolBar::minimumWidth() const
 {
     std::vector<bool> shown(m_items.size());
@@ -575,9 +586,7 @@ void ToolBar::calculateSize(skin::Base *skin, Dim dim)
 
     if(dim == Dim::X)
     {
-        std::vector<bool> shown(m_items.size(), true);
-
-        m_preferredSize.width=preferredFromContent(rowWidth(shown)+padding.left+padding.right, Dim::X);
+        m_preferredSize.width=preferredFromContent(fullWidth(), Dim::X);
         return;
     }
 
