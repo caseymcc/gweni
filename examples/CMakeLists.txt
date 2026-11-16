@@ -148,6 +148,8 @@ set(GWENI_DEMO_SOURCES
     demo/dateTime.h
     demo/nodeGraph.cpp
     demo/nodeGraph.h
+    demo/nodeGraphKit.cpp
+    demo/nodeGraphKit.h
     demo/flow.cpp
     demo/flow.h
     demo/imageGrid.cpp

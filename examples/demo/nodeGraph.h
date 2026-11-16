@@ -9,6 +9,8 @@
 
 #include <gweni/controls/base.h>
 
+#include <memory>
+
 namespace gweni
 {
 namespace controls
@@ -17,6 +19,10 @@ class Link;
 class Node;
 class NodeGraph;
 class Pin;
+}
+namespace nodegraphkit
+{
+class NodeGraphMenus;
 }
 
 //! A small shader-like node graph: a texture coordinate, a noise, a colour
@@ -34,6 +40,8 @@ public:
     GWENI_CONTROL(NodeGraphDemo, controls::Base);
 
 public:
+    ~NodeGraphDemo() override;
+
     controls::NodeGraph *graph() const { return m_graph; }
 
     //! A node of the "Add node" menu's kinds at the graph point \p at, linked
@@ -41,29 +49,9 @@ public:
     controls::Node *addNodeOfKind(int kind, const PointF &at, controls::Pin *from=nullptr);
 
 private:
-    //! The menus: the graph's "Add node", a node's "Delete node", a link's
-    //! styles and "Delete link".
-    void giveNodeMenu(controls::Node *node);
-    void giveLinkMenu(controls::Link *link);
-
-    void onGraphMenu(event::Info info);
-    void onItemMenu(event::Info info);
-    void onAddValue(event::Info info);
-    void onAddMath(event::Info info);
-    void onAddMix(event::Info info);
-    void onDeleteItem(event::Info info);
-    void onStraight(event::Info info);
-    void onBezier(event::Info info);
-    void onOrthogonal(event::Info info);
-    void onLinkCreated(event::Info info);
-    void onDroppedOnEmpty(event::Info info);
-
     controls::NodeGraph *m_graph=nullptr;
-    //! the node or link whose menu opened last
-    controls::Base *m_menuTarget=nullptr;
-    //! the pin a link dropped on empty space came from, while its "Add node"
-    //! menu is open
-    controls::Pin *m_addFrom=nullptr;
+    //! the graph's, its nodes' and its links' menus
+    std::unique_ptr<nodegraphkit::NodeGraphMenus> m_menus;
 };
 
 }//namespace gweni

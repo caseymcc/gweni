@@ -5,52 +5,21 @@
  */
 
 #include "demo/nodeGraph.h"
+#include "demo/nodeGraphKit.h"
 #include "gweni/controls/comboBox.h"
-#include "gweni/controls/dragNumber.h"
 #include "gweni/controls/label.h"
-#include "gweni/controls/menu.h"
-#include "gweni/controls/menuItem.h"
 #include "gweni/controls/nodeGraph.h"
 #include "gweni/controls/textBox.h"
-
-#include <cmath>
 
 namespace gweni
 {
 
-namespace
-{
-
-// a colour per kind of value, as a shader editor has them
-const Color FloatPin(0xa1, 0xa1, 0xa1);
-const Color VectorPin(0x63, 0x63, 0xc7);
-const Color ColorPin(0xc7, 0xc7, 0x29);
-const Color ShaderPin(0x63, 0xc7, 0x63);
-
-controls::Pin *addPin(controls::Node *node, controls::PinDirection direction, const String &name,
-    const Color &color, controls::PinShape shape)
-{
-    controls::Pin *pin=node->addPin(direction, name);
-
-    pin->setColor(color);
-    pin->setShape(shape);
-    return pin;
-}
-
-controls::DragNumber *addNumber(controls::Node *node, double value, double min, double max)
-{
-    controls::DragNumber *number=node->newChild<controls::DragNumber>();
-
-    number->setDock(DockPosition::Top);
-    number->setHeight(20);
-    number->setRange(min, max);
-    number->setFormat("%.2f");
-    number->setNumber(value, false);
-    number->setMargin(Margin(0, 2, 0, 2));
-    return number;
-}
-
-}//namespace
+using nodegraphkit::addNumber;
+using nodegraphkit::addPin;
+using nodegraphkit::ColorPin;
+using nodegraphkit::FloatPin;
+using nodegraphkit::ShaderPin;
+using nodegraphkit::VectorPin;
 
 // A line saying what the input does, then the graph filling the rest.
 GWENI_CONTROL_CONSTRUCTOR(NodeGraphDemo)
@@ -128,160 +97,16 @@ GWENI_CONTROL_CONSTRUCTOR(NodeGraphDemo)
     m_graph->addLink(shader, surface, controls::LinkStyle::Bezier);
 
     // the menus
-    if(controls::Menu *menu=m_graph->createContextMenu())
-    {
-        menu->addItem("Add Value")->setAction(this, &NodeGraphDemo::onAddValue);
-        menu->addItem("Add Math")->setAction(this, &NodeGraphDemo::onAddMath);
-        menu->addItem("Add Mix")->setAction(this, &NodeGraphDemo::onAddMix);
-    }
-    m_graph->onContextMenu.add(this, &NodeGraphDemo::onGraphMenu);
-    for(controls::Node *node : m_graph->getNodes())
-        giveNodeMenu(node);
-    for(controls::Link *link : m_graph->getLinks())
-        giveLinkMenu(link);
-    m_graph->onLinkCreated.add(this, &NodeGraphDemo::onLinkCreated);
-    m_graph->onLinkDroppedOnEmpty.add(this, &NodeGraphDemo::onDroppedOnEmpty);
+    m_menus.reset(new nodegraphkit::NodeGraphMenus(m_graph));
 }
 
-void NodeGraphDemo::giveNodeMenu(controls::Node *node)
-{
-    if(controls::Menu *menu=node->createContextMenu())
-        menu->addItem("Delete node")->setAction(this, &NodeGraphDemo::onDeleteItem);
-    node->onContextMenu.add(this, &NodeGraphDemo::onItemMenu);
-}
+// The menus go first, their handler unhooked from the graph that the
+// children's teardown deletes after.
+NodeGraphDemo::~NodeGraphDemo()=default;
 
-void NodeGraphDemo::giveLinkMenu(controls::Link *link)
-{
-    if(controls::Menu *menu=link->createContextMenu())
-    {
-        menu->addItem("Straight")->setAction(this, &NodeGraphDemo::onStraight);
-        menu->addItem("Bezier")->setAction(this, &NodeGraphDemo::onBezier);
-        menu->addItem("Orthogonal")->setAction(this, &NodeGraphDemo::onOrthogonal);
-        menu->addDivider();
-        menu->addItem("Delete link")->setAction(this, &NodeGraphDemo::onDeleteItem);
-    }
-    link->onContextMenu.add(this, &NodeGraphDemo::onItemMenu);
-}
-
-// A right-click on empty space: the new node is not linked to anything.
-void NodeGraphDemo::onGraphMenu(event::Info)
-{
-    m_addFrom=nullptr;
-}
-
-void NodeGraphDemo::onItemMenu(event::Info info)
-{
-    m_menuTarget=info.controlCaller;
-}
-
-// The kinds the "Add node" menu offers: a value, a maths operation and a
-// mix, each with an input and an output of the float kind.
 controls::Node *NodeGraphDemo::addNodeOfKind(int kind, const PointF &at, controls::Pin *from)
 {
-    static const char *const titles[]={"Value", "Math", "Mix"};
-    controls::Node *node=m_graph->addNode(titles[kind], Point(int(std::lround(at.x)), int(std::lround(at.y))));
-
-    node->setTitleColor(Color(0x4a, 0x4a, 0x6a));
-    if(kind != 0)
-        addPin(node, controls::PinDirection::Input, "In", FloatPin, controls::PinShape::Circle);
-    addPin(node, controls::PinDirection::Output, "Out", FloatPin, controls::PinShape::Circle);
-    if(kind == 1)
-    {
-        controls::ComboBox *operation=node->newChild<controls::ComboBox>();
-        operation->setDock(DockPosition::Top);
-        operation->setHeight(20);
-        operation->addItem("Add");
-        operation->addItem("Multiply");
-    }
-    else
-        addNumber(node, kind == 0 ? 1.0 : 0.5, 0.0, 1.0);
-    giveNodeMenu(node);
-
-    // a link dropped where no node was ends on the new node
-    if(from)
-    {
-        for(controls::Pin *pin : node->getPins())
-        {
-            if(m_graph->canLink(from, pin))
-            {
-                controls::Pin *a=nullptr;
-                controls::Pin *b=nullptr;
-
-                m_graph->canLink(from, pin, &a, &b);
-                if(controls::Link *link=m_graph->addLink(a, b))
-                    giveLinkMenu(link);
-                break;
-            }
-        }
-    }
-    return node;
-}
-
-void NodeGraphDemo::onAddValue(event::Info)
-{
-    addNodeOfKind(0, m_graph->getContextMenuPosition(), m_addFrom);
-    m_addFrom=nullptr;
-}
-
-void NodeGraphDemo::onAddMath(event::Info)
-{
-    addNodeOfKind(1, m_graph->getContextMenuPosition(), m_addFrom);
-    m_addFrom=nullptr;
-}
-
-void NodeGraphDemo::onAddMix(event::Info)
-{
-    addNodeOfKind(2, m_graph->getContextMenuPosition(), m_addFrom);
-    m_addFrom=nullptr;
-}
-
-// The item whose menu it is, removed as Delete would remove it: its
-// requests fire and may veto.
-void NodeGraphDemo::onDeleteItem(event::Info)
-{
-    if(controls::Node *node=gweni_cast<controls::Node>(m_menuTarget))
-        m_graph->selectOnly(node);
-    else if(controls::Link *link=gweni_cast<controls::Link>(m_menuTarget))
-        m_graph->selectOnly(link);
-    else
-        return;
-    m_graph->removeSelection();
-    m_menuTarget=nullptr;
-}
-
-void NodeGraphDemo::onStraight(event::Info)
-{
-    if(controls::Link *link=gweni_cast<controls::Link>(m_menuTarget))
-        link->setStyle(controls::LinkStyle::Straight);
-}
-
-void NodeGraphDemo::onBezier(event::Info)
-{
-    if(controls::Link *link=gweni_cast<controls::Link>(m_menuTarget))
-        link->setStyle(controls::LinkStyle::Bezier);
-}
-
-void NodeGraphDemo::onOrthogonal(event::Info)
-{
-    if(controls::Link *link=gweni_cast<controls::Link>(m_menuTarget))
-        link->setStyle(controls::LinkStyle::Orthogonal);
-}
-
-void NodeGraphDemo::onLinkCreated(event::Info info)
-{
-    if(controls::Link *link=gweni_cast<controls::Link>(info.control))
-        giveLinkMenu(link);
-}
-
-// The "Add node" menu where the link was let go; the node picked is linked to
-// the pin it came from.
-void NodeGraphDemo::onDroppedOnEmpty(event::Info)
-{
-    controls::Pin *from=m_graph->getDropPin();
-
-    m_graph->openContextMenuAt(m_graph->getDropPosition());
-    // after the menu's own handler, which clears it for a right-click
-    m_addFrom=from;
+    return m_menus->addNodeOfKind(kind, at, from);
 }
 
 }//namespace gweni
