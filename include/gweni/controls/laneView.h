@@ -286,6 +286,9 @@ public:
     //! last laid out.
     const std::vector<axis::Tick> &getTicks() const { return m_ticks; }
     const std::vector<internal::Text *> &getTickLabels() const { return m_tickLabels; }
+    //! Each tick's label rect, in this control's coordinates: its measured
+    //! width centred on the tick and kept inside the padding, on the axis row.
+    const std::vector<Rect> &getTickLabelRects() const { return m_tickRects; }
 
     //! A lane view is the size it was asked to be (its constructor's or the
     //! app's).
@@ -376,6 +379,7 @@ protected:
     Rect m_viewport;
     int m_scrollOffset=0;
     std::vector<axis::Tick> m_ticks;
+    std::vector<Rect> m_tickRects;
     std::vector<internal::Text *> m_tickLabels;
 
     //! the measures' key and cache

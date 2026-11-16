@@ -422,6 +422,7 @@ void LaneView::computeTicks()
     const double max=getXMax();
 
     m_ticks.clear();
+    m_tickRects.clear();
     if(!(max > min) || m_area.w <= 0)
         return;
 
@@ -445,6 +446,22 @@ void LaneView::computeTicks()
         ticks[i].position+=m_area.x;
         m_ticks.push_back(std::move(ticks[i]));
     }
+
+    // each label centred on its tick inside the control
+    const int lineHeight=labelLineHeight();
+    const Padding &padding=getPadding();
+    const int innerLeft=padding.left;
+    const int innerRight=std::max(innerLeft, getWidth()-padding.right);
+
+    m_tickRects.reserve(m_ticks.size());
+    for(const axis::Tick &tick : m_ticks)
+    {
+        const int width=labelWidth(tick.label);
+        int x=static_cast<int>(std::lround(tick.position))-width/2;
+
+        x=std::max(innerLeft, std::min(x, innerRight-width));
+        m_tickRects.emplace_back(x, m_axisTop, width, lineHeight);
+    }
 }
 
 void LaneView::placeAxis()
@@ -452,11 +469,6 @@ void LaneView::placeAxis()
     // the labels are children laid out next: what is written to them is
     // placement
     PlacementScope placement;
-
-    const int lineHeight=labelLineHeight();
-    const Padding &padding=getPadding();
-    const int innerLeft=padding.left;
-    const int innerRight=std::max(innerLeft, getWidth()-padding.right);
 
     // the body's viewport right of the caption column
     const int captionWidth=std::min(m_captionWidth, m_viewport.w);
@@ -482,14 +494,10 @@ void LaneView::placeAxis()
 
     for(size_t t=0; t < m_ticks.size(); ++t)
     {
-        internal::Text *label=m_tickLabels[t];
-        const axis::Tick &tick=m_ticks[t];
-        const int width=labelWidth(tick.label);
-        int x=static_cast<int>(std::lround(tick.position))-width/2;
+        const Rect &rect=m_tickRects[t];
 
-        x=std::max(innerLeft, std::min(x, innerRight-width));
-        label->setText(tick.label);
-        placeChild(label, x, m_axisTop, width, lineHeight);
+        m_tickLabels[t]->setText(m_ticks[t].label);
+        placeChild(m_tickLabels[t], rect.x, rect.y, rect.w, rect.h);
     }
 
     // the renderer draws from what this computed, and what the lanes hold

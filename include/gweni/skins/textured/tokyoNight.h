@@ -442,6 +442,22 @@ inline Surface TimelineAxis     { Line,                  Line,                  
 inline Surface TimelineBar      { Blue,                  Blue,                  BgDark, 0.0f,    BorderW };
 inline Surface TimelineBarHover { Color(0xff,0xff,0xff,0x40), Color(0xff,0xff,0xff,0x40), Fg, 0.0f, BorderW };
 
+// A Sequencer, on the Timeline's frame, lanes, grid and axis: a clip
+// (SequencerClip, or the app's surface) with SequencerClipSelected's and then
+// SequencerClipHover's fill blended over it by their alpha (on the CPU, so a
+// look is as opaque as the clip) and their border; a key a disc in
+// SequencerKey or SequencerKeySelected (the hover blended over it alike); the
+// playhead's line and its head in the ruler, and the snap guide, in their top
+// colour; the marquee, translucent, over the clips and keys.
+inline Surface SequencerClip         { DarkBlue,              DarkBlue,              Blue,   3.0f, BorderW };
+inline Surface SequencerClipHover    { Color(0xff,0xff,0xff,0x30), Color(0xff,0xff,0xff,0x30), Fg, 3.0f, BorderW };
+inline Surface SequencerClipSelected { Color(0xff,0xff,0xff,0x18), Color(0xff,0xff,0xff,0x18), Orange, 3.0f, 2.0f };
+inline Surface SequencerKey          { Yellow,                Yellow,                BgDark, 5.0f, BorderW };
+inline Surface SequencerKeySelected  { Orange,                Orange,                Fg,     5.0f, BorderW };
+inline Surface SequencerPlayhead     { Red,                   Red,                   Red,    0.0f, 0.0f };
+inline Surface SequencerSnapGuide    { Cyan,                  Cyan,                  Cyan,   0.0f, 0.0f };
+inline Surface SequencerMarquee      { Color(0x7a,0xa2,0xf7,0x30), Color(0x7a,0xa2,0xf7,0x30), Blue, 0.0f, BorderW };
+
 // A RichText's inline code: a flat block a shade over the panel behind it,
 // slightly rounded, under the code's text.
 inline Surface RichTextCode   { BgHighlight,           BgHighlight,           BgHighlight, 3.0f, 0.0f };
@@ -701,6 +717,10 @@ inline std::unordered_map<std::string, Surface*>& surfaceRegistry()
         {"ChartArea6",&ChartArea6},{"ChartArea7",&ChartArea7},
         {"TimelineFrame",&TimelineFrame},{"TimelineLane",&TimelineLane},{"TimelineGrid",&TimelineGrid},
         {"TimelineAxis",&TimelineAxis},{"TimelineBar",&TimelineBar},{"TimelineBarHover",&TimelineBarHover},
+        {"SequencerClip",&SequencerClip},{"SequencerClipHover",&SequencerClipHover},
+        {"SequencerClipSelected",&SequencerClipSelected},{"SequencerKey",&SequencerKey},
+        {"SequencerKeySelected",&SequencerKeySelected},{"SequencerPlayhead",&SequencerPlayhead},
+        {"SequencerSnapGuide",&SequencerSnapGuide},{"SequencerMarquee",&SequencerMarquee},
         {"StatsOverlay",&StatsOverlay},
         {"RichTextCode",&RichTextCode},{"RichTextSelection",&RichTextSelection},
         {"MarkdownCode",&MarkdownCode},{"MarkdownRule",&MarkdownRule},{"MarkdownQuoteBar",&MarkdownQuoteBar},

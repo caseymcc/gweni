@@ -4274,6 +4274,493 @@ void Timeline::update(renderer::Base *renderer, controls::Base *baseControl)
 }
 
 ///////////////////////////////////////////////////////////////////////////
+//Sequencer
+namespace
+{
+
+// \p top's fill blended over \p under's by its alpha, \p under's alpha kept:
+// a look as opaque as what it is drawn over.
+gweni::Color blendOver(const gweni::Color &under, const gweni::Color &top)
+{
+    const int a=top.a;
+    auto mix=[a](int u, int t) { return static_cast<unsigned char>((u*(255-a)+t*a+127)/255); };
+
+    return gweni::Color(mix(under.r, top.r), mix(under.g, top.g), mix(under.b, top.b), under.a);
+}
+
+void tint(tokyonight::Surface &look, const tokyonight::Surface &by)
+{
+    look.top=blendOver(look.top, by.top);
+    look.bottom=blendOver(look.bottom, by.bottom);
+    look.border=by.border;
+    look.borderWidth=by.borderWidth;
+}
+
+}//namespace
+
+tokyonight::Surface Sequencer::clipLook(const controls::SequencerClip &clip, bool hovered)
+{
+    tokyonight::Surface look=tokyonight::SequencerClip;
+
+    if(!clip.surface.empty())
+    {
+        const std::unordered_map<std::string, tokyonight::Surface *> &surfaces=tokyonight::surfaceRegistry();
+        const auto found=surfaces.find(clip.surface);
+
+        if(found != surfaces.end())
+        {
+            look=*found->second;
+            look.radius=tokyonight::SequencerClip.radius;
+        }
+        else
+        {
+            // a name no theme knows draws as a missing surface
+            look.top=colors::Missing;
+            look.bottom=colors::Missing;
+            look.border=colors::MissingDark;
+        }
+    }
+    if(clip.selected)
+        tint(look, tokyonight::SequencerClipSelected);
+    if(hovered)
+    {
+        const tokyonight::Surface border=look;
+
+        tint(look, tokyonight::SequencerClipHover);
+        // a selected clip keeps its selection's border
+        if(clip.selected)
+        {
+            look.border=border.border;
+            look.borderWidth=border.borderWidth;
+        }
+    }
+    return look;
+}
+
+tokyonight::Surface Sequencer::keyLook(const controls::SequencerKey &key, bool hovered)
+{
+    tokyonight::Surface look=key.selected ? tokyonight::SequencerKeySelected : tokyonight::SequencerKey;
+
+    if(hovered)
+    {
+        const gweni::Color border=look.border;
+        const float width=look.borderWidth;
+
+        tint(look, tokyonight::SequencerClipHover);
+        look.border=border;
+        look.borderWidth=width;
+    }
+    // a disc: radius half its side
+    look.radius=0.5f*float(controls::Sequencer::KeySize);
+    return look;
+}
+
+std::vector<size_t> Sequencer::clipPrimitives(size_t track) const
+{
+    return (track < m_clips.size()) ? lanes::inUse(m_clips[track]) : std::vector<size_t>();
+}
+
+std::vector<size_t> Sequencer::keyPrimitives(size_t track) const
+{
+    return (track < m_keys.size()) ? lanes::inUse(m_keys[track]) : std::vector<size_t>();
+}
+
+std::vector<size_t> Sequencer::labelTexts() const
+{
+    std::vector<size_t> ids;
+
+    for(const Label &label : m_labels)
+    {
+        if(label.shown)
+            ids.push_back(label.id);
+    }
+    return ids;
+}
+
+void Sequencer::releaseAll(renderer::Base *renderer)
+{
+    lanes::releaseList(renderer, m_lanes);
+    lanes::releaseList(renderer, m_grid);
+    for(SlotList &list : m_clips)
+        lanes::releaseList(renderer, list);
+    for(SlotList &list : m_keys)
+        lanes::releaseList(renderer, list);
+    lanes::releaseList(renderer, m_marquee);
+    lanes::releaseList(renderer, m_guide);
+    lanes::releaseList(renderer, m_playhead);
+}
+
+void Sequencer::takeLists(renderer::Base *renderer, size_t laneCount, size_t grid, const std::vector<size_t> &clips,
+    const std::vector<size_t> &keys)
+{
+    releaseAll(renderer);
+    m_clips.resize(clips.size());
+    m_keys.resize(keys.size());
+
+    lanes::Taker taker(renderer, !m_primitives.empty(), m_primitives.empty() ? 0 : m_primitives[0]);
+
+    taker.take(m_lanes, laneCount, lanes::capacity(laneCount));
+    taker.take(m_grid, grid, lanes::capacity(grid));
+    for(size_t i=0; i<clips.size(); ++i)
+        taker.take(m_clips[i], clips[i], lanes::capacity(clips[i]));
+    for(size_t i=0; i<keys.size(); ++i)
+        taker.take(m_keys[i], keys[i], lanes::capacity(keys[i]));
+    // the overlays in front of every item
+    taker.take(m_marquee, 1, 1);
+    taker.take(m_guide, 1, 1);
+    taker.take(m_playhead, 2, 2);
+    taker.finish();
+}
+
+void Sequencer::remove(renderer::Base *renderer, controls::Base * /*baseControl*/)
+{
+    releaseAll(renderer);
+    m_clips.clear();
+    m_keys.clear();
+    for(const Label &label : m_labels)
+        renderer->releaseTextPrimitive(label.id);
+    m_labels.clear();
+    m_frame=Slot();
+    m_drawnAll=false;
+    m_drawnHovering=false;
+    releasePrimitives(renderer);
+}
+
+void Sequencer::appendIds(std::vector<size_t> &primitiveIds, std::vector<size_t> &textIds) const
+{
+    ControlRegister<Sequencer>::appendIds(primitiveIds, textIds);
+    for(const SlotList *list : {&m_lanes, &m_grid})
+        primitiveIds.insert(primitiveIds.end(), list->ids.begin(), list->ids.end());
+    for(const std::vector<SlotList> *lists : {&m_clips, &m_keys})
+    {
+        for(const SlotList &list : *lists)
+            primitiveIds.insert(primitiveIds.end(), list.ids.begin(), list.ids.end());
+    }
+    for(const SlotList *list : {&m_marquee, &m_guide, &m_playhead})
+        primitiveIds.insert(primitiveIds.end(), list->ids.begin(), list->ids.end());
+    for(const Label &label : m_labels)
+        textIds.push_back(label.id);
+}
+
+void Sequencer::update(renderer::Base *renderer, controls::Base *baseControl)
+{
+    controls::Sequencer *seq=static_cast<controls::Sequencer *>(baseControl);
+    const unsigned int sc=baseControl->getStateChange();
+    const bool levelsMoved=m_drawnOpacity.moved(renderer);
+    const bool all=levelsMoved || (sc&(controls::StateChange_Created|controls::StateChange_Visibility
+        |controls::StateChange_Geometry)) != 0;
+    const gweni::Rect &bounds=baseControl->getRenderBounds();
+    const gweni::Rect area=seq->getBarArea();
+    const gweni::Rect column=seq->getCaptionColumnBounds();
+    const size_t trackCount=seq->getLaneCount();
+    const std::vector<controls::axis::Tick> &ticks=seq->getTicks();
+    const size_t gridCount=ticks.size()+2;
+    const bool drawing=baseControl->visible() && (area.w > 0) && (area.h > 0);
+    bool retaken=false;
+
+    if(drawing)
+    {
+        std::vector<size_t> clipsNeed(trackCount);
+        std::vector<size_t> keysNeed(trackCount);
+
+        for(size_t i=0; i<trackCount; ++i)
+        {
+            clipsNeed[i]=seq->getClipCount(i);
+            keysNeed[i]=seq->getKeyCount(i);
+        }
+
+        auto outgrown=[](const SlotList &list, size_t count)
+        {
+            return (count > list.ids.size()) || (count < list.taken);
+        };
+        // a track's items shrink by half before its list is taken again
+        auto itemsOutgrown=[](const SlotList &list, size_t count)
+        {
+            return (count > list.ids.size()) || (count*2 < list.taken);
+        };
+        // the grid's slots are taken for as many ticks as the area's width
+        // can show, so a zoom or a pan, whose tick count moves, takes none
+        const size_t gridRoom=std::max(gridCount, size_t(area.w/60)+4);
+        bool retake=m_playhead.ids.empty() || (m_clips.size() != trackCount)
+            || outgrown(m_lanes, trackCount) || itemsOutgrown(m_grid, gridRoom);
+
+        for(size_t i=0; i<trackCount && !retake; ++i)
+            retake=itemsOutgrown(m_clips[i], clipsNeed[i]) || itemsOutgrown(m_keys[i], keysNeed[i]);
+
+        if(retake)
+        {
+            takeLists(renderer, trackCount, gridRoom, clipsNeed, keysNeed);
+            retaken=true;
+        }
+
+        m_lanes.used=trackCount;
+        m_grid.used=gridCount;
+        for(size_t i=0; i<trackCount; ++i)
+        {
+            m_clips[i].used=clipsNeed[i];
+            m_keys[i].used=keysNeed[i];
+        }
+        m_marquee.used=1;
+        m_guide.used=1;
+        m_playhead.used=2;
+    }
+
+    lanes::Painter painter(renderer, all);
+    auto hide=[&](size_t id, Slot &slot) { painter.hide(id, slot); };
+    auto hideLabels=[&](size_t from)
+    {
+        for(size_t i=from; i<m_labels.size(); ++i)
+        {
+            Label &label=m_labels[i];
+
+            if(all || !label.valid || label.shown)
+                renderer->hideText(label.id);
+            label.valid=true;
+            label.shown=false;
+        }
+    };
+    auto each=[&](bool frame, auto &&func)
+    {
+        if(frame)
+            func(m_primitives[0], m_frame);
+        for(SlotList *list : {&m_lanes, &m_grid, &m_marquee, &m_guide, &m_playhead})
+        {
+            for(size_t i=0; i<list->ids.size(); ++i)
+                func(list->ids[i], list->drawn[i]);
+        }
+        for(std::vector<SlotList> *lists : {&m_clips, &m_keys})
+        {
+            for(SlotList &list : *lists)
+            {
+                for(size_t i=0; i<list.ids.size(); ++i)
+                    func(list.ids[i], list.drawn[i]);
+            }
+        }
+    };
+
+    if(!baseControl->visible())
+    {
+        if(all)
+        {
+            each(true, hide);
+            hideLabels(0);
+        }
+        else
+        {
+            each(true, [](size_t, Slot &slot) { slot.valid=false; });
+            for(Label &label : m_labels)
+                label.valid=false;
+        }
+        m_drawnAll=false;
+        return;
+    }
+
+    const gweni::Rect region=renderer->clipRegion();
+    const gweni::Rect areaClip=lanes::clipTo(renderer, bounds, area);
+    const gweni::Rect viewClip=lanes::clipTo(renderer, bounds,
+        gweni::Rect(column.x, area.y, area.x+area.w-column.x, area.h));
+    const PointF origin(float(bounds.x), float(bounds.y));
+    const int z=baseControl->getZIndex();
+
+    painter.drawRect(m_primitives[0], m_frame, bounds, tokyonight::TimelineFrame, z, region);
+
+    if(!drawing)
+    {
+        each(false, hide);
+        hideLabels(0);
+        m_drawnAll=false;
+        return;
+    }
+
+    const bool stale=all || retaken || !m_drawnAll || (seq->getItemsSerial() != m_drawnSerial)
+        || ((sc&controls::StateChange_Text) != 0)
+        || !(areaClip == m_drawnAreaClip) || !(viewClip == m_drawnViewClip);
+    const bool hovering=seq->isHovering();
+    const controls::SequencerItem hover=seq->getHoverItem();
+    auto hovered=[&](controls::SequencerItem::Kind kind, size_t track, size_t index)
+    {
+        return hovering && hover == controls::SequencerItem(kind, track, index);
+    };
+    auto drawClip=[&](size_t track, size_t index)
+    {
+        SlotList &list=m_clips[track];
+        gweni::Rect rect;
+
+        if(index >= list.used)
+            return;
+        if(!seq->getClipRect(track, index, rect))
+        {
+            hide(list.ids[index], list.drawn[index]);
+            return;
+        }
+        rect.x+=bounds.x;
+        rect.y+=bounds.y;
+        painter.drawRect(list.ids[index], list.drawn[index], rect,
+            clipLook(seq->getClip(track, index), hovered(controls::SequencerItem::Kind::Clip, track, index)),
+            z+ClipLayer+seq->getOverlapLevel(track, index), areaClip);
+    };
+    auto drawKey=[&](size_t track, size_t index)
+    {
+        SlotList &list=m_keys[track];
+        gweni::Rect rect;
+
+        if(index >= list.used)
+            return;
+        if(!seq->getKeyRect(track, index, rect))
+        {
+            hide(list.ids[index], list.drawn[index]);
+            return;
+        }
+        rect.x+=bounds.x;
+        rect.y+=bounds.y;
+        painter.drawRect(list.ids[index], list.drawn[index], rect,
+            keyLook(seq->getKey(track, index), hovered(controls::SequencerItem::Kind::Key, track, index)),
+            z+KeyLayer, areaClip);
+    };
+    auto drawItem=[&](const controls::SequencerItem &item)
+    {
+        if(item.track >= trackCount)
+            return;
+        if(item.kind == controls::SequencerItem::Kind::Clip)
+            drawClip(item.track, item.index);
+        else
+            drawKey(item.track, item.index);
+    };
+
+    if(stale)
+    {
+        painter.paintLanes(*seq, bounds, z, LaneLayer, GridLayer, areaClip, viewClip, m_lanes, m_grid);
+
+        for(size_t t=0; t<trackCount; ++t)
+        {
+            for(size_t i=0; i<m_clips[t].used; ++i)
+                drawClip(t, i);
+            painter.hideSpare(m_clips[t]);
+            for(size_t i=0; i<m_keys[t].used; ++i)
+                drawKey(t, i);
+            painter.hideSpare(m_keys[t]);
+        }
+
+        // the ruler's labels, a run each, taken as more show
+        const std::vector<gweni::Rect> &rects=seq->getTickLabelRects();
+        const gweni::Font &font=baseControl->getSkin()->getDefaultFont();
+        const gweni::Color &color=baseControl->getSkin()->Colors.Timeline.AxisText;
+
+        while(m_labels.size() < ticks.size())
+        {
+            Label label;
+
+            renderer->generateTextPrimitive(label.id);
+            m_labels.push_back(label);
+        }
+        for(size_t i=0; i<ticks.size() && i<rects.size(); ++i)
+        {
+            Label &label=m_labels[i];
+            const gweni::Point pos(bounds.x+rects[i].x, bounds.y+rects[i].y);
+
+            if(all || !label.valid || (label.text != ticks[i].label) || (label.pos.x != pos.x)
+                || (label.pos.y != pos.y) || !(label.color == color) || (label.zIndex != z+1)
+                || !(label.clip == region))
+            {
+                renderer->setClipRegion(region);
+                renderer->setDrawColor(color);
+                renderer->renderText(label.id, font, pos, z+1, ticks[i].label);
+                label.text=ticks[i].label;
+                label.pos=pos;
+                label.color=color;
+                label.zIndex=z+1;
+                label.clip=region;
+            }
+            if(all || !label.valid || !label.shown)
+            {
+                renderer->showText(label.id);
+                label.shown=true;
+            }
+            label.valid=true;
+        }
+        hideLabels(std::min(ticks.size(), rects.size()));
+
+        m_drawnAll=true;
+        m_drawnSerial=seq->getItemsSerial();
+        m_drawnAreaClip=areaClip;
+        m_drawnViewClip=viewClip;
+    }
+    else if(hovering != m_drawnHovering || !(hover == m_drawnHover))
+    {
+        // the item the hover left and the one it reached
+        if(m_drawnHovering)
+            drawItem(m_drawnHover);
+        if(hovering)
+            drawItem(hover);
+    }
+    m_drawnHovering=hovering;
+    m_drawnHover=hover;
+
+    const float top=origin.y+float(area.y);
+    const float bottom=top+float(area.h);
+
+    // the marquee, over the clips and keys
+    if(seq->marqueeActive() && seq->getMarqueeRect().w > 0 && seq->getMarqueeRect().h > 0)
+    {
+        gweni::Rect rect=seq->getMarqueeRect();
+        const tokyonight::Surface &surface=tokyonight::SequencerMarquee;
+
+        rect.x+=bounds.x;
+        rect.y+=bounds.y;
+        painter.drawRect(m_marquee.ids[0], m_marquee.drawn[0], rect, surface, z+MarqueeLayer, areaClip);
+    }
+    else
+        hide(m_marquee.ids[0], m_marquee.drawn[0]);
+
+    // the snap guide across the lanes
+    double guide=0.0;
+
+    if(seq->getSnapGuide(guide))
+    {
+        const float x=origin.x+float(std::lround(seq->xPosition(guide)))+0.5f;
+
+        painter.drawSegment(m_guide.ids[0], m_guide.drawn[0], PointF(x, top), PointF(x, bottom),
+            tokyonight::SequencerSnapGuide.top, z+GuideLayer, areaClip);
+    }
+    else
+        hide(m_guide.ids[0], m_guide.drawn[0]);
+
+    // the playhead: its line across the lanes and its head in the ruler,
+    // while it is in view
+    const double playheadX=seq->getPlayheadX();
+
+    if(playheadX >= area.x-0.5 && playheadX <= area.x+area.w+0.5)
+    {
+        const int centre=static_cast<int>(std::lround(playheadX));
+        const float x=origin.x+float(centre)+0.5f;
+        const gweni::Color &color=tokyonight::SequencerPlayhead.top;
+        const gweni::Rect head(bounds.x+centre-HeadWidth/2, bounds.y+area.y-HeadHeight, HeadWidth, HeadHeight);
+        Slot &headSlot=m_playhead.drawn[1];
+
+        painter.drawSegment(m_playhead.ids[0], m_playhead.drawn[0], PointF(x, top), PointF(x, bottom), color,
+            z+PlayheadLayer, areaClip);
+        if(all || !headSlot.valid || !headSlot.shown || !(headSlot.rect == head) || !(headSlot.color == color)
+            || headSlot.zIndex != z+PlayheadLayer || !(headSlot.clip == region))
+        {
+            renderer->setClipRegion(region);
+            renderer->drawIcon(m_playhead.ids[1], head, 7, 0, color, z+PlayheadLayer);
+            headSlot=Slot();
+            headSlot.valid=true;
+            headSlot.shown=true;
+            headSlot.rect=head;
+            headSlot.color=color;
+            headSlot.zIndex=z+PlayheadLayer;
+            headSlot.clip=region;
+        }
+    }
+    else
+    {
+        hide(m_playhead.ids[0], m_playhead.drawn[0]);
+        hide(m_playhead.ids[1], m_playhead.drawn[1]);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////
 //Chart
 size_t Chart::depthLayersOf(const controls::Base *control)
 {
@@ -7783,6 +8270,7 @@ template class ControlRegister<Knob>;
 template class ControlRegister<Chart>;
 template class ControlRegister<ChartLegendRow>;
 template class ControlRegister<Timeline>;
+template class ControlRegister<Sequencer>;
 template class ControlRegister<RichText>;
 template class ControlRegister<MarkdownRule>;
 template class ControlRegister<MarkdownQuote>;

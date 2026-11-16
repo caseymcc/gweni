@@ -9,6 +9,7 @@
 #include "gweni/controls/curveEditor.h"
 #include "gweni/controls/hexView.h"
 #include "gweni/controls/nodeGraph.h"
+#include "gweni/controls/sequencer.h"
 #include "gweni/controls/timeline.h"
 
 #include <algorithm>
@@ -773,10 +774,8 @@ GWENI_TRANSPARENT_RENDERER(NodeBody)
 // purpose, so Base::setSkin() does not report the type as having none (#185),
 // and each names the idea that tracks its real renderer: drop the line when
 // that renderer lands. A drawsNothing() override is not the place for these,
-// since the controls are meant to draw.
+// since the controls are meant to draw. (None is waiting now.)
 #define GWENI_PENDING_RENDERER(Class) GWENI_TRANSPARENT_RENDERER(Class)
-// the Sequencer's clips, keys, playhead and ruler: #644's step 3
-GWENI_PENDING_RENDERER(Sequencer)
 #undef GWENI_PENDING_RENDERER
 #undef GWENI_TRANSPARENT_RENDERER
 
@@ -1518,6 +1517,115 @@ private:
     unsigned m_drawnSerial=0;
     Rect m_drawnAreaClip;
     Rect m_drawnViewClip;
+};
+
+// A Sequencer: [0] its frame (TimelineFrame, at its z), then slot lists taken
+// back to front, each slot keeping what it last drew (lanes::):
+// - the lanes' stripes and the grid, lanes::Painter::paintLanes() as the
+//   Timeline's, at z+LaneLayer and z+GridLayer;
+// - a list per track of its clips: a drawRoundedRect per clip at its
+//   getClipRect(), in clipLook() (its surface, SequencerClip by default, with
+//   SequencerClipSelected's and SequencerClipHover's fill blended over it and
+//   their border), at z+ClipLayer plus its overlap level, clipped to the lane
+//   area; a clip with no rect hidden;
+// - a list per track of its keys: a disc (a drawRoundedRect of radius half
+//   its side) at getKeyRect() in keyLook(), at z+KeyLayer;
+// - the marquee (SequencerMarquee, translucent, fill and border in one slot)
+//   at z+MarqueeLayer, the snap guide (a 1-unit drawLine across the area in
+//   SequencerSnapGuide's top colour) at z+GuideLayer, and the playhead, a
+//   1-unit drawLine across the area and a head in the ruler (drawIcon kind 7
+//   pointing down) in SequencerPlayhead's top colour, at z+PlayheadLayer;
+// and a pool of text runs for the ruler's labels (Sequencer::getTicks(),
+// getTickLabelRects(), in Colors.Timeline.AxisText), the sequencer's own: its
+// zoom and pan move them and lay nothing out.
+// The lanes, grid, clips, keys and labels are drawn again only when
+// getItemsSerial() moved, the clips changed or the frame marks its geometry,
+// visibility, creation or text (a theme edit), and then each slot only when it
+// differs; a hover alone draws the item it left and the one it reached, a
+// playhead move (getPlayheadSerial()) its two slots, so a drag frame writes
+// the dragged items' slots and the guide's, a scrub frame the playhead's.
+// The lists are taken again, all of them back to front, when one outgrows its
+// slots or shrinks to half (the Timeline's rule).
+class Sequencer:public textured::ControlRegister<Sequencer>
+{
+public:
+    static void staticInit(TexturedSkin *) { m_staticInit=true; }
+
+    static constexpr int LaneLayer=1;
+    static constexpr int GridLayer=2;
+    static constexpr int ClipLayer=3;
+    static constexpr int KeyLayer=ClipLayer+controls::Sequencer::MaxOverlapLevel+1;
+    static constexpr int MarqueeLayer=KeyLayer+1;
+    static constexpr int GuideLayer=MarqueeLayer+1;
+    static constexpr int PlayheadLayer=GuideLayer+1;
+    //! The playhead's head in the ruler: its width and height.
+    static constexpr int HeadWidth=11;
+    static constexpr int HeadHeight=7;
+
+    size_t requiredPrimitives() override { return 1; }
+    // the frame, the lanes, the grid, a layer per overlap level, the keys,
+    // the marquee, the guide and the playhead
+    size_t depthLayers() override { return size_t(PlayheadLayer)+1; }
+
+    void update(renderer::Base *renderer, controls::Base *baseControl) override;
+    void remove(renderer::Base *renderer, controls::Base *baseControl) override;
+    void appendIds(std::vector<size_t> &primitiveIds, std::vector<size_t> &textIds) const override;
+
+    inline static const std::string_view name="Sequencer";
+
+    //! The slots in use as last drawn: track \p track's clips' (clip i's the
+    //! i-th) and keys', the marquee's, the guide's and the playhead's (its line
+    //! and head); the label runs.
+    std::vector<size_t> clipPrimitives(size_t track) const;
+    std::vector<size_t> keyPrimitives(size_t track) const;
+    std::vector<size_t> lanePrimitives() const { return lanes::inUse(m_lanes); }
+    std::vector<size_t> gridPrimitives() const { return lanes::inUse(m_grid); }
+    std::vector<size_t> marqueePrimitives() const { return lanes::inUse(m_marquee); }
+    std::vector<size_t> guidePrimitives() const { return lanes::inUse(m_guide); }
+    std::vector<size_t> playheadPrimitives() const { return lanes::inUse(m_playhead); }
+    std::vector<size_t> labelTexts() const;
+
+    //! What a clip and a key are drawn in, hovered or not.
+    static tokyonight::Surface clipLook(const controls::SequencerClip &clip, bool hovered);
+    static tokyonight::Surface keyLook(const controls::SequencerKey &key, bool hovered);
+
+private:
+    typedef lanes::Slot Slot;
+    typedef lanes::SlotList SlotList;
+
+    void takeLists(renderer::Base *renderer, size_t laneCount, size_t grid, const std::vector<size_t> &clips,
+        const std::vector<size_t> &keys);
+    void releaseAll(renderer::Base *renderer);
+
+    struct Label
+    {
+        size_t id=0;
+        bool valid=false;
+        bool shown=false;
+        String text;
+        Point pos;
+        Color color;
+        int zIndex=0;
+        Rect clip;
+    };
+
+    DrawnOpacity m_drawnOpacity;
+    Slot m_frame;
+    SlotList m_lanes;
+    SlotList m_grid;
+    std::vector<SlotList> m_clips;
+    std::vector<SlotList> m_keys;
+    SlotList m_marquee;
+    SlotList m_guide;
+    SlotList m_playhead;
+    std::vector<Label> m_labels;
+    //! what the lanes, grid, items and labels were last drawn from
+    bool m_drawnAll=false;
+    unsigned m_drawnSerial=0;
+    Rect m_drawnAreaClip;
+    Rect m_drawnViewClip;
+    bool m_drawnHovering=false;
+    controls::SequencerItem m_drawnHover;
 };
 
 // A Link: one slot per segment of its polyline (Link::getPoints()), a drawLine
