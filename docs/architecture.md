@@ -168,10 +168,11 @@ compacts the tree with the largest gap up to `ZGap` that spreads it over at most
 the range, leaving the other half for what is added or moved to the end before the
 next compaction, packed when the tree barely fits, and clamped (with ties, one warning
 on stderr) when even packed it does not. The first numbering takes that same gap
-(`Canvas::spreadZGap`, a count of the tree's ranges before it), so a tree too large for
-`ZGap` is spread over half the range in its first frame instead of running out and
-being compacted in the same frame, a second walk of the whole tree (the demo shell, about 7800 controls, is
-one). A compaction costs a whole-tree rewrite once:
+(`Canvas::spreadZGap`, a count of the tree's ranges before it), so a tree that `ZGap`
+would spread over more than half the range gets the smaller gap from its first frame,
+and one that `ZGap` would run past the range is not numbered past it and compacted in
+the same frame, a second walk of the whole tree (the demo shell, over 8000 controls,
+was one). A compaction costs a whole-tree rewrite once:
 `gweni_bench --scene bring-to-front --n 2000` (4120 controls, a 515-control Window
 moved to the end per frame) compacts once in about 32 frames.
 
