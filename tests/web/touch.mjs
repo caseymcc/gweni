@@ -73,6 +73,9 @@
 //                the box holding exactly "secret" (the canvas types the word
 //                as the focus leaves) and the password field composing
 //                nothing, no stderr line
+//    keys        TextBoxDemo: with a finger resting on the bare page after a
+//                tap on the first box, a letter typed, a phone keyboard's
+//                insertText and a Backspace all reach the box
 //    desktop     TextBoxDemo with no touch: a click on the box and "ab" and
 //                Backspace typed with the keyboard leave "a" exactly (nothing
 //                typed twice through the textarea), the textarea empty; a
@@ -763,6 +766,31 @@ async function checkIme(browser, base, out)
         + `password field composing ${field.composing}, holding "${field.value}"`,
         'the word composing went into the password box as the focus left');
     await w.close('password');
+
+    // a finger resting on the page takes no keyboard: a letter typed, a phone
+    // keyboard's insertText and a Backspace reach the focused box meanwhile
+    const k = await Page.open(browser, base, 'TextBoxDemo');
+    const kbox = await k.probe('control TextBox 0');
+    await k.tap({ x: kbox.rect.x + kbox.rect.w - 5, y: centre(kbox.rect).y });
+    const kstart = (await k.probe('state')).text ?? '';
+    const rest = { x: 600, y: 400 };
+    const restHit = await k.probe(`at ${rest.x} ${rest.y}`);
+    await k.touch('touchStart', rest);
+    await k.settle();
+    await k.page.keyboard.type('x');
+    await k.settle();
+    await k.cdp.send('Input.insertText', { text: 'yz' });
+    await k.settle();
+    await k.page.keyboard.press('Backspace');
+    await k.settle();
+    const resting = await k.probe('state');
+    await k.touch('touchEnd', rest);
+    await k.settle();
+    expect('keys', resting.text === kstart + 'xy',
+        `with a finger resting at (${rest.x}, ${rest.y}) on ${restHit.chain.join(' < ')}, "x" typed, "yz" inserted and `
+        + `Backspace left the box "${resting.text}" (${JSON.stringify(kstart + 'xy')} wanted)`,
+        'keys and text typed under a resting finger reached the box');
+    await k.close('keys');
 
     const d = await Page.open(browser, base, 'TextBoxDemo', false);
     const first = await d.probe('control TextBox 0');

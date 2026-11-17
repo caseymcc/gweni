@@ -1267,8 +1267,9 @@ bool Canvas::deliverMouseButton(int button, bool down)
 
 bool Canvas::pointerOverControl() const
 {
-    // a capture takes the canvas's input even while it is hidden
-    if(m_inputCapture)
+    // a capture takes the canvas's input even while it is hidden (a finger's
+    // touch gesture takes no keyboard)
+    if(keyboardCaptured())
         return true;
     if(hidden())
         return false;
@@ -2355,7 +2356,7 @@ void Canvas::updateToasts()
 
 bool Canvas::inputModifierKey(int key, bool down)
 {
-    if(m_inputCapture)
+    if(keyboardCaptured())
     {
         // As for a press: a key the canvas has down goes up there, so it does
         // not repeat once the capture is gone.
@@ -2386,8 +2387,9 @@ bool Canvas::inputModifierKey(int key, bool down)
 
 bool Canvas::holdsKeyboard() const
 {
-    // a capture takes the canvas's input even while it is hidden
-    if(m_inputCapture)
+    // a capture takes the canvas's input even while it is hidden (a finger's
+    // touch gesture takes no keyboard)
+    if(keyboardCaptured())
         return true;
     if(hidden())
         return false;
@@ -2398,7 +2400,7 @@ bool Canvas::holdsKeyboard() const
 
 bool Canvas::inputCharacter(UnicodeChar chr)
 {
-    if(m_inputCapture)
+    if(keyboardCaptured())
     {
         m_inputCapture->captureCharacter(chr);
         return true;
@@ -2446,16 +2448,17 @@ static Base *compositionTarget(Canvas *canvas)
     return KeyboardFocus;
 }
 
-// A finger's touch gesture holds the input but takes no keyboard: an input
-// method's composition goes past it to the focused control.
-bool Canvas::compositionCaptured() const
+// A finger's touch gesture holds the input but takes no keyboard: a key, a
+// character and an input method's composition go past it to the focused
+// control, as with no finger down.
+bool Canvas::keyboardCaptured() const
 {
     return m_inputCapture && (m_inputCapture != m_touchGesture.get());
 }
 
 bool Canvas::inputCompositionUpdate(const String &text, int caret)
 {
-    if(compositionCaptured())
+    if(keyboardCaptured())
         return true;
     if(hidden())
         return false;
@@ -2495,7 +2498,7 @@ void Canvas::commitHeldComposition(Base *control, bool deleting)
 
 bool Canvas::inputCompositionCommit(const String &text)
 {
-    if(compositionCaptured())
+    if(keyboardCaptured())
     {
         for(size_t at=0; at < text.size();)
         {
@@ -2518,7 +2521,7 @@ bool Canvas::inputCompositionCommit(const String &text)
 
 bool Canvas::inputCompositionCancel()
 {
-    if(compositionCaptured())
+    if(keyboardCaptured())
         return true;
     if(hidden())
         return false;

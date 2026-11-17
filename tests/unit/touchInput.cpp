@@ -43,7 +43,10 @@
  *  a ScrollControl scrolls it and leaves the box unfocused, one in the
  *  focused box selects its text and scrolls nothing. A negative id is
  *  ignored, so it neither takes the input nor keeps it from the next finger
- *  and the mouse.
+ *  and the mouse. A finger resting on the canvas takes no keyboard: a
+ *  character and a key typed meanwhile reach the focused TextBox (and
+ *  Escape closes a long press's menu with the finger still down), while
+ *  another input capture still gets them.
  */
 #include "headlessFixture.h"
 
@@ -110,6 +113,16 @@ public:
     void captureMouseButton(int button, bool down) override
     {
         events.push_back("button "+std::to_string(button)+(down?" down":" up"));
+    }
+
+    void captureKey(int key, bool down) override
+    {
+        events.push_back("key "+std::to_string(key)+(down?" down":" up"));
+    }
+
+    void captureCharacter(UnicodeChar chr) override
+    {
+        events.push_back("char "+std::to_string(static_cast<unsigned>(chr)));
     }
 
     std::vector<std::string> events;
@@ -889,4 +902,60 @@ TEST_CASE("Touch: a disabled control that keeps the drag does not: the finger pa
     canvas->inputTouch(0, TouchPhase::Up, at.x, at.y-60.0f);
     CHECK(scene.scroll->getVerticalScrollOffset() == 60);
     CHECK(target->events.empty());
+}
+
+TEST_CASE("Touch: a finger resting on the canvas takes no keyboard, another capture does")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+    controls::TextBox *box=canvas->newChild<controls::TextBox>();
+
+    box->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    box->setBounds(10, 60, 100, 24);
+    scene.frame();
+    box->focus();
+    canvas->inputCharacter('a');
+    REQUIRE(box->getText() == "a");
+
+    // a finger resting on the bare canvas: the gesture holds the input
+    canvas->inputTouch(0, TouchPhase::Down, 120.0f, 200.0f);
+    REQUIRE(canvas->inputCapture() != nullptr);
+    CHECK(canvas->inputCharacter('b'));
+    CHECK(box->getText() == "ab");
+    CHECK(canvas->inputModifierKey(keys::Backspace, true));
+    CHECK(canvas->inputModifierKey(keys::Backspace, false));
+    CHECK(box->getText() == "a");
+    CHECK(canvas->holdsKeyboard());
+    // the finger is still the gesture's: its lift on the bare canvas is a
+    // tap there, giving the input back
+    CHECK(canvas->inputCapture() != nullptr);
+    canvas->inputTouch(0, TouchPhase::Up, 120.0f, 200.0f);
+    CHECK(canvas->inputCapture() == nullptr);
+    CHECK(box->getText() == "a");
+
+    // a long press's menu closes with Escape while the finger is still down
+    canvas->inputTouch(0, TouchPhase::Down, 30.0f, 20.0f);
+    scene.step(controls::Canvas::LongPressSeconds+0.01);
+    REQUIRE(canvas->shownContextMenu() == scene.menu);
+    canvas->inputModifierKey(keys::Escape, true);
+    canvas->inputModifierKey(keys::Escape, false);
+    scene.frame();
+    CHECK(canvas->shownContextMenu() == nullptr);
+    canvas->inputTouch(0, TouchPhase::Up, 30.0f, 20.0f);
+    CHECK(scene.presses == 0);
+
+    // another capture (the depth view) keeps the keyboard
+    TouchRecorder recorder;
+
+    box->focus();
+    canvas->setInputCapture(&recorder);
+    CHECK(canvas->inputCharacter('c'));
+    CHECK(canvas->inputModifierKey(keys::Backspace, true));
+    canvas->setInputCapture(nullptr);
+    CHECK(box->getText() == "a");
+
+    const std::vector<std::string> expected{"char 99",
+        "key "+std::to_string(keys::Backspace)+" down"};
+
+    CHECK(recorder.events == expected);
 }

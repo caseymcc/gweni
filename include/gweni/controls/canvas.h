@@ -1182,8 +1182,9 @@ protected:
     TouchMode m_touchMode=TouchMode::None;
     Point m_touchMouse;
     std::unique_ptr<internal::TouchGesture> m_touchGesture;
-    /// An input capture holds the input and is not the touch gesture.
-    bool compositionCaptured() const;
+    /// An input capture holds the input and is not the touch gesture, so it
+    /// takes the keyboard too (keys, characters, compositions).
+    bool keyboardCaptured() const;
     /// The last composition update the focus refused (commitHeldComposition):
     /// the control's id (getControlId(), NoHeldComposition for none; the keyboard focus when
     /// it was held, but a control detached or moved to another canvas keeps

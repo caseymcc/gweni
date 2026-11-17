@@ -8570,6 +8570,12 @@ Native touchscreens have no feeder yet: desktop GLFW has no touch API.
     press give the same point.
 - **No hover from a finger.** Every touch ends with `inputMouseLeave()`, so nothing
   stays hovered after a lift and no tooltip's delay starts from one.
+- **No keyboard either.** The gesture holds the canvas's pointer input only: a key, a
+  typed character and an input method's composition go past it (`Canvas::keyboardCaptured()`
+  is false for it) to the accelerators and the keyboard focus as with no finger down,
+  so a thumb resting on the screen, or a long press's wait, loses nothing a keyboard
+  types, and Escape closes a long press's menu with the finger still down. Any other
+  input capture (the depth view, a `Pin`'s link drag) takes the keyboard too.
 
 ### The input method (`TextBox`)
 
@@ -8597,8 +8603,8 @@ Native touchscreens have no feeder yet: desktop GLFW has no touch API.
   into the box that takes the focus next.
   `Canvas::inputComposition*` hands them to the keyboard-focused control
   (`Base::onCompositionUpdate`/`Commit`/`Cancel`), past a finger's touch gesture,
-  which holds the canvas's input but takes no keyboard (another input capture gets a
-  commit as characters and nothing of the rest): a control that takes no composition
+  which takes no keyboard (another input capture gets a commit as characters
+  and nothing of the rest): a control that takes no composition
   (a `CodeEditor`, a plain control) gets a commit as typed characters.
 - **A word composing for a control that shows none.** A phone's keyboard composes
   every word and commits it only when the word ends, so the last word typed into a

@@ -35,8 +35,9 @@ namespace internal
 //! still for Canvas::LongPressSeconds (within the slop), it is a long press:
 //! the context menu of the control under it (Canvas::contextMenuOwnerFor)
 //! opens at the finger, and the lift does nothing more. Either way the lift
-//! ends with inputMouseLeave(). Every other input is dropped while it holds
-//! the canvas.
+//! ends with inputMouseLeave(). The mouse and the wheel are dropped while it
+//! holds the canvas; the keyboard is not its (Canvas::keyboardCaptured()):
+//! keys, characters and compositions go to the focus as with no finger down.
 class TouchGesture: public InputCapture
 {
 public:
