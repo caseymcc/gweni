@@ -68,7 +68,10 @@
 //                blurs the textarea
 //    desktop     TextBoxDemo with no touch: a click on the box and "ab" and
 //                Backspace typed with the keyboard leave "a" exactly (nothing
-//                typed twice through the textarea), the textarea empty
+//                typed twice through the textarea), the textarea empty; a
+//                second click on the box, moving no caret, gives the
+//                textarea the focus back (emscripten-glfw focused the
+//                canvas), so an input method's "ka" composes in the box
 //  It also fails on any console error, uncaught exception or line on a page's
 //  stderr (the page side's "no GLFW3.isAnyElementFocused" line included).
 //  --out keeps a screenshot of the composition and of the long press's menu.
@@ -728,6 +731,22 @@ async function checkIme(browser, base, out)
     expect('desktop', typed.text === start + 'a' && desk.field && desk.value === '',
         `"ab" and Backspace typed into the box left "${typed.text}" (${JSON.stringify(start + 'a')} wanted), the textarea `
         + `${desk.field ? '' : 'not '}focused holding "${desk.value}"`, 'typed once, through keydown');
+
+    // a second click on the focused box that moves no caret: emscripten-glfw
+    // focuses the canvas on its mousedown, and the field gets it back, so a
+    // desktop input method still composes in it
+    await sleep(800);
+    await d.page.mouse.click(first.rect.x + first.rect.w - 5, centre(first.rect).y);
+    await d.settle();
+    const refocused = await d.page.evaluate(() => document.activeElement === Module.gweniInput.field);
+    await d.cdp.send('Input.imeSetComposition', { text: 'ka', selectionStart: 2, selectionEnd: 2 });
+    await d.settle();
+    const composed = await d.probe('state');
+    expect('desktop', refocused && composed.composing === 'ka',
+        `a second click on the focused box left the textarea ${refocused ? '' : 'not '}focused, the box composing `
+        + `"${composed.composing}" ("ka" wanted)`, 'a click that moves no caret gave the textarea the focus back');
+    await d.cdp.send('Input.insertText', { text: '' });
+    await d.settle();
     await d.close('desktop');
 }
 

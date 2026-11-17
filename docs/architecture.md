@@ -8654,6 +8654,11 @@ the touches handed on):
   wrapped not to count the textarea. That is a port internal: without it the page
   says so in one stderr line, and `web_touch`'s desktop check and `web_input`'s typing
   checks fail.
+- **The canvas taking the focus back**: emscripten-glfw focuses the canvas on every
+  mousedown, and a click on the focused box that moves no caret asks for nothing
+  again, so while text input is active the canvas's `focus` gives the textarea the
+  focus back (in a microtask); otherwise a desktop input method would compose with no
+  field. `web_touch`'s desktop check clicks the box twice and composes "ka" in it.
 
 `Dead` keys are left to emscripten-glfw: Chromium on Linux and Windows sends the
 composed character on the next keydown, and where a browser composes it instead

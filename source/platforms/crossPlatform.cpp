@@ -519,6 +519,23 @@ EM_JS(void, gweni_js_input_listen, (int on), {
             }
         });
 
+        // a click on the canvas focuses it (emscripten-glfw, on mousedown),
+        // and one that moves no caret asks for nothing again: the focused
+        // box's field gets the focus back, or a desktop input method would
+        // compose with no field
+        listen(canvas, 'focus', function()
+        {
+            if(!state.active)
+                return;
+            Promise.resolve().then(function()
+            {
+                if(!state.active || Module['gweniInput'] !== state || document.activeElement !== canvas)
+                    return;
+                field.focus({ preventScroll: true });
+                ++state.focuses;
+            });
+        });
+
         if(typeof GLFW3 !== 'undefined' && typeof GLFW3.isAnyElementFocused === 'function')
         {
             var anyFocused = GLFW3.isAnyElementFocused;
