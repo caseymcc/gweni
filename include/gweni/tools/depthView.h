@@ -29,7 +29,8 @@ namespace tools
 //! It is not a control: it changes nothing in the tree. It hands its camera to
 //! the renderer as a view transform (SlotRenderer::setViewTransform), which the
 //! backend multiplies into its projection, so opening, closing and every camera
-//! move enter no control, write no slot and upload nothing. It takes the
+//! move enter no control, write no slot and upload nothing but the layer
+//! table, as it opens. It takes the
 //! canvas's input while open (Canvas::setInputCapture), so the UI gets none and
 //! keeps its hover and keyboard focus, but goes on running: its animations,
 //! a caret blink, a tooltip's delay.
@@ -37,15 +38,22 @@ namespace tools
 //! The camera, in the view's device px: left-drag orbits round the canvas's
 //! centre on its back plane (z 0), right- or middle-drag pans, the wheel and
 //! W/S dolly in and out, the arrows and A/D move the camera, P switches
-//! perspective and orthographic, + and - space the z labels further apart and
-//! closer, R resets and Escape closes it. The layers come towards the camera
-//! from the back plane, each z label zSpacing device px from the next, by
-//! default enough to put the canvas's highest z half the view's width in front.
-//! At reset the camera looks straight at the canvas from a distance at which
-//! that highest z is drawn exactly as in the front view and every layer behind
-//! it smaller about the view's centre, so the whole canvas is on the view; the
-//! orthographic projection draws every layer at the perspective's back-plane
-//! size, so P at reset does not move the back plane.
+//! perspective and orthographic, + and - space the layers further apart and
+//! closer, L switches between shown layers and raw z labels, R resets and
+//! Escape closes it. The layers come towards the camera from the back plane,
+//! each shown layer zSpacing device px from the next, by default enough to put
+//! the highest one half the view's width in front. A shown layer is a z label
+//! some shown slot uses: open, the view holds the renderer's layer table and
+//! remap on (SlotRenderer::setLayerTable, setLayerRemap), so a hidden page or
+//! a gap between labels takes no depth; with raw labels every label is
+//! zSpacing apart, as the canvas numbers them. At reset the camera looks
+//! straight at the canvas from a distance at which that highest layer is
+//! drawn exactly as in the front view and every layer behind it smaller about
+//! the view's centre, so the whole canvas is on the view; the orthographic
+//! projection draws every layer at the perspective's back-plane size, so P at
+//! reset does not move the back plane. A camera at reset is fitted again in a
+//! flush whose shown layers changed (the table's listener, before the draws),
+//! so a view opened before the canvas's first render fits what it draws.
 //!
 //! The library binds no key: an app opens and closes it (open(), close(),
 //! toggle()), hears of it through onOpenChangedCaller, and calls viewChanged()
@@ -75,7 +83,7 @@ public:
         //! The picture moved across the view, device px
         float panX=0.0f;
         float panY=0.0f;
-        //! Device px between two z labels
+        //! Device px between two shown layers (with rawLabels(), two z labels)
         float zSpacing=1.0f;
 
         bool operator==(const Camera &other) const;

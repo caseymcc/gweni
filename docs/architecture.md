@@ -8165,8 +8165,11 @@ Inspector, a hover shows in both and then 0, and closing both gives every id bac
 ## The depth view
 
 `gweni::tools::DepthView` (`include/gweni/tools/depthView.h`,
-`source/tools/depthView.cpp`) draws a canvas's UI in 3D, each slot at its own
-`Vertex::z` as depth, through a camera that orbits, pans and dollies round it. The depth
+`source/tools/depthView.cpp`) draws a canvas's UI in 3D, each slot at the depth of its
+`Vertex::z`, through a camera that orbits, pans and dollies round it. The depth
+counts shown layers, not raw labels: a label no shown slot uses takes none (the layer
+table, below), so the page on show is the most of the stack and not a sliver at the
+back of hidden pages and `Canvas::ZGap` gaps; L shows the raw labels. The depth
 buffer is gweni's draw order (gapped z labels, glyph *i* of a run at
 `z+(i+1)/(glyphs+1)`, overlays at `getZIndex()+1`, a caret at `getOverlayZIndex()`), so
 a z that is wrong (a child sharing its parent's depth, a layer a skin Control did not
@@ -8207,6 +8210,36 @@ the segment's provoking vertex, not of its own point, and along a segment that r
 depth that rim depth is off by up to the segment's depth change. Only the order of a
 polyline's anti-aliased rims against what lies at nearly their depth can change, which
 a debug view can live with (a line sits at z+1 over its frame).
+
+**The layer table: depth by shown layer.** A matrix maps z linearly, so it cannot drop
+the empty runs of labels; the renderer does. `SlotRenderer::setLayerTable(true)` keeps
+`T[z]`, for each of the 65 536 labels, the number of labels below z that a shown slot
+uses (a primitive slot that can show, `m_visibleSlots`: styled, with area, not
+clip-culled; a text run whose `drawnRange()` is not empty, at `runZ(zIndex)`), label 0
+always counted, so a shown label is layer 1 up and layer 0 stays the depth-clear plane,
+which the `LESS` test rejects in either view. Turning it on counts every label of the
+mirror once; from then on each flush counts again only what changed, the slots in
+`updateSlotVisibility` (called for every dirty slot and every cull flip) and the runs in
+`markTextDrawList` (every change of a run's hidden, culled, glyph count, level or z goes
+through it), each slot's and run's counted label kept in a side array that exists only
+while it is on (no field on `TextRun`). Only a flush in which some label's count went
+from or to 0 builds the prefix sums again, above the lowest such label, uploads the rows
+of the 256x256 R16UI table from the first that changed (`FrameStats::layerUploadCalls`,
+`layerUploadBytes`, never in `uploadCalls`/`uploadBytes`, on the `GWENI_UPLOAD_STATS`
+line) and calls the listener (`setLayerTableListener`) before its draws.
+`setLayerRemap(true)` makes both vertex bodies put each z through it before the view
+transform (`shownLayerZ()` in `primitive.vert.glsl` and `text.vert.glsl`, under the
+prologue's `LAYER_REMAP` and `LAYER_FETCH`): `T[floor z]` plus z's fraction of the way to
+`T[floor z+1]`, so glyph i of a run, at its label plus `(i+1)/(glyphs+1)`, stays between
+its run's layer and the next. The line style's behind depth is half a *shown* layer
+behind, the remapped z less 0.5, not the remap of `z - 0.5`, which lands on z's own layer
+whenever label `z-1` is unused and would let a polyline's later segment fail against an
+earlier one's rim. Off, nothing reads the table and the arithmetic is the front view's
+(`docs_samples` byte for byte). The order of the layers is the labels', so the draw order
+and occlusion are the front view's. On the Demo shell at 1024x768 the shown page takes
+0.678 of the 314 shown layers' depth, against 0.053 of the raw labels' (`--scenario
+depth-view` requires 0.6); counting clip-culled slots as shown (the demo list's entries
+scrolled out of view) would take it to 0.590.
 
 **The input: a canvas capture, not an overlay control.** A covering control would change
 the UI it shows: adding it moves `treeSerial` and renumbers z, taking the mouse un-hovers
@@ -8249,10 +8282,14 @@ while it is open does nothing; Escape or F9 leaves.
 
 **The camera** (`DepthView::Camera`), in the view's device px with x right, y down and z
 towards the camera:
-- the model: the canvas centre on z 0 at the origin, each z label `zSpacing` px towards
-  the camera (raw z, its gaps as they are); by default (`defaultZSpacing()`) the
-  canvas's highest z (`Canvas::highestZIndex()`, the last renumber's) half the view's
-  width in front, clamped to 0.01..64 px a label;
+- the model: the canvas centre on z 0 at the origin, each shown layer `zSpacing` px
+  towards the camera; by default (`defaultZSpacing()`) the highest shown layer
+  (`highestZ()`, the renderer's `shownLayerCount()` less 1) half the view's width in
+  front, clamped to 0.01..64 px a layer. With raw labels (L, `setRawLabels`) the
+  renderer draws z as it is, each label `zSpacing` px apart, its gaps and hidden pages as
+  they are, and `highestZ()` is the canvas's highest z (`Canvas::highestZIndex()`, the
+  last renumber's); switching converts the spacing so spacing times `highestZ()`, the
+  stack's depth, is kept and the front layer stays where it is;
 - turned by `yaw` (about the vertical axis) then `pitch` (clamped to ±90°) round that
   centre, and panned across the view;
 - perspective: a camera `distance` focal lengths from z 0, the focal length
@@ -8277,31 +8314,47 @@ towards the camera:
   half-diagonal and its highest z from the centre, so perspective maps the nearest and
   farthest distances that radius allows to `kMaxZIndex` and 0 (`a + b/d`, which as
   `Z = w*(a + b/d)` is linear in the point), and orthographic maps the radius linearly;
-  a 24-bit depth buffer has 256 steps a z index out, so two labels of the Demo shell at
-  its default spacing (0.01 px) are still about a hundred steps apart, and ButtonDemo's
-  (2.6 px) tens of thousands.
+  a 24-bit depth buffer has 256 steps a z index out, so two layers of the Demo shell at
+  its default spacing (1.6 px, 0.015 px a raw label) are thousands of steps apart.
 
 The mouse and the keys: left-drag orbits (0.4° a unit), right- or middle-drag pans by
 the mouse's device px, the wheel and W/S dolly (0.85 a notch, away from the user is in),
 the arrows and A/D move the camera 24 units, P switches perspective and orthographic, +
-and - space the labels 1.25 times further or closer, R resets (straight on, perspective,
-the default spacing, the highest z at its front-view size) and Escape closes it, as F9
-does in the examples. The view opens at reset.
+and - space the layers 1.25 times further or closer, L switches between shown layers
+(the default) and raw labels, R resets (straight on, perspective, the default spacing,
+the highest layer at its front-view size) and Escape closes it, as F9 does in the
+examples. The view opens at reset. A camera at reset, until the next `setCamera()` (a
+key, a drag, the wheel), is fitted again in each flush whose shown layers changed (a
+tooltip shown, a page switched): the table's listener (`DepthView::layersChanged`)
+rebuilds the transform there, before the draws and with no redraw, so that frame draws
+with it; a camera the user moved keeps itself and gets a depth range covering the new
+stack.
 
 **`--depth-view`** opens it once the first frame has numbered the z labels
-(`capture::openDepthViewOnce`, after each `updateCanvas()` in the apps' loops), so the
-default spacing fits them: before the first renumber `highestZIndex()` is 0. Raw z
-spacing shows what the numbering does: the demo shell numbers every page, the hidden
-ones too, so its highest z is about 42700 and the page shown sits near the back
-while the demo list and the status bar, numbered after the pages, stand near the camera.
+(`capture::openDepthViewOnce`, after each `updateCanvas()` in the apps' loops), before
+that frame's render, so the mirror is still empty: the table counts nothing yet, and the
+camera at reset is fitted to the first table that render's flush builds. Raw labels (L)
+show what the numbering does: the demo shell numbers every page, the hidden ones too,
+so its highest z is about 35 000 to 50 000 and the page shown sits near the back while
+the demo list and the status bar, numbered after the pages, stand near the camera.
 
-**Its cost.** Off, nothing: no shader change in the hot path and no per-frame CPU work
-(`tools/bench.sh compare` moves no counter). On, a camera move is a matrix built on the
-CPU and handed to the backend; the frame after it, like the frames opening and closing
-the view, enters no control, writes and uploads nothing, lays out nothing and renumbers
-no z.
+**Its cost.** Off, a flush tests one pointer (the table's), the vertex stages one
+uniform or push-constant switch, and nothing is allocated (`tools/bench.sh compare`
+moves no counter). On, a camera move is a matrix built on the CPU and handed to the
+backend; the frame after it, like the frames opening and closing the view and pressing
+L, enters no control, writes and uploads no slot, lays out nothing and renumbers no z.
+The table costs a count per changed slot and run, and a 128 KiB upload as the view opens
+and again only when the set of shown labels changes (`layer:` in the scenario's line).
 
-**Backends.** GL and Vulkan draw the same picture for the same camera, held to
+**Backends.** The table is a 256x256 integer texture read with `texelFetch` at
+`(z & 255, z >> 8)` in the vertex stage: on GL on a unit of its own
+(`OpenGLCore::LayerTableUnit`, after the image pages, saved with the app's state), bound
+and each program's `layerRemap` uniform sent as its draws begin, only when it changed;
+on Vulkan binding 2 of both set layouts (`VK_SHADER_STAGE_VERTEX_BIT`), uploaded like the
+clip-box tables through the frame's transfer commands (the image barriers take the
+vertex stage), `layerRemap` in both push blocks, and while there is no table the binding
+holds the path's clip-box table, a uint texture nothing reads with the remap off. GL and
+Vulkan draw the same picture for the same camera, held to
 `backend_pixels`' bound (max |Δ| 1, 0.001 % of the pixels of a turned perspective shot);
 desktop GL and GLES byte for byte. WebGL 2 (ANGLE's SwiftShader) differs from native
 along the edges of turned quads and glyphs (up to 64 levels on 0.17 % of ButtonDemo's
@@ -8312,8 +8365,12 @@ the axis-aligned front view never shows, so the web's comparisons are not run on
 front view uploading nothing, a whole-pixel translation moves every pixel by exactly
 that much, a view from behind is mirrored with the far layer in front, a perspective
 camera draws its reference layer as the front view and a nearer one larger and in
-front), `tests/unit/inputCapture.cpp` the capture and `tests/unit/depthView.cpp` the tool
-on a `MirrorOnlyRenderer`. `--scenario depth-view` (`controltest_depth_view`, `_vulkan`,
+front, overlapping slots at gapped labels draw the front view byte for byte with the
+remap on, and under a shear draw what their shown layers draw with it off),
+`tests/unit/layerTable.cpp` the table, `tests/unit/inputCapture.cpp` the capture and
+`tests/unit/depthView.cpp` the tool on a `MirrorOnlyRenderer` (a hidden subtree of 1, 10
+or 1000 controls takes no depth and leaves the reset camera as it is; a view opened
+before the first frame fits it). `--scenario depth-view` (`controltest_depth_view`, `_vulkan`,
 through `tests/depthView.cmake`, which runs it twice and requires byte-identical PNGs,
 and `controltest_verify_layout_depth_view`) opens it with F9 on ButtonDemo, the clock
 frozen and the mouse resting on "Toggle Me", sets a turned perspective camera, moves it
@@ -8321,7 +8378,10 @@ with a left-drag, the wheel, Left, P and +, clicks on the toggle and closes it w
 every one of those frames enters no control, changes, writes and uploads nothing, lays
 out nothing, renumbers no z and hit-tests nothing, the click presses nothing, the
 hover, focus, tree serial and live ids are kept, and the frame after the close is the
-one before the open, byte for byte. `backend_pixels` holds its shots on Vulkan to GL's.
+one before the open, byte for byte; L and L again are two more such frames, the stack's
+depth kept; the table is uploaded in the open frame alone; and on the demo shell at
+1024x768 the shown page takes at least 0.6 of the shown layers at reset.
+`backend_pixels` holds its shots on Vulkan to GL's.
 
 ## The URL, history, links and storage (`platform.h`)
 
