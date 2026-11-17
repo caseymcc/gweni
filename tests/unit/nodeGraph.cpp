@@ -46,6 +46,8 @@
  *  - pins connected while they have a link (a Link deleted directly too),
  *    removeLink(), removePin() and removeNode() taking the links with them
  *    and giving every id back;
+ *  - a pin of a node removeNode() took off, before the frame deletes it:
+ *    canLink() false either way round and addLink() null, no link made (#742);
  *  - a title-bar drag, through the canvas's mouse input: the press selects an
  *    unselected node alone (drawn NodeSelected), brings it to the front and
  *    takes the selection; every move frame moves each selected node by the
@@ -1082,6 +1084,30 @@ TEST_CASE("NodeGraph: removing a link, a pin or a node takes its links and gives
     CHECK(scene.renderer.liveTexts.size() == texts);
     CHECK(scene.renderer.doubleAcquired == 0);
     CHECK(scene.renderer.doubleReleased == 0);
+}
+
+TEST_CASE("NodeGraph: a pin of a node removeNode() took off links to nothing before the frame")
+{
+    LinkScene scene;
+
+    scene.frame();
+    CHECK(scene.graph->canLink(scene.out, scene.in));
+    CHECK(scene.graph->canLink(scene.in, scene.out));
+
+    // removed, its node waits for the frame's delayed deletes: its pins are
+    // still there, but no link may reach them
+    scene.graph->removeNode(scene.a);
+
+    const size_t links=scene.graph->getLinks().size();
+
+    CHECK(!scene.graph->canLink(scene.out, scene.in));
+    CHECK(!scene.graph->canLink(scene.in, scene.out));
+    CHECK(scene.graph->addLink(scene.out, scene.in) == nullptr);
+    CHECK(scene.graph->addLink(scene.in, scene.out) == nullptr);
+    CHECK(scene.graph->getLinks().size() == links);
+    CHECK(scene.in->getLinks().empty());
+    CHECK(!scene.in->isConnected());
+    scene.frame();
 }
 
 TEST_CASE("NodeGraph: a graph deleted with links on it, its nodes going first or last")

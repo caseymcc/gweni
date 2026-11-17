@@ -13013,6 +13013,139 @@ static bool runNodeGraphScenario(Session &s, const std::string &shotDir, bool &p
             +" ids back as "+std::to_string(idsAfter));
     }
 
+    // The Add node menu a link dropped on empty space opens (#742): picked
+    // with no Delete, its node is linked to the pin the link came from; picked
+    // after Delete removed that pin's node (the menu, which takes no keys,
+    // still open), with frames between or none, its node is linked to nothing
+    // and no link reaches the dying pin.
+    {
+        Menu *menu=graph->getContextMenu();
+        auto newNode=[&](const std::vector<Node *> &before) -> Node * {
+            for(Node *node : graph->getNodes())
+                if(std::find(before.begin(), before.end(), node) == before.end())
+                    return node;
+            return nullptr;
+        };
+        // a link dragged out of the pin and let go at the graph point, the
+        // menu laid out after it
+        auto dropAt=[&](Pin *pin, const gweni::PointF &point) {
+            const gweni::Point from=canvasAt(pin->getAnchor());
+            const gweni::Point to=canvasAt(point);
+            const int drops=events.emptyDrops;
+
+            mouseDown(s, from.x, from.y, true);
+            renderFrames(s, 1);
+            moveMouse(s, (from.x+to.x)/2, (from.y+to.y)/2);
+            renderFrames(s, 1);
+            moveMouse(s, to.x, to.y);
+            renderFrames(s, 1);
+            mouseUp(s, to.x, to.y);
+            renderFrames(s, 1);
+            check((events.emptyDrops == drops+1) && menu && (canvas->shownContextMenu() == menu),
+                "a drop on empty space did not open the Add node menu");
+        };
+        // the menu's entry clicked at its centre
+        auto pick=[&](const gweni::String &text) {
+            MenuItem *item=menu?menuItemNamed(menu, text):nullptr;
+
+            check(item != nullptr, "the Add node menu has no "+text);
+            if(item)
+            {
+                const gweni::Point at=centreOf(item);
+
+                clickMouse(s, at.x, at.y);
+            }
+        };
+        auto atDrop=[&](Node *node) {
+            const gweni::PointF drop=graph->getDropPosition();
+            const gweni::Point at=node?node->getGraphPosition():gweni::Point(0, 0);
+
+            return node && (at.x == int(std::lround(drop.x))) && (at.y == int(std::lround(drop.y)));
+        };
+        auto linkCount=[](Node *node) { return node?node->getLinks().size():size_t(0); };
+
+        // no Delete: the new Math node's In is linked to the UV pin
+        Pin *uv=findPin(coord, "UV");
+        size_t links=graph->getLinks().size();
+        std::vector<Node *> before=graph->getNodes();
+
+        dropAt(uv, gweni::PointF(40.0f, 420.0f));
+        pick("Add Math");
+        renderFrames(s, 2);
+
+        Node *linked=newNode(before);
+        const size_t linkedLinks=linkCount(linked);
+
+        check(linked && (linked->getTitle() == "Math") && atDrop(linked), "Add Math made no Math node at the drop");
+        check((linkedLinks == 1) && (linked->getLinks().front()->getFrom() == uv)
+            && (graph->getLinks().size() == links+1), "the Math node picked after a drop from UV has "
+            +std::to_string(linkedLinks)+" links, not one from UV");
+        check(canvas->shownContextMenu() == nullptr, "the Add node menu stayed open after its pick");
+
+        // Delete, frames, then the pick: Texture Coordinate selected, its UV
+        // pin dropped, the node deleted before Add Value is picked
+        clickMouse(s, titleOf(coord).x, titleOf(coord).y);
+        renderFrames(s, 1);
+        check(graph->getSelectedNodes() == std::vector<Node *>{coord}, "a click did not select Texture Coordinate");
+        before=graph->getNodes();
+        dropAt(uv, gweni::PointF(230.0f, 430.0f));
+        key(GLFW_KEY_DELETE);
+        renderFrames(s, 3);
+        coord=nullptr;
+        uv=nullptr;
+        check(findNode("Texture Coordinate") == nullptr, "Delete did not remove Texture Coordinate");
+        check(canvas->shownContextMenu() == menu, "the Add node menu closed with the Delete");
+        links=graph->getLinks().size();
+        pick("Add Value");
+        renderFrames(s, 2);
+
+        Node *afterDelete=newNode(before);
+        const size_t afterDeleteLinks=linkCount(afterDelete);
+
+        check(afterDelete && (afterDelete->getTitle() == "Value") && atDrop(afterDelete),
+            "Add Value after the Delete made no Value node at the drop");
+        check((afterDeleteLinks == 0) && (graph->getLinks().size() == links), "the Value node picked after its "
+            "source node was deleted has "+std::to_string(afterDeleteLinks)+" links");
+        check(canvas->shownContextMenu() == nullptr, "the Add node menu stayed open after its pick");
+
+        // Delete and the pick in one batch: Color Ramp selected, its Color
+        // pin dropped, the node only pending delete as Add Mix is picked
+        Node *rampNode=findNode("Color Ramp");
+        Pin *rampColor=findPin(rampNode, "Color");
+
+        clickMouse(s, titleOf(rampNode).x, titleOf(rampNode).y);
+        renderFrames(s, 1);
+        check(graph->getSelectedNodes() == std::vector<Node *>{rampNode}, "a click did not select Color Ramp");
+        before=graph->getNodes();
+        dropAt(rampColor, gweni::PointF(560.0f, 470.0f));
+        key(GLFW_KEY_DELETE);
+        check(canvas->isPendingDelete(rampNode), "Delete did not remove Color Ramp");
+        links=graph->getLinks().size();
+        pick("Add Mix");
+
+        Node *sameBatch=newNode(before);
+        const size_t sameBatchLinks=linkCount(sameBatch);
+
+        check(sameBatch && (sameBatch->getTitle() == "Mix") && atDrop(sameBatch),
+            "Add Mix in Delete's batch made no Mix node at the drop");
+        check((sameBatchLinks == 0) && rampColor->getLinks().empty() && (graph->getLinks().size() == links),
+            "the Mix node picked in Delete's batch has "+std::to_string(sameBatchLinks)
+            +" links, the dying Color pin "+std::to_string(rampColor->getLinks().size()));
+        rampNode=nullptr;
+        rampColor=nullptr;
+        renderFrames(s, 2);
+
+        const size_t sameBatchLater=linkCount(sameBatch);
+
+        check((sameBatchLater == 0) && (graph->getLinks().size() == links), "two frames after, the Mix node has "
+            +std::to_string(sameBatchLater)+" links");
+        check(canvas->shownContextMenu() == nullptr, "the Add node menu stayed open after its pick");
+        std::cout<<"node-graph add_from_drop linked="<<linkedLinks<<" after_delete="<<afterDeleteLinks
+                 <<" same_batch="<<sameBatchLinks<<" same_batch_later="<<sameBatchLater<<"\n";
+        moveMouse(s, 2, s.size.y-2);
+        renderFrames(s, 2);
+    }
+
     // a settled frame writes nothing, and the demo gives every id back
     {
         const GraphFrame settled=record([]() {});
