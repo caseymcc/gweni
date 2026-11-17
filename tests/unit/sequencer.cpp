@@ -25,13 +25,13 @@
  *  and one of another item keeping it going on its items' moved indices; no
  *  track's search built on a drag frame, each dragged track's once after the
  *  release; a drag whose release never comes (hidden mid-drag, a lost release
-  the next press finds) put back as Escape puts it; a press's
-  onSelectionChanged handler removing the pressed item (no drag) or an earlier
-  one (the pressed item dragged at its new index); a batch of the app's edits
-  under a resting mouse building its track's search once, the hover hit-tested
-  again in the next update; a pan or zoom mid-drag keeping the item under the
-  cursor; a removal of another item mid-drag keeping the dragged item's hover;
-  onItemsMoved once per release that moved something (none for a
+ *  the next press finds) put back as Escape puts it; a press's
+ *  onSelectionChanged handler removing the pressed item (no drag) or an earlier
+ *  one (the pressed item dragged at its new index); a batch of the app's edits
+ *  under a resting mouse building its track's search once, the hover hit-tested
+ *  again in the next update; a pan or zoom mid-drag keeping the item under the
+ *  cursor; a removal of another item mid-drag keeping the dragged item's hover;
+ *  onItemsMoved once per release that moved something (none for a
  *  drag back to where it began), a whole group moving together; Delete
  *  through the veto; and the playhead's keys (Left and Right a frame, Home
  *  and End the range's ends, held to the range), a scrub in the ruler on
