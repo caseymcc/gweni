@@ -297,12 +297,13 @@ public:
     //! Removes the selection as Delete does.
     void removeSelection();
     //! The item an onRemoveRequested handler is asked about (its id in
-    //! info.integer), and from such a handler: keep it.
+    //! info.integer, cut to a size_t; getItemId() of it is the whole id), and
+    //! from such a handler: keep it.
     const SequencerItem &getRemoveRequest() const { return m_removeRequest; }
     void vetoRemove() { m_removeVetoed=true; }
     gweni::event::Caller onRemoveRequested;
-    //! Fired after an item is removed, its id in info.integer and in
-    //! getRemovedId(), its kind in getRemovedKind().
+    //! Fired after an item is removed, its id in info.integer (cut to a
+    //! size_t) and in getRemovedId(), its kind in getRemovedKind().
     gweni::event::Caller onRemoved;
     uint64_t getRemovedId() const { return m_removedId; }
     SequencerItem::Kind getRemovedKind() const { return m_removedKind; }
