@@ -191,8 +191,10 @@ void onCanvasThink(controls::Base *control)
     // While an input capture has the canvas's input (a tools::DepthView), the
     // hover stays and no key repeats: a stale hover waits for the capture to
     // end, and a key held from before it goes up when it is released
-    // (Canvas::inputModifierKey).
+    // (Canvas::inputModifierKey). A finger's touch gesture keeps the hover
+    // too but takes no keyboard, so a held key repeats under it.
     const bool inputCaptured=(canvas && canvas->inputCapture());
+    const bool keyboardCaptured=(canvas && canvas->keyboardCaptured());
 
     // Content moved under the resting mouse this frame, and the layout that
     // moved it is done: the hover goes to what is under the mouse now. A
@@ -205,7 +207,7 @@ void onCanvasThink(controls::Base *control)
 
     dropLostKeyboardFocus();
 
-    if(inputCaptured)
+    if(keyboardCaptured)
         return;
 
     if(!KeyboardFocus)
@@ -240,7 +242,7 @@ double nextKeyRepeatTime(controls::Base *control)
     double next=std::numeric_limits<double>::infinity();
     controls::Canvas *canvas=control?control->getCanvas():nullptr;
 
-    if(!canvas || canvas->inputCapture() || !KeyboardFocus || (KeyboardFocus->getCanvas() != canvas))
+    if(!canvas || canvas->keyboardCaptured() || !KeyboardFocus || (KeyboardFocus->getCanvas() != canvas))
         return next;
 
     for(int i=0; i < keys::KeysCount; i++)

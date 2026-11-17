@@ -16,7 +16,10 @@
  *  update and Escape give back the text, caret and selection it began from,
  *  with no event. A key (Left) or a character during a composition commits
  *  it first, so does Ctrl+A (which then selects the whole text), the focus
- *  leaving commits it, and the app's setText() drops it.
+ *  leaving commits it, and the app's setText() drops it. The box's own
+ *  getText() or getComposition() handed back to setText(), insertText() or
+ *  commitComposition() mid-composition is read whole, though the composition
+ *  holding it ends first.
  *  A PasswordTextBox shows none and types the commit, asks for a password's
  *  text input (platform::TextInputKind::Password; a TextBox for text), and
  *  a word still composing for it is typed into it as the focus leaves
@@ -774,4 +777,51 @@ TEST_CASE("TextBox composition: in a zoomed ZoomPanel the text input is the care
     CHECK(scene.input.rect.y == int(std::floor(topLeft.y+0.5f)));
     CHECK(scene.input.rect.h == 2*caret.h);
     CHECK(scene.input.rect.y+scene.input.rect.h == int(std::floor(bottomRight.y+0.5f)));
+}
+
+TEST_CASE("TextBox composition: the box's own text or composition handed back to it is read whole")
+{
+    // longer than a short string's buffer, so a freed one is not read by luck
+    const String text="abcdefghijklmnopqrstuvwxyz0123456789";
+
+    {
+        Scene scene;
+        controls::TextBox *box=scene.box;
+
+        box->setText(text);
+        box->setCursorPos(3);
+        box->setCursorend(3);
+        scene.canvas->inputCompositionUpdate("xy", 1);
+        REQUIRE(box->isComposing());
+        box->setText(box->getText());
+        CHECK(!box->isComposing());
+        CHECK(box->getText() == text);
+        CHECK(scene.shown() == text);
+    }
+    {
+        Scene scene;
+        controls::TextBox *box=scene.box;
+
+        box->setText(text);
+        box->setCursorPos(3);
+        box->setCursorend(3);
+        scene.canvas->inputCompositionUpdate("xy", 1);
+        REQUIRE(box->isComposing());
+        // the composition goes in first, then the text at the caret after it
+        box->insertText(box->getText());
+        CHECK(box->getText() == "abcxy"+text+"defghijklmnopqrstuvwxyz0123456789");
+        CHECK(box->getCursorPos() == 5+static_cast<int>(text.size()));
+    }
+    {
+        Scene scene;
+        controls::TextBox *box=scene.box;
+        const String composing="a composing text past the SSO buffer";
+
+        scene.canvas->inputCompositionUpdate(composing, 3);
+        REQUIRE(box->isComposing());
+        box->commitComposition(box->getComposition());
+        CHECK(box->getText() == "abc"+composing+"def");
+        CHECK(box->getCursorPos() == 3+static_cast<int>(composing.size()));
+        CHECK(scene.changes == 1);
+    }
 }

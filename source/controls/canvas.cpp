@@ -1267,9 +1267,8 @@ bool Canvas::deliverMouseButton(int button, bool down)
 
 bool Canvas::pointerOverControl() const
 {
-    // a capture takes the canvas's input even while it is hidden (a finger's
-    // touch gesture takes no keyboard)
-    if(keyboardCaptured())
+    // a capture takes the canvas's input even while it is hidden
+    if(m_inputCapture)
         return true;
     if(hidden())
         return false;
@@ -2387,9 +2386,8 @@ bool Canvas::inputModifierKey(int key, bool down)
 
 bool Canvas::holdsKeyboard() const
 {
-    // a capture takes the canvas's input even while it is hidden (a finger's
-    // touch gesture takes no keyboard)
-    if(keyboardCaptured())
+    // a capture takes the canvas's input even while it is hidden
+    if(m_inputCapture)
         return true;
     if(hidden())
         return false;

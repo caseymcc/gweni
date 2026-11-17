@@ -920,6 +920,8 @@ TEST_CASE("Touch: a finger resting on the canvas takes no keyboard, another capt
     // a finger resting on the bare canvas: the gesture holds the input
     canvas->inputTouch(0, TouchPhase::Down, 120.0f, 200.0f);
     REQUIRE(canvas->inputCapture() != nullptr);
+    // ... and the pointer is the UI's while it does
+    CHECK(canvas->pointerOverControl());
     CHECK(canvas->inputCharacter('b'));
     CHECK(box->getText() == "ab");
     CHECK(canvas->inputModifierKey(keys::Backspace, true));
@@ -958,4 +960,42 @@ TEST_CASE("Touch: a finger resting on the canvas takes no keyboard, another capt
         "key "+std::to_string(keys::Backspace)+" down"};
 
     CHECK(recorder.events == expected);
+}
+
+TEST_CASE("Touch: a key held with a finger resting repeats as with no finger down")
+{
+    std::string left[2];
+
+    for(int finger=0; finger < 2; ++finger)
+    {
+        Scene scene;
+        controls::Canvas *canvas=scene.canvas;
+        controls::TextBox *box=canvas->newChild<controls::TextBox>();
+
+        box->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+        box->setBounds(10, 60, 100, 24);
+        scene.frame();
+        box->focus();
+        for(char c: std::string("abcdefghij"))
+            canvas->inputCharacter(c);
+        REQUIRE(box->getText() == "abcdefghij");
+        if(finger)
+        {
+            canvas->inputTouch(0, TouchPhase::Down, 120.0f, 200.0f);
+            REQUIRE(canvas->inputCapture() != nullptr);
+            REQUIRE_FALSE(canvas->keyboardCaptured());
+        }
+        canvas->inputModifierKey(keys::Backspace, true);
+        // an idle loop wakes for the repeat
+        CHECK(input::nextKeyRepeatTime(canvas) < std::numeric_limits<double>::infinity());
+        for(int i=0; i < 30; ++i)
+            scene.step(1.0/60.0);
+        canvas->inputModifierKey(keys::Backspace, false);
+        left[finger]=box->getText();
+        if(finger)
+            canvas->inputTouch(0, TouchPhase::Up, 120.0f, 200.0f);
+    }
+    // held 0.5 s, the key repeated
+    CHECK(left[0].size() < 9);
+    CHECK(left[1] == left[0]);
 }

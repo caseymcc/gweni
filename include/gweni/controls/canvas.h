@@ -778,7 +778,7 @@ public:
     /// whether the pointer is over the UI at all). A key or a text character
     /// is taken while the UI has the keyboard (holdsKeyboard(): a visible
     /// control of this canvas has the keyboard focus, a modal is up or an
-    /// input capture is set), whether the focus used it or not, and otherwise
+    /// input capture but a finger's touch gesture is set), whether the focus used it or not, and otherwise
     /// when something took it (an accelerator, Escape closing a popup). A
     /// press on the bare canvas drops the keyboard focus (but under a modal),
     /// so the keys go back to the scene; one that closes an open menu, context
@@ -890,9 +890,15 @@ public:
     /// scene with an event a control did not take (a wheel over a Label).
     bool pointerOverControl() const;
     /// Whether the UI has the keyboard: a visible control of this canvas has
-    /// the keyboard focus, a modal is up or an input capture is set; false on
-    /// a hidden canvas but for a capture.
+    /// the keyboard focus, a modal is up or an input capture is set but a
+    /// finger's touch gesture (keyboardCaptured()); false on a hidden canvas
+    /// but for such a capture.
     bool holdsKeyboard() const;
+    /// An input capture holds the input and is not a finger's touch gesture,
+    /// so it takes the keyboard too (keys, characters, compositions, a held
+    /// key's repeats); under the gesture they go to the focus as with no
+    /// finger down.
+    bool keyboardCaptured() const;
     /// \}
 
     /// Whether the canvas fills itself with the skin's background (the
@@ -1182,9 +1188,6 @@ protected:
     TouchMode m_touchMode=TouchMode::None;
     Point m_touchMouse;
     std::unique_ptr<internal::TouchGesture> m_touchGesture;
-    /// An input capture holds the input and is not the touch gesture, so it
-    /// takes the keyboard too (keys, characters, compositions).
-    bool keyboardCaptured() const;
     /// The last composition update the focus refused (commitHeldComposition):
     /// the control's id (getControlId(), NoHeldComposition for none; the keyboard focus when
     /// it was held, but a control detached or moved to another canvas keeps

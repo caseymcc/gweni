@@ -148,10 +148,15 @@ bool TextBox::onChar(gweni::UnicodeChar c)
     return true;
 }
 
-void TextBox::insertText(const gweni::String &strIn)
+void TextBox::insertText(const gweni::String &strArg)
 {
     if(!m_editable)
         return;
+
+    // the argument may be getText() or getComposition(), which the commit
+    // frees
+    const String held=m_composition?strArg:String();
+    const String &strIn=m_composition?held:strArg;
 
     commitPendingComposition();
 
@@ -345,8 +350,12 @@ void TextBox::updateCaretBlink()
     m_caretBlink.step(this);
 }
 
-void TextBox::setText(const String &str, bool doEvents)
+void TextBox::setText(const String &strArg, bool doEvents)
 {
+    // the argument may be getText(), which ending the composition frees
+    const String held=m_composition?strArg:String();
+    const String &str=m_composition?held:strArg;
+
     // the app's text: what was being composed goes
     if(m_composition)
     {
@@ -1382,8 +1391,12 @@ void TextBox::cancelComposition()
 
 // As typed: the selection the composition replaced goes, the text goes in at
 // the caret, one edit and one onTextChanged.
-void TextBox::commitComposition(const String &text)
+void TextBox::commitComposition(const String &textArg)
 {
+    // the argument may be getComposition() or getText(), which ending the
+    // composition frees
+    const String text=textArg;
+
     endComposition();
 
     if(!text.empty())
