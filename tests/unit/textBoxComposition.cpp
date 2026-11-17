@@ -601,6 +601,11 @@ TEST_CASE("TextBox composition: a word the platform committed or cancelled is no
     password->focus();
     scene.canvas->inputCompositionUpdate("se", 2);
     scene.canvas->inputCompositionCommit("secret");
+    password->unfocus();
+    CHECK(password->getText() == "secret");
+    CHECK(scene.ends == 0);
+
+    password->focus();
     scene.canvas->inputCompositionUpdate("x", 1);
     scene.canvas->inputCompositionCancel();
     password->unfocus();
