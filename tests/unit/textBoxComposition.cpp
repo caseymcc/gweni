@@ -16,7 +16,13 @@
  *  update and Escape give back the text, caret and selection it began from,
  *  with no event. A key (Left) or a character during a composition commits
  *  it first, the focus leaving commits it, and the app's setText() drops it.
- *  A PasswordTextBox shows none and types the commit. A focus that takes no
+ *  A PasswordTextBox shows none and types the commit, asks for a password's
+ *  text input (platform::TextInputKind::Password; a TextBox for text), and
+ *  a word still composing for it is typed into it as the focus leaves
+ *  (another control's focus(), unfocus()) and the platform's composition
+ *  ended once, unless the platform committed or cancelled it first; a
+ *  control deleted with the focus mid-composition (a TextBox composing, or
+ *  one that showed none) ends the platform's composition. A focus that takes no
  *  composition (a plain control) gets a commit as characters. The platform's
  *  text input (platform::setTextInputRect) is asked for as a box takes the
  *  focus, follows its caret in device px at the canvas's scale, and is let

@@ -8579,20 +8579,37 @@ Native touchscreens have no feeder yet: desktop GLFW has no touch API.
   (a phone's keyboard composes every word; `setTextCompositionEndHandler` replaces it
   for a test). A `PasswordTextBox` shows none and types the commit
   (`TextBox::allowsComposition()`), and a box made not editable takes none, commits
-  what was pending as it is made so, and gives the keyboard up.
+  what was pending as it is made so, and gives the keyboard up. A `TextBox` deleted
+  with the focus mid-composition ends the platform's too, or the word would carry on
+  into the box that takes the focus next.
   `Canvas::inputComposition*` hands them to the keyboard-focused control
   (`Base::onCompositionUpdate`/`Commit`/`Cancel`), past a finger's touch gesture,
   which holds the canvas's input but takes no keyboard (another input capture gets a
   commit as characters and nothing of the rest): a control that takes no composition
   (a `CodeEditor`, a plain control) gets a commit as typed characters.
+- **A word composing for a control that shows none.** A phone's keyboard composes
+  every word and commits it only when the word ends, so the last word typed into a
+  `PasswordTextBox` or a `CodeEditor` before a tap on Log in or Save would be lost:
+  the focus moves to the button, and the browser's `compositionend`, which comes in
+  the microtask after the field's blur, finds no text control to type into. The
+  canvas therefore keeps the last update the focus refused (`onCompositionUpdate`
+  returned false), cleared by a commit, a cancel or an update it took, and as the
+  focus leaves that control (`Base::focus()` of another, before its
+  `onLostKeyboardFocus`, and `unfocus()`, before the focus moves) commits it into it
+  (`onCompositionCommit`, typing) and ends the platform's composition
+  (`Canvas::commitHeldComposition`), so the late `compositionend` is dropped; a
+  control deleted with the focus only ends the platform's (`tests/unit/
+  textBoxComposition.cpp`, `codeEditorTextInput.cpp`; `web_touch`'s `password`).
 - **Asking for the keyboard.** A text control calls
-  `platform::setTextInputRect(active, caretDeviceRect)` as it gains and loses the
+  `platform::setTextInputRect(active, caretDeviceRect, kind)` as it gains and loses the
   keyboard focus and as its caret moves (`TextBox::reportTextInput`,
   `CodeEditor::reportTextInput`; a read-only editor and a box that is not editable
   never ask), the caret in device px of the framebuffer. It is not sent again when
   the box moves with its caret still (a scroll of what holds it), only when the caret
-  moves in the box or the focus comes. Natively it does nothing (`setTextInputHandler` replaces it for
-  a test); in a page it focuses or blurs the hidden textarea below.
+  moves in the box or the focus comes. `kind` is `TextInputKind::Password` for a
+  `PasswordTextBox` (`TextBox::takesPassword()`), `Text` otherwise. Natively it does nothing (`setTextInputHandler` replaces it for
+  a test); in a page it focuses or blurs the hidden textarea below, or for a
+  password a hidden `<input type=password>`.
 
 ### The page side (`platform::useBrowserInput`)
 
@@ -8638,6 +8655,16 @@ the touches handed on):
   `web_touch` holds it: "hel" composing in one box and a tap on another commits it to
   the first, the textarea's composition ends and the next word is a composition of
   its own in the second box.
+- **A hidden password field** (`Module.gweniInput.password`, an `<input
+  type=password>` styled and listened to as the textarea is, `autocomplete`
+  `new-password`) takes the textarea's place while a `PasswordTextBox` has the
+  focus (`TextInputKind::Password`; `gweniInput.current` is the one in use). A
+  phone's keyboard types a password a character at a time, without composing, and
+  neither shows it in its suggestion strip nor learns it; a desktop browser turns its
+  input method off there. Moving between the two inside one tap keeps a phone's
+  keyboard up, as a move between two boxes does. `web_touch`'s `password` taps the
+  box (the password field focused), composes "secret" through CDP and taps Copy: the
+  box holds "secret".
 - **A key guard** on `window`, in the capture phase: an input method's keystrokes
   (keyCode 229, `"Process"`, `"Unidentified"`, any `isComposing`) never reach
   emscripten-glfw, whose Backspace would delete from the box while the composition

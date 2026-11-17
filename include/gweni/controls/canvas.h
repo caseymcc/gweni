@@ -859,7 +859,8 @@ public:
     /// nothing more. Every touch ends with inputMouseLeave(), so nothing stays hovered
     /// and no tooltip's delay starts from one. An input capture set at the
     /// down (the depth view) gets the finger instead (captureTouch). Returns
-    /// whether the UI took it, as a press there would.
+    /// whether the UI took it, as a press there would. A negative \p id is
+    /// ignored (false).
     bool inputTouch(int id, TouchPhase phase, float x, float y) override;
     /// How far a finger moves, in logical units, before a touch is a pan, not
     /// a tap.
