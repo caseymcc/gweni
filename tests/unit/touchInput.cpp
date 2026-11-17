@@ -45,8 +45,10 @@
  *  ignored, so it neither takes the input nor keeps it from the next finger
  *  and the mouse. A finger resting on the canvas takes no keyboard: a
  *  character and a key typed meanwhile reach the focused TextBox (and
- *  Escape closes a long press's menu with the finger still down), while
- *  another input capture still gets them.
+ *  Escape closes a long press's menu with the finger still down), a key
+ *  held meanwhile repeats, and with no focus they are the app's scene's
+ *  (taken by nothing), while pointerOverControl() stays true; another
+ *  input capture still gets them.
  */
 #include "headlessFixture.h"
 
@@ -945,6 +947,18 @@ TEST_CASE("Touch: a finger resting on the canvas takes no keyboard, another capt
     CHECK(canvas->shownContextMenu() == nullptr);
     canvas->inputTouch(0, TouchPhase::Up, 30.0f, 20.0f);
     CHECK(scene.presses == 0);
+
+    // with no focus the keys are the app's scene's, finger or not
+    box->unfocus();
+    REQUIRE_FALSE(canvas->holdsKeyboard());
+    canvas->inputTouch(0, TouchPhase::Down, 120.0f, 200.0f);
+    REQUIRE(canvas->inputCapture() != nullptr);
+    CHECK_FALSE(canvas->holdsKeyboard());
+    CHECK_FALSE(canvas->inputCharacter('z'));
+    CHECK_FALSE(canvas->inputModifierKey(keys::Backspace, true));
+    CHECK_FALSE(canvas->inputModifierKey(keys::Backspace, false));
+    canvas->inputTouch(0, TouchPhase::Up, 120.0f, 200.0f);
+    CHECK(box->getText() == "a");
 
     // another capture (the depth view) keeps the keyboard
     TouchRecorder recorder;

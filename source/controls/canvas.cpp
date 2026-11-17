@@ -2386,8 +2386,9 @@ bool Canvas::inputModifierKey(int key, bool down)
 
 bool Canvas::holdsKeyboard() const
 {
-    // a capture takes the canvas's input even while it is hidden
-    if(m_inputCapture)
+    // a capture takes the canvas's input even while it is hidden (a finger's
+    // touch gesture takes no keyboard)
+    if(keyboardCaptured())
         return true;
     if(hidden())
         return false;

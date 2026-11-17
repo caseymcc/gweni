@@ -1686,9 +1686,10 @@ scene included. A wheel is taken only when a control scrolled or zoomed with it
 (`Canvas::pointerOverControl()` says whether the pointer is over the UI at all, for an
 app that wants a wheel over a Label kept from its scene). A key or a typed character is
 taken while the UI has the keyboard (`Canvas::holdsKeyboard()`: a visible control of
-the canvas has the keyboard focus, a modal is up or an input capture but a finger's touch gesture is set), whether
-the focus used it or not, and otherwise only when something took it (an accelerator,
-Escape closing a popup); a key's OS repeats are taken exactly when its press was. A
+the canvas has the keyboard focus, a modal is up or an input capture but a finger's
+touch gesture is set), whether the focus used it or not, and otherwise only when
+something took it (an accelerator, Escape closing a popup); a key's OS repeats are
+taken exactly when its press was. A
 press on the bare canvas drops the keyboard focus (but under a modal), so the keys go
 back to the scene; one that closes an open menu, context menu or popup is taken all the
 same (the click dismissed it, as on a desktop), so only the next press reaches the
@@ -8573,8 +8574,9 @@ Native touchscreens have no feeder yet: desktop GLFW has no touch API.
 - **No keyboard either.** The gesture holds the canvas's pointer input only: a key, a
   typed character and an input method's composition go past it (`Canvas::keyboardCaptured()`
   is false for it) to the accelerators and the keyboard focus as with no finger down,
-  a held key repeating there (`input::onCanvasThink`, `nextKeyRepeatTime`), so a thumb resting on the screen, or a long press's wait, loses nothing a keyboard
-  types, and Escape closes a long press's menu with the finger still down. Any other
+  a held key repeating there (`input::onCanvasThink`, `nextKeyRepeatTime`), so a thumb
+  resting on the screen, or a long press's wait, loses nothing a keyboard types, and
+  Escape closes a long press's menu with the finger still down. Any other
   input capture (the depth view, a `Pin`'s link drag) takes the keyboard too.
 
 ### The input method (`TextBox`)

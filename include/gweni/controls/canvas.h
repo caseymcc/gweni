@@ -778,8 +778,9 @@ public:
     /// whether the pointer is over the UI at all). A key or a text character
     /// is taken while the UI has the keyboard (holdsKeyboard(): a visible
     /// control of this canvas has the keyboard focus, a modal is up or an
-    /// input capture but a finger's touch gesture is set), whether the focus used it or not, and otherwise
-    /// when something took it (an accelerator, Escape closing a popup). A
+    /// input capture but a finger's touch gesture is set), whether the focus
+    /// used it or not, and otherwise when something took it (an accelerator,
+    /// Escape closing a popup). A
     /// press on the bare canvas drops the keyboard focus (but under a modal),
     /// so the keys go back to the scene; one that closes an open menu, context
     /// menu or popup is taken all the same (the click dismissed it, as a
