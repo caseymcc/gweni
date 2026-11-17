@@ -28,8 +28,13 @@
  *    whose look changed; a settled frame nothing; a zoom no layout pass and no
  *    slot outside the plot;
  *  - an added and a removed key, and the editor deleted, giving every id back;
+ *  - a key added and deleted before a frame never hiding or recycling its
+ *    unallocated id-0 sentinel: later additions keep only the plot's owned ids,
+ *    leave other controls' slots unchanged and keep the live id/take counts;
  *  - a live theme edit recolouring every visible plot layer without layout;
  *  - a reorder reassigning tangent handle sets when the pool is full.
+ *  Every single press advances the process-wide curveEditorFixture.h clock
+ *  shared with the editor tests, so separate scenes cannot repeat a click time.
  */
 #include "headlessFixture.h"
 #include "curveEditorFixture.h"

@@ -141,11 +141,15 @@ struct CurveEditorEdit
 //! clearSelection(), curveChanged()) fire nothing; after editing a curve
 //! itself the app calls curveChanged(). An event handler may call a user-edit
 //! command (addKeyAt(), deleteSelection(), nudgeSelection(), setSelectionMode(),
-//! setSelectionBroken(), setSelectedTime()/Value()); that nested command runs
-//! and stops the outer action's remaining edits and gesture. Reporting an app
-//! edit or replacing the curves also stops the outer action: its indices may
-//! no longer identify the same keys. Changing the selection stops a loop over
-//! that selection and prevents a press from starting a drag or key menu.
+//! setSelectionBroken(), setSelectedTime()/Value()); that nested command uses
+//! its usual preconditions and stops the outer action's remaining edits and
+//! gesture even if it changes nothing. deleteSelection() and nudgeSelection()
+//! refuse to edit during a gesture, so a nested call from a drag ends the drag
+//! without deleting or nudging. Reporting an app edit or replacing the curves
+//! also stops the outer action: its indices may no longer identify the same
+//! keys. Changing the selection stops a loop over that selection and prevents
+//! a press from starting a drag or key menu. An add's pending selection event
+//! still fires after curveChanged(), unless the handler changes the selection.
 //! A wheel zoom during a
 //! drag or a marquee keeps its press on the same point of the curve, so the
 //! dragged keys stay under the cursor.

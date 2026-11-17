@@ -1214,15 +1214,17 @@ size_t CurveEditor::addKeyAt(size_t curve, double time)
     logEdit(curve, spans);
     logEdit(curve, keys);
 
-    const std::vector<std::vector<size_t>> before=snapshotSelection();
+    const std::vector<CurveKeyRef> before=getSelection();
 
     setSelection({CurveKeyRef{curve, index}});
-    const uint64_t serial=m_modelSerial;
+    const std::vector<CurveKeyRef> selected=getSelection();
     const uint64_t selectionSerial=m_selectionSerial;
     fireChanged(curve, index);
-    if((m_modelSerial != serial) || (m_selectionSerial != selectionSerial))
+    // Reporting an app edit alone leaves this user selection to notify; a
+    // handler that changes the selection supersedes the pending notification.
+    if((m_selectionSerial != selectionSerial) || (getSelection() != selected))
         return index;
-    if(snapshotSelection() != before)
+    if(selected != before)
         fireSelectionChanged();
     return index;
 }

@@ -49,12 +49,24 @@
  *  - onChanged reporting an app edit via curveChanged(), safely stopping a
  *    multi-key drag, nudge, deletion or tangent-mode/broken change, and one
  *    setting or clearing the selection stopping a nudge;
+ *  - nested delete, add, nudge, mode, broken, time and value commands from
+ *    onChanged stopping the remaining outer edits, preserving the nested
+ *    command's model, selection and event count;
+ *  - an onSelectionChanged handler adding or deleting keys stopping a left
+ *    or right press before it starts a key drag or opens the key menu;
+ *  - a nested time or value field edit ending a key drag, later mouse motion
+ *    preserving the nested edit and firing no further change;
+ *  - an add, direct or by double-click, still firing its selection event when
+ *    onChanged only reports an app edit via curveChanged(), and suppressing
+ *    the pending event when the handler replaces, clears or replaces then
+ *    restores the selection, or clears the curves;
  *  - a wheel zoom during a key drag keeping the key under the cursor, and
  *    during a marquee keeping its press on the same curve point;
  *  - disabling closing the key menu, whose items then change nothing.
- *  Every press moves the scene's clock on first: the last click's point and
- *  time are process-wide, so a press where the case before pressed would
- *  otherwise be a double-click.
+ *  Every single press advances the process-wide curveEditorFixture.h clock
+ *  shared with the renderer tests: the last click's point and time are also
+ *  process-wide, so a press where a previous scene pressed would otherwise
+ *  be a double-click.
  */
 #include "headlessFixture.h"
 #include "curveEditorFixture.h"
@@ -994,6 +1006,83 @@ TEST_CASE("CurveEditor: a double-click near a curve adds a key on it there")
     CHECK(scene.a.keyCount() == 5);
     CHECK(scene.b.keyCount() == 2);
     CHECK(scene.events.changes == 1);
+}
+
+TEST_CASE("CurveEditor: adding a key still reports selection after an app edit")
+{
+    Scene scene;
+    auto *editor=scene.editor;
+    struct App: event::Handler
+    {
+        void changed(event::Info)
+        {
+            ++calls;
+            editor->curveChanged(0);
+        }
+        controls::CurveEditor *editor;
+        int calls=0;
+    } app;
+    app.editor=editor;
+    editor->onChanged.add(&app, &App::changed);
+
+    SUBCASE("direct add") { CHECK(editor->addKeyAt(0, 1.5) == 2); }
+    SUBCASE("double-click")
+    {
+        const float y=editor->curveToLocal(CurvePoint{1.5, scene.a.evaluate(1.5)}).y;
+        scene.doubleClick(scene.at(150, y));
+    }
+
+    CHECK(app.calls == 1);
+    CHECK(scene.events.changes == 1);
+    REQUIRE(scene.a.keyCount() == 5);
+    CHECK(scene.a.key(2).time == doctest::Approx(1.5));
+    CHECK(editor->getSelection() == refs({{0, 2}}));
+    CHECK(scene.events.selections == 1);
+    scene.frame();
+    CHECK(scene.events.selections == 1);
+}
+
+TEST_CASE("CurveEditor: adding a key skips selection notification superseded by its handler")
+{
+    Scene scene;
+    auto *editor=scene.editor;
+    struct App: event::Handler
+    {
+        void changed(event::Info)
+        {
+            ++calls;
+            if(action == ClearCurves)
+                editor->clearCurves();
+            else if(action == ClearSelection)
+                editor->clearSelection();
+            else
+            {
+                editor->setSelection({{0, 0}});
+                if(action == RestoreSelection)
+                    editor->setSelection({{0, 2}});
+            }
+        }
+        enum Action { ReplaceSelection, ClearSelection, RestoreSelection, ClearCurves };
+        controls::CurveEditor *editor;
+        Action action=ReplaceSelection;
+        int calls=0;
+    } app;
+    app.editor=editor;
+    editor->onChanged.add(&app, &App::changed);
+
+    SUBCASE("replace selection") { app.action=App::ReplaceSelection; }
+    SUBCASE("clear selection") { app.action=App::ClearSelection; }
+    SUBCASE("replace and restore selection") { app.action=App::RestoreSelection; }
+    SUBCASE("clear curves") { app.action=App::ClearCurves; }
+    CHECK(editor->addKeyAt(0, 1.5) == 2);
+
+    CHECK(app.calls == 1);
+    CHECK(scene.events.changes == 1);
+    CHECK(scene.a.keyCount() == 5);
+    const auto expected=(app.action == App::ReplaceSelection)?refs({{0, 0}}):
+        (app.action == App::RestoreSelection)?refs({{0, 2}}):refs({});
+    CHECK(editor->getSelection() == expected);
+    CHECK(scene.events.selections == 0);
 }
 
 TEST_CASE("CurveEditor: a right-click on a key opens the key menu, which sets its mode")

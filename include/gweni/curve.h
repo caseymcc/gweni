@@ -126,8 +126,8 @@ public:
     bool removeKey(size_t index);
 
     //! A key changed to another mode keeps its tangents if the new mode is
-    //! Free (so the curve keeps its shape, joined at the in tangent unless
-    //! broken), else gets the new mode's. A bad index does nothing.
+    //! Free (joined at the in tangent unless broken), else gets the new mode's.
+    //! A bad index does nothing.
     void setMode(size_t index, TangentMode mode);
     //! Breaks a key's tangents apart, or joins them at the in tangent. Only
     //! a Free key's tangents can be broken; a key of any other mode is made
