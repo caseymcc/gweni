@@ -38,7 +38,9 @@
  *  under the press; a marquee taking the items under its rect again after a
  *  zoom, a pan or a lane scroll; Delete removing the selected items when an
  *  onRemoved or onRemoveRequested handler edits their track, and going on
- *  when one removes the item asked about; hidden mid-pan, the pan letting the
+ *  when one removes the item asked about (asking about every item when their
+ *  ids are the same, getRemoveRequest() following the handler's edit, a
+ *  handler's clearTracks() ending it); hidden mid-pan, the pan letting the
  *  input go; disabled, no hover and no keyboard focus from a click, and
  *  enabled again the item under a resting mouse hovered;
  *  onItemsMoved once per release that moved something (none for a
@@ -1283,6 +1285,102 @@ TEST_CASE("Sequencer: Delete goes on when onRemoveRequested removes the item its
     REQUIRE(seq->getClipCount(0) == 2);
     CHECK(seq->getClip(0, 0).id == 10);
     CHECK(seq->getClip(0, 1).id == 12);
+}
+
+// Ids are the app's and need not be unique (they default to 0): a handler
+// removing the item it is asked about must not let Delete remove the next
+// selected item, which has the same id, without asking about it.
+TEST_CASE("Sequencer: Delete asks about every item when ids are the same")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    for(int i=0; i < 3; ++i)
+        seq->addClip(0, 1+i, 1.5+i);
+    scene.frame();
+    seq->select(SequencerItem(Kind::Clip, 0, 0));
+    seq->select(SequencerItem(Kind::Clip, 0, 2));
+
+    int asked=0;
+
+    scene.onRequestHook=[&]()
+    {
+        ++asked;
+        if(seq->getRemoveRequest().index == 2)
+            seq->removeClip(0, 2);
+        else
+            seq->vetoRemove();
+    };
+    scene.press(Point(seq->getBarArea().x+5, seq->getAxisRow().y+2));
+    scene.release();
+    scene.key(keys::Delete);
+    CHECK(asked == 2);
+    CHECK(scene.removedIds.empty());
+    CHECK(seq->getClipCount(0) == 2);
+    CHECK(seq->isSelected(SequencerItem(Kind::Clip, 0, 0)));
+}
+
+// getRemoveRequest() follows a request handler's own edit of the track, so a
+// handler removing a linked clip and then the item asked about removes that
+// item, not the one that moved into its index.
+TEST_CASE("Sequencer: getRemoveRequest() follows the handler's edit")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    for(int i=0; i < 8; ++i)
+        seq->addClip(0, 1+i, 1.5+i, "", 10+i);
+    scene.frame();
+    seq->select(SequencerItem(Kind::Clip, 0, 2));
+    seq->select(SequencerItem(Kind::Clip, 0, 5));
+
+    std::vector<uint64_t> appRemoved;
+
+    scene.onRequestHook=[&]()
+    {
+        if(scene.requested.back() != 15)
+            return;
+        appRemoved.push_back(seq->getClip(0, 0).id);
+        seq->removeClip(0, 0);
+
+        const SequencerItem asked=seq->getRemoveRequest();
+
+        appRemoved.push_back(seq->getClip(asked.track, asked.index).id);
+        seq->removeClip(asked.track, asked.index);
+    };
+    scene.press(Point(seq->getBarArea().x+5, seq->getAxisRow().y+2));
+    scene.release();
+    scene.key(keys::Delete);
+    CHECK(appRemoved == std::vector<uint64_t>{10, 15});
+    CHECK(scene.requested == std::vector<size_t>{15, 12});
+    CHECK(scene.removedIds == std::vector<size_t>{12});
+
+    std::vector<uint64_t> left;
+
+    for(size_t i=0; i < seq->getClipCount(0); ++i)
+        left.push_back(seq->getClip(0, i).id);
+    CHECK(left == std::vector<uint64_t>{11, 13, 14, 16, 17});
+}
+
+// A handler loading a new sequence (clearTracks()) ends Delete: nothing
+// more is asked about.
+TEST_CASE("Sequencer: clearTracks() from a Delete handler ends the Delete")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    for(int i=0; i < 6; ++i)
+        seq->addClip(0, 1+i, 1.5+i, "", 10+i);
+    scene.frame();
+    seq->select(SequencerItem(Kind::Clip, 0, 2));
+    seq->select(SequencerItem(Kind::Clip, 0, 5));
+    scene.onRemovedHook=[&]() { seq->clearTracks(); };
+    scene.press(Point(seq->getBarArea().x+5, seq->getAxisRow().y+2));
+    scene.release();
+    scene.key(keys::Delete);
+    CHECK(scene.requested == std::vector<size_t>{15});
+    CHECK(scene.removedIds == std::vector<size_t>{15});
+    CHECK(seq->getTrackCount() == 0);
 }
 
 // Hidden mid-pan, the pan ends: its capture would take the next key, wheel

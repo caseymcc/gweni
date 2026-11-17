@@ -524,6 +524,8 @@ protected:
     std::vector<SequencerItem> m_pendingRemovals;
     bool m_removingSelection=false;
     SequencerItem m_removeRequest;
+    //! the item asked about went in its handler (removing())
+    bool m_removeRequestGone=false;
     bool m_removeVetoed=false;
     uint64_t m_removedId=0;
     SequencerItem::Kind m_removedKind=SequencerItem::Kind::Clip;

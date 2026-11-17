@@ -170,6 +170,8 @@ void Sequencer::clearTracks()
     m_marquee=Rect();
     m_snapGuide=false;
     m_moved.clear();
+    m_pendingRemovals.clear();
+    m_removeRequestGone=true;
     m_selection.clear();
     m_tracks.clear();
     m_itemCount=0;
@@ -308,6 +310,10 @@ void Sequencer::removing(const Removal &removal)
     }
     remapList(m_moved);
     remapList(m_pendingRemovals);
+    // the item a Delete's request handler is asked about, so the handler's
+    // own edit leaves getRemoveRequest() naming it, or says it went
+    if(m_removingSelection && !m_removeRequestGone && !remap(m_removeRequest, removal))
+        m_removeRequestGone=true;
     if(m_hovering && !remap(m_hoverItem, removal))
         setHover(false, SequencerItem(), Part::None);
 
@@ -1779,8 +1785,9 @@ void Sequencer::removeSelection()
         return;
 
     // the list removing() remaps, so a handler that edits the same track
-    // leaves it naming the items selected; the one asked about stays its
-    // last entry while its handler runs
+    // leaves it naming the items selected; the one asked about is taken off
+    // it into m_removeRequest, which removing() remaps too and flags gone
+    // when the handler removes it itself
     m_pendingRemovals=getSelection();
     m_removingSelection=true;
 
@@ -1788,23 +1795,23 @@ void Sequencer::removeSelection()
 
     while(!m_pendingRemovals.empty())
     {
-        const SequencerItem asked=m_pendingRemovals.back();
-        const uint64_t id=getItemId(asked);
+        m_removeRequest=m_pendingRemovals.back();
+        m_pendingRemovals.pop_back();
+        if(!isValid(m_removeRequest))
+            continue;
+
+        const uint64_t id=getItemId(m_removeRequest);
         event::Info info(this);
 
-        m_removeRequest=asked;
+        m_removeRequestGone=false;
         m_removeVetoed=false;
         info.integer=static_cast<size_t>(id);
         onRemoveRequested.call(this, info);
-        // the handler removed the item itself: it left the list
-        if(m_pendingRemovals.empty() || getItemId(m_pendingRemovals.back()) != id)
+        // vetoed, or the handler removed the item itself
+        if(m_removeVetoed || m_removeRequestGone || !isValid(m_removeRequest))
             continue;
 
-        const SequencerItem item=m_pendingRemovals.back();
-
-        m_pendingRemovals.pop_back();
-        if(m_removeVetoed || !isValid(item))
-            continue;
+        const SequencerItem item=m_removeRequest;
 
         if(item.kind == SequencerItem::Kind::Clip)
             removeClip(item.track, item.index);
@@ -1820,6 +1827,7 @@ void Sequencer::removeSelection()
         onRemoved.call(this, removedInfo);
     }
     m_removeVetoed=false;
+    m_removeRequestGone=false;
     m_removingSelection=false;
     if(removed)
         fireSelectionChanged();
