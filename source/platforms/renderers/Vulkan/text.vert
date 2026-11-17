@@ -20,8 +20,10 @@
 #define slotBase push.slotBase
 #define VERTEX_ID gl_VertexIndex
 #define CLIP_SPACE_TO_API(p) p = vec4((p).x, (p).y, (p).z*0.5 + (p).w*0.5, (p).w)
-// renderer::Vulkan draws through no layer table yet: every z as it is
-#define LAYER_REMAP false
-#define LAYER_FETCH(i) 0u
+// the layer table (SlotRenderer::setLayerTable), read only while layerRemap is 1
+layout(set = 0, binding = 2) uniform usampler2D layerTable;
+
+#define LAYER_REMAP (push.layerRemap != 0)
+#define LAYER_FETCH(i) texelFetch(layerTable, ivec2((i) & 255, (i) >> 8), 0).r
 
 #include "../shaders/text.vert.glsl"

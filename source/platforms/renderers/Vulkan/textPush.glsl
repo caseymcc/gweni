@@ -5,7 +5,7 @@
 //
 //  The glyph slots' push constants, one block for both stages
 //  (renderer::Vulkan::TextPush): the vertex shader reads projection and
-//  slotBase, the fragment shader textMode and textContrast.
+//  slotBase and layerRemap, the fragment shader textMode and textContrast.
 //
 layout(push_constant) uniform TextPush
 {
@@ -13,4 +13,5 @@ layout(push_constant) uniform TextPush
     int slotBase;
     int textMode;
     float textContrast;
+    int layerRemap;
 } push;

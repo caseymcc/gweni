@@ -266,10 +266,10 @@ protected:
     void submitFrame() override;
     void indexChunkSlotsChanged() override;
     void viewTransformChanged() override;
-    // the layer table (setLayerTable): not drawn with yet, the remap is #744's next step
-    void allocateLayerTable() override {}
-    void uploadLayerTableRows(size_t, size_t, const uint16_t *) override {}
-    void destroyLayerTable() override {}
+    void allocateLayerTable() override;
+    void uploadLayerTableRows(size_t firstRow, size_t rows, const uint16_t *table) override;
+    void destroyLayerTable() override;
+    //! nothing: the push blocks carry layerRemap(), set as each pass's draws begin
     void layerRemapChanged() override {}
 
 private:
@@ -329,6 +329,7 @@ private:
     {
         float projection[16];
         int32_t slotBase;
+        int32_t layerRemap;     //!< layerRemap(), set as the draws begin
     };
 
     //! Vulkan/textPush.glsl: one block for both stages of the text pipelines
@@ -338,6 +339,7 @@ private:
         int32_t slotBase;
         int32_t textMode;
         float textContrast;
+        int32_t layerRemap;     //!< layerRemap(), set as the draws begin
     };
 
     //! the descriptor sets of a text pool
@@ -454,6 +456,11 @@ private:
     //! what an image page's binding holds while its class has no page: a 1x1
     //! array of one opaque black texel, as GL samples texture 0
     TextureHandle m_blackTexture=0;
+    //! the layer table (setLayerTable): R16_UINT, kLayerTableSide square, read
+    //! by both pipelines' vertex stages at binding 2; 0 while there is none,
+    //! when the binding holds the path's clip-box table (a uint texture too,
+    //! which nothing reads with the remap off)
+    TextureHandle m_layerTexture=0;
     //! each class's page (SlotRenderer::ImageClasses), handles into m_textures, 0
     //! until an image needs it
     TextureHandle m_imagePages[ImageClasses]={};

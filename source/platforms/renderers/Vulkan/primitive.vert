@@ -8,7 +8,8 @@
 //  renderer::Vulkan's prologue to the primitive slots' vertex shader body
 //  (../shaders/primitive.vert.glsl), which OpenGLCore compiles behind its own.
 //
-//  projection and slotBase are push constants. Each chunk's vertex buffer is
+//  projection, slotBase and layerRemap are push constants, and the layer table
+//  binding 2 of set 0 beside the fragment stage's clip boxes and image pages. Each chunk's vertex buffer is
 //  bound at its first slot (vkCmdBindVertexBuffers' offset) and drawn with a
 //  vertexOffset of 0, so gl_VertexIndex counts from the chunk's first vertex as
 //  GL's gl_VertexID does from its vertex array's.
@@ -25,14 +26,17 @@ layout(push_constant) uniform PrimitivePush
 {
     mat4 projection;
     int slotBase;
+    int layerRemap;
 } push;
+
+// the layer table (SlotRenderer::setLayerTable), read only while layerRemap is 1
+layout(set = 0, binding = 2) uniform usampler2D layerTable;
 
 #define projection push.projection
 #define slotBase push.slotBase
 #define VERTEX_ID gl_VertexIndex
 #define CLIP_SPACE_TO_API(p) p = vec4((p).x, (p).y, (p).z*0.5 + (p).w*0.5, (p).w)
-// renderer::Vulkan draws through no layer table yet: every z as it is
-#define LAYER_REMAP false
-#define LAYER_FETCH(i) 0u
+#define LAYER_REMAP (push.layerRemap != 0)
+#define LAYER_FETCH(i) texelFetch(layerTable, ivec2((i) & 255, (i) >> 8), 0).r
 
 #include "../shaders/primitive.vert.glsl"

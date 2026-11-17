@@ -857,7 +857,7 @@ VkDescriptorSet Vulkan::allocateTextSet()
     {
         VkDescriptorPoolSize size{};
         size.type=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        size.descriptorCount=(uint32_t)(2*TextSetsPerPool);
+        size.descriptorCount=(uint32_t)(3*TextSetsPerPool);
 
         VkDescriptorPoolCreateInfo info{};
         info.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -955,8 +955,8 @@ void Vulkan::init()
     poolInfo.queueFamilyIndex=m_device.queueFamily;
     check(vkCreateCommandPool(device(), &poolInfo, nullptr, &m_commandPool), "vkCreateCommandPool");
 
-    // set 0: the clip boxes and the image pages
-    VkDescriptorSetLayoutBinding bindings[2]{};
+    // set 0: the clip boxes and the image pages, and the vertex stage's layer table
+    VkDescriptorSetLayoutBinding bindings[3]{};
     bindings[0].binding=0;
     bindings[0].descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     bindings[0].descriptorCount=1;
@@ -965,22 +965,27 @@ void Vulkan::init()
     bindings[1].descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     bindings[1].descriptorCount=(uint32_t)ImageClasses;
     bindings[1].stageFlags=VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[2].binding=2;
+    bindings[2].descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[2].descriptorCount=1;
+    bindings[2].stageFlags=VK_SHADER_STAGE_VERTEX_BIT;
 
     VkDescriptorSetLayoutCreateInfo setLayout{};
     setLayout.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    setLayout.bindingCount=2;
+    setLayout.bindingCount=3;
     setLayout.pBindings=bindings;
     check(vkCreateDescriptorSetLayout(device(), &setLayout, nullptr, &m_primitiveSetLayout),
         "vkCreateDescriptorSetLayout");
 
-    // the text draws' set 0: the atlas being drawn and the glyph slots' clip boxes
+    // the text draws' set 0: the atlas being drawn, the glyph slots' clip boxes
+    // and the layer table
     bindings[1].descriptorCount=1;
     check(vkCreateDescriptorSetLayout(device(), &setLayout, nullptr, &m_textSetLayout),
         "vkCreateDescriptorSetLayout");
 
     VkDescriptorPoolSize poolSize{};
     poolSize.type=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount=(uint32_t)((1+ImageClasses)*FramesInFlight);
+    poolSize.descriptorCount=(uint32_t)((2+ImageClasses)*FramesInFlight);
 
     VkDescriptorPoolCreateInfo descriptorPool{};
     descriptorPool.sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -1476,9 +1481,10 @@ void Vulkan::beginTextureWrite(Texture &target)
     if(target.layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
         return;
 
+    // the layer table is read by the vertex stage, the rest by the fragment one
     imageBarrier(current.transfer, target.image, VK_IMAGE_ASPECT_COLOR_BIT,
         target.layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT|VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+        VK_PIPELINE_STAGE_VERTEX_SHADER_BIT|VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT|VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
         VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT);
     target.layout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 
@@ -1566,7 +1572,7 @@ void Vulkan::submit()
         imageBarrier(current.transfer, written->image, VK_IMAGE_ASPECT_COLOR_BIT,
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT|VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_VERTEX_SHADER_BIT|VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT|VK_PIPELINE_STAGE_TRANSFER_BIT,
             VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_TRANSFER_READ_BIT);
         written->layout=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     }
@@ -1871,6 +1877,56 @@ void Vulkan::uploadClipBoxRows(SlotPath path, size_t x, size_t y, size_t width, 
     copy.imageExtent={ (uint32_t)width, (uint32_t)height, 1 };
     vkCmdCopyBufferToImage(frame().transfer, source.first, table->image,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+}
+
+void Vulkan::allocateLayerTable()
+{
+    if(!m_deviceUsable)
+        return;
+    // one table, rewritten in place: an upload's barrier waits for the frames
+    // in flight that read it, as for the clip-box tables
+    if(m_layerTexture != 0)
+        retireHandle(m_layerTexture);
+    m_layerTexture=0;
+
+    Texture table;
+
+    if(!createTexture(table, (uint32_t)kLayerTableSide, (uint32_t)kLayerTableSide, VK_FORMAT_R16_UINT, 1, 0))
+        return;
+    table.sourceDepth=sizeof(uint16_t);
+    table.deviceDepth=sizeof(uint16_t);
+    m_layerTexture=addTexture(std::move(table));
+}
+
+void Vulkan::uploadLayerTableRows(size_t firstRow, size_t rows, const uint16_t *table)
+{
+    if(!m_deviceUsable)
+        return;
+    Texture *layers=texture(m_layerTexture);
+
+    if(!layers || rows == 0)
+        return;
+
+    const std::pair<VkBuffer, VkDeviceSize> source=stage(table, rows*kLayerTableSide*sizeof(uint16_t));
+
+    beginTextureWrite(*layers);
+
+    VkBufferImageCopy copy{};
+    copy.bufferOffset=source.second;
+    copy.imageSubresource.aspectMask=VK_IMAGE_ASPECT_COLOR_BIT;
+    copy.imageSubresource.layerCount=1;
+    copy.imageOffset={ 0, (int32_t)firstRow, 0 };
+    copy.imageExtent={ (uint32_t)kLayerTableSide, (uint32_t)rows, 1 };
+    vkCmdCopyBufferToImage(frame().transfer, source.first, layers->image,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+}
+
+void Vulkan::destroyLayerTable()
+{
+    // kept until no frame in flight reads it
+    if(m_layerTexture != 0)
+        retireHandle(m_layerTexture);
+    m_layerTexture=0;
 }
 
 TextureHandle Vulkan::createAtlasTexture(const texture_atlas_t &atlas)
@@ -2220,6 +2276,7 @@ void Vulkan::beginPrimitiveDraws()
         return;
     Frame &current=frame();
 
+    m_push.layerRemap=layerRemap()?1:0;
     // this frame's set (the frame that last used it is done): the clip-box table
     // and each class's image page, GL's texture 0 for a class with none. Written
     // at the frame's first primitive draws: the sorted pass begins them again
@@ -2251,7 +2308,11 @@ void Vulkan::beginPrimitiveDraws()
         imageInfo[i]={ m_imageSampler, page->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
     }
 
-    VkWriteDescriptorSet writes[2]{};
+    const Texture *layers=texture(m_layerTexture);
+    VkDescriptorImageInfo layerInfo{ m_clipSampler, layers?layers->view:clipInfo.imageView,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL };
+
+    VkWriteDescriptorSet writes[3]{};
     writes[0].sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     writes[0].dstSet=current.primitiveSet;
     writes[0].dstBinding=0;
@@ -2262,7 +2323,10 @@ void Vulkan::beginPrimitiveDraws()
     writes[1].dstBinding=1;
     writes[1].descriptorCount=(uint32_t)ImageClasses;
     writes[1].pImageInfo=imageInfo;
-    vkUpdateDescriptorSets(device(), 2, writes, 0, nullptr);
+    writes[2]=writes[0];
+    writes[2].dstBinding=2;
+    writes[2].pImageInfo=&layerInfo;
+    vkUpdateDescriptorSets(device(), 3, writes, 0, nullptr);
 
     beginRendering();
     vkCmdBindPipeline(current.draw, VK_PIPELINE_BIND_POINT_GRAPHICS, m_primitivePipeline);
@@ -2309,6 +2373,7 @@ void Vulkan::beginTextDraws()
 
     memcpy(m_textPush.projection, m_push.projection, sizeof(m_textPush.projection));
     m_textPush.textContrast=textContrast();
+    m_textPush.layerRemap=layerRemap()?1:0;
 }
 
 void Vulkan::beginTextAtlas(const FontData &fontData)
@@ -2337,14 +2402,16 @@ void Vulkan::beginTextAtlas(const FontData &fontData)
 
     // the atlas linear and clamped, as OpenGLCore's GL_LINEAR atlases; the clip
     // boxes nearest
-    const VkDescriptorImageInfo images[2]=
+    const Texture *layers=texture(m_layerTexture);
+    const VkDescriptorImageInfo images[3]=
     {
         { m_atlasSampler, atlas->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
-        { m_clipSampler, clip->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }
+        { m_clipSampler, clip->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL },
+        { m_clipSampler, layers?layers->view:clip->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL }
     };
-    VkWriteDescriptorSet writes[2]{};
+    VkWriteDescriptorSet writes[3]{};
 
-    for(uint32_t i=0; i<2; ++i)
+    for(uint32_t i=0; i<3; ++i)
     {
         writes[i].sType=VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writes[i].dstSet=set;
@@ -2353,7 +2420,7 @@ void Vulkan::beginTextAtlas(const FontData &fontData)
         writes[i].descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[i].pImageInfo=&images[i];
     }
-    vkUpdateDescriptorSets(device(), 2, writes, 0, nullptr);
+    vkUpdateDescriptorSets(device(), 3, writes, 0, nullptr);
 
     if(pipeline != m_boundTextPipeline)
     {
