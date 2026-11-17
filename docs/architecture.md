@@ -7657,7 +7657,15 @@ pointer (`setUserId`, `setUserData`), and nothing in it knows what a pin carries
   selected link left (`vetoRemove()`), then `onNodeRemoved`, and `onLinkRemoved`
   for each link that went, a node's with it. `onSelectionChanged` fires once per
   user action that changed the selection. Removing a node or pin takes its links,
-  and every primitive id comes back.
+  and every primitive id comes back. A pin whose node waits to be deleted
+  (`removeNode()` took it off, or the app `delayedDelete()`d it) takes no link:
+  `canLink` is false and `addLink` null for it, as `getNodes()` leaves the node out,
+  so a link made in Delete's own input batch never ends on a dying pin. An app that
+  keeps a pin across frames holds its control id and looks it up
+  (`Base::getControlById`, null once it is deleted), not a pointer: the demos' kit
+  keeps the dropped link's pin so while its Add node menu is open, and since a
+  context menu takes no keys, Delete can take the pin's node meanwhile; the pick
+  then adds an unlinked node (#742).
 - **The z layers and their budget.** Links are numbered before every node and the
   overlay after them, so a node is always over every link. Each control takes its
   `depthLayers()` z values and the canvas spreads them with `Canvas::ZGap` gaps, then

@@ -753,7 +753,12 @@
  *                 Escape restoring; the graph's, a node's and a link's context
  *                 menus at the right press's graph point and a right drag that
  *                 pans; a pan and a zoom with no layout pass; a vetoed and a
- *                 made Delete giving every id back; the demo deleted giving its
+ *                 made Delete giving every id back; the Add node menu a drop
+ *                 opens, picked with no Delete, adding a node linked from the
+ *                 drop's pin, and picked after Delete removed that pin's node,
+ *                 frames between and none, adding an unlinked node at the drop
+ *                 with no link to the dying pin (add_from_drop linked=1
+ *                 after_delete=0 same_batch=0 ...); the demo deleted giving its
  *                 ids back (node-graph.png). One line per measured frame, e.g.
  *                   node-graph drag_3 prim_slots=... strays=0
  *                 Exits non-zero if any check fails, naming it on stderr.
