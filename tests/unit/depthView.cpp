@@ -8,8 +8,12 @@
  *  transform and the canvas's input capture and calls onOpenChangedCaller, and
  *  close() (or Escape) gives both back and calls it again; on a renderer that
  *  is no SlotRenderer it opens nothing, and a second canvas cannot take a
- *  renderer one view is on. At reset, on a landscape and a portrait view, the
- *  default spacing puts the highest z half the view's width in front and the
+ *  renderer one view is on. Open, it holds the renderer's layer table and its
+ *  remap on (closed, neither), and spaces shown layers: highestZ() is the
+ *  renderer's highest shown layer, below the canvas's highest z index. At
+ *  reset, on a landscape and a portrait view (a canvas drawn into the
+ *  MirrorOnlyRenderer), the default spacing puts that layer half the view's
+ *  width in front and the
  *  camera is 1 + spacing*highest/focal focal lengths away: in perspective the
  *  highest z is drawn where the front view draws it and a lower one smaller
  *  about the view's centre, z 0 at focal/(focal + spacing*highest) of its size,
@@ -20,8 +24,17 @@
  *  and keys move the camera as the class says: a left drag orbits, a right or
  *  middle drag pans by its device px, the wheel and W/S dolly from the reset
  *  distance by DollyStep a notch, the arrows and A/D move, P switches the
- *  projection, + and - space the labels, R resets; a move with no button down
- *  changes nothing.
+ *  projection, + and - space the layers, R resets, and L switches to raw
+ *  labels (the canvas's highest z index, the remap off) and back, the stack's
+ *  depth kept; a move with no button down changes nothing.
+ *  A hidden subtree of 1, 10 or 1000 controls between two shown ones takes no
+ *  depth and leaves the reset camera as without it; shown, each of its
+ *  controls is a layer and the camera at reset is fitted to them in the
+ *  flush; hidden again, the camera is the first one. A view opened after the
+ *  canvas's first update and before its first render (as --depth-view opens
+ *  it) fits the table that render builds, and a camera the user turned keeps
+ *  itself as the layers change, with a new depth range handed to the
+ *  renderer.
  *  Deleting the canvas under an open view closes it without a call.
  */
 #include "headlessFixture.h"
