@@ -7663,7 +7663,7 @@ pointer (`setUserId`, `setUserData`), and nothing in it knows what a pin carries
   so a link made in Delete's own input batch never ends on a dying pin. An app that
   keeps a pin across frames holds its control id and looks it up
   (`Base::getControlById`, null once it is deleted), not a pointer: the demos' kit
-  keeps the dropped link's pin so while its Add node menu is open, and since a
+  holds the dropped link's pin by id while its Add node menu is open, and since a
   context menu takes no keys, Delete can take the pin's node meanwhile; the pick
   then adds an unlinked node (#742).
 - **The z layers and their budget.** Links are numbered before every node and the

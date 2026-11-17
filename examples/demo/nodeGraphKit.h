@@ -78,7 +78,7 @@ private:
 
     controls::NodeGraph *m_graph;
     //! the control id of the node or link whose menu opened last; an id, not
-    //! a pointer, since the menu outlives a Delete that takes its item
+    //! a pointer, since it is kept after that item is deleted
     size_t m_menuTarget=NoControl;
     //! the control id of the pin a link dropped on empty space came from,
     //! while its "Add node" menu is open; Delete may take its node meanwhile
