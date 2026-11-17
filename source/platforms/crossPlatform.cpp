@@ -860,29 +860,31 @@ String getClipboardText()
     return gs_ClipboardEmulator;
 }
 
-static std::function<void(bool, const Rect &)> &textInputHandler()
+static std::function<void(bool, const Rect &, TextInputKind)> &textInputHandler()
 {
-    static std::function<void(bool, const Rect &)> handler;
+    static std::function<void(bool, const Rect &, TextInputKind)> handler;
     return handler;
 }
 
-void setTextInputHandler(std::function<void(bool active, const Rect &caretDeviceRect)> handler)
+void setTextInputHandler(std::function<void(bool active, const Rect &caretDeviceRect, TextInputKind kind)> handler)
 {
     textInputHandler()=std::move(handler);
 }
 
-void setTextInputRect(bool active, const Rect &caretDeviceRect)
+void setTextInputRect(bool active, const Rect &caretDeviceRect, TextInputKind kind)
 {
     if(textInputHandler())
     {
-        textInputHandler()(active, caretDeviceRect);
+        textInputHandler()(active, caretDeviceRect, kind);
         return;
     }
 #if defined(__EMSCRIPTEN__)
-    gweni_js_text_input(active ? 1 : 0, caretDeviceRect.x, caretDeviceRect.y, caretDeviceRect.w, caretDeviceRect.h);
+    gweni_js_text_input(active ? 1 : 0, (kind == TextInputKind::Password) ? 1 : 0,
+        caretDeviceRect.x, caretDeviceRect.y, caretDeviceRect.w, caretDeviceRect.h);
 #else
     (void)active;
     (void)caretDeviceRect;
+    (void)kind;
 #endif
 }
 

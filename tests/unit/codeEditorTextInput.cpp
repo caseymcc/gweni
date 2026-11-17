@@ -11,7 +11,10 @@
  *  tells the editor before it moves the focus), as it turns read-only while focused and as
  *  it is deleted with the focus. A read-only editor (a CodeView's) never
  *  asks for it, focused or not, and asks again when it takes edits again
- *  while focused.
+ *  while focused. A word the platform is composing for it (which it shows
+ *  none of) is typed at the caret as the focus leaves, through unfocus() or
+ *  another control's focus(), and the platform's composition ended once, so
+ *  a phone keyboard's last word is not lost or typed into the next control.
  */
 #include "headlessFixture.h"
 
@@ -36,15 +39,18 @@ struct Scene
     bool active=false;
     Rect rect;
     int calls=0;
+    //! platform::endTextComposition() calls
+    int ends=0;
 
     Scene()
     {
-        platform::setTextInputHandler([this](bool on, const Rect &caret)
+        platform::setTextInputHandler([this](bool on, const Rect &caret, platform::TextInputKind)
             {
                 active=on;
                 rect=caret;
                 ++calls;
             });
+        platform::setTextCompositionEndHandler([this]() { ++ends; });
         canvas=new controls::Canvas(&skin);
         canvas->setSize(600, 400);
 
@@ -65,6 +71,7 @@ struct Scene
         MouseFocus=nullptr;
         delete canvas;
         platform::setTextInputHandler(nullptr);
+        platform::setTextCompositionEndHandler(nullptr);
     }
 
     void frame()
@@ -157,4 +164,41 @@ TEST_CASE("CodeEditor text input: deleted with the focus, it gives it back")
     delete scene.editor;
     scene.editor=nullptr;
     CHECK(!scene.active);
+}
+
+TEST_CASE("CodeEditor text input: a word still composing goes in at the caret as another control takes the focus")
+{
+    Scene scene;
+    controls::CodeEditor *editor=scene.editor;
+    controls::Base *other=scene.canvas->newChild<controls::Base>();
+
+    other->setKeyboardInputEnabled(true);
+    editor->focus();
+    editor->setCaret(text::Position{1, 7});
+    scene.canvas->inputCompositionUpdate("se", 2);
+    scene.canvas->inputCompositionUpdate("secret", 6);
+    CHECK(editor->getText() == "first line\nsecond line\nthird line");
+    other->focus();
+    CHECK(KeyboardFocus == other);
+    CHECK(editor->getText() == "first line\nsecond secretline\nthird line");
+    CHECK(scene.ends == 1);
+    CHECK(!scene.active);
+}
+
+TEST_CASE("CodeEditor text input: a word still composing goes in as it is unfocused, once")
+{
+    Scene scene;
+    controls::CodeEditor *editor=scene.editor;
+
+    editor->focus();
+    editor->setCaret(text::Position{0, 0});
+    scene.canvas->inputCompositionUpdate("ab", 2);
+    editor->unfocus();
+    CHECK(editor->getText() == "abfirst line\nsecond line\nthird line");
+    CHECK(scene.ends == 1);
+    // focused again, the held word is gone: nothing is typed twice
+    editor->focus();
+    editor->unfocus();
+    CHECK(editor->getText() == "abfirst line\nsecond line\nthird line");
+    CHECK(scene.ends == 1);
 }

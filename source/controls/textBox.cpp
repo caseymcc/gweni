@@ -89,11 +89,15 @@ static constexpr float MessageFontStep=1.0f;
 static constexpr int MessageGap=2;
 
 // A box deleted with the focus hands back the platform's text input, as
-// one losing the focus does.
+// one losing the focus does, and ends the platform's composition, which
+// would otherwise carry on into the box that takes the focus next.
 TextBox::~TextBox()
 {
-    if(KeyboardFocus == this)
-        platform::setTextInputRect(false, Rect());
+    if(KeyboardFocus != this)
+        return;
+    if(m_composition)
+        platform::endTextComposition();
+    platform::setTextInputRect(false, Rect());
 }
 
 namespace
@@ -1477,7 +1481,8 @@ void TextBox::reportTextInput()
     const int y=snap(origin.y);
 
     platform::setTextInputRect(true, Rect(x, y, std::max(1, snap(origin.x+m_rectCaretBounds.w)-x),
-        std::max(1, snap(origin.y+m_rectCaretBounds.h)-y)));
+        std::max(1, snap(origin.y+m_rectCaretBounds.h)-y)),
+        takesPassword()?platform::TextInputKind::Password:platform::TextInputKind::Text);
 }
 
 void TextBox::onTextChanged()

@@ -129,15 +129,27 @@ GWENI_EXPORT void useBrowserClipboard(bool on);
 // method's candidate window stands at the caret.
 //
 
+//! What a text control takes: text, or a password, which a platform's
+//! keyboard neither suggests nor learns (and types a character at a time,
+//! without composing).
+enum class TextInputKind
+{
+    Text,
+    Password
+};
+
 //! \p active: a text control has the keyboard focus, its caret at
 //! \p caretDeviceRect (device px of the window's framebuffer, as the
-//! renderer draws); called as the focus comes and goes and as the caret
-//! moves. In a browser page it focuses the page's hidden text field there
-//! (or blurs it); elsewhere it does nothing.
-GWENI_EXPORT void setTextInputRect(bool active, const Rect &caretDeviceRect);
+//! renderer draws), taking \p kind; called as the focus comes and goes and
+//! as the caret moves. In a browser page it focuses the page's hidden text
+//! field there (a password field for TextInputKind::Password), or blurs it;
+//! elsewhere it does nothing.
+GWENI_EXPORT void setTextInputRect(bool active, const Rect &caretDeviceRect,
+    TextInputKind kind=TextInputKind::Text);
 //! What setTextInputRect() calls instead of the platform's, for a test; an
 //! empty function gives the platform's back.
-GWENI_EXPORT void setTextInputHandler(std::function<void(bool active, const Rect &caretDeviceRect)> handler);
+GWENI_EXPORT void setTextInputHandler(
+    std::function<void(bool active, const Rect &caretDeviceRect, TextInputKind kind)> handler);
 //! A text control ended an input method's composition for a reason of its
 //! own (the focus or the caret moved, a key, the app's setText()), not
 //! because the platform ended it: the platform drops its composition too, so

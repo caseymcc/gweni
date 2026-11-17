@@ -376,7 +376,12 @@ Base::~Base()
         HoveredControl=nullptr;
 
     if(KeyboardFocus == this)
+    {
+        // what the keyboard was composing for it goes nowhere else
+        if(canvas)
+            canvas->commitHeldComposition(this, true);
         KeyboardFocus=nullptr;
+    }
 
     if(MouseFocus == this)
         MouseFocus=nullptr;
@@ -3363,7 +3368,11 @@ void Base::focus()
 
     Base *previous=KeyboardFocus;
     if(previous)
+    {
+        if(Canvas *canvas=previous->getCanvas())
+            canvas->commitHeldComposition(previous);
         previous->onLostKeyboardFocus();
+    }
 
     KeyboardFocus=this;
 
@@ -3385,6 +3394,9 @@ void Base::unfocus()
     if(KeyboardFocus != this)
         return;
 
+    // typed while the focus is still its own, as focus() does
+    if(Canvas *canvas=getCanvas())
+        canvas->commitHeldComposition(this);
     KeyboardFocus=nullptr;
     onLostKeyboardFocus();
     redraw();

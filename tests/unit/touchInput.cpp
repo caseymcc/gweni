@@ -33,7 +33,8 @@
  *  goes with it. A TextBox keeps the drag only while it has the keyboard
  *  focus: a drag starting on an unfocused one in a ScrollControl scrolls it
  *  and leaves the box unfocused, one in the focused box selects its text and
- *  scrolls nothing.
+ *  scrolls nothing. A negative id is ignored, so it neither takes the input
+ *  nor keeps it from the next finger and the mouse.
  */
 #include "headlessFixture.h"
 
@@ -638,4 +639,23 @@ TEST_CASE("Touch: a TextBox keeps the drag only while focused (it selects) and a
     CHECK(KeyboardFocus == box);
     CHECK(box->getCursorPos() != box->getCursorEnd());
     CHECK(scroll->getVerticalScrollOffset() == 0);
+}
+
+// -1 is the canvas's "no finger": a down with it must hold nothing, or its up
+// (taken for no finger's) would leave the input captured for good
+TEST_CASE("Touch: a negative id is ignored")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+
+    CHECK(!canvas->inputTouch(-1, TouchPhase::Down, 30.0f, 20.0f));
+    CHECK(canvas->inputCapture() == nullptr);
+    CHECK(!canvas->inputTouch(-1, TouchPhase::Up, 30.0f, 20.0f));
+    CHECK(canvas->inputCapture() == nullptr);
+    CHECK(scene.presses == 0);
+
+    canvas->inputTouch(0, TouchPhase::Down, 30.0f, 20.0f);
+    canvas->inputTouch(0, TouchPhase::Up, 30.0f, 20.0f);
+    CHECK(scene.presses == 1);
+    CHECK(canvas->inputCapture() == nullptr);
 }

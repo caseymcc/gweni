@@ -823,6 +823,16 @@ public:
     bool inputCompositionUpdate(const String &text, int caret) override;
     bool inputCompositionCommit(const String &text) override;
     bool inputCompositionCancel() override;
+    /// The focus leaving \p control (Base::focus(), unfocus(), ~Base): what
+    /// an input method was composing for it that it showed no composition of
+    /// (onCompositionUpdate returned false: a PasswordTextBox, a CodeEditor)
+    /// is committed into it (onCompositionCommit) and the platform's
+    /// composition ended (platform::endTextComposition), so the word a
+    /// phone's keyboard composes is typed into the field it was typed for, as
+    /// a TextBox's focus loss commits its own, and not into the next one;
+    /// a control being deleted only ends the platform's. Nothing when no
+    /// composition is held for \p control.
+    void commitHeldComposition(Base *control, bool deleting=false);
 
     bool inputMouseWheel(int val) override;
     bool inputMouseWheelH(int val) override;
@@ -1171,6 +1181,12 @@ protected:
     std::unique_ptr<internal::TouchGesture> m_touchGesture;
     /// An input capture holds the input and is not the touch gesture.
     bool compositionCaptured() const;
+    /// The last composition update the focus refused (commitHeldComposition):
+    /// the control (always the keyboard focus: every way the focus leaves
+    /// it clears this) and the text.
+    Base *m_heldCompositionFor=nullptr;
+    String m_heldComposition;
+    void clearHeldComposition();
     /// Per mouse button (bit = button, 0..31): its press is held and was the
     /// scene's (inputMouseButton returned false), or the UI's (true), so its
     /// release, and the moves while it is held, get the press's answer.

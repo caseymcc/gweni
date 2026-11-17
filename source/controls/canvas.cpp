@@ -2443,8 +2443,36 @@ bool Canvas::inputCompositionUpdate(const String &text, int caret)
         return false;
 
     if(Base *target=compositionTarget(this))
-        target->onCompositionUpdate(text, caret);
+    {
+        // kept for the focus's leaving when the target shows none of it
+        if(!target->onCompositionUpdate(text, caret) && !text.empty())
+        {
+            m_heldCompositionFor=target;
+            m_heldComposition=text;
+        }
+        else
+            clearHeldComposition();
+    }
     return holdsKeyboard();
+}
+
+void Canvas::clearHeldComposition()
+{
+    m_heldCompositionFor=nullptr;
+    m_heldComposition.clear();
+}
+
+void Canvas::commitHeldComposition(Base *control, bool deleting)
+{
+    if(!control || (control != m_heldCompositionFor))
+        return;
+
+    const String text=std::move(m_heldComposition);
+
+    clearHeldComposition();
+    if(!deleting)
+        control->onCompositionCommit(text);
+    platform::endTextComposition();
 }
 
 bool Canvas::inputCompositionCommit(const String &text)
@@ -2464,6 +2492,7 @@ bool Canvas::inputCompositionCommit(const String &text)
     if(hidden())
         return false;
 
+    clearHeldComposition();
     if(Base *target=compositionTarget(this))
         target->onCompositionCommit(text);
     return holdsKeyboard();
@@ -2476,6 +2505,7 @@ bool Canvas::inputCompositionCancel()
     if(hidden())
         return false;
 
+    clearHeldComposition();
     if(Base *target=compositionTarget(this))
         target->onCompositionCancel();
     return holdsKeyboard();
@@ -2501,6 +2531,10 @@ bool Canvas::inputMouseLeave()
 // other fingers' events are taken and dropped meanwhile (canvas.h, "Input").
 bool Canvas::inputTouch(int id, TouchPhase phase, float x, float y)
 {
+    // -1 is m_touchId's "none": a negative id tracks nothing
+    if(id < 0)
+        return false;
+
     const Point point(static_cast<int>(std::lround(x)), static_cast<int>(std::lround(y)));
 
     if(phase == TouchPhase::Down)

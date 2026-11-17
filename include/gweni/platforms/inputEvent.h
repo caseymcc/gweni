@@ -71,7 +71,8 @@ public:
     //! The cursor left the window. Optional: the default ignores it.
     virtual bool inputMouseLeave() { return false; }
     //! A touch point \p id at \p x, \p y (logical units, fractions kept) in
-    //! \p phase. Optional: the default ignores it.
+    //! \p phase; \p id is 0 or more (a negative one is ignored). Optional:
+    //! the default ignores it.
     virtual bool inputTouch(int /*id*/, TouchPhase /*phase*/, float /*x*/, float /*y*/) { return false; }
     //! An input method's composition: \p text (UTF-8) as it is being
     //! composed, its caret \p caret bytes into it; the text it ends with;

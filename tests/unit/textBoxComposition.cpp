@@ -82,6 +82,7 @@ struct TextInput
 {
     bool active=false;
     Rect rect;
+    platform::TextInputKind kind=platform::TextInputKind::Text;
     int calls=0;
 };
 
@@ -98,10 +99,11 @@ struct Scene: public event::Handler
 
     Scene()
     {
-        platform::setTextInputHandler([this](bool active, const Rect &rect)
+        platform::setTextInputHandler([this](bool active, const Rect &rect, platform::TextInputKind kind)
             {
                 input.active=active;
                 input.rect=rect;
+                input.kind=kind;
                 ++input.calls;
             });
         platform::setTextCompositionEndHandler([this]() { ++ends; });
@@ -532,4 +534,102 @@ TEST_CASE("TextBox composition: a finger down on the canvas keeps no composition
     CHECK(!box->isComposing());
     scene.canvas->inputTouch(0, TouchPhase::Up, 350.0f, 250.0f);
     CHECK(scene.ends == 0);
+}
+
+TEST_CASE("TextBox composition: a password asks for a password's input, a box for text")
+{
+    Scene scene;
+    auto *password=scene.canvas->newChild<controls::PasswordTextBox>();
+
+    password->setBounds(10, 50, 200, 24);
+    scene.frame();
+    CHECK(scene.input.active);
+    CHECK(scene.input.kind == platform::TextInputKind::Text);
+    password->focus();
+    CHECK(scene.input.active);
+    CHECK(scene.input.kind == platform::TextInputKind::Password);
+    scene.box->focus();
+    CHECK(scene.input.kind == platform::TextInputKind::Text);
+}
+
+// A phone's keyboard composes every word, and a password box shows none of
+// it: the canvas types the word still composing as the focus leaves, and
+// ends the platform's composition, which would give it to the next control.
+TEST_CASE("TextBox composition: a password's word still composing goes in as another control takes the focus")
+{
+    Scene scene;
+    auto *password=scene.canvas->newChild<controls::PasswordTextBox>();
+    controls::Base *other=scene.canvas->newChild<controls::Base>();
+
+    other->setKeyboardInputEnabled(true);
+    password->setBounds(10, 50, 200, 24);
+    scene.frame();
+    password->focus();
+    scene.canvas->inputCompositionUpdate("se", 2);
+    scene.canvas->inputCompositionUpdate("secret", 6);
+    CHECK(password->getText().empty());
+    other->focus();
+    CHECK(KeyboardFocus == other);
+    CHECK(password->getText() == "secret");
+    CHECK(scene.ends == 1);
+    // the platform's late commit goes nowhere it would be typed again
+    scene.canvas->inputCompositionCommit("secret");
+    CHECK(password->getText() == "secret");
+}
+
+TEST_CASE("TextBox composition: a password's word still composing goes in as it is unfocused")
+{
+    Scene scene;
+    auto *password=scene.canvas->newChild<controls::PasswordTextBox>();
+
+    password->setBounds(10, 50, 200, 24);
+    scene.frame();
+    password->focus();
+    scene.canvas->inputCompositionUpdate("secret", 6);
+    password->unfocus();
+    CHECK(password->getText() == "secret");
+    CHECK(scene.ends == 1);
+}
+
+TEST_CASE("TextBox composition: a word the platform committed or cancelled is not typed again as the focus leaves")
+{
+    Scene scene;
+    auto *password=scene.canvas->newChild<controls::PasswordTextBox>();
+
+    password->setBounds(10, 50, 200, 24);
+    scene.frame();
+    password->focus();
+    scene.canvas->inputCompositionUpdate("se", 2);
+    scene.canvas->inputCompositionCommit("secret");
+    scene.canvas->inputCompositionUpdate("x", 1);
+    scene.canvas->inputCompositionCancel();
+    password->unfocus();
+    CHECK(password->getText() == "secret");
+    CHECK(scene.ends == 0);
+}
+
+TEST_CASE("TextBox composition: a control deleted with a word composing for it ends the platform's")
+{
+    Scene scene;
+    auto *box=scene.canvas->newChild<controls::TextBox>();
+    auto *target=scene.canvas->newChild<CharTarget>();
+
+    // a box deleted mid-composition
+    box->setBounds(10, 50, 200, 24);
+    scene.frame();
+    box->focus();
+    scene.canvas->inputCompositionUpdate("v", 1);
+    REQUIRE(box->isComposing());
+    delete box;
+    CHECK(scene.ends == 1);
+    CHECK(KeyboardFocus == nullptr);
+
+    // a control that showed none of it: nothing is typed, the platform's ends
+    target->setBounds(10, 80, 50, 20);
+    scene.frame();
+    target->focus();
+    scene.canvas->inputCompositionUpdate("ab", 2);
+    delete target;
+    CHECK(scene.ends == 2);
+    CHECK(KeyboardFocus == nullptr);
 }

@@ -356,6 +356,9 @@ protected:
     //! Whether an input method's composition shows in the box (true): a
     //! PasswordTextBox's is only typed when committed.
     virtual bool allowsComposition() const { return m_editable; }
+    //! Whether the platform's text input is asked for as a password's
+    //! (platform::TextInputKind::Password): a PasswordTextBox's; false.
+    virtual bool takesPassword() const { return false; }
 
     virtual bool isTextAllowed(const gweni::String &/*str*/, int /*pos*/)
     {
@@ -568,8 +571,12 @@ public:
 
 protected:
 
-    //! A password shows no composition: the committed text is typed.
+    //! A password shows no composition: the committed text is typed (the
+    //! canvas types one still composing as the focus leaves,
+    //! Canvas::commitHeldComposition), and the platform is asked for a
+    //! password's input, which composes nothing.
     bool allowsComposition() const override { return false; }
+    bool takesPassword() const override { return true; }
 
     //! A mask character for each codepoint of the password: its offsets are
     //! the number of codepoints before a getText() offset times the mask
