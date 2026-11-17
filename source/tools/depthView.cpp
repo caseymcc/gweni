@@ -80,6 +80,12 @@ DepthView *DepthView::open(controls::Canvas *canvas, renderer::Base *render)
 
     openViews().push_back(view);
     canvas->setInputCapture(view);
+    // the layers the shown slots use, counted now from what the renderer last
+    // drew (nothing yet, when the view opens before the canvas's first frame)
+    // and kept by each flush, which tells the view before its draws
+    slots->setLayerTable(true);
+    slots->setLayerRemap(true);
+    slots->setLayerTableListener([view]{ view->layersChanged(); });
     view->reset();
 
     event::Info info(canvas);
@@ -141,6 +147,8 @@ DepthView::~DepthView()
     std::vector<DepthView *> &views=openViews();
 
     views.erase(std::remove(views.begin(), views.end(), this), views.end());
+    m_renderer->setLayerTableListener(nullptr);
+    m_renderer->setLayerTable(false);
     m_renderer->clearViewTransform();
     if(m_canvas)
     {
@@ -176,7 +184,49 @@ float DepthView::defaultZSpacing() const
 
 float DepthView::highestZ() const
 {
-    return (float)std::max(m_canvas?m_canvas->highestZIndex():0, 1);
+    if(m_rawLabels)
+        return (float)std::max(m_canvas?m_canvas->highestZIndex():0, 1);
+    // layer 0 is label 0's; the shown labels are layers 1 up
+    return (float)std::max(m_renderer->shownLayerCount(), size_t(2))-1.0f;
+}
+
+void DepthView::reset()
+{
+    setCamera(resetCamera());
+    m_atReset=true;
+}
+
+void DepthView::setRawLabels(bool raw)
+{
+    if(raw == m_rawLabels)
+        return;
+
+    // the stack keeps its depth, spacing times its highest z, so the front
+    // layer stays where it is
+    const float before=highestZ();
+
+    m_rawLabels=raw;
+    m_renderer->setLayerRemap(!raw);
+
+    Camera camera=m_camera;
+    const bool atReset=m_atReset;
+
+    camera.zSpacing*=before/highestZ();
+    setCamera(camera);
+    m_atReset=atReset;
+}
+
+void DepthView::layersChanged()
+{
+    // In flush(), before its draws: the shown layers are new, so a camera at
+    // reset is fitted to them again and any other gets a depth range that
+    // covers the stack; no redraw, this frame draws with it already. Raw
+    // labels do not depend on the table.
+    if(m_rawLabels)
+        return;
+    if(m_atReset)
+        m_camera=resetCamera();
+    apply(false);
 }
 
 float DepthView::focalLength() const
@@ -188,6 +238,7 @@ float DepthView::focalLength() const
 
 void DepthView::setCamera(const Camera &camera)
 {
+    m_atReset=false;
     m_camera=camera;
     m_camera.pitch=std::min(std::max(m_camera.pitch, -90.0f), 90.0f);
     m_camera.distance=std::min(std::max(m_camera.distance, MinDistance), MaxDistance);
@@ -200,7 +251,7 @@ float DepthView::scale() const
     return m_canvas?m_canvas->scale():1.0f;
 }
 
-void DepthView::apply()
+void DepthView::apply(bool redraw)
 {
     const Rect &view=m_renderer->viewRect();
     const float cx=(float)view.x+0.5f*(float)view.w;
@@ -277,7 +328,7 @@ void DepthView::apply()
 
     std::copy(values, values+16, m_transform);
     m_renderer->setViewTransform(m_transform);
-    if(m_canvas)
+    if(m_canvas && redraw)
         m_canvas->redraw();
 }
 
@@ -374,6 +425,9 @@ void DepthView::captureCharacter(gweni::UnicodeChar chr)
         break;
     case 'r': case 'R':
         reset();
+        break;
+    case 'l': case 'L':
+        setRawLabels(!m_rawLabels);
         break;
     case 'w': case 'W': dolly(1.0f); break;
     case 's': case 'S': dolly(-1.0f); break;

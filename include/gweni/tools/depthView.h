@@ -117,10 +117,24 @@ public:
     //! so the highest z is drawn at its front-view size and every lower one
     //! smaller (z 0 at 1/distance of it, in either projection)
     Camera resetCamera() const;
-    void reset() { setCamera(resetCamera()); }
-    //! Device px a z label that puts the canvas's highest z index
-    //! (Canvas::highestZIndex()) half the view's width in front of z 0
+    //! The camera at resetCamera(), which follows the shown layers as they
+    //! change until the next setCamera() (a key, a drag, the wheel)
+    void reset();
+    //! Device px a layer that puts the highest one, highestZ(), half the view's
+    //! width in front of z 0
     float defaultZSpacing() const;
+    //! What the camera spaces: the highest shown layer (the renderer's layer
+    //! table, SlotRenderer::shownLayerCount() less 1), or with rawLabels()
+    //! the canvas's highest z index; at least 1. apply(), resetCamera() and
+    //! defaultZSpacing() all fit to it.
+    float highestZ() const;
+    //! Raw z labels (L): the renderer draws Vertex::z as it is (no remap),
+    //! every label zSpacing apart, hidden pages and the gaps between labels
+    //! included, rather than each shown layer zSpacing apart. Switching
+    //! converts zSpacing so the stack keeps its depth and its front layer
+    //! stays where it is.
+    void setRawLabels(bool raw);
+    bool rawLabels() const { return m_rawLabels; }
     //! The transform last handed to the renderer, column-major
     const float *transform() const { return m_transform; }
 
@@ -153,13 +167,13 @@ private:
     DepthView &operator=(const DepthView &)=delete;
 
     //! Builds the transform from the camera and the view rect, hands it to the
-    //! renderer and asks the canvas for a redraw
-    void apply();
+    //! renderer and asks the canvas for a redraw (not from inside a flush)
+    void apply(bool redraw=true);
+    //! The renderer's listener (SlotRenderer::setLayerTableListener): the
+    //! shown layers changed in a flush, before its draws
+    void layersChanged();
     //! The canvas scale: device px per logical unit, the mouse's
     float scale() const;
-    //! The canvas's highest z index, at least 1, which apply(), resetCamera()
-    //! and defaultZSpacing() all fit to
-    float highestZ() const;
     //! FocalViews times the view's longer side (at least 1), device px
     float focalLength() const;
     void dolly(float steps);
@@ -171,6 +185,9 @@ private:
     float m_transform[16];
     bool m_orbiting=false;
     bool m_panning=false;
+    bool m_rawLabels=false;
+    //! the camera is resetCamera()'s, fitted again as the shown layers change
+    bool m_atReset=true;
 };
 
 }//namespace tools

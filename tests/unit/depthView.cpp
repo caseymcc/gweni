@@ -60,6 +60,45 @@ Point3 project(const renderer::SlotRenderer &renderer, float x, float y, float z
     return { px/pw, py/pw, pz/pw };
 }
 
+//! A skin Control that draws its control's bounds as one filled slot at its
+//! z, hidden while the control is not visible(), so the renderer's layer table
+//! counts the shown controls
+class SlotControl: public skin::Control
+{
+public:
+    std::string getTypeName() override { return "Slot"; }
+    size_t requiredPrimitives() override { return 1; }
+
+    void update(renderer::Base *render, controls::Base *control) override
+    {
+        if(m_primitives.empty())
+            return;
+        if(!control->visible())
+        {
+            render->hidePrimitive(m_primitives[0]);
+            return;
+        }
+
+        const Rect &bounds=control->getBounds();
+
+        render->setDrawColor(Color(10, 20, 30, 255));
+        render->drawFilledRect(m_primitives[0], Rect(0, 0, bounds.w, bounds.h), control->getZIndex());
+    }
+};
+
+//! A skin drawing every control as a SlotControl on its renderer
+class DrawingSkin: public skin::Base
+{
+public:
+    explicit DrawingSkin(renderer::Base *renderer): Base(renderer) {}
+
+    std::unique_ptr<skin::Control> getControlRenderer(std::string) override
+    {
+        return std::make_unique<SlotControl>();
+    }
+    void drawControl(controls::Base *) override {}
+};
+
 class Listener: public event::Handler
 {
 public:
@@ -78,14 +117,16 @@ struct Scene
     test::StubRenderer stub;
     test::StubSkin skin{&stub};
     test::MirrorOnlyRenderer slots;
+    DrawingSkin drawing{&slots};
     controls::Canvas *canvas=nullptr;
     Listener listener;
 
-    //! A canvas filling a \p width x \p height view
-    explicit Scene(int width=640, int height=480)
+    //! A canvas filling a \p width x \p height view, its skin the stub's, or
+    //! with \p drawn one drawing each control as a slot on `slots`
+    explicit Scene(int width=640, int height=480, bool drawn=false)
     {
         slots.setViewRect(Rect(0, 0, width, height));
-        canvas=new controls::Canvas(&skin);
+        canvas=new controls::Canvas(drawn?static_cast<skin::Base *>(&drawing):&skin);
         canvas->setSize(width, height);
         for(int i=0; i<20; ++i)
         {
@@ -169,14 +210,19 @@ TEST_CASE("Depth view: at reset the highest z is drawn as in the front view and 
         CAPTURE(size.x);
         CAPTURE(size.y);
 
-        Scene scene(size.x, size.y);
+        Scene scene(size.x, size.y, true);
         tools::DepthView *view=tools::DepthView::open(scene.canvas, &scene.slots);
 
         REQUIRE(view != nullptr);
 
         const float w=(float)size.x, h=(float)size.y;
         const float cx=0.5f*w, cy=0.5f*h;
-        const float high=(float)scene.canvas->highestZIndex();
+        // the highest shown layer: the canvas and its 20 buttons' slots, the
+        // buttons' own parts drawing too
+        const float high=view->highestZ();
+
+        CHECK(high == (float)(scene.slots.shownLayerCount()-1));
+        CHECK(high < (float)scene.canvas->highestZIndex());
         const float k=(float)renderer::SlotRenderer::kMaxZIndex;
         const float focal=tools::DepthView::FocalViews*std::max(w, h);
         const float s=view->camera().zSpacing;
@@ -255,7 +301,7 @@ TEST_CASE("Depth view: at reset the highest z is drawn as in the front view and 
 
 TEST_CASE("Depth view: the mouse and the keys move the camera")
 {
-    Scene scene;
+    Scene scene(640, 480, true);
     controls::Canvas *canvas=scene.canvas;
     tools::DepthView *view=tools::DepthView::open(canvas, &scene.slots);
 
@@ -329,6 +375,24 @@ TEST_CASE("Depth view: the mouse and the keys move the camera")
     canvas->inputCharacter('R');
     CHECK(view->camera() == reset);
 
+    // L: raw labels and back, the stack's depth (spacing times its highest z)
+    // kept, so its front layer stays
+    const float shownHigh=view->highestZ();
+
+    CHECK(scene.slots.layerRemap());
+    canvas->inputCharacter('l');
+    CHECK(view->rawLabels());
+    CHECK_FALSE(scene.slots.layerRemap());
+    CHECK(view->highestZ() == (float)canvas->highestZIndex());
+    CHECK(view->highestZ() > shownHigh);
+    CHECK(view->camera().zSpacing*view->highestZ() == doctest::Approx(reset.zSpacing*shownHigh));
+    CHECK(view->camera().distance == reset.distance);
+    canvas->inputCharacter('L');
+    CHECK_FALSE(view->rawLabels());
+    CHECK(scene.slots.layerRemap());
+    CHECK(view->highestZ() == shownHigh);
+    CHECK(view->camera().zSpacing == doctest::Approx(reset.zSpacing));
+
     // the transform handed over is the one the view built
     for(int i=0; i<16; ++i)
         CHECK(scene.slots.viewTransform()[i] == view->transform()[i]);
@@ -355,6 +419,158 @@ TEST_CASE("Depth view: a canvas deleted under its view closes it, with no call")
     tools::DepthView::close(other);
     delete other;
     tools::DepthView::onOpenChangedCaller.removeHandler(&listener);
+}
+
+namespace
+{
+
+//! A drawn canvas: a shown control, a container of \p hidden controls hidden
+//! from the start, and another shown control after it
+struct HiddenSubtree
+{
+    test::MirrorOnlyRenderer slots;
+    DrawingSkin skin{&slots};
+    controls::Canvas *canvas=nullptr;
+    controls::Base *container=nullptr;
+
+    explicit HiddenSubtree(int hidden)
+    {
+        slots.setViewRect(Rect(0, 0, 640, 480));
+        canvas=new controls::Canvas(&skin);
+        canvas->setSize(640, 480);
+
+        controls::Base *first=canvas->newChild<controls::Base>();
+
+        first->setBounds(10, 10, 100, 20);
+        container=canvas->newChild<controls::Base>();
+        container->setBounds(10, 40, 300, 300);
+        container->hide();
+        for(int i=0; i<hidden; ++i)
+            container->newChild<controls::Base>()->setBounds(i%30, i/30, 10, 10);
+
+        controls::Base *last=canvas->newChild<controls::Base>();
+
+        last->setBounds(10, 400, 100, 20);
+        frame();
+    }
+
+    HiddenSubtree(const HiddenSubtree &)=delete;
+    HiddenSubtree &operator=(const HiddenSubtree &)=delete;
+
+    ~HiddenSubtree()
+    {
+        tools::DepthView::close(canvas);
+        delete canvas;
+    }
+
+    void frame()
+    {
+        canvas->updateCanvas();
+        canvas->renderCanvas();
+    }
+};
+
+}//namespace
+
+TEST_CASE("Depth view: a hidden subtree takes no depth and leaves the reset camera as it is")
+{
+    HiddenSubtree none(0);
+    tools::DepthView *noneView=tools::DepthView::open(none.canvas, &none.slots);
+
+    REQUIRE(noneView != nullptr);
+    CHECK(none.slots.layerTable());
+    CHECK(none.slots.layerRemap());
+
+    // the two shown controls (the canvas is at z 0, layer 0)
+    const float shownHigh=noneView->highestZ();
+    const tools::DepthView::Camera reference=noneView->camera();
+
+    CHECK(shownHigh == 2.0f);
+
+    for(int hidden:{ 1, 10, 1000 })
+    {
+        CAPTURE(hidden);
+
+        HiddenSubtree scene(hidden);
+        tools::DepthView *view=tools::DepthView::open(scene.canvas, &scene.slots);
+
+        REQUIRE(view != nullptr);
+        // the hidden controls have z labels of their own, and no depth
+        CHECK(scene.canvas->highestZIndex() > none.canvas->highestZIndex());
+        CHECK(view->highestZ() == shownHigh);
+        CHECK(view->camera() == reference);
+        CHECK(view->camera() == view->resetCamera());
+
+        // shown, every control of it is a layer; hidden again, none is
+        scene.container->show();
+        scene.frame();
+        CHECK(view->highestZ() == shownHigh+1.0f+(float)hidden);
+        // the camera at reset follows them, fitted in the flush
+        CHECK(view->camera() == view->resetCamera());
+        CHECK(view->camera().zSpacing == doctest::Approx(
+            std::min(0.5f*640.0f/view->highestZ(), tools::DepthView::MaxZSpacing)));
+        scene.container->hide();
+        scene.frame();
+        CHECK(view->highestZ() == shownHigh);
+        CHECK(view->camera() == reference);
+
+        // in raw labels it is the canvas's z range
+        view->setRawLabels(true);
+        CHECK(view->highestZ() == (float)scene.canvas->highestZIndex());
+    }
+
+    // closed, the renderer keeps no table
+    tools::DepthView::close(none.canvas);
+    CHECK_FALSE(none.slots.layerTable());
+    CHECK_FALSE(none.slots.layerRemap());
+}
+
+TEST_CASE("Depth view: opened before the canvas's first frame, the camera fits the first table built")
+{
+    test::MirrorOnlyRenderer slots;
+    DrawingSkin skin{&slots};
+    controls::Canvas *canvas=new controls::Canvas(&skin);
+
+    slots.setViewRect(Rect(0, 0, 640, 480));
+    canvas->setSize(640, 480);
+    for(int i=0; i<12; ++i)
+        canvas->newChild<controls::Base>()->setBounds(10+i*20, 10+i*10, 100, 20);
+    // as capture::openDepthViewOnce does: after the update, before the render
+    canvas->updateCanvas();
+
+    tools::DepthView *view=tools::DepthView::open(canvas, &slots);
+
+    REQUIRE(view != nullptr);
+    // nothing drawn yet: the least stack
+    CHECK(view->highestZ() == 1.0f);
+
+    canvas->renderCanvas();
+    // the 12 controls, fitted in that flush
+    CHECK(view->highestZ() == 12.0f);
+    CHECK(view->camera() == view->resetCamera());
+    CHECK(view->camera().zSpacing == doctest::Approx(0.5f*640.0f/12.0f));
+    for(int i=0; i<16; ++i)
+        CHECK(slots.viewTransform()[i] == view->transform()[i]);
+
+    // a camera the user moved keeps itself, its depth range following the stack
+    canvas->inputMouseButton(0, true);
+    canvas->inputMouseMoved(310, 205, 10, 5);
+    canvas->inputMouseButton(0, false);
+
+    const tools::DepthView::Camera turned=view->camera();
+    const std::vector<float> before(view->transform(), view->transform()+16);
+
+    canvas->newChild<controls::Base>()->setBounds(300, 300, 50, 50);
+    canvas->updateCanvas();
+    canvas->renderCanvas();
+    CHECK(view->highestZ() == 13.0f);
+    CHECK(view->camera() == turned);
+    CHECK_FALSE(std::equal(before.begin(), before.end(), view->transform()));
+    for(int i=0; i<16; ++i)
+        CHECK(slots.viewTransform()[i] == view->transform()[i]);
+
+    delete canvas;
+    CHECK_FALSE(slots.layerTable());
 }
 
 #endif//GWENI_TEST_SLOT_RENDERER
