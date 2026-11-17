@@ -155,6 +155,9 @@ void TouchGesture::start(Base *target, const PointF &at, bool stoppedFling)
     m_axes[1]=Axis();
     m_samples.clear();
     m_samples.push_back({platform::getTimeInSeconds(), at});
+    m_direction[0]=m_direction[1]=0;
+    m_extreme[0]=at.x;
+    m_extreme[1]=at.y;
 
     // a finger that stops a fling is no long press either
     if(m_canvas && m_target && !stoppedFling)
@@ -224,6 +227,34 @@ void TouchGesture::move(const PointF &at)
 
     m_last=at;
 
+    // a turn back along an axis: the speed is taken from where it turned
+    bool turned=false;
+
+    for(int axis=0; axis < 2; ++axis)
+    {
+        const float along=(axis == 0)?at.x:at.y;
+        const float from=along-m_extreme[axis];
+
+        if(m_direction[axis] == 0)
+        {
+            if(std::fabs(from) >= 1.0f)
+            {
+                m_direction[axis]=(from > 0.0f)?1:-1;
+                m_extreme[axis]=along;
+            }
+        }
+        else if(from*m_direction[axis] > 0.0f)
+            m_extreme[axis]=along;
+        else if(-from*m_direction[axis] >= 1.0f)
+        {
+            m_direction[axis]=-m_direction[axis];
+            m_extreme[axis]=along;
+            turned=true;
+        }
+    }
+    if(turned && (m_samples.size() > 1))
+        m_samples.erase(m_samples.begin(), m_samples.end()-1);
+
     // the samples the fling's speed is taken over, and the one before them
     if(!m_samples.empty() && (m_samples.back().time == now))
         m_samples.back().at=at;
@@ -273,22 +304,25 @@ float TouchGesture::unitsPerCanvasUnit(Base *control, int axis) const
     return (units > 0.0f)?units:1.0f;
 }
 
-// Only once a whole unit has gathered: a ZoomPanel takes any fraction, so a
-// fraction alone would hand the axis to it past a ScrollControl under it that
-// moves in whole units. Nothing under the finger moving along the axis drops
-// what gathered, so it does not pile up for a control that can move later.
+// A control is asked once a whole unit of its own has gathered: a ZoomPanel
+// takes any fraction, so a fraction alone would hand the axis to it past a
+// ScrollControl under it that moves in whole units (of its own, smaller than
+// the canvas's in a panel zoomed in). Nothing under the finger moving along
+// the axis drops what gathered, so it does not pile up for a control that can
+// move later.
 void TouchGesture::latch(int axis)
 {
     Axis &state=m_axes[axis];
-
-    if(std::fabs(state.pending) < 1.0f)
-        return;
 
     for(Base *control=Base::getControlById(m_target); control && (control != m_canvas);
         control=control->getActualParent())
     {
         const float scale=unitsPerCanvasUnit(control, axis);
         const float local=state.pending*scale;
+
+        if(std::fabs(local) < 1.0f)
+            return;
+
         const PointF moved=control->touchPan(axis == 0?PointF(local, 0.0f):PointF(0.0f, local));
         const float along=(axis == 0)?moved.x:moved.y;
 
@@ -297,10 +331,22 @@ void TouchGesture::latch(int axis)
             state.control=control->getControlId();
             state.scale=scale;
             state.pending-=along/scale;
+            dropRefused(state);
             return;
         }
     }
     state.pending=0.0f;
+}
+
+// What a latched control left of a pan: a whole unit of its own or more is
+// what it refused at the end of its range, dropped, so the finger turning
+// back moves it at once; the fraction under a unit is kept.
+void TouchGesture::dropRefused(Axis &state)
+{
+    const float local=state.pending*state.scale;
+
+    if(std::fabs(local) >= 1.0f)
+        state.pending=std::fmod(local, 1.0f)/state.scale;
 }
 
 // One call per control: a ZoomPanel holding both axes is panned once.
@@ -341,9 +387,15 @@ void TouchGesture::panLatched()
         const PointF moved=control->touchPan(delta);
 
         if(same || (axis == 0))
+        {
             x.pending-=moved.x/x.scale;
+            dropRefused(x);
+        }
         if(same || (axis == 1))
+        {
             y.pending-=moved.y/y.scale;
+            dropRefused(y);
+        }
     }
 }
 

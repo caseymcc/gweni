@@ -8537,11 +8537,17 @@ Native touchscreens have no feeder yet: desktop GLFW has no touch API.
     whole units and stops at its range's ends (`VirtualList`, `DataTable`'s virtual
     body and `LogView`, which detaches as a wheel up does, inherit it, so a pan over
     100 000 items binds only the rows coming into view), a `ZoomPanel` (so a
-    `NodeGraph`) its pan; the gesture keeps what was not moved, so a slow drag adds
-    up. A pan delivers no press, so a drag that starts on a button scrolls and fires
+    `NodeGraph`) its pan; the gesture keeps what was not moved under one of the
+    control's own units, so a slow drag adds up, and drops what a control refused at
+    its range's end (a whole unit of its own or more), so a list dragged past its top
+    and back follows the finger at once, and a flick back flings. An axis is offered
+    to a control only once a whole unit of its own has gathered (a ScrollControl's
+    unit inside a ZoomPanel at 1.25 is 1.25 canvas units), so a fraction never hands
+    the axis past a list to the panel holding it. A pan delivers no press, so a drag that starts on a button scrolls and fires
     nothing, and a pan frame costs what a wheel step to the same offset costs;
   - lifted while moving, a pan **flings**: the finger's speed over its last
-    `FlingWindowSeconds` (0.1 s), from `MinFlingSpeed` (50 units/s) up to
+    `FlingWindowSeconds` (0.1 s), counted from where it last turned back a unit along
+    an axis (so a flick back after a drag the other way flings the new way), from `MinFlingSpeed` (50 units/s) up to
     `MaxFlingSpeed` per axis, falling by e every `FlingTimeConstant` (0.325 s) on the
     canvas clock, one `anim::` animation per flinging control calling its `touchPan`,
     each axis stopping under `StopFlingSpeed` (10 units/s) or at its range's end, so a

@@ -10,12 +10,15 @@
  *  A finger moved the slop or more presses nothing, and pans: a ScrollControl
  *  under it scrolls by the finger's whole units (the content following the
  *  finger, the fractions kept from move to move, the offset stopping at the
- *  range's ends), a ZoomPanel pans by the finger's motion exactly, and an
- *  axis the ScrollControl cannot move along (it is at its end, or scrolls the
- *  other way) goes to the ZoomPanel holding it, each axis kept by the
- *  control it went to until the lift. A control that keepsTouchDrag() gets a
- *  left-button mouse drag: a move to the down point and a press there, the
- *  moves, a release where the finger lifts, and no hover after. A second
+ *  range's ends, what it refuses there dropped, so a reverse drag or a flick
+ *  back follows the finger at once), a ZoomPanel pans by the finger's motion
+ *  exactly, and an axis the ScrollControl cannot move along (it is at its
+ *  end, or scrolls the other way) goes to the ZoomPanel holding it, an axis
+ *  waiting for one of the ScrollControl's own units (a zoomed panel's units
+ *  are smaller), each axis kept by the control it went to until the lift. A
+ *  control that keepsTouchDrag() gets a left-button mouse drag: a move to
+ *  the down point and a press there, the moves, a release where the finger
+ *  lifts, and no hover after. A second
  *  finger is taken and dropped while the first is down; a cancel presses
  *  nothing; an input capture set when a finger goes down gets that finger's
  *  every event (captureTouch) and nothing on the canvas does, and one set
@@ -24,11 +27,12 @@
  *  flings on: the list goes on scrolling, each frame by no more than the
  *  one before, about the speed times Canvas::FlingTimeConstant in all, and
  *  stops within a bounded number of frames with no animation left; at the
- *  end of the range it stops there at once; a finger held still before the
- *  lift flings nothing; a finger put down stops a fling, and its lift is no
- *  tap. Held still for Canvas::LongPressSeconds, and not before, a finger
- *  opens the context menu of the control under it with its corner at the
- *  finger, and the lift chooses nothing (nothing is even hit-tested); one
+ *  end of the range it stops there at once; its speed is the finger's since
+ *  it last turned back along an axis, so a flick back flings the new way; a
+ *  finger held still before the lift flings nothing; a finger put down
+ *  stops a fling, and its lift is no tap. Held still for
+ *  Canvas::LongPressSeconds, and not before, a finger opens the context menu
+ *  of the control under it with its corner at the finger, and the lift chooses nothing (nothing is even hit-tested); one
  *  moved past the slop is no long press, nor one lifted sooner, whose delay
  *  goes with it. A TextBox keeps the drag only while it has the keyboard
  *  focus: a drag starting on an unfocused one in a ScrollControl scrolls it
@@ -319,6 +323,105 @@ TEST_CASE("Touch: an axis a ScrollControl cannot move along goes to the ZoomPane
     CHECK(scene.scroll->getVerticalScrollOffset() == 0);
     CHECK(scene.panel->pan().y == pan.y-30.0f);
     canvas->inputTouch(0, TouchPhase::Up, at.x+10.5f, at.y-30.0f);
+    CHECK(scene.rowPresses == 0);
+}
+
+TEST_CASE("Touch: a drag past a ScrollControl's end and back follows the reverse from its first unit")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+    const PointF at=scene.inScroll(60.0f, 60.0f);
+
+    // 100 up the list, then 300 down: to its top and 200 past it
+    canvas->inputTouch(0, TouchPhase::Down, at.x, at.y);
+    canvas->inputTouch(0, TouchPhase::Move, at.x, at.y-100.0f);
+    REQUIRE(scene.scroll->getVerticalScrollOffset() == 100);
+    canvas->inputTouch(0, TouchPhase::Move, at.x, at.y+200.0f);
+    CHECK(scene.scroll->getVerticalScrollOffset() == 0);
+
+    // the 200 it refused are gone: 50 back up scrolls 50
+    canvas->inputTouch(0, TouchPhase::Move, at.x, at.y+150.0f);
+    CHECK(scene.scroll->getVerticalScrollOffset() == 50);
+    canvas->inputTouch(0, TouchPhase::Up, at.x, at.y+150.0f);
+    CHECK(scene.rowPresses == 0);
+}
+
+TEST_CASE("Touch: a flick back after a drag past a ScrollControl's end flings")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+    const PointF at=scene.inScroll(60.0f, 60.0f);
+
+    // 100 up, then 325 down: 225 past the top
+    canvas->inputTouch(0, TouchPhase::Down, at.x, at.y);
+    canvas->inputTouch(0, TouchPhase::Move, at.x, at.y-100.0f);
+    canvas->inputTouch(0, TouchPhase::Move, at.x, at.y+225.0f);
+    REQUIRE(scene.scroll->getVerticalScrollOffset() == 0);
+
+    // then 10 up a 60th for 15 moves, lifted moving
+    for(int i=1; i <= 15; ++i)
+    {
+        scene.step(1.0/60.0);
+        canvas->inputTouch(0, TouchPhase::Move, at.x, at.y+225.0f-10.0f*i);
+    }
+    canvas->inputTouch(0, TouchPhase::Up, at.x, at.y+75.0f);
+    CHECK(scene.scroll->getVerticalScrollOffset() == 150);
+    CHECK(anim::activeCount(scene.scroll) == 1);
+
+    for(int frames=0; anim::activeCount(scene.scroll) && (frames < 600); ++frames)
+        scene.step(1.0/60.0);
+    CHECK(scene.scroll->getVerticalScrollOffset() > 300);
+}
+
+TEST_CASE("Touch: a flick that turns back within the speed's window flings the new way")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+    const PointF at=scene.inScroll(60.0f, 100.0f);
+
+    // a 60th apart: 200 up, 150 back down, then 60 up again and lifted, the
+    // last FlingWindowSeconds 40 down in all but its last two moves up
+    const float ys[]={-50.0f, -100.0f, -150.0f, -200.0f, -150.0f, -100.0f, -50.0f, -80.0f, -110.0f};
+
+    canvas->inputTouch(0, TouchPhase::Down, at.x, at.y);
+    for(float y : ys)
+    {
+        scene.step(1.0/60.0);
+        canvas->inputTouch(0, TouchPhase::Move, at.x, at.y+y);
+    }
+    canvas->inputTouch(0, TouchPhase::Up, at.x, at.y-110.0f);
+    REQUIRE(scene.scroll->getVerticalScrollOffset() == 110);
+    CHECK(anim::activeCount(scene.scroll) == 1);
+
+    for(int frames=0; anim::activeCount(scene.scroll) && (frames < 600); ++frames)
+        scene.step(1.0/60.0);
+    CHECK(scene.scroll->getVerticalScrollOffset() > 300);
+}
+
+TEST_CASE("Touch: a ScrollControl in a zoomed ZoomPanel keeps an axis until one of its own units gathered")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+
+    // at 1.25 a ScrollControl unit is 1.25 canvas units
+    scene.panel->setZoom(1.25f);
+    scene.frame();
+
+    const PointF at=scene.inScroll(60.0f, 60.0f);
+    const PointF pan=scene.panel->pan();
+
+    // past the slop 8 across and 1.1 down: across is the panel's, and 1.1
+    // canvas units are 0.88 of the list's, which waits for more
+    canvas->inputTouch(0, TouchPhase::Down, at.x, at.y);
+    canvas->inputTouch(0, TouchPhase::Move, at.x+8.0f, at.y+1.1f);
+    CHECK(scene.panel->pan().x == pan.x+8.0f);
+    CHECK(scene.panel->pan().y == pan.y);
+
+    // then 50 up: the list scrolls, the panel stays
+    canvas->inputTouch(0, TouchPhase::Move, at.x+8.0f, at.y-48.9f);
+    CHECK(scene.panel->pan().y == pan.y);
+    CHECK(scene.scroll->getVerticalScrollOffset() == 39);
+    canvas->inputTouch(0, TouchPhase::Up, at.x+8.0f, at.y-48.9f);
     CHECK(scene.rowPresses == 0);
 }
 
