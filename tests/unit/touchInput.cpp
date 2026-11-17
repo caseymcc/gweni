@@ -7,38 +7,42 @@
  *  within Canvas::TouchSlop of its down is a tap: the Button under the down
  *  point is pressed once (a move there and a lift elsewhere within the slop
  *  included), the canvas's input is given back and nothing is left hovered.
- *  A finger moved the slop or more presses nothing, and pans: a ScrollControl
- *  under it scrolls by the finger's whole units (the content following the
- *  finger, the fractions kept from move to move, the offset stopping at the
- *  range's ends, what it refuses there dropped, so a reverse drag or a flick
- *  back follows the finger at once), a ZoomPanel pans by the finger's motion
- *  exactly, and an axis the ScrollControl cannot move along (it is at its
- *  end, or scrolls the other way) goes to the ZoomPanel holding it, an axis
- *  waiting for one of the ScrollControl's own units (a zoomed panel's units
- *  are smaller), each axis kept by the control it went to until the lift. A
- *  control that keepsTouchDrag() gets a left-button mouse drag: a move to
- *  the down point and a press there, the moves, a release where the finger
- *  lifts, and no hover after. A second
- *  finger is taken and dropped while the first is down; a cancel presses
- *  nothing; an input capture set when a finger goes down gets that finger's
- *  every event (captureTouch) and nothing on the canvas does, and one set
- *  mid-gesture takes the finger with no tap replayed; a control panned
- *  deleted mid-drag leaves the drag harmless. Lifted while moving, a drag
- *  flings on: the list goes on scrolling, each frame by no more than the
- *  one before, about the speed times Canvas::FlingTimeConstant in all, and
- *  stops within a bounded number of frames with no animation left; at the
- *  end of the range it stops there at once; its speed is the finger's since
- *  it last turned back along an axis, so a flick back flings the new way; a
- *  finger held still before the lift flings nothing; a finger put down
- *  stops a fling, and its lift is no tap. Held still for
- *  Canvas::LongPressSeconds, and not before, a finger opens the context menu
- *  of the control under it with its corner at the finger, and the lift chooses nothing (nothing is even hit-tested); one
- *  moved past the slop is no long press, nor one lifted sooner, whose delay
- *  goes with it. A TextBox keeps the drag only while it has the keyboard
- *  focus: a drag starting on an unfocused one in a ScrollControl scrolls it
- *  and leaves the box unfocused, one in the focused box selects its text and
- *  scrolls nothing. A negative id is ignored, so it neither takes the input
- *  nor keeps it from the next finger and the mouse.
+ *  A finger moved the slop or more presses nothing, and pans: a
+ *  ScrollControl under it scrolls by the finger's whole units (the content
+ *  following the finger, the fractions kept from move to move, the offset
+ *  stopping at the range's ends, what it refuses there dropped, so a
+ *  reverse drag or a flick back follows the finger at once), a ZoomPanel
+ *  pans by the finger's motion exactly, and an axis the ScrollControl
+ *  cannot move along (it is at its end, or scrolls the other way) goes to
+ *  the ZoomPanel holding it, an axis waiting for one of the ScrollControl's
+ *  own units (a zoomed panel's units are smaller), each axis kept by the
+ *  control it went to until the lift. A control that keepsTouchDrag() gets
+ *  a left-button mouse drag: a move to the down point and a press there,
+ *  the moves, a release where the finger lifts, and no hover after; a
+ *  disabled one does not, and the finger pans. A second finger is taken and
+ *  dropped while the first is down; a cancel presses nothing; an input
+ *  capture set when a finger goes down gets that finger's every event
+ *  (captureTouch) and nothing on the canvas does, and one set mid-gesture
+ *  takes the finger with no tap replayed; a control panned deleted mid-drag
+ *  leaves the drag harmless. Lifted while moving, a drag flings on: the
+ *  list goes on scrolling, each frame by no more than the one before, about
+ *  the speed times Canvas::FlingTimeConstant in all, and stops within a
+ *  bounded number of frames with no animation left; at the end of the range
+ *  it stops there at once; its speed is the finger's since it last turned
+ *  back the slop or more along an axis, so a flick back flings the new way,
+ *  while a last move rolled back a little still flings the flick's way and
+ *  a unit's sideways wobble flings as far as a straight flick; a finger
+ *  held still before the lift flings nothing; a finger put down stops a
+ *  fling, and its lift is no tap. Held still for Canvas::LongPressSeconds,
+ *  and not before, a finger opens the context menu of the control under it
+ *  with its corner at the finger, and the lift chooses nothing (nothing is
+ *  even hit-tested); one moved past the slop is no long press, nor one
+ *  lifted sooner, whose delay goes with it. A TextBox keeps the drag only
+ *  while it has the keyboard focus: a drag starting on an unfocused one in
+ *  a ScrollControl scrolls it and leaves the box unfocused, one in the
+ *  focused box selects its text and scrolls nothing. A negative id is
+ *  ignored, so it neither takes the input nor keeps it from the next finger
+ *  and the mouse.
  */
 #include "headlessFixture.h"
 
@@ -761,4 +765,82 @@ TEST_CASE("Touch: a negative id is ignored")
     canvas->inputTouch(0, TouchPhase::Up, 30.0f, 20.0f);
     CHECK(scene.presses == 1);
     CHECK(canvas->inputCapture() == nullptr);
+}
+
+TEST_CASE("Touch: a flick whose last move rolls back a little still flings its way")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+    const PointF at=scene.inScroll(60.0f, 100.0f);
+
+    // 10 up a 60th for 6 moves, then 2 back down as the finger lifts
+    canvas->inputTouch(0, TouchPhase::Down, at.x, at.y);
+    for(int i=1; i <= 6; ++i)
+    {
+        scene.step(1.0/60.0);
+        canvas->inputTouch(0, TouchPhase::Move, at.x, at.y-10.0f*i);
+    }
+    scene.step(1.0/60.0);
+    canvas->inputTouch(0, TouchPhase::Move, at.x, at.y-58.0f);
+    canvas->inputTouch(0, TouchPhase::Up, at.x, at.y-58.0f);
+
+    const int lifted=scene.scroll->getVerticalScrollOffset();
+
+    REQUIRE(lifted == 58);
+    CHECK(anim::activeCount(scene.scroll) == 1);
+    for(int frames=0; anim::activeCount(scene.scroll) && (frames < 600); ++frames)
+        scene.step(1.0/60.0);
+    CHECK(scene.scroll->getVerticalScrollOffset() > lifted+100);
+}
+
+TEST_CASE("Touch: a flick that wobbles a unit sideways flings as far as a straight one")
+{
+    // speeding up, 3, 6, ... 24 up a 60th: the speed is the window's, not the
+    // last move's
+    auto flung=[](bool wobble)
+    {
+        Scene scene;
+        controls::Canvas *canvas=scene.canvas;
+        const PointF at=scene.inScroll(60.0f, 100.0f);
+        float y=at.y;
+
+        canvas->inputTouch(0, TouchPhase::Down, at.x, at.y);
+        for(int i=1; i <= 8; ++i)
+        {
+            scene.step(1.0/60.0);
+            y-=3.0f*i;
+            canvas->inputTouch(0, TouchPhase::Move, at.x+((wobble && (i%2))?1.0f:0.0f), y);
+        }
+        canvas->inputTouch(0, TouchPhase::Up, at.x, y);
+        for(int frames=0; anim::activeCount(scene.scroll) && (frames < 600); ++frames)
+            scene.step(1.0/60.0);
+        return scene.scroll->getVerticalScrollOffset();
+    };
+
+    const int straight=flung(false);
+
+    REQUIRE(straight > 200);
+    CHECK(flung(true) == straight);
+}
+
+TEST_CASE("Touch: a disabled control that keeps the drag does not: the finger pans")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+    DragTarget *target=scene.scroll->newChild<DragTarget>();
+
+    target->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    target->setBounds(0, 0, 120, 60);
+    target->setDisabled(true);
+    scene.frame();
+
+    const PointF at=scene.inScroll(60.0f, 20.0f);
+
+    REQUIRE(canvas->getControlAt(int(at.x), int(at.y)) == target);
+    canvas->inputTouch(0, TouchPhase::Down, at.x, at.y);
+    canvas->inputTouch(0, TouchPhase::Move, at.x, at.y-30.0f);
+    canvas->inputTouch(0, TouchPhase::Move, at.x, at.y-60.0f);
+    canvas->inputTouch(0, TouchPhase::Up, at.x, at.y-60.0f);
+    CHECK(scene.scroll->getVerticalScrollOffset() == 60);
+    CHECK(target->events.empty());
 }

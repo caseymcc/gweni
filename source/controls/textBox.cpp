@@ -827,6 +827,7 @@ void TextBox::onCut(event::Info)
 
 void TextBox::onSelectAll(event::Info)
 {
+    commitPendingComposition();
     m_cursorEnd=0;
     m_cursorPos=textLength();
     m_cursorLine=0;
@@ -1473,15 +1474,7 @@ void TextBox::reportTextInput()
     if(!isFocussed() || !m_editable)
         return;
 
-    Canvas *canvas=getCanvas();
-    const float scale=canvas?canvas->scale():1.0f;
-    const Point origin=localPosToCanvas(Point(m_rectCaretBounds.x, m_rectCaretBounds.y));
-    const auto snap=[scale](int v) { return static_cast<int>(std::floor(v*scale+0.5f)); };
-    const int x=snap(origin.x);
-    const int y=snap(origin.y);
-
-    platform::setTextInputRect(true, Rect(x, y, std::max(1, snap(origin.x+m_rectCaretBounds.w)-x),
-        std::max(1, snap(origin.y+m_rectCaretBounds.h)-y)),
+    platform::setTextInputRect(true, localRectToDevice(m_rectCaretBounds),
         takesPassword()?platform::TextInputKind::Password:platform::TextInputKind::Text);
 }
 

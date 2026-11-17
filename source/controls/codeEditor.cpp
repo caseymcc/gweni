@@ -1202,15 +1202,7 @@ void CodeEditor::reportTextInput()
     if(caret.w <= 0 || caret.h <= 0)
         caret=Rect(getViewport().x, getViewport().y, 1, std::max(m_lineHeight, 1));
 
-    Canvas *canvas=getCanvas();
-    const float scale=canvas?canvas->scale():1.0f;
-    const Point origin=localPosToCanvas(Point(caret.x, caret.y));
-    const auto snap=[scale](int v) { return static_cast<int>(std::floor(v*scale+0.5f)); };
-    const int x=snap(origin.x);
-    const int y=snap(origin.y);
-
-    platform::setTextInputRect(true, Rect(x, y, std::max(1, snap(origin.x+caret.w)-x),
-        std::max(1, snap(origin.y+caret.h)-y)));
+    platform::setTextInputRect(true, localRectToDevice(caret));
 }
 
 void CodeEditor::syncCurrentLine()

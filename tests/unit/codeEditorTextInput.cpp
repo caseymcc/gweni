@@ -13,8 +13,10 @@
  *  asks for it, focused or not, and asks again when it takes edits again
  *  while focused. A word the platform is composing for it (which it shows
  *  none of) is typed at the caret as the focus leaves, through unfocus() or
- *  another control's focus(), and the platform's composition ended once, so
- *  a phone keyboard's last word is not lost or typed into the next control.
+ *  another control's focus(), and before a press (a click, a tap) can move
+ *  the caret, and the platform's composition ended once, so a phone
+ *  keyboard's last word is not lost, typed into the next control or typed
+ *  where the press put the caret.
  */
 #include "headlessFixture.h"
 
@@ -200,5 +202,33 @@ TEST_CASE("CodeEditor text input: a word still composing goes in as it is unfocu
     editor->focus();
     editor->unfocus();
     CHECK(editor->getText() == "abfirst line\nsecond line\nthird line");
+    CHECK(scene.ends == 1);
+}
+
+TEST_CASE("CodeEditor text input: a word still composing goes in at the caret before a press moves it")
+{
+    Scene scene;
+    controls::CodeEditor *editor=scene.editor;
+    controls::Canvas *canvas=scene.canvas;
+
+    editor->focus();
+    editor->setCaret(text::Position{1, 7});
+    canvas->inputCompositionUpdate("secret", 6);
+
+    // a click at the start of the first line
+    const Point at=editor->localPosToCanvas(Point(4, 4));
+
+    canvas->inputMouseMoved(at.x, at.y, 0, 0);
+    canvas->inputMouseButton(0, true);
+    canvas->inputMouseButton(0, false);
+    scene.frame();
+    CHECK(editor->getText() == "first line\nsecond secretline\nthird line");
+    CHECK(editor->getCaret().line == 0);
+    CHECK(scene.ends == 1);
+    CHECK(KeyboardFocus == editor);
+
+    // nothing is held any more: the focus leaving types nothing
+    editor->unfocus();
+    CHECK(editor->getText() == "first line\nsecond secretline\nthird line");
     CHECK(scene.ends == 1);
 }

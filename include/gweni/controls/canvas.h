@@ -830,8 +830,10 @@ public:
     /// composition ended (platform::endTextComposition), so the word a
     /// phone's keyboard composes is typed into the field it was typed for, as
     /// a TextBox's focus loss commits its own, and not into the next one;
-    /// a control being deleted only ends the platform's. Nothing when no
-    /// composition is held for \p control.
+    /// a control being deleted only ends the platform's. A press
+    /// (inputMouseButton) commits it as well before it is delivered, so the
+    /// word goes in at the caret it was typed at, not where the press puts
+    /// it. Nothing when no composition is held for \p control.
     void commitHeldComposition(Base *control, bool deleting=false);
 
     bool inputMouseWheel(int val) override;
@@ -842,8 +844,8 @@ public:
     /// A touch point (docs/architecture.md -> "Touch and the input method").
     /// One finger is tracked: the first down, until its up or cancel; every
     /// other finger's events are taken and ignored meanwhile. On its down
-    /// the canvas hit-tests the point (getControlAt). If the control there or
-    /// an ancestor keepsTouchDrag(), the finger is a left-button mouse drag
+    /// the canvas hit-tests the point (getControlAt). If an enabled control
+    /// there or above it keepsTouchDrag(), the finger is a left-button mouse drag
     /// (a move to the point and a press, its moves, a release where it
     /// lifts), so a control's own drag and its
     /// pressGesture() run as for the mouse. Otherwise the canvas's touch

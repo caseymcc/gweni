@@ -8524,7 +8524,8 @@ Native touchscreens have no feeder yet: desktop GLFW has no touch API.
   scroll bar's thumb, a Resizer), `DragNumber`, `Knob`, the colour picker's boxes and
   strips, `GradientEditor`'s strip and handles, `internal::NodeTitleBar`, `Pin`, and a
   `TextBox` only while it has the keyboard focus (a drag in a focused box selects; over
-  an unfocused one it scrolls what holds it).
+  an unfocused one it scrolls what holds it). A disabled one keeps none, so a finger
+  on a disabled slider in a list scrolls the list.
 - **Tap, pan, fling, long press.** Otherwise the canvas's `internal::TouchGesture`
   (`source/controls/touchGesture.cpp`) takes the canvas's input until the lift:
   - a lift within `Canvas::TouchSlop` (8 units) of the down is a **tap**: a move to the
@@ -8543,11 +8544,14 @@ Native touchscreens have no feeder yet: desktop GLFW has no touch API.
     and back follows the finger at once, and a flick back flings. An axis is offered
     to a control only once a whole unit of its own has gathered (a ScrollControl's
     unit inside a ZoomPanel at 1.25 is 1.25 canvas units), so a fraction never hands
-    the axis past a list to the panel holding it. A pan delivers no press, so a drag that starts on a button scrolls and fires
-    nothing, and a pan frame costs what a wheel step to the same offset costs;
+    the axis past a list to the panel holding it. A pan delivers no press, so a drag
+    that starts on a button scrolls and fires nothing, and a pan frame costs what a
+    wheel step to the same offset costs;
   - lifted while moving, a pan **flings**: the finger's speed over its last
-    `FlingWindowSeconds` (0.1 s), counted from where it last turned back a unit along
-    an axis (so a flick back after a drag the other way flings the new way), from `MinFlingSpeed` (50 units/s) up to
+    `FlingWindowSeconds` (0.1 s), counted from the furthest point before it last
+    turned back `TouchSlop` or more along an axis (so a flick back after a drag the
+    other way flings the new way, while a finger rolling back a unit or two as it
+    lifts, or wobbling sideways, turns nothing), from `MinFlingSpeed` (50 units/s) up to
     `MaxFlingSpeed` per axis, falling by e every `FlingTimeConstant` (0.325 s) on the
     canvas clock, one `anim::` animation per flinging control calling its `touchPan`,
     each axis stopping under `StopFlingSpeed` (10 units/s) or at its range's end, so a
@@ -8574,10 +8578,10 @@ Native touchscreens have no feeder yet: desktop GLFW has no touch API.
   `getText()`, not on the undo stack and fires no `onTextChanged`.
   `commitComposition(text)` leaves the text, caret, undo step and events that typing
   the text leaves; `cancelComposition()`, Escape and an empty update give back the
-  text, caret and selection it began from. A key, a character, a caret move, an edit,
-  an undo or the focus leaving commits what is pending first; the app's `setText()`
-  drops it. Only a key's press commits it: a modifier (Shift, Ctrl, Alt, Command),
-  a release and a held modifier's repeat (`inputHandler`'s) leave it be. A composition
+  text, caret and selection it began from. A key, a character, a caret move, Ctrl+A,
+  an edit, an undo or the focus leaving commits what is pending first; the app's
+  `setText()` drops it. Only a key's press commits it: a modifier (Shift, Ctrl, Alt,
+  Command), a release and a held modifier's repeat (`inputHandler`'s) leave it be. A composition
   the box ends for a reason of its own, not the input method's (all those but a
   commit, a cancel or an empty update from `onComposition*`), also calls
   `platform::endTextComposition()`, so the platform's input method drops its
@@ -8603,19 +8607,23 @@ Native touchscreens have no feeder yet: desktop GLFW has no touch API.
   focus leaves that control (`Base::focus()` of another, before its
   `onLostKeyboardFocus`, and `unfocus()`, before the focus moves) commits it into it
   (`onCompositionCommit`, typing) and ends the platform's composition
-  (`Canvas::commitHeldComposition`), so the late `compositionend` is dropped; a
-  control deleted with the focus only ends the platform's (`tests/unit/
+  (`Canvas::commitHeldComposition`), so the late `compositionend` is dropped. A press
+  (`Canvas::inputMouseButton`, a tap's replayed one included) commits it too, before
+  it is delivered, so the word goes in where it was typed and not at the caret the
+  press moves to. A control deleted with the focus only ends the platform's (`tests/unit/
   textBoxComposition.cpp`, `codeEditorTextInput.cpp`; `web_touch`'s `password`).
 - **Asking for the keyboard.** A text control calls
   `platform::setTextInputRect(active, caretDeviceRect, kind)` as it gains and loses the
   keyboard focus and as its caret moves (`TextBox::reportTextInput`,
   `CodeEditor::reportTextInput`; a read-only editor and a box that is not editable
-  never ask), the caret in device px of the framebuffer. It is not sent again when
-  the box moves with its caret still (a scroll of what holds it), only when the caret
-  moves in the box or the focus comes. `kind` is `TextInputKind::Password` for a
-  `PasswordTextBox` (`TextBox::takesPassword()`), `Text` otherwise. Natively it does nothing (`setTextInputHandler` replaces it for
-  a test); in a page it focuses or blurs the hidden textarea below, or for a
-  password a hidden `<input type=password>`.
+  never ask), the caret in device px of the framebuffer (`Base::localRectToDevice`:
+  both corners through any zoom it is in and the canvas's scale). It is not sent
+  again when the box moves with its caret still (a scroll of what holds it), only
+  when the caret moves in the box or the focus comes. `kind` is
+  `TextInputKind::Password` for a `PasswordTextBox` (`TextBox::takesPassword()`),
+  `Text` otherwise. Natively it does nothing (`setTextInputHandler` replaces it for a
+  test); in a page it focuses or blurs the hidden textarea below, or for a password a
+  hidden `<input type=password>`.
 
 ### The page side (`platform::useBrowserInput`)
 

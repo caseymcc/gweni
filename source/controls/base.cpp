@@ -4581,6 +4581,19 @@ Rect Base::getCanvasBounds() const
         static_cast<int>(std::floor(bottomRight.y+0.5f))-top);
 }
 
+Rect Base::localRectToDevice(const Rect &local) const
+{
+    Canvas *canvas=const_cast<Base *>(this)->getCanvas();
+    const float scale=canvas?canvas->scale():1.0f;
+    const PointF topLeft=localPosToCanvasF(PointF(float(local.x), float(local.y)));
+    const PointF bottomRight=localPosToCanvasF(PointF(float(local.x+local.w), float(local.y+local.h)));
+    const auto snap=[scale](float v) { return static_cast<int>(std::floor(v*scale+0.5f)); };
+    const int left=snap(topLeft.x);
+    const int top=snap(topLeft.y);
+
+    return Rect(left, top, std::max(1, snap(bottomRight.x)-left), std::max(1, snap(bottomRight.y)-top));
+}
+
 bool Base::isMenuComponent()
 {
     if(!m_parent)

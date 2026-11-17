@@ -158,6 +158,7 @@ void TouchGesture::start(Base *target, const PointF &at, bool stoppedFling)
     m_direction[0]=m_direction[1]=0;
     m_extreme[0]=at.x;
     m_extreme[1]=at.y;
+    m_extremeTime[0]=m_extremeTime[1]=m_samples.back().time;
 
     // a finger that stops a fling is no long press either
     if(m_canvas && m_target && !stoppedFling)
@@ -227,8 +228,11 @@ void TouchGesture::move(const PointF &at)
 
     m_last=at;
 
-    // a turn back along an axis: the speed is taken from where it turned
-    bool turned=false;
+    // A turn back along an axis, the slop or more from the furthest the
+    // finger went the other way: the speed is taken from that furthest
+    // point on. A finger rolling back a little as it lifts, or wobbling
+    // sideways, turns nothing.
+    double turnedAt=-1.0;
 
     for(int axis=0; axis < 2; ++axis)
     {
@@ -241,19 +245,27 @@ void TouchGesture::move(const PointF &at)
             {
                 m_direction[axis]=(from > 0.0f)?1:-1;
                 m_extreme[axis]=along;
+                m_extremeTime[axis]=now;
             }
         }
         else if(from*m_direction[axis] > 0.0f)
-            m_extreme[axis]=along;
-        else if(-from*m_direction[axis] >= 1.0f)
         {
+            m_extreme[axis]=along;
+            m_extremeTime[axis]=now;
+        }
+        else if(-from*m_direction[axis] >= Canvas::TouchSlop)
+        {
+            turnedAt=std::max(turnedAt, m_extremeTime[axis]);
             m_direction[axis]=-m_direction[axis];
             m_extreme[axis]=along;
-            turned=true;
+            m_extremeTime[axis]=now;
         }
     }
-    if(turned && (m_samples.size() > 1))
-        m_samples.erase(m_samples.begin(), m_samples.end()-1);
+    if(turnedAt >= 0.0)
+    {
+        while((m_samples.size() > 1) && (m_samples[1].time <= turnedAt))
+            m_samples.erase(m_samples.begin());
+    }
 
     // the samples the fling's speed is taken over, and the one before them
     if(!m_samples.empty() && (m_samples.back().time == now))

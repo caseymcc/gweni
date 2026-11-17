@@ -105,10 +105,12 @@ private:
     };
     std::vector<Sample> m_samples;
     //! Per axis, the way the finger goes (1, -1, or 0 before it has gone a
-    //! unit) and the furthest it went that way: turning back a unit from
-    //! there restarts the samples, so the fling's speed is the new way's.
+    //! unit) and the furthest it went that way, and when: turning back
+    //! Canvas::TouchSlop from there drops the samples before that point, so
+    //! the fling's speed is the new way's.
     int m_direction[2]={0, 0};
     float m_extreme[2]={0.0f, 0.0f};
+    double m_extremeTime[2]={0.0, 0.0};
     Axis m_axes[2];
 };
 

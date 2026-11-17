@@ -15,7 +15,8 @@
  *  step), the selection replaced as typing replaces it, with its events. A cancel, an empty
  *  update and Escape give back the text, caret and selection it began from,
  *  with no event. A key (Left) or a character during a composition commits
- *  it first, the focus leaving commits it, and the app's setText() drops it.
+ *  it first, so does Ctrl+A (which then selects the whole text), the focus
+ *  leaving commits it, and the app's setText() drops it.
  *  A PasswordTextBox shows none and types the commit, asks for a password's
  *  text input (platform::TextInputKind::Password; a TextBox for text), and
  *  a word still composing for it is typed into it as the focus leaves
@@ -25,7 +26,8 @@
  *  one that showed none) ends the platform's composition. A focus that takes no
  *  composition (a plain control) gets a commit as characters. The platform's
  *  text input (platform::setTextInputRect) is asked for as a box takes the
- *  focus, follows its caret in device px at the canvas's scale, and is let
+ *  focus, follows its caret in device px at the canvas's scale (inside a
+ *  zoomed ZoomPanel the caret as drawn, its size zoomed too), and is let
  *  go as the focus leaves or the focused box is deleted; a box that takes no
  *  edits asks for none, and setEditable(false) commits what was composed and
  *  lets it go. A composition the box ends itself (a key, a caret move, the
@@ -40,12 +42,14 @@
 #include "headlessFixture.h"
 
 #include <gweni/controls/textBox.h>
+#include <gweni/controls/zoomPanel.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/inputEvent.h>
 #include <gweni/platforms/platform.h>
 
 #include <doctest/doctest.h>
 
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -643,4 +647,54 @@ TEST_CASE("TextBox composition: a control deleted with a word composing for it e
     delete target;
     CHECK(scene.ends == 2);
     CHECK(KeyboardFocus == nullptr);
+}
+
+TEST_CASE("TextBox composition: Ctrl+A commits it first, so the whole text is selected")
+{
+    Scene scene;
+    controls::TextBox *box=scene.box;
+
+    scene.canvas->inputCompositionUpdate("xy", 2);
+    scene.canvas->inputModifierKey(keys::Control, true);
+    scene.canvas->inputCharacter('a');
+    scene.canvas->inputModifierKey(keys::Control, false);
+    scene.frame();
+    CHECK(!box->isComposing());
+    CHECK(box->getText() == "abcxydef");
+    CHECK(box->getCursorPos() == 8);
+    CHECK(box->getCursorEnd() == 0);
+
+    // typed over, the selection goes
+    scene.canvas->inputCharacter('Q');
+    CHECK(box->getText() == "Q");
+}
+
+TEST_CASE("TextBox composition: in a zoomed ZoomPanel the text input is the caret as drawn")
+{
+    Scene scene;
+    controls::ZoomPanel *panel=scene.canvas->newChild<controls::ZoomPanel>();
+
+    panel->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    panel->setBounds(0, 50, 400, 250);
+    panel->setContentSize(Point(400, 250));
+    panel->setZoom(2.0f);
+
+    controls::TextBox *box=panel->newChild<controls::TextBox>();
+
+    box->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    box->setBounds(10, 10, 150, 24);
+    box->setText("abc");
+    scene.frame();
+    box->focus();
+    scene.frame();
+    REQUIRE(scene.input.active);
+
+    const Rect caret=box->getCaretBounds();
+    const PointF topLeft=box->localPosToCanvasF(PointF(float(caret.x), float(caret.y)));
+    const PointF bottomRight=box->localPosToCanvasF(PointF(float(caret.x+caret.w), float(caret.y+caret.h)));
+
+    CHECK(scene.input.rect.x == int(std::floor(topLeft.x+0.5f)));
+    CHECK(scene.input.rect.y == int(std::floor(topLeft.y+0.5f)));
+    CHECK(scene.input.rect.h == 2*caret.h);
+    CHECK(scene.input.rect.y+scene.input.rect.h == int(std::floor(bottomRight.y+0.5f)));
 }

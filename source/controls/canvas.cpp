@@ -1156,6 +1156,11 @@ bool Canvas::inputMouseButton(int button, bool down)
 {
     const uint32_t bit=pressBit(button);
 
+    // a word composing for a control that shows none goes in where it was
+    // typed, before the press can move the caret
+    if(down && m_heldCompositionFor)
+        commitHeldComposition(m_heldCompositionFor);
+
     // A release gets its press's answer (canvas.h, "Input"): the release of a
     // press the scene got is the scene's alone, as the press reached no
     // control.
@@ -2559,9 +2564,10 @@ bool Canvas::inputTouch(int id, TouchPhase phase, float x, float y)
         Base *target=getControlAt(point.x, point.y);
         bool keeps=false;
 
+        // a disabled control takes no drag of its own: the finger pans
         for(Base *control=target; control && (control != this); control=control->getActualParent())
         {
-            if(control->keepsTouchDrag())
+            if(control->keepsTouchDrag() && !control->isDisabled())
             {
                 keeps=true;
                 break;

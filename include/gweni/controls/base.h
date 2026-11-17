@@ -368,6 +368,12 @@ public:
     //! What places a canvas child next to it (a tooltip, a popup, a menu, a
     //! ComboBox's list) reads, so that opens at the control as it is drawn.
     gweni::Rect getCanvasBounds() const;
+    //! A rect in this control's coordinates in device px on the canvas: its
+    //! corners through every zoom it is in (localPosToCanvasF()) and the
+    //! canvas's scale, each edge snapped as renderer::Base::snap() snaps one,
+    //! and at least 1 px each way. What a text control hands
+    //! platform::setTextInputRect() for its caret.
+    gweni::Rect localRectToDevice(const gweni::Rect &local) const;
 
 //Attributes
 
