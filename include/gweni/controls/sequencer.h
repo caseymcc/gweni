@@ -116,8 +116,10 @@ struct SequencerItemOrder
 //!   clearTracks(), a Delete), before the indices move; a removal of any
 //!   other item keeps the drag going, its indices moved with the edit. While
 //!   a drag lasts the dragged tracks' searches are not rebuilt (the dragged
-//!   items keep their overlap levels until the release, and hitTest() finds
-//!   them where they were), so a drag frame costs the same at any count;
+//!   items keep their overlap levels until the release; hitTest() searches
+//!   them where they were and accepts them where they are, so a dragged item
+//!   is hit only where the two overlap), so a drag frame costs the same at
+//!   any count;
 //! - a drag snaps the pressed item's edges to another clip's edge, a key or
 //!   the playhead within SnapDistance on-screen units (the nearest, shown by
 //!   the snap guide, getSnapGuide()), else to whole frames; Alt held, or
@@ -356,6 +358,7 @@ public:
     //! Hidden mid-drag: the release never comes, so the drag is put back as
     //! Escape puts it back.
     void onVisibleChanged() override;
+    void setDisabled(bool active) override;
 
     bool onKeyLeft(bool down) override;
     bool onKeyRight(bool down) override;
@@ -439,7 +442,9 @@ protected:
     //! The mouse at \p local during a drag of items.
     void dragTo(const Point &local);
     void endDrag(bool cancelled);
-    void marqueeTo(const Point &local);
+    //! The marquee from the press to local; force takes its hits again with
+    //! the rect unchanged (the view or the lanes moved under it).
+    void marqueeTo(const Point &local, bool force=false);
     void scrubTo(const Point &local);
 
     class PanGesture;

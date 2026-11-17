@@ -66,25 +66,33 @@ public:
     void start(Canvas *canvas)
     {
         m_canvas=canvas;
-        m_lastX=input::getMousePosition().x;
+        m_lastX=m_sequencer->canvasPosToLocal(input::getMousePosition()).x;
     }
 
     bool active() const { return m_canvas && (m_canvas->inputCapture() == this); }
 
-    void captureMouseMoved(int x, int /*y*/, int /*deltaX*/, int /*deltaY*/) override
+    void captureMouseMoved(int x, int y, int /*deltaX*/, int /*deltaY*/) override
     {
-        if(!m_sequencer->visible())
+        if(!m_sequencer->visible() || m_sequencer->isDisabled())
         {
             end();
             return;
         }
 
+        // in the sequencer's units (a ZoomPanel's zoom taken out), and the
+        // hover hit-tested at the cursor, not at the press
+        const Point local=m_sequencer->canvasPosToLocal(Point(x, y));
         const Rect area=m_sequencer->getBarArea();
         const double span=m_sequencer->getViewEnd()-m_sequencer->getViewStart();
 
-        if(area.w > 0 && x != m_lastX)
-            m_sequencer->panBy(-(x-m_lastX)*span/area.w);
-        m_lastX=x;
+        m_sequencer->m_mouse=local;
+        m_sequencer->m_mouseInside=(local.x >= 0 && local.y >= 0 && local.x < m_sequencer->getWidth()
+            && local.y < m_sequencer->getHeight());
+        if(area.w > 0 && local.x != m_lastX)
+            m_sequencer->panBy(-(local.x-m_lastX)*span/area.w);
+        else
+            m_sequencer->refreshHover();
+        m_lastX=local.x;
     }
 
     void captureMouseButton(int button, bool down) override
@@ -654,6 +662,9 @@ void Sequencer::laneContentMoved()
 {
     ++m_itemsSerial;
     playheadMoved();
+    // a marquee's rect stays on screen: the items under it now are its hits
+    if(m_drag == Drag::Marquee && m_dragStarted)
+        marqueeTo(m_mouse, true);
     refreshHover();
 }
 
@@ -700,6 +711,8 @@ void Sequencer::setPlayhead(double t)
 
 bool Sequencer::onKeyLeft(bool down)
 {
+    if(isDisabled())
+        return false;
     if(down)
         setPlayhead(static_cast<double>(frameAt(m_playhead)-1)/m_fps);
     return true;
@@ -707,6 +720,8 @@ bool Sequencer::onKeyLeft(bool down)
 
 bool Sequencer::onKeyRight(bool down)
 {
+    if(isDisabled())
+        return false;
     if(down)
         setPlayhead(static_cast<double>(frameAt(m_playhead)+1)/m_fps);
     return true;
@@ -714,6 +729,8 @@ bool Sequencer::onKeyRight(bool down)
 
 bool Sequencer::onKeyHome(bool down)
 {
+    if(isDisabled())
+        return false;
     if(down)
         setPlayhead(m_rangeStart);
     return true;
@@ -721,6 +738,8 @@ bool Sequencer::onKeyHome(bool down)
 
 bool Sequencer::onKeyend(bool down)
 {
+    if(isDisabled())
+        return false;
     if(down)
         setPlayhead(m_rangeEnd);
     return true;
@@ -728,6 +747,8 @@ bool Sequencer::onKeyend(bool down)
 
 bool Sequencer::onKeySpace(bool down)
 {
+    if(isDisabled())
+        return false;
     if(down)
     {
         event::Info info(this);
@@ -995,7 +1016,13 @@ void Sequencer::hoverMayHaveChanged()
 
 void Sequencer::refreshHover()
 {
-    // a drag keeps the item it holds; the mouse off the sequencer hovers nothing
+    // a drag keeps the item it holds; the mouse off the sequencer, or a
+    // disabled one, hovers nothing
+    if(isDisabled())
+    {
+        setHover(false, SequencerItem(), Part::None);
+        return;
+    }
     if(!m_mouseInside || m_drag != Drag::None)
         return;
 
@@ -1145,8 +1172,10 @@ void Sequencer::onMouseClickLeft(int x, int y, bool down)
     if(changed && !ctrl)
         fireSelectionChanged();
     m_pressFiring=false;
-    // gone, or toggled off with Ctrl: nothing to drag
-    if(m_pressItemGone || !isValid(m_pressItem) || (ctrl && !isSelected(m_pressItem)))
+    // gone, toggled off with Ctrl, or the sequencer hidden or disabled by a
+    // handler: nothing to drag
+    if(m_pressItemGone || !isValid(m_pressItem) || (ctrl && !isSelected(m_pressItem)) || !visible()
+        || isDisabled())
         return;
     item=m_pressItem;
     if(part == Part::ClipLeftEdge)
@@ -1188,6 +1217,26 @@ void Sequencer::onMouseClickLeft(int x, int y, bool down)
         m_originals.push_back(original(item));
 
     MouseFocus=this;
+}
+
+// Disabled, it takes nothing: a drag is put back as Escape puts it back, a
+// pan ends, and the mouse and keyboard focus are let go.
+void Sequencer::setDisabled(bool active)
+{
+    if(active == isDisabled())
+        return;
+
+    ParentClass::setDisabled(active);
+    if(!active)
+        return;
+    if(m_drag != Drag::None)
+        endDrag(true);
+    m_panGesture->end();
+    if(MouseFocus == this)
+        MouseFocus=nullptr;
+    if(KeyboardFocus == this)
+        unfocus();
+    refreshHover();
 }
 
 void Sequencer::onVisibleChanged()
@@ -1461,17 +1510,20 @@ void Sequencer::dragTo(const Point &local)
     }
 }
 
-void Sequencer::marqueeTo(const Point &local)
+void Sequencer::marqueeTo(const Point &local, bool force)
 {
     const int x0=std::min(local.x, m_press.x);
     const int y0=std::min(local.y, m_press.y);
     const Rect rect(x0, y0, std::max(local.x, m_press.x)-x0, std::max(local.y, m_press.y)-y0);
 
-    if(rect == m_marquee)
+    if(rect == m_marquee && !force)
         return;
 
-    m_marquee=rect;
-    addStateChange(StateChange_Background);
+    if(!(rect == m_marquee))
+    {
+        m_marquee=rect;
+        addStateChange(StateChange_Background);
+    }
 
     // the items the rect touches, in the tracks it crosses
     std::vector<SequencerItem> hits;
@@ -1692,6 +1744,8 @@ bool Sequencer::onKeyEscape(bool down)
 
 bool Sequencer::onKeyDelete(bool down)
 {
+    if(isDisabled())
+        return false;
     if(down)
         removeSelection();
     return true;

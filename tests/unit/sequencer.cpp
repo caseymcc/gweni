@@ -31,6 +31,12 @@
  *  under a resting mouse building its track's search once, the hover hit-tested
  *  again in the next update; a pan or zoom mid-drag keeping the item under the
  *  cursor; a removal of another item mid-drag keeping the dragged item's hover;
+ *  disabled, nothing (setDisabled(true) putting a drag back with no event,
+ *  ending a middle-drag pan and letting the mouse and keyboard focus go, the
+ *  keys doing nothing); a press whose selection handler hides or disables it
+ *  dragging nothing; a middle-drag pan hovering what is under the cursor, not
+ *  under the press; a marquee taking the items under its rect again after a
+ *  zoom, a pan or a lane scroll;
  *  onItemsMoved once per release that moved something (none for a
  *  drag back to where it began), a whole group moving together; Delete
  *  through the veto; and the playhead's keys (Left and Right a frame, Home
@@ -992,4 +998,199 @@ TEST_CASE("Sequencer: a removal mid-drag keeps the dragged item hovered")
     CHECK(seq->isHovering());
     CHECK(seq->getHoverItem() == SequencerItem(Kind::Clip, 0, 0));
     scene.release();
+}
+
+// Disabled, it takes nothing: setDisabled(true) puts a drag back as Escape
+// does, ends a middle-drag pan and lets the mouse and the keyboard focus go,
+// and its keys do nothing.
+TEST_CASE("Sequencer: disabled, it takes no key, drag or pan")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    seq->addClip(0, 1, 2, "", 1);
+    scene.frame();
+
+    const int twoSeconds=int(std::lround(2*scene.perSecond()));
+
+    SUBCASE("the keys, with the focus and a selection from a click")
+    {
+        scene.press(scene.at(0, 1.5));
+        scene.release();
+        REQUIRE(KeyboardFocus == seq);
+        REQUIRE(seq->getSelection().size() == 1);
+        seq->setDisabled(true);
+        CHECK(KeyboardFocus != seq);
+        for(int which : {keys::Delete, keys::Right, keys::End, keys::Space})
+            scene.key(which);
+        CHECK(!seq->onKeyDelete(true));
+        CHECK(!seq->onKeyRight(true));
+        CHECK(!seq->onKeyLeft(true));
+        CHECK(!seq->onKeyend(true));
+        CHECK(!seq->onKeyHome(true));
+        CHECK(!seq->onKeySpace(true));
+        CHECK(seq->getClipCount(0) == 1);
+        CHECK(scene.requested.empty());
+        CHECK(seq->getPlayhead() == 0.0);
+        CHECK(scene.toggleCalls == 0);
+    }
+    SUBCASE("mid-drag: the clip back, nothing reported")
+    {
+        scene.drag(scene.at(0, 1.5), twoSeconds);
+        REQUIRE(seq->getClip(0, 0).start == doctest::Approx(3.0));
+        seq->setDisabled(true);
+        CHECK(!seq->dragging());
+        CHECK(MouseFocus != seq);
+        CHECK(seq->getClip(0, 0).start == 1.0);
+        scene.move(Point(scene.at(0, 1.5).x+2*twoSeconds, scene.at(0, 1.5).y));
+        scene.release();
+        CHECK(seq->getClip(0, 0).start == 1.0);
+        CHECK(scene.movedCalls == 0);
+        CHECK(!seq->isHovering());
+    }
+    SUBCASE("mid-pan: the pan ends")
+    {
+        const Point from=scene.at(2, 5.0);
+
+        scene.move(from);
+        scene.canvas->inputMouseButton(2, true);
+        scene.move(Point(from.x-50, from.y));
+
+        const double viewStart=seq->getViewStart();
+
+        REQUIRE(viewStart > 0.0);
+        seq->setDisabled(true);
+        CHECK(scene.canvas->inputCapture() == nullptr);
+        scene.move(Point(from.x-150, from.y));
+        scene.canvas->inputMouseButton(2, false);
+        CHECK(seq->getViewStart() == viewStart);
+    }
+}
+
+// A press whose own onSelectionChanged handler hides or disables the
+// sequencer drags nothing: the clip stays, the release reports nothing.
+TEST_CASE("Sequencer: a press's selection handler hiding or disabling it starts no drag")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    seq->addClip(0, 1, 2, "", 1);
+    scene.frame();
+
+    const int twoSeconds=int(std::lround(2*scene.perSecond()));
+
+    SUBCASE("hidden")
+    {
+        scene.onSelection=[&]() { scene.onSelection=nullptr; seq->hide(); };
+    }
+    SUBCASE("disabled")
+    {
+        scene.onSelection=[&]() { scene.onSelection=nullptr; seq->setDisabled(true); };
+    }
+    scene.drag(scene.at(0, 1.5), twoSeconds);
+    CHECK(!seq->dragging());
+    CHECK(MouseFocus != seq);
+    CHECK(seq->getClip(0, 0).start == 1.0);
+    scene.frame();
+    scene.release();
+    seq->show();
+    seq->setDisabled(false);
+    scene.frame();
+    CHECK(scene.movedCalls == 0);
+
+    SequencerItem item;
+
+    CHECK(seq->hitTest(scene.at(0, 1.5), item) == Sequencer::Part::ClipBody);
+}
+
+// A middle-drag pan hit-tests the hover at the cursor, which keeps its time
+// as the view moves with it, not at the press's point.
+TEST_CASE("Sequencer: a middle-drag pan hovers what is under the cursor")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    seq->addClip(0, 6, 8, "", 1);
+    scene.frame();
+
+    const int panned=int(std::lround(1.5*scene.perSecond()));
+    bool hovered=false;
+    double at=0.0;
+
+    SUBCASE("from empty space: a clip passing under the points the mouse left is not hovered")
+    {
+        at=4.8;
+    }
+    SUBCASE("from the clip: it stays hovered")
+    {
+        at=7.5;
+        hovered=true;
+    }
+
+    const Point from=scene.at(0, at);
+
+    scene.move(from);
+    CHECK(seq->isHovering() == hovered);
+    scene.canvas->inputMouseButton(2, true);
+    scene.move(Point(from.x-panned/2, from.y));
+    scene.move(Point(from.x-panned, from.y));
+    REQUIRE(seq->getViewStart() == doctest::Approx(1.5).epsilon(0.02));
+    CHECK(seq->timeAt(from.x-panned) == doctest::Approx(at).epsilon(0.02));
+    CHECK(seq->isHovering() == hovered);
+    scene.canvas->inputMouseButton(2, false);
+    scene.frame();
+    CHECK(seq->isHovering() == hovered);
+}
+
+// A marquee's rect stays on screen while the view or the lanes move under it:
+// the items it covers then are its hits.
+TEST_CASE("Sequencer: a marquee follows a zoom, a pan and a lane scroll")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    for(int i=4; i < 30; ++i)
+        seq->addTrack("Track "+std::to_string(i), 100+i);
+    seq->addClip(0, 1, 2, "", 1);
+    seq->addClip(0, 5, 6, "", 2);
+    seq->addClip(8, 1, 2, "", 3);
+    scene.frame();
+
+    const Point from(int(std::lround(seq->xPosition(0.5))), scene.laneMiddle(0)-6);
+    const Point to(int(std::lround(seq->xPosition(2.5))), scene.laneMiddle(0)+2);
+    const SequencerItem first(Kind::Clip, 0, 0);
+    SequencerItem gained;
+
+    scene.press(from);
+    scene.move(Point(from.x+20, from.y+4));
+    scene.move(to);
+    REQUIRE(seq->getSelection() == std::vector<SequencerItem>{first});
+
+    SUBCASE("zoomed out about its start")
+    {
+        seq->zoomAt(0.25, 0.5);
+        gained=SequencerItem(Kind::Clip, 0, 1);
+    }
+    SUBCASE("panned 3.5 s")
+    {
+        seq->panBy(3.5);
+        gained=SequencerItem(Kind::Clip, 0, 1);
+    }
+    SUBCASE("the lanes scrolled 8 lanes")
+    {
+        Rect lane0;
+
+        REQUIRE(seq->getLaneRect(0, lane0));
+        seq->setScrollOffset(8*lane0.h);
+        scene.frame();
+        gained=SequencerItem(Kind::Clip, 8, 0);
+    }
+
+    Rect rect;
+
+    REQUIRE((gained.kind == Kind::Clip && seq->getClipRect(gained.track, gained.index, rect)));
+    CHECK(rect.x < seq->getMarqueeRect().x+seq->getMarqueeRect().w);
+    CHECK(seq->isSelected(gained));
+    scene.release();
+    CHECK(seq->isSelected(gained));
 }

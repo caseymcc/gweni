@@ -4948,11 +4948,19 @@ two programs and the draws. What follows describes both together:
   search once.
   While a drag lasts the dragged tracks' searches are left as at the press (the dragged
   items in them passed over by the snap, keeping their overlap levels until the
-  release, which builds each dragged track's search once). A left press on empty lane
-  space is a marquee (Shift adding, Ctrl toggling, Escape restoring), each move setting
-  only the items it touched before and touches now; the selection is a set of items, so
-  what reads or clears it costs the selection, not the items. Delete removes the
-  selection through `onRemoveRequested`/`vetoRemove()`, then `onRemoved`. Moving an item to another track is not supported. **The look and
+  release, which builds each dragged track's search once; `hitTest()` searches a
+  dragged item where it was and accepts it where it is, so mid-drag it is hit only
+  where the two overlap). A press whose handler hides or disables the sequencer drags
+  nothing, and disabled it takes nothing: `setDisabled(true)` puts a drag back, ends a
+  pan and lets the mouse and the keyboard focus go, and its keys and wheel do nothing. A
+  middle-drag pan moves by the cursor in the sequencer's units and hit-tests the hover
+  at the cursor. A left press on empty lane space is a marquee (Shift adding, Ctrl
+  toggling, Escape restoring), each move setting only the items it touched before and
+  touches now, and a zoom, pan or lane scroll under it taking the items its rect covers
+  now; the selection is a set of items, so what reads or clears it costs the selection,
+  not the items. Delete removes the selection through
+  `onRemoveRequested`/`vetoRemove()`, then `onRemoved`. Moving an item to another track
+  is not supported. **The look and
   its cost:** a clip is a `drawRoundedRect` slot in a list per track, at z+3 plus its
   overlap level, in its surface (`SequencerClip` or the app's) with
   `SequencerClipSelected`'s and `SequencerClipHover`'s fill blended over it on the CPU
@@ -4967,8 +4975,9 @@ two programs and the draws. What follows describes both together:
   gives, the items moved, set, added or selected since the last frame and the clips a
   rebuilt search gave a new overlap level, and the item the hover left and the one it
   reached; each slot only when it differs. The playhead's two slots are drawn on
-  every such frame, unchanged bytes writing nothing. The grid's slots are taken for as many ticks as the area's width can show
-  (`area.w/60+4`), and the label runs given back with the ticks, so a zoom takes no slot
+  every such frame, unchanged bytes writing nothing. The grid's slots are taken for as
+  many ticks as the area's width can show (`area.w/60+4`), and the label runs given
+  back with the ticks, so a zoom takes no slot
   and a width back has the slots and runs it had (`controltest_resize_each` found both).
   So a drag frame writes the dragged items' slots and the guide's, a scrub frame the
   playhead's, a settled frame nothing; `SlotRenderer` counts only slots whose bytes
