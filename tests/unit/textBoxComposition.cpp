@@ -20,7 +20,14 @@
  *  composition (a plain control) gets a commit as characters. The platform's
  *  text input (platform::setTextInputRect) is asked for as a box takes the
  *  focus, follows its caret in device px at the canvas's scale, and is let
- *  go as the focus leaves or the focused box is deleted.
+ *  go as the focus leaves or the focused box is deleted; a box that takes no
+ *  edits asks for none, and setEditable(false) commits what was composed and
+ *  lets it go. A composition the box ends itself (a key, a caret move, the
+ *  focus leaving, setText) ends the platform's too
+ *  (platform::endTextComposition), one the platform ended does not; a
+ *  modifier key, a key's release and a held key's repeat commit nothing. A
+ *  finger down on the canvas (its touch gesture holding the input) keeps no
+ *  composition from the focused box.
  */
 #include "headlessFixture.h"
 
@@ -84,6 +91,8 @@ struct Scene: public event::Handler
     controls::TextBox *box=nullptr;
     int changes=0;
     TextInput input;
+    //! platform::endTextComposition() calls
+    int ends=0;
 
     Scene()
     {
@@ -93,6 +102,7 @@ struct Scene: public event::Handler
                 input.rect=rect;
                 ++input.calls;
             });
+        platform::setTextCompositionEndHandler([this]() { ++ends; });
         canvas=new controls::Canvas(&skin);
         canvas->setSize(400, 300);
 
@@ -118,6 +128,7 @@ struct Scene: public event::Handler
         MouseFocus=nullptr;
         delete canvas;
         platform::setTextInputHandler(nullptr);
+        platform::setTextCompositionEndHandler(nullptr);
     }
 
     void changed(event::Info) { ++changes; }
@@ -375,4 +386,128 @@ TEST_CASE("TextBox composition: the platform's text input follows the focus and 
     box->delayedDelete();
     scene.frame();
     CHECK(!scene.input.active);
+}
+
+TEST_CASE("TextBox composition: one the box ends itself ends the platform's, one the platform ends does not")
+{
+    Scene scene;
+    controls::TextBox *box=scene.box;
+
+    // the platform's own end, commit, cancel or empty update: nothing back
+    scene.canvas->inputCompositionUpdate("xy", 2);
+    scene.canvas->inputCompositionCommit("xy");
+    scene.canvas->inputCompositionUpdate("q", 1);
+    scene.canvas->inputCompositionCancel();
+    scene.canvas->inputCompositionUpdate("q", 1);
+    scene.canvas->inputCompositionUpdate("", 0);
+    CHECK(box->getText() == "abcxydef");
+    CHECK(scene.ends == 0);
+
+    // a key
+    scene.canvas->inputCompositionUpdate("q", 1);
+    scene.canvas->inputModifierKey(keys::Left, true);
+    scene.canvas->inputModifierKey(keys::Left, false);
+    CHECK(!box->isComposing());
+    CHECK(scene.ends == 1);
+
+    // the caret moved (a tap elsewhere in the box)
+    scene.canvas->inputCompositionUpdate("w", 1);
+    box->setCursorPos(0);
+    CHECK(!box->isComposing());
+    CHECK(scene.ends == 2);
+
+    // the focus leaving
+    scene.canvas->inputCompositionUpdate("v", 1);
+    box->unfocus();
+    CHECK(scene.ends == 3);
+
+    // the app's setText
+    box->focus();
+    scene.canvas->inputCompositionUpdate("u", 1);
+    box->setText("new");
+    CHECK(scene.ends == 4);
+
+    // nothing composing: nothing to end
+    box->setCursorPos(1);
+    box->setText("newer");
+    CHECK(scene.ends == 4);
+}
+
+TEST_CASE("TextBox composition: a modifier, a release and a held key's repeat commit nothing")
+{
+    Scene scene;
+    controls::TextBox *box=scene.box;
+    double clock=100.0;
+
+    platform::setTimeSource([&clock]() { return clock; });
+    scene.canvas->inputCompositionUpdate("xy", 2);
+    for(const int key: {keys::Shift, keys::Control, keys::Alt, keys::Command})
+    {
+        scene.canvas->inputModifierKey(key, true);
+        CHECK(box->isComposing());
+    }
+    // Shift held: past the repeat delay it repeats, every 30 ms
+    for(int i=0; i < 40; ++i)
+    {
+        clock+=0.03;
+        scene.frame();
+    }
+    CHECK(box->isComposing());
+    for(const int key: {keys::Shift, keys::Control, keys::Alt, keys::Command})
+        scene.canvas->inputModifierKey(key, false);
+    // the release of a key pressed before the composition
+    scene.canvas->inputModifierKey(keys::Left, false);
+    CHECK(box->isComposing());
+    CHECK(box->getComposition() == "xy");
+    CHECK(scene.ends == 0);
+    platform::setTimeSource(nullptr);
+}
+
+TEST_CASE("TextBox composition: a box that takes no edits asks for no keyboard")
+{
+    Scene scene;
+    controls::TextBox *box=scene.box;
+
+    REQUIRE(scene.input.active);
+    box->unfocus();
+    box->setEditable(false);
+    box->focus();
+    CHECK(!scene.input.active);
+    box->setCursorPos(1);
+    CHECK(!scene.input.active);
+
+    // editable again, focused: the keyboard comes back
+    box->setEditable(true);
+    CHECK(scene.input.active);
+
+    // made read-only mid-composition: what was composed goes in (over the
+    // selection, 1..3, as typing), the composition and the keyboard go
+    scene.canvas->inputCompositionUpdate("xy", 2);
+    box->setEditable(false);
+    CHECK(!box->isComposing());
+    CHECK(box->getText() == "axydef");
+    CHECK(!scene.input.active);
+    CHECK(scene.ends == 1);
+    scene.canvas->inputCompositionUpdate("z", 1);
+    CHECK(!box->isComposing());
+}
+
+TEST_CASE("TextBox composition: a finger down on the canvas keeps no composition from the box")
+{
+    Scene scene;
+    controls::TextBox *box=scene.box;
+
+    // a finger on the bare canvas: its touch gesture holds the input
+    scene.canvas->inputTouch(0, TouchPhase::Down, 350.0f, 250.0f);
+    REQUIRE(scene.canvas->inputCapture() != nullptr);
+    scene.canvas->inputCompositionUpdate("xy", 2);
+    CHECK(box->getComposition() == "xy");
+    scene.canvas->inputCompositionCancel();
+    CHECK(!box->isComposing());
+    scene.canvas->inputCompositionUpdate("q", 1);
+    scene.canvas->inputCompositionCommit(nihongo);
+    CHECK(box->getText() == "abc"+nihongo+"def");
+    CHECK(!box->isComposing());
+    scene.canvas->inputTouch(0, TouchPhase::Up, 350.0f, 250.0f);
+    CHECK(scene.ends == 0);
 }

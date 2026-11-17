@@ -2428,9 +2428,16 @@ static Base *compositionTarget(Canvas *canvas)
     return KeyboardFocus;
 }
 
+// A finger's touch gesture holds the input but takes no keyboard: an input
+// method's composition goes past it to the focused control.
+bool Canvas::compositionCaptured() const
+{
+    return m_inputCapture && (m_inputCapture != m_touchGesture.get());
+}
+
 bool Canvas::inputCompositionUpdate(const String &text, int caret)
 {
-    if(m_inputCapture)
+    if(compositionCaptured())
         return true;
     if(hidden())
         return false;
@@ -2442,7 +2449,7 @@ bool Canvas::inputCompositionUpdate(const String &text, int caret)
 
 bool Canvas::inputCompositionCommit(const String &text)
 {
-    if(m_inputCapture)
+    if(compositionCaptured())
     {
         for(size_t at=0; at < text.size();)
         {
@@ -2464,7 +2471,7 @@ bool Canvas::inputCompositionCommit(const String &text)
 
 bool Canvas::inputCompositionCancel()
 {
-    if(m_inputCapture)
+    if(compositionCaptured())
         return true;
     if(hidden())
         return false;

@@ -237,8 +237,9 @@ public:
 
     //! The committed text: a composition's is shown, not in it.
     const String &getText() const override;
-    //! A key during a composition commits it first, but Escape, which
-    //! cancels it.
+    //! A key pressed during a composition commits it first, but Escape,
+    //! which cancels it, and a modifier, which does nothing to it (nor does a
+    //! release, or a held key's repeat of a modifier).
     bool onKeyPress(int key, bool press=true) override;
 
     bool onKeyReturn(bool down) override;
@@ -277,7 +278,10 @@ public:
     void onMouseClickLeft(int x, int y, bool down) override;
     void onMouseMoved(int x, int y, int deltaX, int deltaY) override;
 
-    virtual void setEditable(bool b) { m_editable=b; }
+    //! Not editable, the box takes no composition and asks for no keyboard
+    //! (platform::setTextInputRect); made so while composing, it commits
+    //! what was composed first.
+    virtual void setEditable(bool b);
 
     //! Makes this box ask for its string's width instead of its request,
     //! however it is flagged (see sizedByRequest): for a box whose parent
@@ -409,7 +413,9 @@ protected:
     };
     std::unique_ptr<Composition> m_composition;
     //! Puts back the text, caret and selection the composition began from,
-    //! and ends it.
+    //! and ends it; unless the platform's input method ended it
+    //! (onComposition*), the platform's composition is ended too
+    //! (platform::endTextComposition).
     void endComposition();
     //! Commits what is being composed, if anything (an edit's guard).
     void commitPendingComposition();

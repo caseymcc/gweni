@@ -18,8 +18,8 @@
 //  state through ControlTest's gweni_web_probe export (Module.ccall, one JSON
 //  object a query: the frames' layout passes, slots written and animations
 //  run since a reset, the hovered and focused controls, the tooltip and the
-//  context menu, a Button's presses, a control's rect, scroll offsets, pan
-//  and value, the hit test at a point) and waits after each input for the
+//  context menu, a Button's presses, a control's rect, a TextBox's text,
+//  scroll offsets, pan and value, the hit test at a point) and waits after each input for the
 //  page to settle (frames.mjs). The checks, each one "touch.mjs: <check>: ok"
 //  line or a "touch.mjs: FAIL: <check>: ..." one:
 //    tap         ButtonDemo: a tap on "Toggle Me" presses it once and turns it
@@ -58,8 +58,14 @@
 //                a composition (imeSetComposition) shows inline in the box's
 //                pixels and is not its text and fires no onTextChanged;
 //                insertText commits "日本語", which the box then holds
-//                exactly, with one onTextChanged; a tap elsewhere blurs the
-//                textarea
+//                exactly, with one onTextChanged; "hel" composing there and
+//                a tap on the second box commits it to the first and ends
+//                the textarea's composition too (one compositionend, the
+//                textarea empty), so the next word is a composition of its
+//                own in the second box alone; a Shift pressed before a
+//                composition and let go during it reaches emscripten-glfw's
+//                document listener and commits nothing; a tap elsewhere
+//                blurs the textarea
 //    desktop     TextBoxDemo with no touch: a click on the box and "ab" and
 //                Backspace typed with the keyboard leave "a" exactly (nothing
 //                typed twice through the textarea), the textarea empty
@@ -636,6 +642,66 @@ async function checkIme(browser, base, out)
         `the commit left "${committed.text}" (${JSON.stringify(text + '日本語')} wanted), composing "${committed.composing}", `
         + `${committed.changes} onTextChanged (1 wanted), the textarea holding "${value}"`,
         'committed exactly, one onTextChanged');
+
+    // gweni ending a composition itself ends the textarea's: "hel" composing
+    // in this box, a tap on the second one commits it here, and the browser's
+    // composition is over too, so the next word starts afresh in the other
+    // box instead of carrying "hel" on into it (a phone's keyboard composes
+    // every word, so that would type it twice)
+    const other = await p.probe('control TextBox 1');
+    const otherText = other.text ?? '';
+    await p.page.evaluate(() =>
+    {
+        window.gweniCompositionEnds = 0;
+        window.gweniCompositionStarts = 0;
+        Module.gweniInput.field.addEventListener('compositionend', () => { ++window.gweniCompositionEnds; });
+        Module.gweniInput.field.addEventListener('compositionstart', () => { ++window.gweniCompositionStarts; });
+    });
+    await p.cdp.send('Input.imeSetComposition', { text: 'hel', selectionStart: 3, selectionEnd: 3 });
+    await p.settle();
+    await p.tap({ x: other.rect.x + other.rect.w - 5, y: centre(other.rect).y });
+    const across = await p.page.evaluate(() => ({ field: document.activeElement === Module.gweniInput.field,
+        composing: Module.gweniInput.composing, value: Module.gweniInput.field.value, ends: window.gweniCompositionEnds }));
+    const firstBox = await p.probe('control TextBox 0');
+    expect('ime', firstBox.text === text + '日本語hel' && across.ends === 1 && !across.composing && across.value === '' && across.field,
+        `a tap on another box mid-composition left the first box "${firstBox.text}" (${JSON.stringify(text + '日本語hel')} wanted), `
+        + `the textarea ${across.field ? '' : 'not '}focused, composing ${across.composing}, holding "${across.value}", `
+        + `${across.ends} compositionend(s) (1 wanted)`, 'a tap on another box ended the browser\'s composition');
+    const starts = await p.page.evaluate(() => window.gweniCompositionStarts);
+    await p.cdp.send('Input.imeSetComposition', { text: 'wo', selectionStart: 2, selectionEnd: 2 });
+    await p.settle();
+    await p.cdp.send('Input.insertText', { text: 'word' });
+    await p.settle();
+    const second = await p.probe('control TextBox 1');
+    const firstAfter = await p.probe('control TextBox 0');
+    const started = await p.page.evaluate(() => window.gweniCompositionStarts) - starts;
+    expect('ime', second.text === otherText + 'word' && firstAfter.text === firstBox.text && started === 1,
+        `the next word left the other box "${second.text}" (${JSON.stringify(otherText + 'word')} wanted) and the first `
+        + `"${firstAfter.text}" (${JSON.stringify(firstBox.text)} wanted), in ${started} new composition(s) (1 wanted)`,
+        'the next word went into the other box alone, once, a composition of its own');
+
+    // a Shift pressed before a composition and let go during it reaches
+    // emscripten-glfw's listener (on document), so it is not left held; and
+    // neither its press nor its release commits the composition
+    await p.page.evaluate(() =>
+    {
+        window.gweniShiftUps = 0;
+        document.addEventListener('keyup', e => { if(e.key === 'Shift') ++window.gweniShiftUps; });
+    });
+    await p.cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Shift', code: 'ShiftLeft',
+        windowsVirtualKeyCode: 16, modifiers: 8 });
+    await p.settle();
+    await p.cdp.send('Input.imeSetComposition', { text: 'ka', selectionStart: 2, selectionEnd: 2 });
+    await p.settle();
+    await p.cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16 });
+    await p.settle();
+    const shifted = await p.probe('state');
+    const shiftUps = await p.page.evaluate(() => window.gweniShiftUps);
+    expect('ime', shiftUps === 1 && shifted.composing === 'ka',
+        `a Shift let go during a composition reached the document ${shiftUps} time(s) (1 wanted), the box composing `
+        + `"${shifted.composing}" ("ka" wanted)`, 'a Shift held across a composition went up, committing nothing');
+    await p.cdp.send('Input.insertText', { text: '' });
+    await p.settle();
 
     await p.tap({ x: 600, y: 470 });
     await sleep(50);

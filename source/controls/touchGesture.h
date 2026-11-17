@@ -52,7 +52,6 @@ public:
     static size_t stopFlings(Canvas *canvas);
 
     bool active() const { return m_canvas && (m_canvas->inputCapture() == this); }
-    bool panning() const { return m_panning; }
 
     void captureTouch(int id, TouchPhase phase, float x, float y) override;
     void captureCanvasDeleted(Canvas * /*canvas*/) override { m_canvas=nullptr; }

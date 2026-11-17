@@ -344,10 +344,18 @@ EM_JS(char *, gweni_js_clipboard_pasted, (), {
 //   isComposing) from emscripten-glfw, whose Backspace would delete from the
 //   box while the composition does, and, while the textarea has the focus,
 //   prevents the default of a keydown typing one code point without Ctrl or
-//   Meta, so the textarea takes nothing emscripten-glfw already typed;
+//   Meta, so the textarea takes nothing emscripten-glfw already typed; a
+//   keyup whose keydown it let through goes through too (a Shift pressed
+//   before a composition and let go during it), so no key stays held;
 // - emscripten-glfw's GLFW3.isAnyElementFocused, which drops every key while
 //   an element other than the canvas has the focus, told not to count the
 //   textarea, so desktop typing still comes through keydown as before.
+// endTextComposition() (gweni_js_text_input_end) ends the textarea's
+// composition when gweni has ended its own: the textarea is emptied, blurred
+// and focused again in that task (a blur is what ends a composition in every
+// browser, and focusing again in the same task keeps a phone's keyboard up),
+// and the compositionend that gives is dropped, as is anything of that
+// composition still to come, up to the next compositionstart.
 // Only keys for gweni (the textarea, the canvas or nothing focused) are
 // looked at: the page's own fields are left alone. Counts for a test:
 // focuses and blurs of the textarea, touches handed on.
@@ -373,7 +381,8 @@ EM_JS(void, gweni_js_input_listen, (int on), {
         canvas.style.touchAction = 'none';
 
         state = Module['gweniInput'] = { field: field, touches: {}, active: false, composing: false,
-            compositionStart: 0, focuses: 0, blurs: 0, touchesHanded: 0, listeners: [] };
+            compositionStart: 0, dropping: false, ended: 0, keysPassed: {}, focuses: 0, blurs: 0,
+            touchesHanded: 0, listeners: [] };
 
         var listen = function(target, type, fn, options)
         {
@@ -430,11 +439,18 @@ EM_JS(void, gweni_js_input_listen, (int on), {
         {
             if(!forGweni())
                 return;
+            if(e.type === 'keyup' && e.code && state.keysPassed[e.code])
+            {
+                delete state.keysPassed[e.code];
+                return;
+            }
             if(e.isComposing || e.keyCode === 229 || e.key === 'Process' || e.key === 'Unidentified')
             {
                 e.stopImmediatePropagation();
                 return;
             }
+            if(e.type === 'keydown' && e.code)
+                state.keysPassed[e.code] = true;
             if(e.type === 'keydown' && document.activeElement === field && !e.ctrlKey && !e.metaKey &&
                 typeof e.key === 'string' && Array.from(e.key).length === 1)
                 e.preventDefault();
@@ -445,12 +461,15 @@ EM_JS(void, gweni_js_input_listen, (int on), {
         listen(field, 'compositionstart', function()
         {
             state.composing = true;
+            state.dropping = false;
             state.compositionStart = field.selectionStart;
         });
         listen(field, 'input', function(e)
         {
             if(e.inputType === 'insertCompositionText')
             {
+                if(!state.composing)
+                    return;
                 var text = e.data || '';
                 var caret = Math.max(0, Math.min(text.length, field.selectionEnd - state.compositionStart));
                 withText(text, function(pointer)
@@ -466,6 +485,11 @@ EM_JS(void, gweni_js_input_listen, (int on), {
             var text = e.data || '';
             state.composing = false;
             field.value = '';
+            if(state.dropping)
+            {
+                state.dropping = false;
+                return;
+            }
             if(text === '')
                 Module['_gweni_platform_composition'](2, 0, 0);
             else
@@ -514,6 +538,29 @@ EM_JS(void, gweni_js_input_listen, (int on), {
     }
 });
 
+// endTextComposition(): ends the textarea's composition, gweni having ended
+// its own (gweni_js_input_listen); nothing while the textarea composes
+// nothing.
+EM_JS(void, gweni_js_text_input_end, (), {
+    var state = Module['gweniInput'];
+    if(!state || !state.composing)
+        return;
+    var field = state.field;
+    state.composing = false;
+    state.dropping = true;
+    ++state.ended;
+    if(document.activeElement !== field)
+    {
+        field.value = '';
+        return;
+    }
+    // blurred first: emptied while composing, Chromium drops the composition
+    // with no compositionend, which a page listening for it would miss
+    field.blur();
+    field.value = '';
+    field.focus({ preventScroll: true });
+});
+
 // setTextInputRect(): the textarea to the caret (device px of the canvas's
 // framebuffer) and focused, inside the input call, so inside the tap's or the
 // click's own event handler, which iOS opens a keyboard only from; or, once
@@ -534,6 +581,9 @@ EM_JS(void, gweni_js_text_input, (int active, int x, int y, int w, int h), {
         field.style.left = (rect.left + x*sx) + 'px';
         field.style.top = (rect.top + y*sy) + 'px';
         field.style.height = Math.max(1, h*sy) + 'px';
+        // asked from the canvas's own input (a tap, a click, a key), which a
+        // page field that had the focus before keeps: a touch on the canvas
+        // prevents its default, so the focus would otherwise never leave it
         if(document.activeElement !== field)
         {
             field.focus({ preventScroll: true });
@@ -816,6 +866,29 @@ void setTextInputRect(bool active, const Rect &caretDeviceRect)
 #else
     (void)active;
     (void)caretDeviceRect;
+#endif
+}
+
+static std::function<void()> &textCompositionEndHandler()
+{
+    static std::function<void()> handler;
+    return handler;
+}
+
+void setTextCompositionEndHandler(std::function<void()> handler)
+{
+    textCompositionEndHandler()=std::move(handler);
+}
+
+void endTextComposition()
+{
+    if(textCompositionEndHandler())
+    {
+        textCompositionEndHandler()();
+        return;
+    }
+#if defined(__EMSCRIPTEN__)
+    gweni_js_text_input_end();
 #endif
 }
 

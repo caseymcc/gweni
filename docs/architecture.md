@@ -8570,16 +8570,28 @@ Native touchscreens have no feeder yet: desktop GLFW has no touch API.
   the text leaves; `cancelComposition()`, Escape and an empty update give back the
   text, caret and selection it began from. A key, a character, a caret move, an edit,
   an undo or the focus leaving commits what is pending first; the app's `setText()`
-  drops it. A `PasswordTextBox` shows none and types the commit
-  (`TextBox::allowsComposition()`). `Canvas::inputComposition*` hands them to the
-  keyboard-focused control (`Base::onCompositionUpdate`/`Commit`/`Cancel`): a control
-  that takes no composition (a `CodeEditor`, a plain control) gets a commit as typed
-  characters.
+  drops it. Only a key's press commits it: a modifier (Shift, Ctrl, Alt, Command),
+  a release and a held modifier's repeat (`inputHandler`'s) leave it be. A composition
+  the box ends for a reason of its own, not the input method's (all those but a
+  commit, a cancel or an empty update from `onComposition*`), also calls
+  `platform::endTextComposition()`, so the platform's input method drops its
+  composition too and does not carry the word on into the next field or the new caret
+  (a phone's keyboard composes every word; `setTextCompositionEndHandler` replaces it
+  for a test). A `PasswordTextBox` shows none and types the commit
+  (`TextBox::allowsComposition()`), and a box made not editable takes none, commits
+  what was pending as it is made so, and gives the keyboard up.
+  `Canvas::inputComposition*` hands them to the keyboard-focused control
+  (`Base::onCompositionUpdate`/`Commit`/`Cancel`), past a finger's touch gesture,
+  which holds the canvas's input but takes no keyboard (another input capture gets a
+  commit as characters and nothing of the rest): a control that takes no composition
+  (a `CodeEditor`, a plain control) gets a commit as typed characters.
 - **Asking for the keyboard.** A text control calls
   `platform::setTextInputRect(active, caretDeviceRect)` as it gains and loses the
   keyboard focus and as its caret moves (`TextBox::reportTextInput`,
-  `CodeEditor::reportTextInput`; read-only editors never ask), the caret in device px
-  of the framebuffer. Natively it does nothing (`setTextInputHandler` replaces it for
+  `CodeEditor::reportTextInput`; a read-only editor and a box that is not editable
+  never ask), the caret in device px of the framebuffer. It is not sent again when
+  the box moves with its caret still (a scroll of what holds it), only when the caret
+  moves in the box or the focus comes. Natively it does nothing (`setTextInputHandler` replaces it for
   a test); in a page it focuses or blurs the hidden textarea below.
 
 ### The page side (`platform::useBrowserInput`)
@@ -8599,7 +8611,10 @@ the touches handed on):
   canvas's top-left (GLFW's window coordinates, mapped to logical units as the mouse
   is), preventing their defaults (the browser's scrolling, zooming and compatibility
   mouse events). A touch elsewhere keeps its defaults, so the page's own links and
-  checkboxes still get their clicks. The canvas gets `touch-action: none`, as the
+  checkboxes still get their clicks, but no touch listener of the embedding page
+  below `window` runs (the trade-off of keeping them from emscripten-glfw's document
+  listeners); a page that needs its own listens on `window` in the capture phase,
+  added before the app starts. The canvas gets `touch-action: none`, as the
   pages' CSS also says. No Pointer Events: cancelling a `pointerdown` does not stop
   the touch events emscripten-glfw listens to.
 - **A hidden textarea** (transparent, 16 px so iOS does not zoom into it,
@@ -8614,14 +8629,24 @@ the touches handed on):
   `insertText` the characters no keydown delivered (a phone keyboard, an input
   method's predictions), `deleteContentBackward`/`Forward` and the line breaks a key
   tap of Backspace, Delete and Return; it is emptied after each, so it never holds
-  text.
+  text. `platform::endTextComposition()` (`gweni_js_text_input_end`) ends its
+  composition when gweni has ended its own: it is blurred, emptied and focused again
+  in that task (a blur is what finishes a composition in every browser and tells the
+  input method; emptied first, Chromium drops it silently; focused again at once, a
+  phone keeps its keyboard up), and the `compositionend` that gives, and anything of
+  that composition still to come, is dropped up to the next `compositionstart`.
+  `web_touch` holds it: "hel" composing in one box and a tap on another commits it to
+  the first, the textarea's composition ends and the next word is a composition of
+  its own in the second box.
 - **A key guard** on `window`, in the capture phase: an input method's keystrokes
   (keyCode 229, `"Process"`, `"Unidentified"`, any `isComposing`) never reach
   emscripten-glfw, whose Backspace would delete from the box while the composition
   deletes from itself, and while the textarea has the focus a keydown that types one
   code point without Ctrl or Meta has its default prevented, so the textarea never
-  types what emscripten-glfw's keydown already typed. Desktop typing therefore still
-  comes through keydown as before. Ctrl and Meta keys are left alone: the clipboard
+  types what emscripten-glfw's keydown already typed. A keyup whose keydown went
+  through goes through too (by `code`), so a Shift pressed before a composition and
+  let go during it is not left held in emscripten-glfw and gweni. Desktop typing
+  therefore still comes through keydown as before. Ctrl and Meta keys are left alone: the clipboard
   rides on the copy, cut and paste events that follow them, and the clipboard's
   listeners count the textarea as gweni's.
 - **emscripten-glfw's focus test**: its `Context::onKeyDown` drops every key while an

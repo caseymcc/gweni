@@ -138,6 +138,18 @@ GWENI_EXPORT void setTextInputRect(bool active, const Rect &caretDeviceRect);
 //! What setTextInputRect() calls instead of the platform's, for a test; an
 //! empty function gives the platform's back.
 GWENI_EXPORT void setTextInputHandler(std::function<void(bool active, const Rect &caretDeviceRect)> handler);
+//! A text control ended an input method's composition for a reason of its
+//! own (the focus or the caret moved, a key, the app's setText()), not
+//! because the platform ended it: the platform drops its composition too, so
+//! the input method does not carry it on into what comes next (a phone's
+//! keyboard composes every word, and would type it again into the next
+//! field). In a browser page the hidden text field is emptied, blurred and
+//! focused again in the same task, which ends the browser's composition (its
+//! compositionend is not handed on); elsewhere it does nothing.
+GWENI_EXPORT void endTextComposition();
+//! What endTextComposition() calls instead of the platform's, for a test; an
+//! empty function gives the platform's back.
+GWENI_EXPORT void setTextCompositionEndHandler(std::function<void()> handler);
 
 //! What a browser page's own listeners hand an app (useBrowserInput): the
 //! touches on its canvas, the text its hidden text field takes that no

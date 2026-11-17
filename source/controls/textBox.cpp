@@ -96,6 +96,26 @@ TextBox::~TextBox()
         platform::setTextInputRect(false, Rect());
 }
 
+namespace
+{
+
+//! Set while the platform's input method ends a composition
+//! (TextBox::onComposition*), which then need not be told it ended.
+bool g_compositionEndedByPlatform=false;
+
+struct PlatformCompositionScope
+{
+    PlatformCompositionScope() { g_compositionEndedByPlatform=true; }
+    ~PlatformCompositionScope() { g_compositionEndedByPlatform=false; }
+};
+
+bool isModifierKey(int key)
+{
+    return key == keys::Shift || key == keys::Control || key == keys::Alt || key == keys::Command;
+}
+
+}//namespace
+
 bool TextBox::keepsTouchDrag() const
 {
     return KeyboardFocus == this;
@@ -679,7 +699,13 @@ void TextBox::onKeyboardFocus()
 // The focus leaving keeps what was composed, as a browser's text field does.
 void TextBox::onLostKeyboardFocus()
 {
-    commitPendingComposition();
+    // the focus has moved already: the platform is told here
+    if(m_composition)
+    {
+        commitPendingComposition();
+        if(!g_compositionEndedByPlatform)
+            platform::endTextComposition();
+    }
     platform::setTextInputRect(false, Rect());
     ParentClass::onLostKeyboardFocus();
     m_caretBlink.stop(this);
@@ -1321,6 +1347,9 @@ void TextBox::endComposition()
 
     std::unique_ptr<Composition> composition=std::move(m_composition);
 
+    if(!g_compositionEndedByPlatform && (KeyboardFocus == this))
+        platform::endTextComposition();
+
     m_text->setText(composition->committed);
     m_cursorPos=composition->cursorPos;
     m_cursorEnd=composition->cursorEnd;
@@ -1369,6 +1398,8 @@ bool TextBox::onCompositionUpdate(const String &text, int caret)
     if(!allowsComposition())
         return false;
 
+    PlatformCompositionScope scope;
+
     setComposition(text, caret);
     return true;
 }
@@ -1378,6 +1409,8 @@ bool TextBox::onCompositionCommit(const String &text)
     if(!m_editable)
         return false;
 
+    PlatformCompositionScope scope;
+
     commitComposition(text);
     return true;
 }
@@ -1386,6 +1419,8 @@ bool TextBox::onCompositionCancel()
 {
     if(!m_composition)
         return false;
+
+    PlatformCompositionScope scope;
 
     cancelComposition();
     return true;
@@ -1401,15 +1436,33 @@ bool TextBox::onKeyPress(int key, bool press)
                 cancelComposition();
             return true;
         }
-        commitPendingComposition();
+        if(press && !isModifierKey(key))
+            commitPendingComposition();
     }
     return ParentClass::onKeyPress(key, press);
+}
+
+void TextBox::setEditable(bool b)
+{
+    if(m_editable == b)
+        return;
+
+    // what was composed goes in while it still may
+    if(!b)
+        commitPendingComposition();
+    m_editable=b;
+    if(!isFocussed())
+        return;
+    if(b)
+        reportTextInput();
+    else
+        platform::setTextInputRect(false, Rect());
 }
 
 // The caret in device px of the framebuffer, as the renderer snaps a rect.
 void TextBox::reportTextInput()
 {
-    if(!isFocussed())
+    if(!isFocussed() || !m_editable)
         return;
 
     Canvas *canvas=getCanvas();

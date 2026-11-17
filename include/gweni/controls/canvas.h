@@ -818,7 +818,8 @@ public:
     /// a TextBox shows the composing text inline at its caret and takes the
     /// committed text as typed. Taken while the UI has the keyboard, as a
     /// character is. An input capture gets a commit as characters and
-    /// nothing of the rest.
+    /// nothing of the rest, but a finger's touch gesture, which takes no
+    /// keyboard: past it they go to the focus as ever.
     bool inputCompositionUpdate(const String &text, int caret) override;
     bool inputCompositionCommit(const String &text) override;
     bool inputCompositionCancel() override;
@@ -1168,6 +1169,8 @@ protected:
     TouchMode m_touchMode=TouchMode::None;
     Point m_touchMouse;
     std::unique_ptr<internal::TouchGesture> m_touchGesture;
+    /// An input capture holds the input and is not the touch gesture.
+    bool compositionCaptured() const;
     /// Per mouse button (bit = button, 0..31): its press is held and was the
     /// scene's (inputMouseButton returned false), or the UI's (true), so its
     /// release, and the moves while it is held, get the press's answer.

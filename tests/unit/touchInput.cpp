@@ -30,7 +30,10 @@
  *  opens the context menu of the control under it with its corner at the
  *  finger, and the lift chooses nothing (nothing is even hit-tested); one
  *  moved past the slop is no long press, nor one lifted sooner, whose delay
- *  goes with it.
+ *  goes with it. A TextBox keeps the drag only while it has the keyboard
+ *  focus: a drag starting on an unfocused one in a ScrollControl scrolls it
+ *  and leaves the box unfocused, one in the focused box selects its text and
+ *  scrolls nothing.
  */
 #include "headlessFixture.h"
 
@@ -38,6 +41,7 @@
 #include <gweni/controls/button.h>
 #include <gweni/controls/menu.h>
 #include <gweni/controls/scrollControl.h>
+#include <gweni/controls/textBox.h>
 #include <gweni/controls/zoomPanel.h>
 #include <gweni/inputHandler.h>
 #include <gweni/platforms/inputEvent.h>
@@ -576,4 +580,62 @@ TEST_CASE("Touch: a finger moved past the slop or lifted before the delay is no 
     CHECK(canvas->shownContextMenu() == scene.menu);
     canvas->inputTouch(0, TouchPhase::Up, 30.0f, 20.0f);
     CHECK(scene.presses == 1);
+}
+
+TEST_CASE("Touch: a TextBox keeps the drag only while focused (it selects) and a drag on an unfocused one scrolls")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+    auto *scroll=canvas->newChild<controls::ScrollControl>();
+
+    scroll->setScroll(false, true);
+    scroll->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    scroll->setBounds(10, 50, 130, 180);
+
+    auto *box=scroll->newChild<controls::TextBox>();
+
+    box->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    box->setBounds(0, 0, 120, 24);
+    box->setText("hello touch world");
+
+    auto *filler=scroll->newChild<controls::Base>();
+
+    filler->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    filler->setBounds(0, 24, 120, 600);
+    scene.frame();
+    scene.frame();
+    REQUIRE(scroll->getMaxVerticalScrollOffset() > 100);
+    REQUIRE(KeyboardFocus != box);
+
+    const Point origin=box->localPosToCanvas();
+    const float x=float(origin.x)+10.0f;
+    const float y=float(origin.y)+12.0f;
+
+    // unfocused: the drag scrolls what holds the box, and focuses nothing
+    canvas->inputTouch(0, TouchPhase::Down, x, y);
+    canvas->inputTouch(0, TouchPhase::Move, x, y-20.0f);
+    canvas->inputTouch(0, TouchPhase::Move, x, y-40.0f);
+    scene.step(0.6);
+    canvas->inputTouch(0, TouchPhase::Up, x, y-40.0f);
+    CHECK(scroll->getVerticalScrollOffset() == 40);
+    CHECK(KeyboardFocus != box);
+    CHECK(box->getCursorPos() == box->getCursorEnd());
+
+    scroll->setVerticalScrollOffset(0);
+    scene.frame();
+    box->focus();
+    box->setCursorPos(0);
+    box->setCursorend(0);
+    scene.frame();
+
+    // focused: a drag along it selects, the ScrollControl stays put
+    const Point at=box->localPosToCanvas();
+
+    canvas->inputTouch(0, TouchPhase::Down, float(at.x)+4.0f, float(at.y)+12.0f);
+    canvas->inputTouch(0, TouchPhase::Move, float(at.x)+40.0f, float(at.y)+12.0f);
+    canvas->inputTouch(0, TouchPhase::Move, float(at.x)+80.0f, float(at.y)+40.0f);
+    canvas->inputTouch(0, TouchPhase::Up, float(at.x)+80.0f, float(at.y)+40.0f);
+    CHECK(KeyboardFocus == box);
+    CHECK(box->getCursorPos() != box->getCursorEnd());
+    CHECK(scroll->getVerticalScrollOffset() == 0);
 }

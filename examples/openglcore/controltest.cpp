@@ -25850,7 +25850,8 @@ static bool runTouchScenario(Session &s, const std::string &shotDir, bool &passe
 
         touchUp(s, 0);
 
-        const CodeEditorFrame tapped=codeEditorFrame(s);
+        // the lift's frame
+        codeEditorFrame(s);
 
         checks.check("tap",
             presses.calls == 1 && toggle->getToggleState() && held.written == 0 && held.changed == 0
@@ -25872,7 +25873,6 @@ static bool runTouchScenario(Session &s, const std::string &shotDir, bool &passe
         idleWork+=settleCodeEditor(s, pixels);
         checks.check("button_settled", idleWork == 0,
             "settled frames wrote or changed "+std::to_string(idleWork));
-        (void)tapped;
         dropControl(s, control);
     }
 
@@ -26832,6 +26832,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_probe(const char *query)
         if(auto *scroll=gweni::gweni_cast<gweni::controls::ScrollControl>(control))
             result+=",\"scroll\":{\"x\":"+std::to_string(scroll->getHorizontalScrollOffset())
                 +",\"y\":"+std::to_string(scroll->getVerticalScrollOffset())+"}";
+        if(auto *box=gweni::gweni_cast<gweni::controls::TextBox>(control))
+            result+=",\"text\":"+jsonString(box->getText());
         if(auto *number=gweni::gweni_cast<gweni::controls::DragNumber>(control))
             result+=",\"number\":"+jsonFloat(float(number->getNumber()));
         if(auto *slider=gweni::gweni_cast<gweni::controls::Slider>(control))
