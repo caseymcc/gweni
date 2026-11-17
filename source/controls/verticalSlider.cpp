@@ -28,19 +28,21 @@ float VerticalSlider::calculateValue()
 }
 
 // Rounded, so a thumb the mouse put at y, read back as 1-y/travel, lands at y
-// again (a truncating cast left it a unit short on some positions, #466).
+// again (a truncating cast left it a unit short on some positions, #466). On
+// the track column at x 0, a value text's column right of it, whatever the
+// drag did across it (#727): the Dragger moves the thumb in both axes, and
+// this runs in the same input event.
 void VerticalSlider::updateBarFromValue()
 {
     const int travel=std::max(0, getHeight()-m_sliderBar->getHeight());
 
-    placeChildPos(m_sliderBar, m_sliderBar->getX(),
-        thumbOffset(travel, 1.f-m_value));
+    placeChildPos(m_sliderBar, 0, thumbOffset(travel, 1.f-m_value));
 }
 
 // The thumb jumps to the click, kept on the track: computed, like the value.
 void VerticalSlider::onMouseClickLeft(int x, int y, bool down)
 {
-    const Point pos=m_sliderBar->restrictedPos(m_sliderBar->getX(),
+    const Point pos=m_sliderBar->restrictedPos(0,
         canvasPosToLocal(gweni::Point(x, y)).y - m_sliderBar->getHeight()  *0.5f);
 
     placeChildPos(m_sliderBar, pos.x, pos.y);

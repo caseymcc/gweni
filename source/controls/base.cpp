@@ -1651,19 +1651,23 @@ Point Base::restrictedPos(int x, int y) const
 {
     if(m_restrictToParent && getParent())
     {
+        // The parent's own bounds: its margin is its spacing in its own
+        // parent's layout, not an inset of what it holds (#727). The child's
+        // padding keeps it that far off the edges (a scroll bar's thumb kept
+        // between its arrow buttons).
         const Base *parent=getParent();
 
-        if(x-getPadding().left < parent->getMargin().left)
-            x=parent->getMargin().left+getPadding().left;
+        if(x < getPadding().left)
+            x=getPadding().left;
 
-        if(y-getPadding().top < parent->getMargin().top)
-            y=parent->getMargin().top+getPadding().top;
+        if(y < getPadding().top)
+            y=getPadding().top;
 
-        if(x+getWidth()+getPadding().right > parent->getWidth()-parent->getMargin().right)
-            x=parent->getWidth()-parent->getMargin().right-getWidth()-getPadding().right;
+        if(x+getWidth()+getPadding().right > parent->getWidth())
+            x=parent->getWidth()-getWidth()-getPadding().right;
 
-        if(y+getHeight()+getPadding().bottom > parent->getHeight()-parent->getMargin().bottom)
-            y=parent->getHeight()-parent->getMargin().bottom-getHeight()-getPadding().bottom;
+        if(y+getHeight()+getPadding().bottom > parent->getHeight())
+            y=parent->getHeight()-getHeight()-getPadding().bottom;
     }
 
     return Point(x, y);

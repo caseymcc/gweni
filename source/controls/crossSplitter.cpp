@@ -20,7 +20,9 @@ namespace controls
 GWENI_CONTROL_CONSTRUCTOR(CrossSplitter)
 {
     // layout() places the bars from the split fractions, in this control's
-    // own coordinates; restrictToParent would clamp them against its margin.
+    // own coordinates, each fraction kept to the room its bar has
+    // (barFraction), so the bars need no restrictToParent: a drag moves one
+    // unclamped and layout() puts it back on the line its fraction gives.
     // They and the panels are this control's to place (Placement::Owner).
     m_verticalSplitter=newChild<SplitterBar>();
 

@@ -27,20 +27,21 @@ float HorizontalSlider::calculateValue()
 }
 
 // Rounded, so a thumb the mouse put at x, read back as x/travel, lands at x
-// again (a truncating cast left it a unit short on some positions, #466).
+// again (a truncating cast left it a unit short on some positions, #466). On
+// the track at y 0 whatever the drag did across it (#727): the Dragger moves
+// the thumb in both axes, and this runs in the same input event.
 void HorizontalSlider::updateBarFromValue()
 {
     const int travel=std::max(0, getWidth()-m_sliderBar->getWidth());
 
-    placeChildPos(m_sliderBar, thumbOffset(travel, m_value),
-        m_sliderBar->getY());
+    placeChildPos(m_sliderBar, thumbOffset(travel, m_value), 0);
 }
 
 // The thumb jumps to the click, kept on the track: computed, like the value.
 void HorizontalSlider::onMouseClickLeft(int x, int y, bool down)
 {
     const Point pos=m_sliderBar->restrictedPos(canvasPosToLocal(Point(x, y)).x - m_sliderBar->getWidth()/2,
-        m_sliderBar->getY());
+        0);
 
     placeChildPos(m_sliderBar, pos.x, pos.y);
     m_sliderBar->onMouseClickLeft(x, y, down);

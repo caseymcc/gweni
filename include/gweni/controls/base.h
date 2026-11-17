@@ -565,7 +565,10 @@ public:
     //! MoveTo is identical to setPos except it uses shouldRestrictToParent().
     virtual void moveTo(int x, int y);
     //! Where moveTo(x, y) would put this control: (x, y), kept inside the
-    //! parent when shouldRestrictToParent().
+    //! parent's own bounds when shouldRestrictToParent(), x in
+    //! [padding.left, parent width - width - padding.right] and y likewise,
+    //! this control's padding keeping it off the parent's edges (the parent's
+    //! margin is its spacing outside, and plays no part).
     Point restrictedPos(int x, int y) const;
     virtual void moveBy(int x, int y);
 
