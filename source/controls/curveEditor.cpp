@@ -814,7 +814,14 @@ std::vector<std::vector<size_t>> CurveEditor::snapshotSelection() const
 void CurveEditor::restoreSelection(const std::vector<std::vector<size_t>> &snapshot)
 {
     for(size_t curve=0; (curve < m_curves.size()) && (curve < snapshot.size()); ++curve)
-        setCurveSelection(curve, snapshot[curve]);
+    {
+        std::vector<size_t> selected=snapshot[curve];
+        const size_t count=m_curves[curve].curve->keyCount();
+
+        // The app may have removed keys before ending the marquee.
+        selected.erase(std::lower_bound(selected.begin(), selected.end(), count), selected.end());
+        setCurveSelection(curve, std::move(selected));
+    }
     syncFields();
 }
 

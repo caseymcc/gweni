@@ -22,6 +22,9 @@
  *    the release firing onSelectionChanged once, Escape giving the selection
  *    back with no event, and so does a marquee the app ends before its
  *    release (curveChanged() of another curve, a disable, a hide);
+ *  - restoring a marquee's selection after the app removes keys discarding
+ *    indices at or past keyCount(), keeping valid keys and syncing the footer
+ *    safely before curveChanged() or clearCurves() returns;
  *  - a key drag: each frame moving the selection by the mouse's motion in
  *    curve units and firing onChanged once per key it moved (none for a frame
  *    that keeps it), logging the curve's span and key splices; a key dragged
@@ -892,6 +895,58 @@ TEST_CASE("CurveEditor: a marquee the app ends gives the selection back with no 
         CHECK(editor->getSelection() == refs({{1, 0}}));
         CHECK(scene.events.selections == 0);
     }
+}
+
+TEST_CASE("CurveEditor: a marquee restore drops keys the app removed and keeps valid keys")
+{
+    bool clear=false;
+    bool otherCurve=false;
+    bool boundary=false;
+
+    SUBCASE("curveChanged after replacing the selected curve") {}
+    SUBCASE("clearCurves after replacing the selected curve") { clear=true; }
+    SUBCASE("another curve notification keeps the surviving selection") { otherCurve=true; }
+    SUBCASE("the removed index equals keyCount") { boundary=true; }
+
+    Scene scene;
+    controls::CurveEditor *editor=scene.editor;
+
+    editor->setSelection(otherCurve?refs({{0, 3}, {1, 0}}):refs({{0, 3}}));
+    scene.press(scene.at(150, 10));
+    scene.move(scene.at(160, 20));
+    REQUIRE(editor->marqueeActive());
+    REQUIRE(editor->getSelection().empty());
+
+    // Replacing the value type frees its old storage, so ASAN also catches a
+    // footer reading the removed key during restore, before the app call ends.
+    if(boundary)
+        scene.a=Curve({makeKey(0, 0.5), makeKey(1, 1.5), makeKey(2, 0.5)});
+    else
+        scene.a=Curve({makeKey(0, 0.5, Mode::Linear)});
+    if(clear)
+        editor->clearCurves();
+    else
+        editor->curveChanged(otherCurve?1:0);
+
+    const auto expected=otherCurve?refs({{1, 0}}):refs({});
+
+    CHECK(!editor->marqueeActive());
+    CHECK(editor->getSelection() == expected);
+    CHECK(editor->selectionSize() == (otherCurve?1:0));
+    CHECK(editor->getTimeField()->isBlank() == !otherCurve);
+    CHECK(editor->getValueField()->isBlank() == !otherCurve);
+    CHECK(editor->getTimeField()->isDisabled() == !otherCurve);
+    CHECK(editor->getValueField()->isDisabled() == !otherCurve);
+    if(otherCurve)
+    {
+        CHECK(editor->getTimeField()->getNumber() == doctest::Approx(scene.b.key(0).time));
+        CHECK(editor->getValueField()->getNumber() == doctest::Approx(scene.b.key(0).value));
+    }
+    scene.frame();
+    scene.release();
+    CHECK(editor->getSelection() == expected);
+    CHECK(scene.events.selections == 0);
+    CHECK(scene.events.changes == 0);
 }
 
 TEST_CASE("CurveEditor: a key drag moves the selection, past a neighbour too, Escape puts it back")
