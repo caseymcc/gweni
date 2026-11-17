@@ -36,7 +36,11 @@
  *  keys doing nothing); a press whose selection handler hides or disables it
  *  dragging nothing; a middle-drag pan hovering what is under the cursor, not
  *  under the press; a marquee taking the items under its rect again after a
- *  zoom, a pan or a lane scroll;
+ *  zoom, a pan or a lane scroll; Delete removing the selected items when an
+ *  onRemoved or onRemoveRequested handler edits their track, and going on
+ *  when one removes the item asked about; hidden mid-pan, the pan letting the
+ *  input go; disabled, no hover and no keyboard focus from a click, and
+ *  enabled again the item under a resting mouse hovered;
  *  onItemsMoved once per release that moved something (none for a
  *  drag back to where it began), a whole group moving together; Delete
  *  through the veto; and the playhead's keys (Left and Right a frame, Home
@@ -116,8 +120,15 @@ struct Scene: event::Handler
         requested.push_back(info.integer);
         if(info.integer == vetoId)
             seq->vetoRemove();
+        if(onRequestHook)
+            onRequestHook();
     }
-    void removed(event::Info info) { removedIds.push_back(info.integer); }
+    void removed(event::Info info)
+    {
+        removedIds.push_back(info.integer);
+        if(onRemovedHook)
+            onRemovedHook();
+    }
 
     double perSecond() const
     {
@@ -181,6 +192,8 @@ struct Scene: event::Handler
     std::vector<size_t> requested;
     std::vector<size_t> removedIds;
     std::function<void()> onSelection;
+    std::function<void()> onRequestHook;
+    std::function<void()> onRemovedHook;
 };
 
 }//namespace
@@ -1193,4 +1206,129 @@ TEST_CASE("Sequencer: a marquee follows a zoom, a pan and a lane scroll")
     CHECK(seq->isSelected(gained));
     scene.release();
     CHECK(seq->isSelected(gained));
+}
+
+// A handler that edits the track Delete is working on (an NLE removing a
+// linked clip) leaves the rest of Delete on the items that were selected: the
+// list it works from follows the edit as the selection does.
+TEST_CASE("Sequencer: Delete removes the selected items when a handler edits their track")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    for(int i=0; i < 6; ++i)
+        seq->addClip(0, 1+i, 1.5+i, "", 10+i);
+    scene.frame();
+    seq->select(SequencerItem(Kind::Clip, 0, 2));
+    seq->select(SequencerItem(Kind::Clip, 0, 5));
+
+    bool linked=false;
+    std::vector<size_t> appRemoved;
+    auto removeLinked=[&]()
+    {
+        if(linked)
+            return;
+        linked=true;
+        appRemoved.push_back(seq->getClip(0, 0).id);
+        seq->removeClip(0, 0);
+    };
+
+    std::vector<size_t> expectRequested{15, 12};
+
+    SUBCASE("in onRemoved")
+    {
+        scene.onRemovedHook=removeLinked;
+    }
+    SUBCASE("in onRemoveRequested")
+    {
+        scene.onRequestHook=removeLinked;
+    }
+    scene.press(Point(seq->getBarArea().x+5, seq->getAxisRow().y+2));
+    scene.release();
+    scene.key(keys::Delete);
+    CHECK(scene.requested == expectRequested);
+    CHECK(scene.removedIds == std::vector<size_t>{15, 12});
+    CHECK(appRemoved == std::vector<size_t>{10});
+
+    std::vector<uint64_t> left;
+
+    for(size_t i=0; i < seq->getClipCount(0); ++i)
+        left.push_back(seq->getClip(0, i).id);
+    CHECK(left == std::vector<uint64_t>{11, 13, 14});
+    CHECK(seq->getSelection().empty());
+}
+
+// A handler that removes the very item it is asked about: Delete goes on
+// with the others and reports no removal of it.
+TEST_CASE("Sequencer: Delete goes on when onRemoveRequested removes the item itself")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    for(int i=0; i < 4; ++i)
+        seq->addClip(0, 1+i, 1.5+i, "", 10+i);
+    scene.frame();
+    seq->select(SequencerItem(Kind::Clip, 0, 1));
+    seq->select(SequencerItem(Kind::Clip, 0, 3));
+    scene.onRequestHook=[&]()
+    {
+        if(scene.requested.back() == 13)
+            seq->removeClip(0, 3);
+    };
+    scene.press(Point(seq->getBarArea().x+5, seq->getAxisRow().y+2));
+    scene.release();
+    scene.key(keys::Delete);
+    CHECK(scene.requested == std::vector<size_t>{13, 11});
+    CHECK(scene.removedIds == std::vector<size_t>{11});
+    REQUIRE(seq->getClipCount(0) == 2);
+    CHECK(seq->getClip(0, 0).id == 10);
+    CHECK(seq->getClip(0, 1).id == 12);
+}
+
+// Hidden mid-pan, the pan ends: its capture would take the next key, wheel
+// and click until the mouse moved again.
+TEST_CASE("Sequencer: hidden mid-pan, the pan lets the input go")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    scene.frame();
+
+    const Point from=scene.at(2, 5.0);
+
+    scene.move(from);
+    scene.canvas->inputMouseButton(2, true);
+    scene.move(Point(from.x-50, from.y));
+    REQUIRE(scene.canvas->inputCapture() != nullptr);
+    seq->hide();
+    scene.frame();
+    CHECK(scene.canvas->inputCapture() == nullptr);
+    scene.canvas->inputMouseButton(2, false);
+
+    // made under a hidden parent: told it is not visible before its init()
+    controls::Base *hidden=scene.canvas->newChild<controls::Base>();
+
+    hidden->hide();
+    CHECK(hidden->newChild<Sequencer>() != nullptr);
+}
+
+// Disabled, it hovers nothing and a click takes no keyboard focus; enabled
+// again under a resting mouse, the item there is hovered at once.
+TEST_CASE("Sequencer: disabled it hovers nothing and takes no focus, enabled it hovers again")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    seq->addClip(0, 1, 2, "", 1);
+    scene.frame();
+    seq->setDisabled(true);
+    scene.move(scene.at(0, 1.4));
+    scene.move(scene.at(0, 1.5));
+    CHECK(!seq->isHovering());
+    scene.canvas->inputMouseButton(0, true);
+    scene.canvas->inputMouseButton(0, false);
+    CHECK(KeyboardFocus != seq);
+    CHECK(seq->getSelection().empty());
+    seq->setDisabled(false);
+    CHECK(seq->isHovering());
 }

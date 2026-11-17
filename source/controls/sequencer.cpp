@@ -307,6 +307,7 @@ void Sequencer::removing(const Removal &removal)
         remapList(m_marqueeHits);
     }
     remapList(m_moved);
+    remapList(m_pendingRemovals);
     if(m_hovering && !remap(m_hoverItem, removal))
         setHover(false, SequencerItem(), Part::None);
 
@@ -1227,8 +1228,13 @@ void Sequencer::setDisabled(bool active)
         return;
 
     ParentClass::setDisabled(active);
+    // the keyboard focus too: a click on it takes none
+    setKeyboardInputEnabled(!active);
     if(!active)
+    {
+        refreshHover();
         return;
+    }
     if(m_drag != Drag::None)
         endDrag(true);
     m_panGesture->end();
@@ -1241,7 +1247,14 @@ void Sequencer::setDisabled(bool active)
 
 void Sequencer::onVisibleChanged()
 {
-    if(visible() || m_drag == Drag::None)
+    if(visible())
+        return;
+
+    // hidden mid-pan: its capture would swallow the input until the next move
+    // (none yet when it is attached to a hidden parent before its init())
+    if(m_panGesture)
+        m_panGesture->end();
+    if(m_drag == Drag::None)
         return;
 
     endDrag(true);
@@ -1761,20 +1774,36 @@ void Sequencer::removeSelection()
         refreshHover();
     }
 
-    const std::vector<SequencerItem> selection=getSelection();
+    // a handler's Delete goes on with this one's list
+    if(m_removingSelection)
+        return;
+
+    // the list removing() remaps, so a handler that edits the same track
+    // leaves it naming the items selected; the one asked about stays its
+    // last entry while its handler runs
+    m_pendingRemovals=getSelection();
+    m_removingSelection=true;
+
     bool removed=false;
 
-    for(auto it=selection.rbegin(); it != selection.rend(); ++it)
+    while(!m_pendingRemovals.empty())
     {
-        const SequencerItem item=*it;
-        const uint64_t id=getItemId(item);
+        const SequencerItem asked=m_pendingRemovals.back();
+        const uint64_t id=getItemId(asked);
         event::Info info(this);
 
-        m_removeRequest=item;
+        m_removeRequest=asked;
         m_removeVetoed=false;
         info.integer=static_cast<size_t>(id);
         onRemoveRequested.call(this, info);
-        if(m_removeVetoed || !isValid(item) || getItemId(item) != id)
+        // the handler removed the item itself: it left the list
+        if(m_pendingRemovals.empty() || getItemId(m_pendingRemovals.back()) != id)
+            continue;
+
+        const SequencerItem item=m_pendingRemovals.back();
+
+        m_pendingRemovals.pop_back();
+        if(m_removeVetoed || !isValid(item))
             continue;
 
         if(item.kind == SequencerItem::Kind::Clip)
@@ -1791,6 +1820,7 @@ void Sequencer::removeSelection()
         onRemoved.call(this, removedInfo);
     }
     m_removeVetoed=false;
+    m_removingSelection=false;
     if(removed)
         fireSelectionChanged();
 }

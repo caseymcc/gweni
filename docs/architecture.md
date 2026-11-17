@@ -4952,14 +4952,18 @@ two programs and the draws. What follows describes both together:
   dragged item where it was and accepts it where it is, so mid-drag it is hit only
   where the two overlap). A press whose handler hides or disables the sequencer drags
   nothing, and disabled it takes nothing: `setDisabled(true)` puts a drag back, ends a
-  pan and lets the mouse and the keyboard focus go, and its keys and wheel do nothing. A
-  middle-drag pan moves by the cursor in the sequencer's units and hit-tests the hover
+  pan, lets the mouse and the keyboard focus go (a click takes none while disabled) and
+  hovers nothing, and its keys and wheel do nothing; enabled again it hovers what is
+  under the mouse at once. Hidden mid-pan, the pan ends too, so its capture takes no
+  more input. A middle-drag pan moves by the cursor in the sequencer's units and hit-tests the hover
   at the cursor. A left press on empty lane space is a marquee (Shift adding, Ctrl
   toggling, Escape restoring), each move setting only the items it touched before and
   touches now, and a zoom, pan or lane scroll under it taking the items its rect covers
   now; the selection is a set of items, so what reads or clears it costs the selection,
   not the items. Delete removes the selection through
-  `onRemoveRequested`/`vetoRemove()`, then `onRemoved`. Moving an item to another track
+  `onRemoveRequested`/`vetoRemove()`, then `onRemoved`, back to front from a list
+  `removing()` remaps, so a handler that edits the same track (a linked clip removed)
+  leaves the rest of the Delete on the items selected. Moving an item to another track
   is not supported. **The look and
   its cost:** a clip is a `drawRoundedRect` slot in a list per track, at z+3 plus its
   overlap level, in its surface (`SequencerClip` or the app's) with

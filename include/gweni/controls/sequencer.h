@@ -242,7 +242,7 @@ public:
     double getRangeStart() const { return m_rangeStart; }
     double getRangeEnd() const { return m_rangeEnd; }
     //! The x range shown, which the zoom and pan move: its span at least
-    //! MinViewFrames frames.
+    //! MinViewFrames frames and at most 4 times the time range's.
     void setViewRange(double start, double end);
     double getViewStart() const { return m_viewStart; }
     double getViewEnd() const { return m_viewEnd; }
@@ -406,7 +406,8 @@ protected:
     static bool remap(SequencerItem &item, const Removal &removal);
     //! Before a removal: a drag holding what goes is cancelled (its items
     //! put back while their indices hold), and the indices the drag, the
-    //! marquee, the selection and the moved items hold follow the edit.
+    //! marquee, the selection, the moved items and the selection Delete
+    //! is removing hold follow the edit.
     void removing(const Removal &removal);
 
     //! The rect of a clip / key in lane \p track, without the view checks.
@@ -518,6 +519,10 @@ protected:
     bool m_snapGuide=false;
     double m_snapGuideTime=0.0;
 
+    //! the selection Delete has still to remove, back to front, remapped
+    //! by removing() so a handler's edit leaves it naming the same items
+    std::vector<SequencerItem> m_pendingRemovals;
+    bool m_removingSelection=false;
     SequencerItem m_removeRequest;
     bool m_removeVetoed=false;
     uint64_t m_removedId=0;
