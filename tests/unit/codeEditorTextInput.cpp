@@ -7,7 +7,8 @@
  *  setTextInputRect), as a TextBox does, so a phone opens its keyboard over
  *  it in a browser page: active as it takes the keyboard focus, at its caret
  *  in device px at the canvas's scale, following the caret as it moves, and
- *  let go as the focus leaves, as it turns read-only while focused and as
+ *  let go as the focus leaves (unfocus(), or another control's focus(), which
+ *  tells the editor before it moves the focus), as it turns read-only while focused and as
  *  it is deleted with the focus. A read-only editor (a CodeView's) never
  *  asks for it, focused or not, and asks again when it takes edits again
  *  while focused.
@@ -97,6 +98,23 @@ TEST_CASE("CodeEditor text input: asked for at the caret while focused, let go a
     CHECK(scene.rect.y == top+caret.h);
 
     editor->unfocus();
+    CHECK(!scene.active);
+}
+
+TEST_CASE("CodeEditor text input: let go as another control takes the focus")
+{
+    Scene scene;
+    controls::Base *other=scene.canvas->newChild<controls::Base>();
+
+    other->setKeyboardInputEnabled(true);
+    scene.editor->focus();
+    REQUIRE(scene.active);
+
+    // Base::focus() tells the editor while the focus is still its own
+    other->focus();
+    CHECK(KeyboardFocus == other);
+    CHECK(!scene.active);
+    scene.frame();
     CHECK(!scene.active);
 }
 

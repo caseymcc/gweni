@@ -23,9 +23,11 @@
  *  go as the focus leaves or the focused box is deleted; a box that takes no
  *  edits asks for none, and setEditable(false) commits what was composed and
  *  lets it go. A composition the box ends itself (a key, a caret move, the
- *  focus leaving, setText) ends the platform's too
+ *  focus leaving, through unfocus() or another control's focus(), setText)
+ *  ends the platform's too, once,
  *  (platform::endTextComposition), one the platform ended does not; a
- *  modifier key, a key's release and a held key's repeat commit nothing. A
+ *  modifier key, the release of a key pressed before the composition and a
+ *  held key's repeat commit nothing. A
  *  finger down on the canvas (its touch gesture holding the input) keeps no
  *  composition from the focused box.
  */
@@ -433,6 +435,23 @@ TEST_CASE("TextBox composition: one the box ends itself ends the platform's, one
     CHECK(scene.ends == 4);
 }
 
+TEST_CASE("TextBox composition: another control taking the focus ends the platform's once and lets the keyboard go")
+{
+    Scene scene;
+    controls::TextBox *box=scene.box;
+    controls::Base *other=scene.canvas->newChild<controls::Base>();
+
+    other->setKeyboardInputEnabled(true);
+    scene.canvas->inputCompositionUpdate("v", 1);
+    // Base::focus() tells the box while the focus is still its own
+    other->focus();
+    CHECK(KeyboardFocus == other);
+    CHECK(!box->isComposing());
+    CHECK(box->getText() == "abcvdef");
+    CHECK(scene.ends == 1);
+    CHECK(!scene.input.active);
+}
+
 TEST_CASE("TextBox composition: a modifier, a release and a held key's repeat commit nothing")
 {
     Scene scene;
@@ -440,7 +459,12 @@ TEST_CASE("TextBox composition: a modifier, a release and a held key's repeat co
     double clock=100.0;
 
     platform::setTimeSource([&clock]() { return clock; });
+    // a key pressed before the composition, released during it (at once:
+    // held past the repeat delay, its repeat would commit)
+    scene.canvas->inputModifierKey(keys::Left, true);
     scene.canvas->inputCompositionUpdate("xy", 2);
+    scene.canvas->inputModifierKey(keys::Left, false);
+    CHECK(box->isComposing());
     for(const int key: {keys::Shift, keys::Control, keys::Alt, keys::Command})
     {
         scene.canvas->inputModifierKey(key, true);
@@ -455,8 +479,6 @@ TEST_CASE("TextBox composition: a modifier, a release and a held key's repeat co
     CHECK(box->isComposing());
     for(const int key: {keys::Shift, keys::Control, keys::Alt, keys::Command})
         scene.canvas->inputModifierKey(key, false);
-    // the release of a key pressed before the composition
-    scene.canvas->inputModifierKey(keys::Left, false);
     CHECK(box->isComposing());
     CHECK(box->getComposition() == "xy");
     CHECK(scene.ends == 0);

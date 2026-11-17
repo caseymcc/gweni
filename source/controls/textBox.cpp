@@ -699,11 +699,15 @@ void TextBox::onKeyboardFocus()
 // The focus leaving keeps what was composed, as a browser's text field does.
 void TextBox::onLostKeyboardFocus()
 {
-    // the focus has moved already: the platform is told here
     if(m_composition)
     {
+        // Base::focus() tells the box while the focus is still its own, and
+        // endComposition() tells the platform then; unfocus() has moved it
+        // already, and the platform is told here
+        const bool platformTold=(KeyboardFocus == this);
+
         commitPendingComposition();
-        if(!g_compositionEndedByPlatform)
+        if(!platformTold && !g_compositionEndedByPlatform)
             platform::endTextComposition();
     }
     platform::setTextInputRect(false, Rect());

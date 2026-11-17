@@ -2126,16 +2126,18 @@ void CodeEditor::onKeyboardFocus()
     caretChanged();
 }
 
-// Typing after the focus comes back is a step of its own.
+// Typing after the focus comes back is a step of its own. The text input is
+// let go last: Base::focus() calls this while the focus is still the
+// editor's, so caretChanged() asks for it again.
 void CodeEditor::onLostKeyboardFocus()
 {
     ParentClass::onLostKeyboardFocus();
-    if(!m_readOnly)
-        platform::setTextInputRect(false, Rect());
     m_caretBlink.stop(this);
     m_undo.seal();
     m_escapeArmed=false;
     caretChanged();
+    if(!m_readOnly)
+        platform::setTextInputRect(false, Rect());
 }
 
 void CodeEditor::onMouseClickLeft(int x, int y, bool down)
