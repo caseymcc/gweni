@@ -7,7 +7,9 @@
  *  hooks do nothing. Off it holds nothing: shownLayerCount() and shownLayer()
  *  are 0 and a flush uploads no table. Turned on over slots drawn already, it
  *  counts every label a shown slot or run uses, so shownLayer(z) is the number
- *  of used labels below z (an unused label between two used ones takes none),
+ *  of used labels below z, label 0 always counted (its depth is the clear
+ *  value, so layer 0 stays its own and a slot there adds no layer), and an
+ *  unused label between two used ones takes none,
  *  at once, before any flush; the next flush allocates it and uploads it whole
  *  (FrameStats::layerUploadCalls/layerUploadBytes, never uploadCalls/
  *  uploadBytes) and calls the listener once. From then on the table follows a
@@ -122,16 +124,16 @@ TEST_CASE("Layer table: shown layers of primitive slots, following hide, show, z
     renderer.setLayerTableListener([&]{ ++listened; });
     REQUIRE(renderer.layerTable());
     // counted at once, before a flush
-    CHECK(renderer.shownLayerCount() == 3);
+    CHECK(renderer.shownLayerCount() == 4);
     CHECK(renderer.shownLayer(0) == 0);
-    CHECK(renderer.shownLayer(10) == 0);
-    CHECK(renderer.shownLayer(11) == 1);
-    CHECK(renderer.shownLayer(17) == 1);
-    CHECK(renderer.shownLayer(18) == 1);
-    CHECK(renderer.shownLayer(26) == 2);
-    CHECK(renderer.shownLayer(27) == 3);
-    CHECK(renderer.shownLayer(65535) == 3);
-    CHECK(renderer.shownLayer(70000) == 3);
+    CHECK(renderer.shownLayer(10) == 1);
+    CHECK(renderer.shownLayer(11) == 2);
+    CHECK(renderer.shownLayer(17) == 2);
+    CHECK(renderer.shownLayer(18) == 2);
+    CHECK(renderer.shownLayer(26) == 3);
+    CHECK(renderer.shownLayer(27) == 4);
+    CHECK(renderer.shownLayer(65535) == 4);
+    CHECK(renderer.shownLayer(70000) == 4);
     CHECK(renderer.uploads.empty());
     CHECK(listened == 0);
 
@@ -156,24 +158,24 @@ TEST_CASE("Layer table: shown layers of primitive slots, following hide, show, z
 
     // one of two slots at label 26 hidden: the label is still in use
     renderer.frame([&]{ renderer.hidePrimitive(d); });
-    CHECK(renderer.shownLayerCount() == 3);
+    CHECK(renderer.shownLayerCount() == 4);
     CHECK(renderer.uploads.size() == 1);
     CHECK(listened == 1);
 
     // hidden: label 18 takes no layer, those above it move down one
     renderer.frame([&]{ renderer.hidePrimitive(b); });
-    CHECK(renderer.shownLayerCount() == 2);
-    CHECK(renderer.shownLayer(18) == 1);
-    CHECK(renderer.shownLayer(26) == 1);
-    CHECK(renderer.shownLayer(27) == 2);
+    CHECK(renderer.shownLayerCount() == 3);
+    CHECK(renderer.shownLayer(18) == 2);
+    CHECK(renderer.shownLayer(26) == 2);
+    CHECK(renderer.shownLayer(27) == 3);
     REQUIRE(renderer.uploads.size() == 2);
     CHECK(renderer.uploads[1].firstRow == 0);
     CHECK(listened == 2);
 
     // shown again
     renderer.frame([&]{ renderer.showPrimitive(4, b); });
-    CHECK(renderer.shownLayerCount() == 3);
-    CHECK(renderer.shownLayer(26) == 2);
+    CHECK(renderer.shownLayerCount() == 4);
+    CHECK(renderer.shownLayer(26) == 3);
     CHECK(listened == 3);
 
     // a z change high up sends the rows from the first one whose T moved
@@ -182,11 +184,11 @@ TEST_CASE("Layer table: shown layers of primitive slots, following hide, show, z
         renderer.drawRoundedRect(c, Rect(0, 10, 20, 20), 2.0f, 0.0f, Color(10, 20, 30, 255),
             Color(10, 20, 30, 255), Color(), 1000);
     });
-    CHECK(renderer.shownLayerCount() == 3);
-    CHECK(renderer.shownLayer(26) == 2);
-    CHECK(renderer.shownLayer(27) == 2);
-    CHECK(renderer.shownLayer(1000) == 2);
-    CHECK(renderer.shownLayer(1001) == 3);
+    CHECK(renderer.shownLayerCount() == 4);
+    CHECK(renderer.shownLayer(26) == 3);
+    CHECK(renderer.shownLayer(27) == 3);
+    CHECK(renderer.shownLayer(1000) == 3);
+    CHECK(renderer.shownLayer(1001) == 4);
     REQUIRE(renderer.uploads.size() == 4);
     CHECK(renderer.uploads[3].firstRow == 0);
     renderer.frame([&]
@@ -199,13 +201,13 @@ TEST_CASE("Layer table: shown layers of primitive slots, following hide, show, z
     CHECK(renderer.uploads[4].firstRow == 1001/renderer::SlotRenderer::kLayerTableSide);
     CHECK(renderer.uploads[4].rows == renderer::SlotRenderer::kLayerTableSide-3);
     CHECK(renderer.getFrameStats().layerUploadBytes == renderer.uploads[4].rows*kRowBytes);
-    CHECK(renderer.shownLayer(2001) == 3);
+    CHECK(renderer.shownLayer(2001) == 4);
 
     // released
     renderer.frame([&]{ renderer.releasePrimitive(a); });
     renderer.ids.erase(renderer.ids.begin());
-    CHECK(renderer.shownLayerCount() == 2);
-    CHECK(renderer.shownLayer(18) == 0);
+    CHECK(renderer.shownLayerCount() == 3);
+    CHECK(renderer.shownLayer(18) == 1);
 
     // culled wholly outside its clip box: drawn nowhere, so no layer
     renderer.setClipCulling(true);
@@ -215,14 +217,14 @@ TEST_CASE("Layer table: shown layers of primitive slots, following hide, show, z
         renderer.drawRoundedRect(b, Rect(0, 10, 20, 20), 2.0f, 0.0f, Color(10, 20, 30, 255),
             Color(10, 20, 30, 255), Color(), 18);
     });
-    CHECK(renderer.shownLayerCount() == 1);
+    CHECK(renderer.shownLayerCount() == 2);
     renderer.frame([&]
     {
         renderer.setClipRegion(Rect(0, 0, 640, 480));
         renderer.drawRoundedRect(b, Rect(0, 10, 20, 20), 2.0f, 0.0f, Color(10, 20, 30, 255),
             Color(10, 20, 30, 255), Color(), 18);
     });
-    CHECK(renderer.shownLayerCount() == 2);
+    CHECK(renderer.shownLayerCount() == 3);
 
     renderer.setLayerRemap(true);
     CHECK(renderer.layerRemap());
@@ -255,35 +257,40 @@ TEST_CASE("Layer table: a text run's layer follows its hide, show, emptying, z a
         renderer.primitive(4);
         renderer.renderText(text, font, Point(10, 10), 40, "abc");
     });
-    CHECK(renderer.shownLayerCount() == 2);
-    CHECK(renderer.shownLayer(40) == 1);
-    CHECK(renderer.shownLayer(41) == 2);
+    CHECK(renderer.shownLayerCount() == 3);
+    CHECK(renderer.shownLayer(40) == 2);
+    CHECK(renderer.shownLayer(41) == 3);
+
+    // label 0 is layer 0 already
+    renderer.frame([&]{ renderer.primitive(0); });
+    CHECK(renderer.shownLayerCount() == 3);
+    CHECK(renderer.shownLayer(40) == 2);
 
     renderer.frame([&]{ renderer.hideText(text); });
-    CHECK(renderer.shownLayerCount() == 1);
-    renderer.frame([&]{ renderer.showText(text); });
     CHECK(renderer.shownLayerCount() == 2);
+    renderer.frame([&]{ renderer.showText(text); });
+    CHECK(renderer.shownLayerCount() == 3);
 
     // emptied: no glyph to draw
     renderer.frame([&]{ renderer.renderText(text, font, Point(10, 10), 40, ""); });
-    CHECK(renderer.shownLayerCount() == 1);
-    renderer.frame([&]{ renderer.renderText(text, font, Point(10, 10), 40, "abc"); });
     CHECK(renderer.shownLayerCount() == 2);
+    renderer.frame([&]{ renderer.renderText(text, font, Point(10, 10), 40, "abc"); });
+    CHECK(renderer.shownLayerCount() == 3);
 
     // moved in z, the same string kept
     renderer.frame([&]{ renderer.renderText(text, font, Point(12, 10), 2, "abc"); });
-    CHECK(renderer.shownLayerCount() == 2);
-    CHECK(renderer.shownLayer(2) == 0);
-    CHECK(renderer.shownLayer(4) == 1);
-    CHECK(renderer.shownLayer(40) == 2);
+    CHECK(renderer.shownLayerCount() == 3);
+    CHECK(renderer.shownLayer(2) == 1);
+    CHECK(renderer.shownLayer(4) == 2);
+    CHECK(renderer.shownLayer(40) == 3);
 
     // a run counted when the table is turned on
     renderer.setLayerTable(false);
     renderer.setLayerTable(true);
-    CHECK(renderer.shownLayerCount() == 2);
+    CHECK(renderer.shownLayerCount() == 3);
 
     renderer.frame([&]{ renderer.releaseTextPrimitive(text); });
-    CHECK(renderer.shownLayerCount() == 1);
+    CHECK(renderer.shownLayerCount() == 2);
 }
 
 #endif//GWENI_TEST_SLOT_RENDERER

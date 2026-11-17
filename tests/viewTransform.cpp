@@ -17,6 +17,16 @@
  *  nearer one larger about the centre and in front of it: on Vulkan that needs
  *  CLIP_SPACE_TO_API to map z to [0, w], not to [0, 1] as for w = 1, which would
  *  put the nearer layer past the far plane.
+ *  The layer remap (SlotRenderer::setLayerTable, setLayerRemap): overlapping
+ *  slots at gapped labels (a fill, a rounded rect, a polyline and a segment
+ *  across its rim, a text run) draw
+ *  the front view byte for byte with the remap on as with it off, with no view
+ *  transform and under the identity, its frames writing and uploading nothing
+ *  but the table; and under a shear that moves each layer by its z, the same
+ *  slots at gapped labels with the remap on draw exactly what they draw at
+ *  their shown layers (consecutive labels) with it off, glyph fractions and
+ *  occlusion included, where with it off at the gapped labels they land
+ *  elsewhere.
  */
 #include <doctest/doctest.h>
 
@@ -72,6 +82,7 @@ struct Guard
         SlotRenderer &renderer=gweni::test::gpuRenderer();
 
         renderer.clearViewTransform();
+        renderer.setLayerTable(false);
         renderer.setClipRegion(wholeView());
     }
 };
@@ -330,4 +341,114 @@ TEST_CASE("View transform: under a perspective camera the reference layer is the
     CHECK(deep.is((int)cx+45, (int)cy, red));
     CHECK(deep.is((int)cx, (int)cy+18, green));
     CHECK(deep.is((int)cx, (int)cy+22, red));
+}
+
+namespace
+{
+
+//! The gapped labels the remap cases draw at: four used labels, unused ones
+//! between
+const int gappedZ[4]={ 100, 300, 500, 700 };
+
+//! Overlapping slots at z[0..3]: a fill, a rounded rect on it, a polyline and a
+//! segment across it over both, and a text run over all of them
+void drawLayers(SlotRenderer &renderer, Ids &ids, const int z[4])
+{
+    renderer.setClipRegion(wholeView());
+    renderer.setDrawColor(red);
+    renderer.drawFilledRect(ids.prims[0], Rect(20, 20, 200, 120), z[0]);
+    renderer.drawRoundedRect(ids.prims[1], Rect(100, 40, 120, 80), 8.0f, 2.0f,
+        Color(200, 120, 40, 255), Color(120, 60, 20, 255), white, z[1]);
+
+    const PointF a(40.0f, 120.0f), b(140.0f, 30.0f), c(240.0f, 130.0f);
+
+    renderer.setDrawColor(green);
+    renderer.drawLine(ids.prims[2], a, b, 3.0f, z[2], nullptr, &c);
+    renderer.drawLine(ids.prims[3], b, c, 3.0f, z[2], &a, nullptr);
+    // a segment of no polyline at the same z, drawn later, across the first:
+    // it draws over that one's anti-aliased rim, which is half a layer behind
+    renderer.drawLine(ids.prims[4], PointF(30.0f, 50.0f), PointF(210.0f, 125.0f), 2.0f, z[2]);
+    renderer.setDrawColor(white);
+    renderer.renderText(ids.texts[0], gweni::test::openSans(), Point(60, 70), z[3], "Shown layers");
+}
+
+}//namespace
+
+TEST_CASE("View transform: the layer remap draws the front view byte for byte")
+{
+    Guard guard;
+    Ids ids(5, 1);
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
+
+    const Frame front=drawFrame([&](SlotRenderer &r) { drawLayers(r, ids, gappedZ); });
+
+    renderer.setLayerTable(true);
+    renderer.setLayerRemap(true);
+    REQUIRE(renderer.layerRemap());
+
+    const Frame remapped=drawFrame([&](SlotRenderer &r) { drawLayers(r, ids, gappedZ); });
+
+    CHECK(renderer.getFrameStats().layerUploadCalls == 1);
+    CHECK(renderer.frameStats().primitiveSlotsWritten == 0);
+    CHECK(renderer.frameStats().textSlotsWritten == 0);
+    CHECK(renderer.frameStats().uploadBytes == 0);
+    CHECK(differing(front, remapped) == 0);
+
+    renderer.setViewTransform(identity);
+
+    const Frame withIdentity=drawFrame([&](SlotRenderer &r) { drawLayers(r, ids, gappedZ); });
+
+    CHECK(renderer.getFrameStats().layerUploadCalls == 0);
+    CHECK(renderer.frameStats().uploadBytes == 0);
+    CHECK(differing(front, withIdentity) == 0);
+    // something of each was drawn
+    CHECK(front.is(30, 30, red));
+    CHECK(differing(front, drawFrame([&](SlotRenderer &r)
+        {
+            for(size_t id:ids.prims)
+                r.hidePrimitive(id);
+            r.hideText(ids.texts[0]);
+        })) > 1000);
+}
+
+TEST_CASE("View transform: under a shear, gapped labels remapped draw what their shown layers draw")
+{
+    Guard guard;
+    Ids ids(5, 1);
+    SlotRenderer &renderer=gweni::test::gpuRenderer();
+    // each layer 6 px right and 3 px down of the one below it: x' = x + 6z, y' = y + 3z
+    const float shear[16]={ 1, 0, 0, 0, 0, 1, 0, 0, 6, 3, 1, 0, 0, 0, 0, 1 };
+
+    drawFrame([&](SlotRenderer &r) { drawLayers(r, ids, gappedZ); });
+    renderer.setLayerTable(true);
+
+    int layers[4];
+
+    for(int i=0; i<4; ++i)
+        layers[i]=(int)renderer.shownLayer(gappedZ[i]);
+    CAPTURE(layers[0]);
+    CAPTURE(layers[3]);
+    REQUIRE(layers[0] >= 1);
+    // no other shown slot between them in this renderer
+    CHECK(layers[1] == layers[0]+1);
+    CHECK(layers[2] == layers[0]+2);
+    CHECK(layers[3] == layers[0]+3);
+
+    renderer.setViewTransform(shear);
+    renderer.setLayerRemap(true);
+
+    const Frame remapped=drawFrame([&](SlotRenderer &r) { drawLayers(r, ids, gappedZ); });
+
+    CHECK(renderer.frameStats().uploadBytes == 0);
+
+    renderer.setLayerRemap(false);
+
+    const Frame consecutive=drawFrame([&](SlotRenderer &r) { drawLayers(r, ids, layers); });
+    // and the gapped labels as they are: every layer 600 px and more off
+    const Frame raw=drawFrame([&](SlotRenderer &r) { drawLayers(r, ids, gappedZ); });
+
+    CHECK(differing(remapped, consecutive) == 0);
+    CHECK(differing(remapped, raw) > 1000);
+    // the fill, layers[0] layers in: 6 px a layer right, 3 down
+    CHECK(remapped.is(30+6*layers[0], 30+3*layers[0], red));
 }

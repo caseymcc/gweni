@@ -354,8 +354,10 @@ public:
     const float *viewTransform() const { return m_viewTransform; }
 
     //! The layer table, for tools::DepthView: T[z], for every z label, the
-    //! number of labels below z that a shown slot uses, so T maps each used
-    //! label to its shown layer, 0 up, and gives an unused one no depth. A
+    //! number of labels below z that a shown slot uses, label 0 always counted
+    //! as one, so T maps each used label to its shown layer, 1 up, and gives an
+    //! unused one no depth. Layer 0 stays label 0's, the depth-clear plane,
+    //! where nothing passes the LESS test in either view. A
     //! primitive slot is shown while it can show (style not 0, a quad with
     //! area, not clip-culled: m_visibleSlots), at its Vertex::z; a text run
     //! while drawnRange() is not empty (not hidden or culled, glyphs, a text
@@ -376,8 +378,9 @@ public:
     //! exactly what it was. Raises layerRemapChanged() in the backend.
     void setLayerRemap(bool on);
     bool layerRemap() const { return m_layerRemap; }
-    //! The labels a shown slot uses (0 while the table is off), so the
-    //! highest shown layer is shownLayerCount()-1
+    //! The layers the table hands out, layer 0 and one per label above 0 a
+    //! shown slot uses (0 while the table is off), so the highest shown layer
+    //! is shownLayerCount()-1
     size_t shownLayerCount() const;
     //! T[z], z clamped to 0..kMaxZIndex (0 while the table is off)
     size_t shownLayer(int z) const;
@@ -1435,7 +1438,7 @@ private:
         std::vector<uint32_t> runLabels;
         //! T: the labels in use below each label
         std::vector<uint16_t> table;
-        size_t shown=0;     //!< labels in use
+        size_t shown=0;     //!< labels above 0 in use
         //! the lowest label whose count went from or to 0 since the last
         //! flush (kNoLabel: none), so T is built again above it
         uint32_t lowestCrossed=kNoLabel;

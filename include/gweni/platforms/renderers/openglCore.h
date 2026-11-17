@@ -200,10 +200,11 @@ protected:
     void submitFrame() override;
     void indexChunkSlotsChanged() override;
     void viewTransformChanged() override;
-    // the layer table (setLayerTable): not drawn with yet, the remap is #744's next step
-    void allocateLayerTable() override {}
-    void uploadLayerTableRows(size_t, size_t, const uint16_t *) override {}
-    void destroyLayerTable() override {}
+    void allocateLayerTable() override;
+    void uploadLayerTableRows(size_t firstRow, size_t rows, const uint16_t *table) override;
+    void destroyLayerTable() override;
+    //! nothing: each program's layerRemap uniform is set as its draws begin,
+    //! when it differs from layerRemap()
     void layerRemapChanged() override {}
 
 private:
@@ -236,6 +237,19 @@ private:
     //! Unit 0 is setTexture's and the text's atlas, 1 the clip boxes, the image
     //! pages (SlotRenderer::ImageClasses) from this one on
     static constexpr int FirstImageUnit=2;
+    //! the layer table's unit, for both programs' vertex stages, after the pages
+    static constexpr int LayerTableUnit=FirstImageUnit+(int)ImageClasses;
+    //! the layer table (setLayerTable): GL_R16UI, kLayerTableSide square, 0
+    //! while there is none
+    uint32_t m_layerTexture=0;
+    //! each program's layerTable sampler and layerRemap uniforms, and the
+    //! layerRemap value each was last given
+    uint32_t m_layerTableUniform=0;
+    uint32_t m_layerRemapUniform=0;
+    uint32_t m_textLayerTableUniform=0;
+    uint32_t m_textLayerRemapUniform=0;
+    bool m_layerRemapSent=false;
+    bool m_textLayerRemapSent=false;
     //! Each class's GL_TEXTURE_2D_ARRAY, 0 until an image needs it
     unsigned int m_imagePages[ImageClasses]={};
 

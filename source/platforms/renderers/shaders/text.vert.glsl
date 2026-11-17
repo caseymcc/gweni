@@ -6,7 +6,7 @@
 //  The glyph slots' vertex shader body, shared by every backend, behind a
 //  backend's prologue (OpenGLCore::shaderSource, Vulkan/text.vert), which
 //  declares projection and slotBase and defines VERTEX_ID and
-//  CLIP_SPACE_TO_API, as for primitive.vert.glsl.
+//  CLIP_SPACE_TO_API, LAYER_REMAP and LAYER_FETCH, as for primitive.vert.glsl.
 //
 layout (location = 0) in vec3 vertPosition;
 layout (location = 1) in vec2 vertTexCoord;
@@ -23,6 +23,17 @@ out vec2 pixel;    // pixel-space position, the clip boxes' space
 // draws.
 flat out uint slot;
 
+// As primitive.vert.glsl's: glyph i of a run, at its label plus (i+1)/(n+1),
+// stays between the run's shown layer and the next
+float shownLayerZ(float z)
+{
+    float label = floor(z);
+    int i = clamp(int(label), 0, 65535);
+    float t = float(LAYER_FETCH(i));
+
+    return t + (z - label)*(float(LAYER_FETCH(min(i + 1, 65535))) - t);
+}
+
 void main()
 {
     texCoord=vertTexCoord;
@@ -37,6 +48,10 @@ void main()
     // grids of their own, which moved the field under the pixels by up to 1/32 px
     // and its anti-aliased edge by up to 10/255. Coverage and LCD glyphs are on
     // whole pixels already.
-    gl_Position = projection * vec4(floor(vertPosition.xy*16.0 + 0.5)/16.0, vertPosition.z, 1.0f);
+    float z = vertPosition.z;
+
+    if(LAYER_REMAP)
+        z = shownLayerZ(z);
+    gl_Position = projection * vec4(floor(vertPosition.xy*16.0 + 0.5)/16.0, z, 1.0f);
     CLIP_SPACE_TO_API(gl_Position);
 }

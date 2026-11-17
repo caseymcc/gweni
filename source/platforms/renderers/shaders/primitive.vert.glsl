@@ -19,6 +19,11 @@
 //                      API's (nothing for GL; Vulkan maps z to [0, w] as GL's
 //                      viewport transform does, z*0.5 + w*0.5, so every depth is
 //                      computed as on GL)
+//    LAYER_REMAP       a bool expression: whether each z goes through the layer
+//                      table first (SlotRenderer::setLayerRemap; false in the
+//                      front view, where nothing below reads the table)
+//    LAYER_FETCH(i)    the layer table's uint at label i (0..65535): the shown
+//                      labels below it (SlotRenderer::setLayerTable)
 //
 layout (location = 0) in uint style;
 layout (location = 1) in ivec3 inPosition;   // device px (signed) and z (16 bits unsigned, read as GL_SHORT with x and y)
@@ -83,6 +88,17 @@ void trapezoidEdge(float y0, float y1, float w, float inside, out vec4 line, out
 
     line = vec4(s, -s*m, -s*y0, 0.5*(a - b));
     area = vec3(b, 1.0/a, 1.0/(2.0*a*max(b, 1e-20)));
+}
+
+// Label z's shown layer, the layer table's T[floor z], with z's fraction kept
+// between it and the next label's (a glyph's i/(n+1) of a primitive's whole z)
+float shownLayerZ(float z)
+{
+    float label = floor(z);
+    int i = clamp(int(label), 0, 65535);
+    float t = float(LAYER_FETCH(i));
+
+    return t + (z - label)*(float(LAYER_FETCH(min(i + 1, 65535))) - t);
 }
 
 void main()
@@ -152,6 +168,16 @@ void main()
     vPixel = vec2(inPosition.xy);
     // GL_SHORT sign-extends z; its low 16 bits are Vertex::z, 0..65535
     float z = float(inPosition.z & 0xffff);
+    // style 3's depth is half a layer behind its own: half a shown layer under
+    // the table, not the table at z - 0.5, which is z's own layer whenever
+    // label z - 1 is unused
+    float behindZ = z - 0.5;
+
+    if(LAYER_REMAP)
+    {
+        z = shownLayerZ(z);
+        behindZ = z - 0.5;
+    }
 
     if(style == 0u)//item has been hidden, move all coords to 0.0f
         gl_Position = vec4(0.0f, 0.0f, 0.0f, 1.0f);
@@ -162,6 +188,6 @@ void main()
     // GL's window depth of a point half a layer behind; w is exactly 1.0 in the
     // front view, and a view transform's camera (SlotRenderer::setViewTransform)
     // can make it anything
-    vec4 behind = projection * vec4(float(inPosition.x), float(inPosition.y), z - 0.5, 1.0);
+    vec4 behind = projection * vec4(float(inPosition.x), float(inPosition.y), behindZ, 1.0);
     vBehindDepth = behind.z/behind.w*0.5 + 0.5;
 }

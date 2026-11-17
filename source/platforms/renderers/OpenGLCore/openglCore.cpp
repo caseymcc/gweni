@@ -159,8 +159,8 @@ void OpenGLCore::clearDepth()
 struct OpenGLCore::AppState
 {
     //! units 0..UnitCount-1: setTexture's and the atlases', the clip boxes', the
-    //! image pages'
-    static constexpr int UnitCount=FirstImageUnit+(int)ImageClasses;
+    //! image pages', the layer table's
+    static constexpr int UnitCount=LayerTableUnit+1;
 
     GLint program=0;
     GLint vertexArray=0;
@@ -510,6 +510,45 @@ void OpenGLCore::uploadClipBoxRows(SlotPath path, size_t x, size_t y, size_t wid
     glActiveTexture(GL_TEXTURE0);
 }
 
+void OpenGLCore::allocateLayerTable()
+{
+    // on its own unit, as the clip boxes are on theirs; an integer texture is
+    // complete only with nearest filtering, and is read with texelFetch alone
+    if(m_layerTexture == 0)
+        glGenTextures(1, &m_layerTexture);
+    glActiveTexture(GL_TEXTURE0+LayerTableUnit);
+    glBindTexture(GL_TEXTURE_2D, m_layerTexture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R16UI, (GLsizei)kLayerTableSide, (GLsizei)kLayerTableSide, 0,
+        GL_RED_INTEGER, GL_UNSIGNED_SHORT, nullptr);
+    glActiveTexture(GL_TEXTURE0);
+}
+
+void OpenGLCore::uploadLayerTableRows(size_t firstRow, size_t rows, const uint16_t *table)
+{
+    // inside flush(), after begin() set gweni's unpack state (setGweniState),
+    // and with the alignment set here as the atlas uploads set theirs: whole
+    // rows of 16-bit texels
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
+    glActiveTexture(GL_TEXTURE0+LayerTableUnit);
+    glBindTexture(GL_TEXTURE_2D, m_layerTexture);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, (GLint)firstRow, (GLsizei)kLayerTableSide, (GLsizei)rows,
+        GL_RED_INTEGER, GL_UNSIGNED_SHORT, table);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    glActiveTexture(GL_TEXTURE0);
+}
+
+void OpenGLCore::destroyLayerTable()
+{
+    if(m_layerTexture == 0)
+        return;
+    glDeleteTextures(1, &m_layerTexture);
+    m_layerTexture=0;
+}
+
 TextureHandle OpenGLCore::createAtlasTexture(const texture_atlas_t &atlas)
 {
     const bool lcd=(atlas.depth == 3);
@@ -720,6 +759,17 @@ void OpenGLCore::beginPrimitiveDraws()
         glActiveTexture(GL_TEXTURE0+FirstImageUnit+(GLenum)i);
         glBindTexture(GL_TEXTURE_2D_ARRAY, m_imagePages[i]);
     }
+    // the layer table only while the vertex stage reads it (setLayerRemap)
+    if(layerRemap())
+    {
+        glActiveTexture(GL_TEXTURE0+LayerTableUnit);
+        glBindTexture(GL_TEXTURE_2D, m_layerTexture);
+    }
+    if(m_layerRemapSent != layerRemap())
+    {
+        m_layerRemapSent=layerRemap();
+        glUniform1i(m_layerRemapUniform, m_layerRemapSent?1:0);
+    }
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, m_currentTexture);
 }
@@ -774,6 +824,16 @@ void OpenGLCore::beginTextDraws()
 
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, m_textClipTexture);
+    if(layerRemap())
+    {
+        glActiveTexture(GL_TEXTURE0+LayerTableUnit);
+        glBindTexture(GL_TEXTURE_2D, m_layerTexture);
+    }
+    if(m_textLayerRemapSent != layerRemap())
+    {
+        m_textLayerRemapSent=layerRemap();
+        glUniform1i(m_textLayerRemapUniform, m_textLayerRemapSent?1:0);
+    }
     glActiveTexture(GL_TEXTURE0);
 
     // An LCD atlas's runs blend each channel by its own coverage, the fragment
@@ -1026,6 +1086,8 @@ void OpenGLCore::init()
     m_imagesUniform=glGetUniformLocation(m_program, "imagePages");
     m_clipBoxesUniform=glGetUniformLocation(m_program, "clipBoxes");
     m_slotBaseUniform=glGetUniformLocation(m_program, "slotBase");
+    m_layerTableUniform=glGetUniformLocation(m_program, "layerTable");
+    m_layerRemapUniform=glGetUniformLocation(m_program, "layerRemap");
 
     m_textProgram=loadShaders(shaderSource(GLShaderSource::TextVertex, dialect, dualSource).c_str(),
         shaderSource(GLShaderSource::TextFragment, dialect, dualSource).c_str());
@@ -1034,6 +1096,8 @@ void OpenGLCore::init()
     m_textModeUniform=glGetUniformLocation(m_textProgram, "textMode");
     m_textContrastUniform=glGetUniformLocation(m_textProgram, "textContrast");
     m_textSlotBaseUniform=glGetUniformLocation(m_textProgram, "slotBase");
+    m_textLayerTableUniform=glGetUniformLocation(m_textProgram, "layerTable");
+    m_textLayerRemapUniform=glGetUniformLocation(m_textProgram, "layerRemap");
 
     // texture1 stays on unit 0; the clip boxes are on unit 1 for both programs, and
     // the primitive program's image pages on FirstImageUnit on. A uniform is set
@@ -1042,12 +1106,19 @@ void OpenGLCore::init()
 
     for(size_t i=0; i<ImageClasses; ++i)
         imageUnits[i]=FirstImageUnit+(GLint)i;
+    // the layer table on LayerTableUnit for both, read only while layerRemap is 1
     glUseProgram(m_program);
     glUniform1i(m_clipBoxesUniform, 1);
     glUniform1iv(m_imagesUniform, (GLsizei)ImageClasses, imageUnits);
+    glUniform1i(m_layerTableUniform, LayerTableUnit);
+    glUniform1i(m_layerRemapUniform, 0);
     glUseProgram(m_textProgram);
     glUniform1i(m_textClipBoxesUniform, 1);
+    glUniform1i(m_textLayerTableUniform, LayerTableUnit);
+    glUniform1i(m_textLayerRemapUniform, 0);
     glUseProgram(0);
+    m_layerRemapSent=false;
+    m_textLayerRemapSent=false;
 
     glViewport(view.x, view.y, view.w, view.h);
 }
@@ -1073,16 +1144,24 @@ std::string embeddedText(const unsigned char *data, size_t size)
 const char *primitiveVertexPrologue=
     "#define VERTEX_ID gl_VertexID\n"
     "#define CLIP_SPACE_TO_API(p)\n"
+    "#define LAYER_REMAP (layerRemap != 0)\n"
+    "#define LAYER_FETCH(i) texelFetch(layerTable, ivec2((i) & 255, (i) >> 8), 0).r\n"
     "uniform mat4 projection;\n"
-    "uniform int slotBase;\n";
+    "uniform int slotBase;\n"
+    "uniform usampler2D layerTable;\n"
+    "uniform int layerRemap;\n";
 const char *primitiveFragmentPrologue=
     "uniform sampler2DArray imagePages[5];\n"
     "uniform usampler2D clipBoxes;\n";
 const char *textVertexPrologue=
     "#define VERTEX_ID gl_VertexID\n"
     "#define CLIP_SPACE_TO_API(p)\n"
+    "#define LAYER_REMAP (layerRemap != 0)\n"
+    "#define LAYER_FETCH(i) texelFetch(layerTable, ivec2((i) & 255, (i) >> 8), 0).r\n"
     "uniform mat4 projection;\n"
-    "uniform int slotBase;\n";
+    "uniform int slotBase;\n"
+    "uniform usampler2D layerTable;\n"
+    "uniform int layerRemap;\n";
 const char *textFragmentPrologue=
     "uniform sampler2D texture1;\n"
     "uniform usampler2D clipBoxes;\n"

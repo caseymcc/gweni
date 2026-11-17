@@ -1783,7 +1783,7 @@ void SlotRenderer::setLayerRemap(bool on)
 
 size_t SlotRenderer::shownLayerCount() const
 {
-    return m_layers?m_layers->shown:0;
+    return m_layers?m_layers->shown+1:0;
 }
 
 size_t SlotRenderer::shownLayer(int z) const
@@ -1813,12 +1813,13 @@ void SlotRenderer::setLayerLabel(std::vector<uint32_t> &labels, size_t index, ui
     if(old == label)
         return;
     labels[index]=label;
-    if((old != LayerTable::kNoLabel) && (--layers.counts[old] == 0))
+    // label 0 is layer 0 whether or not it is used (buildLayerSums)
+    if((old != LayerTable::kNoLabel) && (--layers.counts[old] == 0) && (old > 0))
     {
         --layers.shown;
         layers.lowestCrossed=std::min(layers.lowestCrossed, old);
     }
-    if((label != LayerTable::kNoLabel) && (layers.counts[label]++ == 0))
+    if((label != LayerTable::kNoLabel) && (layers.counts[label]++ == 0) && (label > 0))
     {
         ++layers.shown;
         layers.lowestCrossed=std::min(layers.lowestCrossed, label);
@@ -1832,11 +1833,13 @@ size_t SlotRenderer::buildLayerSums()
     if(layers.lowestCrossed == LayerTable::kNoLabel)
         return kLayerTableSide;
 
-    // T[z] counts the labels below z, so only those above the crossed one move
+    // T[z] counts the labels below z, so only those above the crossed one move.
+    // Label 0 is always counted: its depth is the depth-clear value, which the
+    // LESS test rejects, so layer 0 stays label 0's and nothing shown lands there.
     const size_t lowest=layers.lowestCrossed;
 
     for(size_t z=lowest; z<size_t(kMaxZIndex); ++z)
-        layers.table[z+1]=uint16_t(layers.table[z]+((layers.counts[z] > 0)?1:0));
+        layers.table[z+1]=uint16_t(layers.table[z]+(((z == 0) || (layers.counts[z] > 0))?1:0));
     layers.lowestCrossed=LayerTable::kNoLabel;
     layers.changed=true;
     return (lowest+1)/kLayerTableSide;
