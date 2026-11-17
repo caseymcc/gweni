@@ -676,8 +676,19 @@
  *                 view open (which has the mouse, so nothing changes), F9, and
  *                 a shell built with the view open, then Escape; the view told
  *                 (DepthView::onOpenChangedCaller) once per open and close.
- *                 One line
- *                   depth-view open=visited:0,... camera_drawn=yes shell_button=yes
+ *                 L (raw z labels, the renderer's layer remap off) and L again
+ *                 are two more of those idle frames, the stack's depth kept
+ *                 and the second the frame before the first; the renderer's
+ *                 layer table is uploaded in the open frame alone (layer: in
+ *                 each frame's counts, never in upload:) and gone once closed.
+ *                 Then the shell at 1024x768 with the view at reset, fitted to
+ *                 its highest shown layer: the shown page's labels must take at
+ *                 least MinDepthViewPageShare (0.6) of the stack's shown
+ *                 layers (page_share=, raw_share= its raw labels' share of the
+ *                 canvas's highest z). One line
+ *                   depth-view open=visited:0,...,layer:131072 ... camera_drawn=yes
+ *                   shell_button=yes layer_switch=yes layer_uploads=yes demo_fitted=yes
+ *                   shown_layers=315 page_share=0.678 raw_share=0.053
  *                 Exits non-zero if any check is no. controltest_depth_view
  *                 (tests/depthView.cmake) runs it twice and requires the same
  *                 PNGs.
@@ -1880,6 +1891,7 @@
 #include <gweni/controls/properties.h>
 #include <gweni/controls/zoomPanel.h>
 #include <gweni/tools/depthView.h>
+#include <gweni/controls/pageControl.h>
 #include <gweni/tools/inspector.h>
 #include <gweni/tools/statsOverlay.h>
 #include <gweni/controls/dialogs/dialog.h>
@@ -1898,6 +1910,7 @@
 #include <cstring>
 #include <fstream>
 #include <functional>
+#include <iomanip>
 #include <set>
 #include <iostream>
 #include <map>
@@ -4376,12 +4389,20 @@ static bool runInspectorScenario(Session &s, const std::string &shotDir, bool &p
 // open, however it was opened or closed.
 //-----------------------------------------------------------------------------
 
+// The least share of the stack's depth the Demo shell's shown page takes at
+// reset, at 1024x768: measured 0.681 on GL (#744; 0.053 in raw labels)
+static constexpr double MinDepthViewPageShare=0.6;
+
 // What one frame did, of the work the view must not cause
 struct DepthViewFrame
 {
     std::string name;
     size_t visited=0, changed=0, primSlots=0, textSlots=0, uploadBytes=0, atlasBytes=0;
     size_t layoutPasses=0, layoutVisited=0, zVisited=0, hitTests=0;
+    //! the renderer's layer table's uploads (FrameStats::layerUploadBytes),
+    //! which are not slots or UI work: made as the view opens, and again only
+    //! when the set of shown labels changes
+    size_t layerBytes=0;
 
     bool idle() const
     {
@@ -4463,6 +4484,7 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
         f.textSlots=gpu.textSlotsWritten;
         f.uploadBytes=gpu.uploadBytes;
         f.atlasBytes=gpu.atlasUploadBytes;
+        f.layerBytes=gpu.layerUploadBytes;
         f.layoutPasses=(size_t)layout.passes;
         f.layoutVisited=layout.visited;
         f.zVisited=s.canvas->getUpdateStats().zVisited;
@@ -4518,6 +4540,27 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
     const bool shotOrtho=shoot(s, shotDir+"/depth-view-ortho.png");
     const DepthView::Camera moved=view->camera();
 
+    // L: raw z labels (the renderer's remap off) and back, the stack's depth,
+    // its spacing times its highest z, kept both ways
+    const float shownHigh=view->highestZ();
+
+    glfwChar(s, 'l');
+    frame("raw");
+
+    const std::vector<uint8_t> raw=framePixels(s);
+    const bool rawLabels=view->rawLabels() && !s.renderer->layerRemap()
+        && view->highestZ() == (float)std::max(s.canvas->highestZIndex(), 1) && view->highestZ() > shownHigh
+        && std::fabs(view->camera().zSpacing*view->highestZ()-moved.zSpacing*shownHigh)
+            <= 1e-3f*moved.zSpacing*shownHigh;
+
+    glfwChar(s, 'l');
+    frame("shown");
+
+    const bool shownAgain=!view->rawLabels() && s.renderer->layerRemap() && view->highestZ() == shownHigh
+        && std::fabs(view->camera().zSpacing-moved.zSpacing) <= 1e-4f*moved.zSpacing
+        && framePixels(s) == ortho;
+    const bool layerSwitch=rawLabels && shownAgain && raw != ortho;
+
     // a click on the toggle, while the view has the input: nothing is pressed
     mouseDown(s, on.x, on.y, false);
     mouseUp(s, on.x, on.y);
@@ -4528,7 +4571,8 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
     // F9 again closes it
     glfwKey(s, GLFW_KEY_F9, GLFW_PRESS, 0);
     glfwKey(s, GLFW_KEY_F9, GLFW_RELEASE, 0);
-    const bool closed=DepthView::find(s.canvas) == nullptr && !s.renderer->hasViewTransform();
+    const bool closed=DepthView::find(s.canvas) == nullptr && !s.renderer->hasViewTransform()
+        && !s.renderer->layerTable();
     frame("close");
 
     const std::vector<uint8_t> after=framePixels(s);
@@ -4637,22 +4681,97 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
     }
     const bool shellFollows=shellFailure.empty();
 
+    // The demo shell at 1024x768, the view opened at reset: the shown page's
+    // share of the stack's depth, its lowest to its highest shown layer over
+    // every shown layer, against what its raw labels would take of the
+    // canvas's highest z (step 1 of #744 measured 0.681 against 0.053)
+    double pageShare=0.0, rawShare=0.0;
+    size_t shownLayers=0;
+    bool fitted=false;
+    {
+        const gweni::Point size=s.size;
+
+        resizeSession(s, 1024, 768);
+
+        gweni::controls::Base *shellControl=addControl(s, "Demo");
+
+        renderFrames(s, 3);
+
+        DepthView *demoView=DepthView::open(s.canvas);
+        auto *pages=static_cast<gweni::controls::PageControl *>(findControl(shellControl, "PageControl", 0));
+
+        renderFrames(s, 1);
+        if(demoView && pages && pages->getCurrentPage())
+        {
+            gweni::controls::Base *page=pages->getCurrentPage();
+            const gweni::renderer::SlotRenderer &slots=*s.renderer;
+            // the page's labels: its own z to its subtree's highest
+            int pageLow=page->getZIndex(), pageHigh=pageLow;
+            std::function<void(gweni::controls::Base *)> walk=[&](gweni::controls::Base *control)
+            {
+                pageHigh=std::max(pageHigh, control->getZIndex());
+                for(gweni::controls::Base *child:control->getChildren())
+                    walk(child);
+            };
+
+            walk(page);
+
+            // the labels shown slots use, T[z+1] > T[z], inside the page's
+            int usedLow=-1, usedHigh=-1;
+
+            for(int z=std::max(pageLow, 1); z <= pageHigh; ++z)
+            {
+                if(slots.shownLayer(z+1) > slots.shownLayer(z))
+                {
+                    if(usedLow < 0)
+                        usedLow=z;
+                    usedHigh=z;
+                }
+            }
+            shownLayers=slots.shownLayerCount();
+            fitted=demoView->camera() == demoView->resetCamera()
+                && demoView->highestZ() == (float)(shownLayers-1);
+            if(usedLow > 0 && shownLayers > 2)
+            {
+                pageShare=double(slots.shownLayer(usedHigh)-slots.shownLayer(usedLow))/double(shownLayers-1);
+                rawShare=double(usedHigh-usedLow)/double(std::max(s.canvas->highestZIndex(), 1));
+            }
+        }
+        DepthView::close(s.canvas);
+        forgetMouse(s);
+        dropControl(s, shellControl);
+        resizeSession(s, size.x, size.y);
+        renderFrames(s, 1);
+    }
+    // well past half, with room for the shell to change
+    const bool pageFills=fitted && pageShare >= MinDepthViewPageShare;
+
     bool idle=true;
 
     for(const DepthViewFrame &f : frames)
         idle=idle && f.idle();
-    passed=idle && clickIgnored && closed && kept && same && drawn && shellFollows;
+    // the table is uploaded as the view opens and never again in these frames:
+    // they show and hide no slot
+    bool layerUploads=!frames.empty() && frames.front().layerBytes > 0;
+
+    for(size_t i=1; i<frames.size(); ++i)
+        layerUploads=layerUploads && frames[i].layerBytes == 0;
+    passed=idle && clickIgnored && closed && kept && same && drawn && shellFollows && layerSwitch
+        && layerUploads && pageFills;
 
     std::cout<<"depth-view";
     for(const DepthViewFrame &f : frames)
         std::cout<<" "<<f.name<<"=visited:"<<f.visited<<",changed:"<<f.changed
                  <<",prim:"<<f.primSlots<<",text:"<<f.textSlots<<",upload:"<<f.uploadBytes+f.atlasBytes
                  <<",layout:"<<f.layoutPasses<<"/"<<f.layoutVisited<<",z:"<<f.zVisited
-                 <<",hit:"<<f.hitTests;
+                 <<",hit:"<<f.hitTests<<",layer:"<<f.layerBytes;
     std::cout<<" idle="<<(idle?"yes":"no")<<" click_ignored="<<(clickIgnored?"yes":"no")
              <<" closed="<<(closed?"yes":"no")<<" kept="<<(kept?"yes":"no")
              <<" same_after="<<(same?"yes":"no")<<" camera_drawn="<<(drawn?"yes":"no")
-             <<" shell_button="<<(shellFollows?"yes":"no")<<"\n";
+             <<" shell_button="<<(shellFollows?"yes":"no")<<" layer_switch="<<(layerSwitch?"yes":"no")
+             <<" layer_uploads="<<(layerUploads?"yes":"no")<<" demo_fitted="<<(fitted?"yes":"no")
+             <<" shown_layers="<<shownLayers<<" page_share="<<std::fixed<<std::setprecision(3)<<pageShare
+             <<" raw_share="<<rawShare<<std::defaultfloat<<"\n";
     if(!passed)
         std::cerr<<"ControlTest: depth-view: "
                  <<(!idle ? "a frame that opened, moved or closed the view did work in the UI"
@@ -4661,7 +4780,12 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
                      : !kept ? "the hover, the focus, the tree or the live ids changed"
                      : !same ? "closed, it did not draw the frame before it opened"
                      : !drawn ? "a camera move did not change what was drawn as it should"
-                     : "the shell's Depth button: "+shellFailure)<<"\n";
+                     : !shellFollows ? "the shell's Depth button: "+shellFailure
+                     : !layerSwitch ? "L did not switch to raw labels and back with the stack's depth kept"
+                     : !layerUploads ? "the layer table was not uploaded as the view opened, or again later"
+                     : !fitted ? "on Demo the camera at reset is not fitted to the highest shown layer"
+                     : "on Demo at 1024x768 the shown page takes less of the stack's depth than "
+                         +std::to_string(MinDepthViewPageShare))<<"\n";
     return shotBefore && shotTurned && shotOrtho && shotAfter;
 }
 
