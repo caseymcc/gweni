@@ -1323,10 +1323,20 @@ void NodeGraph::setLinkFilter(std::function<bool(Pin *from, Pin *to)> filter)
     m_linkFilter=std::move(filter);
 }
 
+// Whether the node of a pin of this graph waits for the canvas's delayed
+// deletes (removeNode() took it off, or the app delayedDelete()d it): no
+// link may reach it, as getNodes() leaves it out.
+static bool pinNodeGoing(const NodeGraph *graph, Pin *pin)
+{
+    const Canvas *canvas=const_cast<NodeGraph *>(graph)->getCanvas();
+
+    return canvas && canvas->isPendingDelete(pin->getNode());
+}
+
 bool NodeGraph::canLink(Pin *a, Pin *b, Pin **from, Pin **to) const
 {
     if(!a || !b || (a == b) || !a->getNode() || !b->getNode() || (a->getNode()->getGraph() != this)
-        || (b->getNode()->getGraph() != this))
+        || (b->getNode()->getGraph() != this) || pinNodeGoing(this, a) || pinNodeGoing(this, b))
         return false;
 
     // the Output first; two of one direction in the order dragged
@@ -1467,7 +1477,8 @@ void NodeGraph::removeNode(Node *node)
 Link *NodeGraph::addLink(Pin *from, Pin *to, LinkStyle style)
 {
     if(!from || !to || (from == to) || !from->getNode() || !to->getNode()
-        || (from->getNode()->getGraph() != this) || (to->getNode()->getGraph() != this))
+        || (from->getNode()->getGraph() != this) || (to->getNode()->getGraph() != this)
+        || pinNodeGoing(this, from) || pinNodeGoing(this, to))
         return nullptr;
 
     Link *link=m_linkLayer->newChild<Link>();

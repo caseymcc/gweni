@@ -558,7 +558,8 @@ public:
 
     //! A new link from \p from to \p to, both pins of nodes in this graph,
     //! marking both connected; null for a pin that is not, or the same pin
-    //! twice. It is in the link layer, under every node.
+    //! twice. It is in the link layer, under every node. Null too for a pin
+    //! whose node waits to be deleted (removeNode(), delayedDelete()).
     Link *addLink(Pin *from, Pin *to, LinkStyle style=LinkStyle::Bezier);
     //! Takes the link off its pins at once (setting each one's connected to
     //! whether it has another link) and deletes it before the next frame's
@@ -644,7 +645,8 @@ public:
     //! direction). Without one, an Input and an Output of two nodes.
     void setLinkFilter(std::function<bool(Pin *from, Pin *to)> filter);
     //! Whether a link dragged from \p a may end on \p b, and the ends it would
-    //! have: \p from and \p to, the Output first.
+    //! have: \p from and \p to, the Output first. False for a pin whose node
+    //! waits to be deleted (removeNode(), delayedDelete()).
     bool canLink(Pin *a, Pin *b, Pin **from=nullptr, Pin **to=nullptr) const;
 
     //! The style of a link the user drags out (Bezier by default).
