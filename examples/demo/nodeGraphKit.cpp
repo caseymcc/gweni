@@ -86,12 +86,22 @@ void NodeGraphMenus::giveLinkMenu(controls::Link *link)
 // A right-click on empty space: the new node is not linked to anything.
 void NodeGraphMenus::onGraphMenu(event::Info)
 {
-    m_addFrom=nullptr;
+    m_addFrom=NoControl;
 }
 
 void NodeGraphMenus::onItemMenu(event::Info info)
 {
-    m_menuTarget=info.controlCaller;
+    m_menuTarget=info.controlCaller?info.controlCaller->getControlId():NoControl;
+}
+
+controls::Pin *NodeGraphMenus::addFrom() const
+{
+    return gweni_cast<controls::Pin>(controls::Base::getControlById(m_addFrom));
+}
+
+controls::Base *NodeGraphMenus::menuTarget() const
+{
+    return controls::Base::getControlById(m_menuTarget);
 }
 
 // The kinds the "Add node" menu offers: a value, a maths operation and a
@@ -139,51 +149,53 @@ controls::Node *NodeGraphMenus::addNodeOfKind(int kind, const PointF &at, contro
 
 void NodeGraphMenus::onAddValue(event::Info)
 {
-    addNodeOfKind(0, m_graph->getContextMenuPosition(), m_addFrom);
-    m_addFrom=nullptr;
+    addNodeOfKind(0, m_graph->getContextMenuPosition(), addFrom());
+    m_addFrom=NoControl;
 }
 
 void NodeGraphMenus::onAddMath(event::Info)
 {
-    addNodeOfKind(1, m_graph->getContextMenuPosition(), m_addFrom);
-    m_addFrom=nullptr;
+    addNodeOfKind(1, m_graph->getContextMenuPosition(), addFrom());
+    m_addFrom=NoControl;
 }
 
 void NodeGraphMenus::onAddMix(event::Info)
 {
-    addNodeOfKind(2, m_graph->getContextMenuPosition(), m_addFrom);
-    m_addFrom=nullptr;
+    addNodeOfKind(2, m_graph->getContextMenuPosition(), addFrom());
+    m_addFrom=NoControl;
 }
 
 // The item whose menu it is, removed as Delete would remove it: its
 // requests fire and may veto.
 void NodeGraphMenus::onDeleteItem(event::Info)
 {
-    if(controls::Node *node=gweni_cast<controls::Node>(m_menuTarget))
+    controls::Base *target=menuTarget();
+
+    if(controls::Node *node=gweni_cast<controls::Node>(target))
         m_graph->selectOnly(node);
-    else if(controls::Link *link=gweni_cast<controls::Link>(m_menuTarget))
+    else if(controls::Link *link=gweni_cast<controls::Link>(target))
         m_graph->selectOnly(link);
     else
         return;
     m_graph->removeSelection();
-    m_menuTarget=nullptr;
+    m_menuTarget=NoControl;
 }
 
 void NodeGraphMenus::onStraight(event::Info)
 {
-    if(controls::Link *link=gweni_cast<controls::Link>(m_menuTarget))
+    if(controls::Link *link=gweni_cast<controls::Link>(menuTarget()))
         link->setStyle(controls::LinkStyle::Straight);
 }
 
 void NodeGraphMenus::onBezier(event::Info)
 {
-    if(controls::Link *link=gweni_cast<controls::Link>(m_menuTarget))
+    if(controls::Link *link=gweni_cast<controls::Link>(menuTarget()))
         link->setStyle(controls::LinkStyle::Bezier);
 }
 
 void NodeGraphMenus::onOrthogonal(event::Info)
 {
-    if(controls::Link *link=gweni_cast<controls::Link>(m_menuTarget))
+    if(controls::Link *link=gweni_cast<controls::Link>(menuTarget()))
         link->setStyle(controls::LinkStyle::Orthogonal);
 }
 
@@ -201,7 +213,7 @@ void NodeGraphMenus::onDroppedOnEmpty(event::Info)
 
     m_graph->openContextMenuAt(m_graph->getDropPosition());
     // after the menu's own handler, which clears it for a right-click
-    m_addFrom=from;
+    m_addFrom=from?from->getControlId():NoControl;
 }
 
 }//namespace nodegraphkit

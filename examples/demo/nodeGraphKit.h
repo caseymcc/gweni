@@ -67,12 +67,22 @@ private:
     void onLinkCreated(event::Info info);
     void onDroppedOnEmpty(event::Info info);
 
+    //! the pin the "Add node" menu's pick links the new node to: the drop's,
+    //! or null once that pin is gone (its node deleted while the menu is open)
+    controls::Pin *addFrom() const;
+    //! the node or link whose menu opened last, null once it is gone
+    controls::Base *menuTarget() const;
+
+    //! what m_addFrom and m_menuTarget hold for no control: never an id
+    static constexpr size_t NoControl=size_t(-1);
+
     controls::NodeGraph *m_graph;
-    //! the node or link whose menu opened last
-    controls::Base *m_menuTarget=nullptr;
-    //! the pin a link dropped on empty space came from, while its "Add node"
-    //! menu is open
-    controls::Pin *m_addFrom=nullptr;
+    //! the control id of the node or link whose menu opened last; an id, not
+    //! a pointer, since the menu outlives a Delete that takes its item
+    size_t m_menuTarget=NoControl;
+    //! the control id of the pin a link dropped on empty space came from,
+    //! while its "Add node" menu is open; Delete may take its node meanwhile
+    size_t m_addFrom=NoControl;
 };
 
 }//namespace nodegraphkit
