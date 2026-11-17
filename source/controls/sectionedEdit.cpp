@@ -679,6 +679,8 @@ bool SectionedEdit::onChar(gweni::UnicodeChar c)
 
 void SectionedEdit::onLostKeyboardFocus()
 {
+    // the word an input method is composing is typed, then read
+    commitCompositionOnFocusLoss();
     commit();
     ParentClass::onLostKeyboardFocus();
 }

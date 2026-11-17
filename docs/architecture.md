@@ -8610,8 +8610,15 @@ Native touchscreens have no feeder yet: desktop GLFW has no touch API.
   (`Canvas::commitHeldComposition`), so the late `compositionend` is dropped. A press
   (`Canvas::inputMouseButton`, a tap's replayed one included) commits it too, before
   it is delivered, so the word goes in where it was typed and not at the caret the
-  press moves to. A control deleted with the focus only ends the platform's (`tests/unit/
-  textBoxComposition.cpp`, `codeEditorTextInput.cpp`; `web_touch`'s `password`).
+  press moves to. A control deleted with the focus only ends the platform's. The
+  canvas holds the control by its id, not a pointer: a focused control detached or
+  moved to another canvas keeps the focus and may be deleted where this canvas never
+  hears of it, so a press looks it up (`Base::getControlById`) and drops the word if
+  it is gone or off the canvas. A `SectionedEdit` (`DateEdit`, `TimeEdit`) reads its
+  text as the focus leaves, so it commits the composition first
+  (`TextBox::commitCompositionOnFocusLoss`): "2:30 " typed and "pm" composing is
+  2:30 PM (`tests/unit/textBoxComposition.cpp`, `timeEdit.cpp`,
+  `codeEditorTextInput.cpp`; `web_touch`'s `password`).
 - **Asking for the keyboard.** A text control calls
   `platform::setTextInputRect(active, caretDeviceRect, kind)` as it gains and loses the
   keyboard focus and as its caret moves (`TextBox::reportTextInput`,

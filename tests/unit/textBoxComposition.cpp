@@ -23,7 +23,10 @@
  *  (another control's focus(), unfocus()) and the platform's composition
  *  ended once, unless the platform committed or cancelled it first; a
  *  control deleted with the focus mid-composition (a TextBox composing, or
- *  one that showed none) ends the platform's composition. A focus that takes no
+ *  one that showed none) ends the platform's composition. A word held for a
+ *  control that keeps the focus but was detached from the canvas, or moved to
+ *  another one, and then kept or deleted goes nowhere: a press on the canvas
+ *  types it into nothing and reads no deleted control. A focus that takes no
  *  composition (a plain control) gets a commit as characters. The platform's
  *  text input (platform::setTextInputRect) is asked for as a box takes the
  *  focus, follows its caret in device px at the canvas's scale (inside a
@@ -647,6 +650,70 @@ TEST_CASE("TextBox composition: a control deleted with a word composing for it e
     delete target;
     CHECK(scene.ends == 2);
     CHECK(KeyboardFocus == nullptr);
+}
+
+// The canvas holds the word by the control's id: a control that keeps the
+// focus off the canvas (detached, or moved to another canvas) is not the
+// press's to type into, and one deleted there is never read again.
+TEST_CASE("TextBox composition: a word held for a control taken off the canvas goes nowhere")
+{
+    Scene scene;
+
+    SUBCASE("detached and kept")
+    {
+        auto *password=scene.canvas->newChild<controls::PasswordTextBox>();
+
+        password->setBounds(10, 50, 200, 24);
+        scene.frame();
+        password->focus();
+        scene.canvas->inputCompositionUpdate("secret", 6);
+        password->setParent(nullptr);
+        scene.canvas->inputMouseMoved(300, 250, 0, 0);
+        scene.canvas->inputMouseButton(0, true);
+        scene.canvas->inputMouseButton(0, false);
+        CHECK(password->getText().empty());
+        KeyboardFocus=nullptr;
+        delete password;
+    }
+    SUBCASE("moved to another canvas and kept")
+    {
+        controls::Canvas *second=new controls::Canvas(&scene.skin);
+        auto *password=scene.canvas->newChild<controls::PasswordTextBox>();
+
+        second->setSize(400, 300);
+        password->setBounds(10, 50, 200, 24);
+        scene.frame();
+        password->focus();
+        scene.canvas->inputCompositionUpdate("secret", 6);
+        password->setParent(second);
+        scene.canvas->inputMouseMoved(300, 250, 0, 0);
+        scene.canvas->inputMouseButton(0, true);
+        scene.canvas->inputMouseButton(0, false);
+        CHECK(password->getText().empty());
+        KeyboardFocus=nullptr;
+        delete second;
+    }
+    SUBCASE("detached and deleted")
+    {
+        // a heap-use-after-free under ASAN if the canvas held the pointer
+        auto *password=scene.canvas->newChild<controls::PasswordTextBox>();
+
+        password->setBounds(10, 50, 200, 24);
+        scene.frame();
+        password->focus();
+        scene.canvas->inputCompositionUpdate("secret", 6);
+        password->setParent(nullptr);
+        delete password;
+        scene.canvas->inputMouseMoved(300, 250, 0, 0);
+        scene.canvas->inputMouseButton(0, true);
+        scene.canvas->inputMouseButton(0, false);
+        CHECK(KeyboardFocus == nullptr);
+    }
+    // nothing is held any more: the next press types nothing anywhere
+    scene.box->focus();
+    scene.canvas->inputMouseButton(0, true);
+    scene.canvas->inputMouseButton(0, false);
+    CHECK(scene.box->getText() == "abcdef");
 }
 
 TEST_CASE("TextBox composition: Ctrl+A commits it first, so the whole text is selected")

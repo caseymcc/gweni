@@ -1158,8 +1158,17 @@ bool Canvas::inputMouseButton(int button, bool down)
 
     // a word composing for a control that shows none goes in where it was
     // typed, before the press can move the caret
-    if(down && m_heldCompositionFor)
-        commitHeldComposition(m_heldCompositionFor);
+    if(down && (m_heldCompositionFor != NoHeldComposition))
+    {
+        // held by id: a control detached or moved off this canvas while it
+        // had the focus may have been deleted since, and its word goes nowhere
+        Base *held=Base::getControlById(m_heldCompositionFor);
+
+        if(held && (held->getCanvas() == this))
+            commitHeldComposition(held);
+        else
+            clearHeldComposition();
+    }
 
     // A release gets its press's answer (canvas.h, "Input"): the release of a
     // press the scene got is the scene's alone, as the press reached no
@@ -2452,7 +2461,7 @@ bool Canvas::inputCompositionUpdate(const String &text, int caret)
         // kept for the focus's leaving when the target shows none of it
         if(!target->onCompositionUpdate(text, caret) && !text.empty())
         {
-            m_heldCompositionFor=target;
+            m_heldCompositionFor=target->getControlId();
             m_heldComposition=text;
         }
         else
@@ -2463,13 +2472,13 @@ bool Canvas::inputCompositionUpdate(const String &text, int caret)
 
 void Canvas::clearHeldComposition()
 {
-    m_heldCompositionFor=nullptr;
+    m_heldCompositionFor=NoHeldComposition;
     m_heldComposition.clear();
 }
 
 void Canvas::commitHeldComposition(Base *control, bool deleting)
 {
-    if(!control || (control != m_heldCompositionFor))
+    if(!control || (control->getControlId() != m_heldCompositionFor))
         return;
 
     const String text=std::move(m_heldComposition);

@@ -21,7 +21,10 @@
  *  not. The minute step: Up and Down by it to its next multiple, a typed
  *  minute kept. onValueChanged once per real change by the user, never from
  *  setTime, setRange, setTwelveHour or setMinuteStep. A format the parse
- *  cannot read back (the minute before the hour, AP not last) refused.
+ *  cannot read back (the minute before the hour, AP not last) refused. A word
+ *  an input method is still composing as the focus leaves (another control's
+ *  focus(), unfocus()) is in the text the field reads: "2:30 " typed and
+ *  "pm" composing is 2:30 PM.
  */
 #include "headlessFixture.h"
 
@@ -364,4 +367,33 @@ TEST_CASE("TimeEdit: a format the parse cannot read back is refused")
     CHECK(edit->getText() == "2.30 PM");
     CHECK(edit->setFormat("H:mm"));
     CHECK(scene.events.count == 0);
+}
+
+// The focus leaving reads the text: a word composing then is typed first, as
+// a phone's keyboard composes every word.
+TEST_CASE("TimeEdit: a word still composing as the focus leaves is read with the text")
+{
+    Scene scene;
+    TimeEdit *edit=scene.edit;
+    controls::Base *other=scene.canvas->newChild<controls::Base>();
+
+    other->setKeyboardInputEnabled(true);
+    edit->setTwelveHour(true);
+    edit->setTime(TimeOfDay(8, 0));
+
+    // another control taking the focus
+    scene.type("2:30 ");
+    scene.canvas->inputCompositionUpdate("pm", 2);
+    other->focus();
+    CHECK(scene.time() == "14:30");
+    CHECK(edit->getText() == "2:30 PM");
+    CHECK(scene.events.count == 1);
+
+    // unfocus()
+    scene.type("3:15 ");
+    scene.canvas->inputCompositionUpdate("pm", 2);
+    edit->unfocus();
+    CHECK(scene.time() == "15:15");
+    CHECK(edit->getText() == "3:15 PM");
+    CHECK(scene.events.count == 2);
 }

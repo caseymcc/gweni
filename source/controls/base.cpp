@@ -4587,7 +4587,7 @@ Rect Base::localRectToDevice(const Rect &local) const
     const float scale=canvas?canvas->scale():1.0f;
     const PointF topLeft=localPosToCanvasF(PointF(float(local.x), float(local.y)));
     const PointF bottomRight=localPosToCanvasF(PointF(float(local.x+local.w), float(local.y+local.h)));
-    const auto snap=[scale](float v) { return static_cast<int>(std::floor(v*scale+0.5f)); };
+    const auto snap=[scale](float v) { return renderer::Base::snap(v, scale); };
     const int left=snap(topLeft.x);
     const int top=snap(topLeft.y);
 

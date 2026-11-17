@@ -422,6 +422,11 @@ protected:
     void endComposition();
     //! Commits what is being composed, if anything (an edit's guard).
     void commitPendingComposition();
+    //! What onLostKeyboardFocus() does first: commits what is being composed
+    //! and ends the platform's composition if focus() did not already. A
+    //! subclass that reads its text as the focus leaves (SectionedEdit) calls
+    //! it before it reads, so the composed word is in the text it reads.
+    void commitCompositionOnFocusLoss();
     //! Tells the platform where the caret is, for its text input
     //! (platform::setTextInputRect), while the box has the focus.
     void reportTextInput();

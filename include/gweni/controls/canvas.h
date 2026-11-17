@@ -1185,9 +1185,12 @@ protected:
     /// An input capture holds the input and is not the touch gesture.
     bool compositionCaptured() const;
     /// The last composition update the focus refused (commitHeldComposition):
-    /// the control (always the keyboard focus: every way the focus leaves
-    /// it clears this) and the text.
-    Base *m_heldCompositionFor=nullptr;
+    /// the control's id (getControlId(), NoHeldComposition for none; the keyboard focus when
+    /// it was held, but a control detached or moved to another canvas keeps
+    /// the focus and may be deleted off this canvas, so it is looked up by id)
+    /// and the text.
+    static constexpr size_t NoHeldComposition=size_t(-1);
+    size_t m_heldCompositionFor=NoHeldComposition;
     String m_heldComposition;
     void clearHeldComposition();
     /// Per mouse button (bit = button, 0..31): its press is held and was the
