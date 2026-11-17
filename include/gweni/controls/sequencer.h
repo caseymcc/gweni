@@ -290,8 +290,11 @@ public:
     // ---- edits by the user --------------------------------------------------
 
     //! The items the last drag moved or resized, while onItemsMoved runs and
-    //! after it, until the next drag.
-    const std::vector<SequencerItem> &getMovedItems() const { return m_moved; }
+    //! after it, until the next drag: a copy, track by track, clips then keys,
+    //! in index order, so a handler that edits while it reads it holds its own.
+    //! A removal moves the indices after it, so a handler removing the moved
+    //! items goes back to front (`for(auto it=moved.rbegin(); ...)`).
+    std::vector<SequencerItem> getMovedItems() const { return m_moved; }
     gweni::event::Caller onItemsMoved;
 
     //! Removes the selection as Delete does.

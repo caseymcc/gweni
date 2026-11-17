@@ -1430,3 +1430,50 @@ TEST_CASE("Sequencer: disabled it hovers nothing and takes no focus, enabled it 
     seq->setDisabled(false);
     CHECK(seq->isHovering());
 }
+
+namespace
+{
+// Removes the moved clips as getMovedItems()'s doc says: from its result, back
+// to front.
+struct RemoveMovedHandler: event::Handler
+{
+    Sequencer *seq=nullptr;
+    std::vector<uint64_t> removed;
+    void moved(event::Info)
+    {
+        const std::vector<SequencerItem> &moved=seq->getMovedItems();
+
+        for(auto it=moved.rbegin(); it != moved.rend(); ++it)
+        {
+            removed.push_back(seq->getClip(it->track, it->index).id);
+            seq->removeClip(it->track, it->index);
+        }
+    }
+};
+}
+
+TEST_CASE("Sequencer: an onItemsMoved handler removes exactly the moved clips from getMovedItems()")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+    RemoveMovedHandler handler;
+
+    handler.seq=seq;
+    seq->onItemsMoved.add(&handler, &RemoveMovedHandler::moved);
+    for(int i=0; i < 4; ++i)
+        seq->addClip(0, 1+2*i, 1.5+2*i, "", 10+i);
+    scene.frame();
+    seq->select(SequencerItem(Kind::Clip, 0, 1));
+    seq->select(SequencerItem(Kind::Clip, 0, 2));
+    const int dx=int(std::lround(0.3*scene.perSecond()));
+    scene.drag(scene.at(0, 3.25), dx);
+    scene.move(Point(scene.at(0, 3.25).x+dx+1, scene.laneMiddle(0)));
+    scene.release();
+    CHECK(scene.movedCalls == 1);
+    CHECK(handler.removed == std::vector<uint64_t>{12, 11});
+    REQUIRE(seq->getClipCount(0) == 2);
+    CHECK(seq->getClip(0, 0).id == 10);
+    CHECK(seq->getClip(0, 1).id == 13);
+    // What the remaining items hold after the handler's edits.
+    CHECK(seq->getMovedItems().empty());
+}

@@ -4931,7 +4931,8 @@ two programs and the draws. What follows describes both together:
   (the nearest; searched in the tracks in view through their indexes, so its cost does
   not follow the item count), shown by the snap guide, else its start to a whole frame,
   and Alt or `setSnapping(false)` snaps to nothing; Escape puts every item back;
-  `onItemsMoved` fires once on a release that moved something (`getMovedItems()`). A
+  `onItemsMoved` fires once on a release that moved something (`getMovedItems()`, a
+  copy in index order, so a handler removing the moved items goes back to front). A
   removal while a drag lasts (a Delete, the app's `removeClip`, `removeKey`,
   `removeTrack`) that takes a dragged item or its track puts every dragged item back
   first, while their indices still hold, and reports nothing, so the app never holds a
