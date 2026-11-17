@@ -66,6 +66,12 @@
 //                composition and let go during it reaches emscripten-glfw's
 //                document listener and commits nothing; a tap elsewhere
 //                blurs the textarea
+//    password    TextBoxDemo: a tap on the PasswordTextBox focuses the page's
+//                password field, not the textarea; "secret" composing for it
+//                (which it shows none of) and a tap on the Copy button leave
+//                the box holding exactly "secret" (the canvas types the word
+//                as the focus leaves) and the password field composing
+//                nothing, no stderr line
 //    desktop     TextBoxDemo with no touch: a click on the box and "ab" and
 //                Backspace typed with the keyboard leave "a" exactly (nothing
 //                typed twice through the textarea), the textarea empty; a
@@ -715,6 +721,35 @@ async function checkIme(browser, base, out)
         `a tap off the box left ${state.focus} focused, the textarea ${left.field ? 'focused' : 'blurred'} `
         + `(${left.blurs} blur(s), 1 wanted)`, 'the focus taken away blurred the textarea');
     await p.close('ime');
+
+    // a phone's keyboard composes every word, a password box shows none of
+    // it: the word must still be the box's when a tap on a button takes the
+    // focus (Log in, Send), not dropped with the browser's late compositionend
+    const w = await Page.open(browser, base, 'TextBoxDemo');
+    const secret = await w.probe('control PasswordTextBox 0');
+    await w.tap({ x: secret.rect.x + secret.rect.w - 5, y: centre(secret.rect).y });
+    const inPassword = await w.page.evaluate(() => ({ password: document.activeElement === Module.gweniInput.password,
+        type: document.activeElement && document.activeElement.type }));
+    expect('password', inPassword.password,
+        `a tap on the PasswordTextBox focused a ${inPassword.type} field, not the page's password field`,
+        'the password box focused the page\'s password field');
+    for(const word of ['s', 'se', 'sec', 'secr', 'secre', 'secret'])
+    {
+        await w.cdp.send('Input.imeSetComposition', { text: word, selectionStart: word.length, selectionEnd: word.length });
+        await w.settle();
+    }
+    const copy = await w.probe('button Copy');
+    await w.tap(centre(copy.rect));
+    await sleep(50);
+    await w.settle();
+    const held = await w.probe('control PasswordTextBox 0');
+    const field = await w.page.evaluate(() => ({ composing: Module.gweniInput.composing,
+        value: Module.gweniInput.password.value }));
+    expect('password', held.text === 'secret' && !field.composing && field.value === '',
+        `"secret" composing and a tap on Copy left the PasswordTextBox "${held.text}" ("secret" wanted), the `
+        + `password field composing ${field.composing}, holding "${field.value}"`,
+        'the word composing went into the password box as the focus left');
+    await w.close('password');
 
     const d = await Page.open(browser, base, 'TextBoxDemo', false);
     const first = await d.probe('control TextBox 0');

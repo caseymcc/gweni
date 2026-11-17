@@ -235,10 +235,10 @@ EM_JS(void, gweni_js_clipboard_listen, (int on), {
         var forPage = function()
         {
             var active = document.activeElement;
-            // the text field of useBrowserInput is gweni's
+            // the text fields of useBrowserInput are gweni's
             var input = Module['gweniInput'];
             return active && active !== document.body && active !== document.documentElement
-                && active !== Module['canvas'] && !(input && active === input.field);
+                && active !== Module['canvas'] && !(input && (active === input.field || active === input.password));
         };
         state.onCopy = function(e)
         {
@@ -333,7 +333,9 @@ EM_JS(char *, gweni_js_clipboard_pasted, (), {
 //   zooming and compatibility mouse events); a touch elsewhere keeps its
 //   defaults, so the page's own links and checkboxes still get their clicks;
 // - a hidden textarea that setTextInputRect() focuses at the caret
-//   (gweni_js_text_input), so a phone opens its keyboard and an input
+//   (gweni_js_text_input; a hidden password field instead for
+//   TextInputKind::Password, Module.gweniInput.password, which the rest
+//   of this says of the textarea too), so a phone opens its keyboard and an input
 //   method's candidate window stands there: its composition events become
 //   gweni_platform_composition, and its beforeinput the text no keydown
 //   delivered (gweni_platform_character) and Backspace, Return and Delete
@@ -364,25 +366,37 @@ EM_JS(void, gweni_js_input_listen, (int on), {
     if(on && !state)
     {
         var canvas = Module['canvas'];
-        var field = document.createElement('textarea');
-        field.setAttribute('autocapitalize', 'off');
-        field.setAttribute('autocorrect', 'off');
-        field.setAttribute('autocomplete', 'off');
-        field.setAttribute('spellcheck', 'false');
-        field.setAttribute('tabindex', '-1');
-        field.setAttribute('aria-hidden', 'true');
-        // 16 px: iOS zooms the page into a smaller focused field
-        field.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:16px;margin:0;padding:0;' +
-            'border:0;outline:none;resize:none;overflow:hidden;white-space:pre;opacity:0;' +
-            'background:transparent;color:transparent;caret-color:transparent;' +
-            'font-size:16px;line-height:16px;pointer-events:none;';
-        document.body.appendChild(field);
+        var makeField = function(tag)
+        {
+            var made = document.createElement(tag);
+            if(tag === 'input')
+                made.type = 'password';
+            made.setAttribute('autocapitalize', 'off');
+            made.setAttribute('autocorrect', 'off');
+            made.setAttribute('autocomplete', tag === 'input' ? 'new-password' : 'off');
+            made.setAttribute('spellcheck', 'false');
+            made.setAttribute('tabindex', '-1');
+            made.setAttribute('aria-hidden', 'true');
+            // 16 px: iOS zooms the page into a smaller focused field
+            made.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:16px;margin:0;padding:0;' +
+                'border:0;outline:none;resize:none;overflow:hidden;white-space:pre;opacity:0;' +
+                'background:transparent;color:transparent;caret-color:transparent;' +
+                'font-size:16px;line-height:16px;pointer-events:none;';
+            document.body.appendChild(made);
+            return made;
+        };
+        // the textarea for text, and a password field for a password's
+        // input (setTextInputRect's kind), which a phone's keyboard types a
+        // character at a time into, neither suggesting nor learning it
+        var field = makeField('textarea');
+        var password = makeField('input');
         // what a page's CSS should say too: a touch on the canvas is gweni's
         canvas.style.touchAction = 'none';
 
-        state = Module['gweniInput'] = { field: field, touches: {}, active: false, composing: false,
-            compositionStart: 0, dropping: false, ended: 0, keysPassed: {}, focuses: 0, blurs: 0,
-            touchesHanded: 0, listeners: [] };
+        state = Module['gweniInput'] = { field: field, password: password, current: field, touches: {},
+            active: false, composing: false, compositionStart: 0, dropping: false, ended: 0, keysPassed: {},
+            focuses: 0, blurs: 0, touchesHanded: 0, listeners: [] };
+        var isField = function(element) { return element === field || element === password; };
 
         var listen = function(target, type, fn, options)
         {
@@ -393,7 +407,7 @@ EM_JS(void, gweni_js_input_listen, (int on), {
         {
             var active = document.activeElement;
             return !active || active === document.body || active === document.documentElement ||
-                active === canvas || active === field;
+                active === canvas || isField(active);
         };
         var withText = function(text, call)
         {
@@ -451,72 +465,75 @@ EM_JS(void, gweni_js_input_listen, (int on), {
             }
             if(e.type === 'keydown' && e.code)
                 state.keysPassed[e.code] = true;
-            if(e.type === 'keydown' && document.activeElement === field && !e.ctrlKey && !e.metaKey &&
+            if(e.type === 'keydown' && isField(document.activeElement) && !e.ctrlKey && !e.metaKey &&
                 typeof e.key === 'string' && Array.from(e.key).length === 1)
                 e.preventDefault();
         };
         listen(window, 'keydown', onKey, true);
         listen(window, 'keyup', onKey, true);
 
-        listen(field, 'compositionstart', function()
+        [field, password].forEach(function(field)
         {
-            state.composing = true;
-            state.dropping = false;
-            state.compositionStart = field.selectionStart;
-        });
-        listen(field, 'input', function(e)
-        {
-            if(e.inputType === 'insertCompositionText')
+            listen(field, 'compositionstart', function()
             {
-                if(!state.composing)
-                    return;
-                var text = e.data || '';
-                var caret = Math.max(0, Math.min(text.length, field.selectionEnd - state.compositionStart));
-                withText(text, function(pointer)
-                {
-                    Module['_gweni_platform_composition'](0, pointer, lengthBytesUTF8(text.slice(0, caret)));
-                });
-            }
-            else if(!state.composing)
-                field.value = '';
-        });
-        listen(field, 'compositionend', function(e)
-        {
-            var text = e.data || '';
-            state.composing = false;
-            field.value = '';
-            if(state.dropping)
-            {
+                state.composing = true;
                 state.dropping = false;
-                return;
-            }
-            if(text === '')
-                Module['_gweni_platform_composition'](2, 0, 0);
-            else
-                withText(text, function(pointer)
-                {
-                    Module['_gweni_platform_composition'](1, pointer, 0);
-                });
-        });
-        // gweni's keys:: codes
-        var keys = { insertLineBreak: 1, insertParagraph: 1, deleteContentBackward: 2, deleteContentForward: 3 };
-        listen(field, 'beforeinput', function(e)
-        {
-            if(e.isComposing || state.composing)
-                return;
-            if(e.inputType === 'insertText' && e.data)
+                state.compositionStart = field.selectionStart;
+            });
+            listen(field, 'input', function(e)
             {
-                e.preventDefault();
-                Array.from(e.data).forEach(function(character)
+                if(e.inputType === 'insertCompositionText')
                 {
-                    Module['_gweni_platform_character'](character.codePointAt(0));
-                });
-            }
-            else if(keys[e.inputType])
+                    if(!state.composing)
+                        return;
+                    var text = e.data || '';
+                    var caret = Math.max(0, Math.min(text.length, field.selectionEnd - state.compositionStart));
+                    withText(text, function(pointer)
+                    {
+                        Module['_gweni_platform_composition'](0, pointer, lengthBytesUTF8(text.slice(0, caret)));
+                    });
+                }
+                else if(!state.composing)
+                    field.value = '';
+            });
+            listen(field, 'compositionend', function(e)
             {
-                e.preventDefault();
-                Module['_gweni_platform_text_key'](keys[e.inputType]);
-            }
+                var text = e.data || '';
+                state.composing = false;
+                field.value = '';
+                if(state.dropping)
+                {
+                    state.dropping = false;
+                    return;
+                }
+                if(text === '')
+                    Module['_gweni_platform_composition'](2, 0, 0);
+                else
+                    withText(text, function(pointer)
+                    {
+                        Module['_gweni_platform_composition'](1, pointer, 0);
+                    });
+            });
+            // gweni's keys:: codes
+            var keys = { insertLineBreak: 1, insertParagraph: 1, deleteContentBackward: 2, deleteContentForward: 3 };
+            listen(field, 'beforeinput', function(e)
+            {
+                if(e.isComposing || state.composing)
+                    return;
+                if(e.inputType === 'insertText' && e.data)
+                {
+                    e.preventDefault();
+                    Array.from(e.data).forEach(function(character)
+                    {
+                        Module['_gweni_platform_character'](character.codePointAt(0));
+                    });
+                }
+                else if(keys[e.inputType])
+                {
+                    e.preventDefault();
+                    Module['_gweni_platform_text_key'](keys[e.inputType]);
+                }
+            });
         });
 
         // a click on the canvas focuses it (emscripten-glfw, on mousedown),
@@ -531,7 +548,7 @@ EM_JS(void, gweni_js_input_listen, (int on), {
             {
                 if(!state.active || Module['gweniInput'] !== state || document.activeElement !== canvas)
                     return;
-                field.focus({ preventScroll: true });
+                state.current.focus({ preventScroll: true });
                 ++state.focuses;
             });
         });
@@ -539,7 +556,7 @@ EM_JS(void, gweni_js_input_listen, (int on), {
         if(typeof GLFW3 !== 'undefined' && typeof GLFW3.isAnyElementFocused === 'function')
         {
             var anyFocused = GLFW3.isAnyElementFocused;
-            GLFW3.isAnyElementFocused = function() { return anyFocused() && document.activeElement !== field; };
+            GLFW3.isAnyElementFocused = function() { return anyFocused() && !isField(document.activeElement); };
             state.listeners.push(function() { GLFW3.isAnyElementFocused = anyFocused; });
         }
         else
@@ -548,9 +565,11 @@ EM_JS(void, gweni_js_input_listen, (int on), {
     else if(!on && state)
     {
         state.listeners.forEach(function(remove) { remove(); });
-        if(document.activeElement === state.field && Module['canvas'])
+        if((document.activeElement === state.field || document.activeElement === state.password) &&
+            Module['canvas'])
             Module['canvas'].focus({ preventScroll: true });
         state.field.remove();
+        state.password.remove();
         Module['gweniInput'] = null;
     }
 });
@@ -562,7 +581,7 @@ EM_JS(void, gweni_js_text_input_end, (), {
     var state = Module['gweniInput'];
     if(!state || !state.composing)
         return;
-    var field = state.field;
+    var field = state.current;
     state.composing = false;
     state.dropping = true;
     ++state.ended;
@@ -578,20 +597,22 @@ EM_JS(void, gweni_js_text_input_end, (), {
     field.focus({ preventScroll: true });
 });
 
-// setTextInputRect(): the textarea to the caret (device px of the canvas's
-// framebuffer) and focused, inside the input call, so inside the tap's or the
-// click's own event handler, which iOS opens a keyboard only from; or, once
-// this task's calls are done (a focus moving from one box to another goes
-// inactive and then active again in one call), blurred, the canvas focused.
-EM_JS(void, gweni_js_text_input, (int active, int x, int y, int w, int h), {
+// setTextInputRect(): the textarea (the password field for a password) to the
+// caret (device px of the canvas's framebuffer) and focused, inside the input
+// call, so inside the tap's or the click's own event handler, which iOS opens
+// a keyboard only from (a move from one field to the other in it keeps the
+// keyboard up); or, once this task's calls are done (a focus moving from one
+// box to another goes inactive and then active again in one call), blurred,
+// the canvas focused.
+EM_JS(void, gweni_js_text_input, (int active, int password, int x, int y, int w, int h), {
     var state = Module['gweniInput'];
     if(!state)
         return;
-    var field = state.field;
     var canvas = Module['canvas'];
     state.active = active !== 0;
     if(state.active)
     {
+        var field = state.current = password ? state.password : state.field;
         var rect = canvas.getBoundingClientRect();
         var sx = canvas.width ? rect.width/canvas.width : 1;
         var sy = canvas.height ? rect.height/canvas.height : 1;
@@ -610,7 +631,8 @@ EM_JS(void, gweni_js_text_input, (int active, int x, int y, int w, int h), {
     }
     Promise.resolve().then(function()
     {
-        if(state.active || Module['gweniInput'] !== state || document.activeElement !== field)
+        var field = document.activeElement;
+        if(state.active || Module['gweniInput'] !== state || (field !== state.field && field !== state.password))
             return;
         field.blur();
         ++state.blurs;
