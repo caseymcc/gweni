@@ -1666,7 +1666,7 @@ void CurveEditor::release()
     const Gesture gesture=m_gesture;
     const bool moved=m_moved;
 
-    endGesture();
+    finishGesture();
 
     switch(gesture)
     {
@@ -1713,12 +1713,23 @@ bool CurveEditor::cancelGesture()
     }
 
     // the release that comes next ends nothing more
-    endGesture();
+    finishGesture();
     m_snapshot=snapshotSelection();
     return true;
 }
 
 void CurveEditor::endGesture()
+{
+    // A marquee ended by anything but its release (the app's curveChanged(),
+    // a disable, a hide, the mouse taken) gives the selection back as Escape
+    // does: the user's action did not finish, so it changed nothing and
+    // fires nothing.
+    if((m_gesture == Gesture::Marquee) && m_moved)
+        restoreSelection(m_snapshot);
+    finishGesture();
+}
+
+void CurveEditor::finishGesture()
 {
     const bool marquee=(m_gesture == Gesture::Marquee) && m_moved;
 

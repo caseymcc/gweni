@@ -7374,7 +7374,9 @@ through each move), Escape putting every key back; a plain click on a key of a s
 makes it the selection. A press on a selected Free key's handle (each `HandleLength` on
 screen from its key along its tangent as drawn) sets that tangent from the key to the
 mouse, both while joined. A press on empty space is a marquee (the keys it touches, added
-with Shift or Ctrl; Escape gives the selection back; let go where pressed it clears the
+with Shift or Ctrl; Escape gives the selection back, and so does anything that ends the
+marquee before its release, `curveChanged()`, `clearCurves()`, a disable or a hide, with
+no event, as the user's action did not finish; let go where pressed it clears the
 selection). A double-click within `CurveHitDistance` of a curve's value at the mouse's
 time adds a key there at `evaluate()` (Unity's). Delete removes the selection, the arrows
 nudge it a plot unit's worth of time or value (Shift ten), and a right-click on a key

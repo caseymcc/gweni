@@ -20,7 +20,8 @@
  *  - the marquee: nothing until PanThreshold, then the keys it touches, each
  *    frame logging a look change for the keys whose selection changed alone,
  *    the release firing onSelectionChanged once, Escape giving the selection
- *    back with no event;
+ *    back with no event, and so does a marquee the app ends before its
+ *    release (curveChanged() of another curve, a disable, a hide);
  *  - a key drag: each frame moving the selection by the mouse's motion in
  *    curve units and firing onChanged once per key it moved (none for a frame
  *    that keeps it), logging the curve's span and key splices; a key dragged
@@ -849,6 +850,48 @@ TEST_CASE("CurveEditor: a marquee selects what it touches, logging only the keys
     scene.key(keys::Shift, false);
     CHECK(editor->getSelection() == refs({{0, 3}, {1, 0}}));
     CHECK(scene.events.selections == 2);
+}
+
+TEST_CASE("CurveEditor: a marquee the app ends gives the selection back with no event")
+{
+    enum class Interrupt { CurveChanged, Disable, Hide };
+
+    for(Interrupt interrupt : {Interrupt::CurveChanged, Interrupt::Disable, Interrupt::Hide})
+    {
+        CAPTURE(int(interrupt));
+        Scene scene;
+        controls::CurveEditor *editor=scene.editor;
+
+        editor->setSelection(refs({{1, 0}}));
+        scene.press(scene.at(150, 10));
+        scene.move(scene.at(320, 100));
+        REQUIRE(editor->marqueeActive());
+        REQUIRE(editor->getSelection() == refs({{0, 3}}));
+
+        switch(interrupt)
+        {
+        case Interrupt::CurveChanged:
+            // the other curve's: the marquee's keys are still the curve's
+            editor->curveChanged(1);
+            break;
+        case Interrupt::Disable:
+            editor->setDisabled(true);
+            editor->setDisabled(false);
+            break;
+        case Interrupt::Hide:
+            editor->hide();
+            editor->show();
+            break;
+        }
+        scene.frame();
+        CHECK(!editor->marqueeActive());
+        // as Escape: the selection the press found, no event
+        CHECK(editor->getSelection() == refs({{1, 0}}));
+        CHECK(scene.events.selections == 0);
+        scene.release();
+        CHECK(editor->getSelection() == refs({{1, 0}}));
+        CHECK(scene.events.selections == 0);
+    }
 }
 
 TEST_CASE("CurveEditor: a key drag moves the selection, past a neighbour too, Escape puts it back")

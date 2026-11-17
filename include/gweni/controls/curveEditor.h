@@ -122,8 +122,10 @@ struct CurveEditorEdit
 //!   (both while the key is not broken); Escape puts it back;
 //! - a left press on empty space starts a marquee, which selects the keys it
 //!   touches (added to the selection with Shift or Ctrl), Escape giving the
-//!   selection back; let go where it was pressed, it clears the selection
-//!   (not with Shift or Ctrl);
+//!   selection back, as does a marquee ended before its release (by
+//!   curveChanged(), clearCurves(), a disable, a hide or the mouse taken),
+//!   which fires nothing; let go where it was pressed, it clears the
+//!   selection (not with Shift or Ctrl);
 //! - a double-click on or near a curve (CurveHitDistance on screen from its
 //!   value at the mouse's time) adds a key there, at the curve's value
 //!   (Curve::addKey(time)), and selects it.
@@ -376,7 +378,10 @@ protected:
     void updateMarquee();
     //! The press in the plot's units, in the view as it is now.
     gweni::PointF pressPoint() const;
+    //! Ends the gesture; a moved marquee's selection is given back first.
     void endGesture();
+    //! Ends the gesture, keeping what it did (the release's and Escape's).
+    void finishGesture();
     //! A pan for a press of \p button (CurvePlot::pressGesture()), or null.
     InputCapture *startPan(int button);
     //! Every dragged key to its press position plus (\p dt, \p dv).
