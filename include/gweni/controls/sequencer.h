@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <set>
 #include <vector>
 
 namespace gweni
@@ -65,6 +66,20 @@ struct SequencerItem
     bool operator!=(const SequencerItem &other) const { return !(*this == other); }
 };
 
+//! Items ordered track by track, clips before keys, by index:
+//! Sequencer::getSelection()'s order.
+struct SequencerItemOrder
+{
+    bool operator()(const SequencerItem &a, const SequencerItem &b) const
+    {
+        if(a.track != b.track)
+            return a.track < b.track;
+        if(a.kind != b.kind)
+            return a.kind == SequencerItem::Kind::Clip;
+        return a.index < b.index;
+    }
+};
+
 //! An animation sequencer, a dope sheet (ImSequencer, a DCC tool's timeline):
 //! tracks of clips (time ranges) and keyframes (instants) on a time axis in
 //! seconds, a playhead, a time zoom and pan, and editing by selecting and
@@ -77,7 +92,9 @@ struct SequencerItem
 //! setTimeFormat(Frames), of whole frames at setFrameRate(). Its labels are
 //! the renderer's text runs, not controls (tickLabelsAreControls()), so a zoom
 //! or a pan lays nothing out: it moves every clip, key and tick in view, the
-//! renderer drawing their slots again (linear in what is in view, by design).
+//! renderer drawing every item's slot again (linear in the items, by design:
+//! each slot is compared with what it holds and only one that differs is
+//! written, so what is uploaded is what is in view).
 //!
 //! The app owns the model; the sequencer holds its view of it, each item with
 //! the app's id: a track's clips in the order added (an index is a place in
@@ -93,7 +110,13 @@ struct SequencerItem
 //!   the selection in time; a drag of a clip's edge (GripWidth units inside
 //!   it, on a clip 3 grips wide or more) resizes that clip, keeping one frame
 //!   at least; onItemsMoved once on the release, getMovedItems() the items;
-//!   Escape puts every item back and fires nothing;
+//!   Escape puts every item back and fires nothing, and so does a removal of
+//!   a dragged item or its track (removeClip(), removeKey(), removeTrack(),
+//!   clearTracks(), a Delete), before the indices move; a removal of any
+//!   other item keeps the drag going, its indices moved with the edit. While
+//!   a drag lasts the dragged tracks' searches are not rebuilt (the dragged
+//!   items keep their overlap levels until the release, and hitTest() finds
+//!   them where they were), so a drag frame costs the same at any count;
 //! - a drag snaps the pressed item's edges to another clip's edge, a key or
 //!   the playhead within SnapDistance on-screen units (the nearest, shown by
 //!   the snap guide, getSnapGuide()), else to whole frames; Alt held, or
@@ -254,8 +277,10 @@ public:
     void select(const SequencerItem &item, bool selected=true);
     void clearSelection();
     bool isSelected(const SequencerItem &item) const;
-    //! The selected items, track by track, clips then keys, in index order.
+    //! The selected items, track by track, clips then keys, in index order
+    //! (kept as a set, so this is linear in the selection, not the items).
     std::vector<SequencerItem> getSelection() const;
+    size_t getSelectionSize() const { return m_selection.size(); }
     //! Fired once per user change of the selection.
     gweni::event::Caller onSelectionChanged;
 
@@ -304,11 +329,20 @@ public:
     const SequencerItem &getHoverItem() const { return m_hoverItem; }
     Part getHoverPart() const { return m_hoverPart; }
 
-    //! Bumped by every change that can move an item's slot or the ruler (the
-    //! items, the selection, the tracks, the view, the layout, the scroll),
-    //! not by the hover or the playhead: the renderer draws the items again
-    //! only when it moved.
+    //! Bumped by every change that can move every item's slot or the ruler
+    //! (the tracks, a removal, the view, the layout, the scroll), not by an
+    //! item's own change, the hover or the playhead: the renderer draws every
+    //! item again only when it moved.
     unsigned getItemsSerial() const { return m_itemsSerial; }
+    //! The renderer's: the items whose slot may have changed on their own
+    //! (moved, set, added, selected, a new overlap level) since the last
+    //! call, moved into \p items (cleared first). False when more than
+    //! MaxChangedItems were noted: then everything is to be drawn again.
+    bool takeChangedItems(std::vector<SequencerItem> &items);
+    static constexpr size_t MaxChangedItems=1024;
+    //! How many times a track's clip or key search was built: an edit's
+    //! track once, a drag's tracks once on its release, never on a drag frame.
+    size_t getSearchBuildCount() const { return m_searchBuilds; }
     //! Bumped by a move of the playhead (and of the view and layout, which
     //! move it on screen).
     unsigned getPlayheadSerial() const { return m_playheadSerial; }
@@ -335,7 +369,6 @@ protected:
     std::vector<axis::Tick> chooseTicks(double min, double max, int width) override;
     bool tickLabelsAreControls() const override { return false; }
     void laneContentMoved() override;
-    void lanesChanged() override;
     int minLaneHeight() const override { return 2*ClipInset+1; }
 
     struct Track
@@ -348,11 +381,29 @@ protected:
     };
 
     const Track *trackAt(size_t track) const { return track < m_tracks.size() ? &m_tracks[track] : nullptr; }
-    void ensureTrack(const Track &track) const;
-    //! An item changed: marks the sequencer and the track's search.
-    void itemsChanged(Track *track);
-    //! Ends any drag with nothing restored (an app edit took its items).
-    void dropDrag();
+    //! The track's searches built again if they are dirty, every clip whose
+    //! overlap level that changes noted.
+    void ensureTrack(size_t track) const;
+    //! An item changed: noted, the sequencer marked, the track's search
+    //! dirtied (unless \p search is false: a drag frame).
+    void itemChanged(const SequencerItem &item, bool search=true);
+    void noteChanged(const SequencerItem &item) const;
+    //! Every item drawn again (the indices moved).
+    void allItemsChanged();
+
+    //! What a removal takes: a whole track, or one item.
+    struct Removal
+    {
+        bool wholeTrack=false;
+        SequencerItem item;
+    };
+    //! \p item after \p removal: false if it is what goes, else its index
+    //! (or track) moved down past it.
+    static bool remap(SequencerItem &item, const Removal &removal);
+    //! Before a removal: a drag holding what goes is cancelled (its items
+    //! put back while their indices hold), and the indices the drag, the
+    //! marquee, the selection and the moved items hold follow the edit.
+    void removing(const Removal &removal);
 
     //! The rect of a clip / key in lane \p track, without the view checks.
     bool clipRect(size_t track, const SequencerClip &clip, Rect &rect) const;
@@ -391,6 +442,10 @@ protected:
 
     std::vector<Track> m_tracks;
     size_t m_itemCount=0;
+    std::set<SequencerItem, SequencerItemOrder> m_selection;
+    mutable std::vector<SequencerItem> m_changed;
+    mutable bool m_changedOverflow=false;
+    mutable size_t m_searchBuilds=0;
 
     double m_fps=30.0;
     TimeFormat m_timeFormat=TimeFormat::Seconds;
@@ -437,6 +492,8 @@ protected:
     std::vector<Original> m_originals;
     std::vector<SequencerItem> m_moved;
     std::vector<SequencerItem> m_pressSelection;
+    //! what the marquee touched as it was last moved, sorted
+    std::vector<SequencerItem> m_marqueeHits;
     //! the marquee's modifiers at the press
     bool m_marqueeAdd=false;
     bool m_marqueeToggle=false;

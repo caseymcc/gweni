@@ -1539,11 +1539,16 @@ private:
 // (Sequencer::getTicks(), getTickLabelRects(), in Colors.Timeline.AxisText),
 // the sequencer's own: its zoom and pan move them and lay nothing out.
 // The lanes, grid, clips, keys and labels are drawn again only when
-// getItemsSerial() moved, the clips changed or the frame marks its geometry,
-// visibility, creation or text (a theme edit), and then each slot only when it
-// differs; a hover alone draws the item it left and the one it reached, a
+// getItemsSerial() moved (the view, the layout, the tracks, a removal), more
+// items changed than Sequencer::MaxChangedItems or the frame marks its
+// geometry, visibility, creation or text (a theme edit), and then each slot
+// only when it differs; otherwise the frame draws the items
+// Sequencer::takeChangedItems() gives (moved, set, added, selected, a new
+// overlap level) and the item the hover left and the one it reached, and a
 // playhead move (getPlayheadSerial()) its two slots, so a drag frame writes
-// the dragged items' slots and the guide's, a scrub frame the playhead's.
+// the dragged items' slots and the guide's, a scrub frame the playhead's, at
+// any count of items. A track's keys share one layer, their slots taken in
+// descending id order so a later key draws in front, as hitTest() picks it.
 // The lists are taken again, all of them back to front, when one outgrows its
 // slots or shrinks to half (the Timeline's rule).
 class Sequencer:public textured::ControlRegister<Sequencer>
@@ -1584,6 +1589,10 @@ public:
     std::vector<size_t> guidePrimitives() const { return lanes::inUse(m_guide); }
     std::vector<size_t> playheadPrimitives() const { return lanes::inUse(m_playhead); }
     std::vector<size_t> labelTexts() const;
+    //! The clips and keys the updates have looked at (drew, or found as
+    //! drawn), counted up: every item in an update that draws them all, the
+    //! changed ones and the hover's in any other.
+    size_t itemsVisited() const { return m_itemsVisited; }
 
     //! What a clip and a key are drawn in, hovered or not.
     static tokyonight::Surface clipLook(const controls::SequencerClip &clip, bool hovered);
@@ -1626,6 +1635,8 @@ private:
     Rect m_drawnViewClip;
     bool m_drawnHovering=false;
     controls::SequencerItem m_drawnHover;
+    std::vector<controls::SequencerItem> m_changed;
+    size_t m_itemsVisited=0;
 };
 
 // A Link: one slot per segment of its polyline (Link::getPoints()), a drawLine

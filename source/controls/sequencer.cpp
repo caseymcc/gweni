@@ -41,15 +41,10 @@ bool intersects(const Rect &a, const Rect &b)
     return a.x < b.x+b.w && b.x < a.x+a.w && a.y < b.y+b.h && b.y < a.y+a.h;
 }
 
-// Items ordered track by track, clips before keys, by index: getSelection()'s
-// order, for a binary search of a selection.
+// getSelection()'s order, for a binary search of a selection.
 bool itemLess(const SequencerItem &a, const SequencerItem &b)
 {
-    if(a.track != b.track)
-        return a.track < b.track;
-    if(a.kind != b.kind)
-        return a.kind == SequencerItem::Kind::Clip;
-    return a.index < b.index;
+    return SequencerItemOrder()(a, b);
 }
 
 bool holds(const std::vector<SequencerItem> &sorted, const SequencerItem &item)
@@ -142,7 +137,11 @@ void Sequencer::removeTrack(size_t track)
     if(track >= m_tracks.size())
         return;
 
-    dropDrag();
+    Removal removal;
+
+    removal.wholeTrack=true;
+    removal.item.track=track;
+    removing(removal);
     m_itemCount-=m_tracks[track].clips.size()+m_tracks[track].keys.size();
     m_tracks.erase(m_tracks.begin()+static_cast<std::ptrdiff_t>(track));
     eraseLane(track);
@@ -153,9 +152,19 @@ void Sequencer::clearTracks()
     if(m_tracks.empty())
         return;
 
-    dropDrag();
+    // nothing is left for a drag to hold or put back
+    m_drag=Drag::None;
+    m_dragStarted=false;
+    m_originals.clear();
+    m_pressSelection.clear();
+    m_marqueeHits.clear();
+    m_marquee=Rect();
+    m_snapGuide=false;
+    m_moved.clear();
+    m_selection.clear();
     m_tracks.clear();
     m_itemCount=0;
+    allItemsChanged();
     eraseLanes();
 }
 
@@ -166,23 +175,152 @@ uint64_t Sequencer::getTrackId(size_t track) const
     return found ? found->id : 0;
 }
 
-void Sequencer::lanesChanged()
-{
-    invalidate();
-    laneContentMoved();
-}
-
 // ---- clips and keys -------------------------------------------------------
 
-void Sequencer::itemsChanged(Track *track)
+void Sequencer::noteChanged(const SequencerItem &item) const
 {
-    if(track)
+    if(m_changedOverflow)
+        return;
+    if(m_changed.size() >= MaxChangedItems)
     {
-        track->clipIndex.dirty=true;
-        track->keyIndex.dirty=true;
+        m_changed.clear();
+        m_changedOverflow=true;
+        return;
     }
+    m_changed.push_back(item);
+}
+
+void Sequencer::itemChanged(const SequencerItem &item, bool search)
+{
+    if(search && item.track < m_tracks.size())
+    {
+        Track &track=m_tracks[item.track];
+
+        if(item.kind == SequencerItem::Kind::Clip)
+            track.clipIndex.dirty=true;
+        else
+            track.keyIndex.dirty=true;
+    }
+    noteChanged(item);
+    addStateChange(StateChange_Background);
+}
+
+void Sequencer::allItemsChanged()
+{
+    m_changed.clear();
+    m_changedOverflow=false;
     ++m_itemsSerial;
     addStateChange(StateChange_Background);
+}
+
+bool Sequencer::takeChangedItems(std::vector<SequencerItem> &items)
+{
+    // the searches first: a rebuilt one notes the clips whose level moved
+    for(size_t t=0; t < m_tracks.size(); ++t)
+    {
+        if(m_tracks[t].clipIndex.dirty || m_tracks[t].keyIndex.dirty)
+            ensureTrack(t);
+    }
+
+    const bool listed=!m_changedOverflow;
+
+    items.clear();
+    items.swap(m_changed);
+    m_changedOverflow=false;
+    return listed;
+}
+
+bool Sequencer::remap(SequencerItem &item, const Removal &removal)
+{
+    if(item.track != removal.item.track)
+    {
+        if(removal.wholeTrack && item.track > removal.item.track)
+            --item.track;
+        return true;
+    }
+    if(removal.wholeTrack)
+        return false;
+    if(item.kind != removal.item.kind)
+        return true;
+    if(item.index == removal.item.index)
+        return false;
+    if(item.index > removal.item.index)
+        --item.index;
+    return true;
+}
+
+void Sequencer::removing(const Removal &removal)
+{
+    auto remapList=[&removal](std::vector<SequencerItem> &items)
+    {
+        std::vector<SequencerItem> kept;
+
+        kept.reserve(items.size());
+        for(SequencerItem item : items)
+        {
+            if(remap(item, removal))
+                kept.push_back(item);
+        }
+        items.swap(kept);
+    };
+
+    if(m_drag == Drag::Move || m_drag == Drag::ResizeLeft || m_drag == Drag::ResizeRight)
+    {
+        bool held=false;
+
+        for(const Original &o : m_originals)
+        {
+            SequencerItem item=o.item;
+
+            held|=!remap(item, removal);
+        }
+        if(held)
+        {
+            // put back while the indices still hold: the app hears of no move
+            endDrag(true);
+            refreshHover();
+        }
+        else
+        {
+            for(Original &o : m_originals)
+                remap(o.item, removal);
+            remap(m_pressItem, removal);
+        }
+    }
+    else if(m_drag == Drag::Marquee)
+    {
+        remapList(m_pressSelection);
+        remapList(m_marqueeHits);
+    }
+    remapList(m_moved);
+    if(m_hovering && !remap(m_hoverItem, removal))
+        setHover(false, SequencerItem(), Part::None);
+
+    // the selection: the items at or after what goes, in its track (or every
+    // later track), taken out and put back moved
+    SequencerItem from=removal.item;
+
+    if(removal.wholeTrack)
+    {
+        from.kind=SequencerItem::Kind::Clip;
+        from.index=0;
+    }
+
+    std::vector<SequencerItem> moved;
+
+    for(auto it=m_selection.lower_bound(from); it != m_selection.end()
+        && (removal.wholeTrack || (it->track == from.track && it->kind == from.kind));)
+    {
+        moved.push_back(*it);
+        it=m_selection.erase(it);
+    }
+    for(SequencerItem item : moved)
+    {
+        if(remap(item, removal))
+            m_selection.insert(item);
+    }
+    // a removal moves the indices after it: every slot drawn again
+    allItemsChanged();
 }
 
 size_t Sequencer::addClip(size_t track, double start, double end, const String &surface, uint64_t id)
@@ -201,7 +339,7 @@ size_t Sequencer::addClip(size_t track, double start, double end, const String &
     clip.id=id;
     m_tracks[track].clips.push_back(std::move(clip));
     ++m_itemCount;
-    itemsChanged(&m_tracks[track]);
+    itemChanged(SequencerItem(SequencerItem::Kind::Clip, track, m_tracks[track].clips.size()-1));
     refreshHover();
     return m_tracks[track].clips.size()-1;
 }
@@ -221,7 +359,7 @@ void Sequencer::setClip(size_t track, size_t index, double start, double end)
 
     clip.start=start;
     clip.end=end;
-    itemsChanged(&m_tracks[track]);
+    itemChanged(SequencerItem(SequencerItem::Kind::Clip, track, index));
     refreshHover();
 }
 
@@ -230,10 +368,13 @@ void Sequencer::removeClip(size_t track, size_t index)
     if(track >= m_tracks.size() || index >= m_tracks[track].clips.size())
         return;
 
-    dropDrag();
+    Removal removal;
+
+    removal.item=SequencerItem(SequencerItem::Kind::Clip, track, index);
+    removing(removal);
     m_tracks[track].clips.erase(m_tracks[track].clips.begin()+static_cast<std::ptrdiff_t>(index));
     --m_itemCount;
-    itemsChanged(&m_tracks[track]);
+    m_tracks[track].clipIndex.dirty=true;
     m_hovering=false;
     refreshHover();
 }
@@ -261,7 +402,7 @@ int Sequencer::getOverlapLevel(size_t track, size_t index) const
     if(!found || index >= found->clips.size())
         return 0;
 
-    ensureTrack(*found);
+    ensureTrack(track);
     return found->clipIndex.levels[index];
 }
 
@@ -276,7 +417,7 @@ size_t Sequencer::addKey(size_t track, double time, uint64_t id)
     key.id=id;
     m_tracks[track].keys.push_back(key);
     ++m_itemCount;
-    itemsChanged(&m_tracks[track]);
+    itemChanged(SequencerItem(SequencerItem::Kind::Key, track, m_tracks[track].keys.size()-1));
     refreshHover();
     return m_tracks[track].keys.size()-1;
 }
@@ -292,7 +433,7 @@ void Sequencer::setKey(size_t track, size_t index, double time)
         return;
 
     key.time=time;
-    itemsChanged(&m_tracks[track]);
+    itemChanged(SequencerItem(SequencerItem::Kind::Key, track, index));
     refreshHover();
 }
 
@@ -301,10 +442,13 @@ void Sequencer::removeKey(size_t track, size_t index)
     if(track >= m_tracks.size() || index >= m_tracks[track].keys.size())
         return;
 
-    dropDrag();
+    Removal removal;
+
+    removal.item=SequencerItem(SequencerItem::Kind::Key, track, index);
+    removing(removal);
     m_tracks[track].keys.erase(m_tracks[track].keys.begin()+static_cast<std::ptrdiff_t>(index));
     --m_itemCount;
-    itemsChanged(&m_tracks[track]);
+    m_tracks[track].keyIndex.dirty=true;
     m_hovering=false;
     refreshHover();
 }
@@ -344,12 +488,18 @@ uint64_t Sequencer::getItemId(const SequencerItem &item) const
 
 // The clips searched by start with their overlap levels, and the keys as
 // instants, the later of two at one point found (pick()'s rule is the earlier
-// at a level, so the keys' search keeps the highest index itself).
-void Sequencer::ensureTrack(const Track &track) const
+// at a level, so the keys' search keeps the highest index itself). A clip
+// whose level the build changed is noted for the renderer.
+void Sequencer::ensureTrack(size_t trackIndex) const
 {
+    const Track &track=m_tracks[trackIndex];
+
     if(track.clipIndex.dirty)
     {
         const std::vector<SequencerClip> &clips=track.clips;
+        const std::vector<int> before=track.clipIndex.levels;
+
+        ++m_searchBuilds;
 
         track.clipIndex.build(clips.size(), [&clips](size_t i, double &start, double &end)
         {
@@ -357,11 +507,20 @@ void Sequencer::ensureTrack(const Track &track) const
             end=clips[i].end;
             return finite(start, end);
         }, MaxOverlapLevel);
+
+        const std::vector<int> &after=track.clipIndex.levels;
+
+        for(size_t i=0; i < after.size(); ++i)
+        {
+            if(i >= before.size() || before[i] != after[i])
+                noteChanged(SequencerItem(SequencerItem::Kind::Clip, trackIndex, i));
+        }
     }
     if(track.keyIndex.dirty)
     {
         const std::vector<SequencerKey> &keys=track.keys;
 
+        ++m_searchBuilds;
         track.keyIndex.build(keys.size(), [&keys](size_t i, double &start, double &end)
         {
             start=keys[i].time;
@@ -382,8 +541,13 @@ void Sequencer::setFrameRate(double fps)
 
     m_fps=fps;
     // the least span and the frame ticks follow it
+    const double start=m_viewStart;
+    const double end=m_viewEnd;
+
     setViewRange(m_viewStart, m_viewEnd);
-    viewChanged();
+    // setViewRange() told the view of it only if the span moved
+    if(start == m_viewStart && end == m_viewEnd)
+        viewChanged();
 }
 
 void Sequencer::setTimeFormat(TimeFormat format)
@@ -581,9 +745,12 @@ bool Sequencer::setSelectedFlag(const SequencerItem &item, bool selected)
         return false;
 
     flag=selected;
+    if(selected)
+        m_selection.insert(item);
+    else
+        m_selection.erase(item);
     // the item's look alone; its search is unchanged
-    ++m_itemsSerial;
-    addStateChange(StateChange_Background);
+    itemChanged(item, false);
     return true;
 }
 
@@ -608,24 +775,7 @@ void Sequencer::clearSelection()
 
 std::vector<SequencerItem> Sequencer::getSelection() const
 {
-    std::vector<SequencerItem> selection;
-
-    for(size_t t=0; t < m_tracks.size(); ++t)
-    {
-        const Track &track=m_tracks[t];
-
-        for(size_t i=0; i < track.clips.size(); ++i)
-        {
-            if(track.clips[i].selected)
-                selection.emplace_back(SequencerItem::Kind::Clip, t, i);
-        }
-        for(size_t i=0; i < track.keys.size(); ++i)
-        {
-            if(track.keys[i].selected)
-                selection.emplace_back(SequencerItem::Kind::Key, t, i);
-        }
-    }
-    return selection;
+    return std::vector<SequencerItem>(m_selection.begin(), m_selection.end());
 }
 
 void Sequencer::restoreSelection(const std::vector<SequencerItem> &selection)
@@ -727,7 +877,7 @@ Sequencer::Part Sequencer::hitTest(const Point &local, SequencerItem &item) cons
     const size_t trackIndex=static_cast<size_t>(laneIndex);
     const Track &track=m_tracks[trackIndex];
 
-    ensureTrack(track);
+    ensureTrack(trackIndex);
 
     // the keys first, drawn in front of the clips: the later of two under the
     // point, the walk keeping the highest index itself
@@ -925,6 +1075,7 @@ void Sequencer::onMouseClickLeft(int x, int y, bool down)
 
         m_drag=Drag::Marquee;
         m_pressSelection=getSelection();
+        m_marqueeHits.clear();
         m_marqueeAdd=shift && !ctrl;
         m_marqueeToggle=ctrl;
         m_marquee=Rect(local.x, local.y, 0, 0);
@@ -1013,6 +1164,8 @@ InputCapture *Sequencer::pressGesture(int button)
 // Ctrl+wheel zooms time about the cursor; the plain wheel scrolls the tracks.
 bool Sequencer::onMouseWheeled(int delta)
 {
+    if(isDisabled())
+        return false;
     if(input::isControlDown())
     {
         const Point local=canvasPosToLocal(input::getMousePosition());
@@ -1027,6 +1180,8 @@ bool Sequencer::onMouseWheeled(int delta)
 // The horizontal wheel (Shift+wheel) pans time.
 bool Sequencer::onMouseWheeledH(int delta)
 {
+    if(isDisabled())
+        return false;
     panBy(-delta/60.0*WheelPanFraction*(m_viewEnd-m_viewStart));
     return true;
 }
@@ -1093,7 +1248,10 @@ double Sequencer::snapEdge(double t, bool allowItems, double &distance, bool &gu
             const size_t trackIndex=static_cast<size_t>(lane);
             const Track &track=m_tracks[trackIndex];
 
-            ensureTrack(track);
+            // a drag leaves its tracks' searches as at the press (built again
+            // here only after an edit of the app's): the dragged items in
+            // them are passed over, every other item is where it was
+            ensureTrack(trackIndex);
 
             const internal::LaneBarIndex &clips=track.clipIndex;
             size_t pos=static_cast<size_t>(std::lower_bound(clips.starts.begin(), clips.starts.end(), t-window)
@@ -1197,7 +1355,7 @@ void Sequencer::dragTo(const Point &local)
                 {
                     clip.start=o.start+dt;
                     clip.end=o.end+dt;
-                    itemsChanged(&track);
+                    itemChanged(o.item, false);
                 }
             }
             else
@@ -1207,7 +1365,7 @@ void Sequencer::dragTo(const Point &local)
                 if(key.time != o.start+dt)
                 {
                     key.time=o.start+dt;
-                    itemsChanged(&track);
+                    itemChanged(o.item, false);
                 }
             }
         }
@@ -1241,7 +1399,7 @@ void Sequencer::dragTo(const Point &local)
         {
             clip.start=start;
             clip.end=end;
-            itemsChanged(&track);
+            itemChanged(pressed.item, false);
         }
     }
 
@@ -1277,7 +1435,7 @@ void Sequencer::marqueeTo(const Point &local)
         const size_t trackIndex=static_cast<size_t>(lane);
         const Track &track=m_tracks[trackIndex];
 
-        ensureTrack(track);
+        ensureTrack(trackIndex);
 
         const double low=timeAt(rect.x-KeySize);
         const double high=timeAt(rect.x+rect.w+KeySize);
@@ -1302,21 +1460,17 @@ void Sequencer::marqueeTo(const Point &local)
     }
     std::sort(hits.begin(), hits.end(), itemLess);
 
-    // every item is as at the press, or, in the rect, selected (toggled)
-    for(const SequencerItem &item : getSelection())
+    // every item is as at the press (none for a plain marquee), or, in the
+    // rect, selected (toggled): only what the rect left and what it touches
+    // can change
+    for(const SequencerItem &item : m_marqueeHits)
     {
-        const bool base=(m_marqueeAdd || m_marqueeToggle) && holds(m_pressSelection, item);
-
         if(!holds(hits, item))
-            setSelectedFlag(item, base);
-    }
-    for(const SequencerItem &item : m_pressSelection)
-    {
-        if(!holds(hits, item) && (m_marqueeAdd || m_marqueeToggle))
-            setSelectedFlag(item, true);
+            setSelectedFlag(item, (m_marqueeAdd || m_marqueeToggle) && holds(m_pressSelection, item));
     }
     for(const SequencerItem &item : hits)
         setSelectedFlag(item, m_marqueeToggle ? !holds(m_pressSelection, item) : true);
+    m_marqueeHits.swap(hits);
 }
 
 void Sequencer::scrubTo(const Point &local)
@@ -1344,12 +1498,33 @@ void Sequencer::endDrag(bool cancelled)
         addStateChange(StateChange_Background);
     }
 
+    // the dragged tracks' searches were left as at the press
+    auto dirtyDragged=[this]()
+    {
+        for(const Original &o : m_originals)
+        {
+            if(o.item.track < m_tracks.size())
+            {
+                Track &track=m_tracks[o.item.track];
+
+                if(o.item.kind == SequencerItem::Kind::Clip)
+                    track.clipIndex.dirty=true;
+                else
+                    track.keyIndex.dirty=true;
+            }
+        }
+        // the levels the release changes are drawn
+        addStateChange(StateChange_Background);
+    };
+
     switch(drag)
     {
     case Drag::Move:
     case Drag::ResizeLeft:
     case Drag::ResizeRight:
     {
+        if(started)
+            dirtyDragged();
         if(cancelled)
         {
             for(const Original &o : m_originals)
@@ -1364,13 +1539,13 @@ void Sequencer::endDrag(bool cancelled)
                     {
                         clip.start=o.start;
                         clip.end=o.end;
-                        itemsChanged(&track);
+                        itemChanged(o.item, false);
                     }
                 }
                 else if(track.keys[o.item.index].time != o.start)
                 {
                     track.keys[o.item.index].time=o.start;
-                    itemsChanged(&track);
+                    itemChanged(o.item, false);
                 }
             }
             m_originals.clear();
@@ -1420,7 +1595,8 @@ void Sequencer::endDrag(bool cancelled)
     }
     case Drag::Marquee:
     {
-        if(m_dragStarted || started)
+        m_marqueeHits.clear();
+        if(started)
         {
             m_marquee=Rect();
             addStateChange(StateChange_Background);
@@ -1450,19 +1626,6 @@ void Sequencer::endDrag(bool cancelled)
     m_marquee=Rect();
 }
 
-void Sequencer::dropDrag()
-{
-    if(m_drag == Drag::None)
-        return;
-
-    m_drag=Drag::None;
-    m_dragStarted=false;
-    m_originals.clear();
-    m_marquee=Rect();
-    m_snapGuide=false;
-    addStateChange(StateChange_Background);
-}
-
 bool Sequencer::onKeyEscape(bool down)
 {
     if(m_drag == Drag::None)
@@ -1487,10 +1650,16 @@ bool Sequencer::onKeyDelete(bool down)
 // Back to front, so the indices of the items still to go hold.
 void Sequencer::removeSelection()
 {
+    // a drag of the selection is put back first, so the app hears of no move
+    if(m_drag == Drag::Move || m_drag == Drag::ResizeLeft || m_drag == Drag::ResizeRight)
+    {
+        endDrag(true);
+        refreshHover();
+    }
+
     const std::vector<SequencerItem> selection=getSelection();
     bool removed=false;
 
-    dropDrag();
     for(auto it=selection.rbegin(); it != selection.rend(); ++it)
     {
         const SequencerItem item=*it;

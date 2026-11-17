@@ -4404,7 +4404,14 @@ void Sequencer::takeLists(renderer::Base *renderer, size_t laneCount, size_t gri
     for(size_t i=0; i<clips.size(); ++i)
         taker.take(m_clips[i], clips[i], lanes::capacity(clips[i]));
     for(size_t i=0; i<keys.size(); ++i)
+    {
         taker.take(m_keys[i], keys[i], lanes::capacity(keys[i]));
+        // a track's keys share a layer, where the slot drawn first is what
+        // shows: key i takes the list's i-th highest id, so a later key is
+        // drawn before the earlier ones and in front of them, as the hit
+        // test picks it (a key added later takes a lower id still)
+        std::reverse(m_keys[i].ids.begin(), m_keys[i].ids.end());
+    }
     // the overlays in front of every item
     taker.take(m_marquee, 1, 1);
     taker.take(m_guide, 1, 1);
@@ -4457,6 +4464,9 @@ void Sequencer::update(renderer::Base *renderer, controls::Base *baseControl)
     const size_t gridCount=ticks.size()+2;
     const bool drawing=baseControl->visible() && (area.w > 0) && (area.h > 0);
     bool retaken=false;
+    // the items that changed on their own since the last draw, taken every
+    // frame (false: too many, everything drawn again)
+    const bool listed=seq->takeChangedItems(m_changed);
 
     if(drawing)
     {
@@ -4574,7 +4584,7 @@ void Sequencer::update(renderer::Base *renderer, controls::Base *baseControl)
         return;
     }
 
-    const bool stale=all || retaken || !m_drawnAll || (seq->getItemsSerial() != m_drawnSerial)
+    const bool stale=all || retaken || !listed || !m_drawnAll || (seq->getItemsSerial() != m_drawnSerial)
         || ((sc&controls::StateChange_Text) != 0)
         || !(areaClip == m_drawnAreaClip) || !(viewClip == m_drawnViewClip);
     const bool hovering=seq->isHovering();
@@ -4588,6 +4598,7 @@ void Sequencer::update(renderer::Base *renderer, controls::Base *baseControl)
         SlotList &list=m_clips[track];
         gweni::Rect rect;
 
+        ++m_itemsVisited;
         if(index >= list.used)
             return;
         if(!seq->getClipRect(track, index, rect))
@@ -4606,6 +4617,7 @@ void Sequencer::update(renderer::Base *renderer, controls::Base *baseControl)
         SlotList &list=m_keys[track];
         gweni::Rect rect;
 
+        ++m_itemsVisited;
         if(index >= list.used)
             return;
         if(!seq->getKeyRect(track, index, rect))
@@ -4693,13 +4705,20 @@ void Sequencer::update(renderer::Base *renderer, controls::Base *baseControl)
         m_drawnAreaClip=areaClip;
         m_drawnViewClip=viewClip;
     }
-    else if(hovering != m_drawnHovering || !(hover == m_drawnHover))
+    else
     {
-        // the item the hover left and the one it reached
-        if(m_drawnHovering)
-            drawItem(m_drawnHover);
-        if(hovering)
-            drawItem(hover);
+        // the items that changed, and the one the hover left and the one it
+        // reached: what a drag, a selection or a hover frame writes, at any
+        // count of items
+        for(const controls::SequencerItem &item : m_changed)
+            drawItem(item);
+        if(hovering != m_drawnHovering || !(hover == m_drawnHover))
+        {
+            if(m_drawnHovering)
+                drawItem(m_drawnHover);
+            if(hovering)
+                drawItem(hover);
+        }
     }
     m_drawnHovering=hovering;
     m_drawnHover=hover;

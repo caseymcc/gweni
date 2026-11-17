@@ -8,7 +8,7 @@
  *  canvas's input. It pins: time and x through the view at two zooms (a
  *  zoom about a point keeps that point's time where it was, Ctrl+wheel zooms
  *  about the cursor, Shift+wheel and a middle drag pan, the plain wheel does
- *  not move time); the hit test (a key in front of a clip, the later of two
+ *  not move time; disabled, neither moves time); the hit test (a key in front of a clip, the later of two
  *  overlapping clips and of two keys at one instant, a clip's edge grips, the
  *  ruler, nothing in a gap); a body drag snapping the pressed clip's edges to
  *  another track's clip edge, a key and the playhead within SnapDistance
@@ -17,9 +17,14 @@
  *  the other edge keeping one frame; selection by click, Shift, Ctrl (an item
  *  toggled off not dragged), a plain press on a selected item keeping the
  *  group for a drag and its release selecting it alone, and a marquee
- *  (plain, Shift, Ctrl, Escape restoring, a click on empty space clearing),
+ *  (plain, Shift, Ctrl, Escape restoring, a click on empty space clearing,
+ *  an item it shrinks off going back to its state at the press),
  *  onSelectionChanged once per change; Escape putting a drag back with no
- *  event; onItemsMoved once per release that moved something (none for a
+ *  event; a removal during a drag (a vetoed Delete, the app's removeClip()
+ *  or removeTrack() of a dragged item) putting the drag back with no event,
+ *  and one of another item keeping it going on its items' moved indices; no
+ *  track's search built on a drag frame, each dragged track's once after the
+ *  release; onItemsMoved once per release that moved something (none for a
  *  drag back to where it began), a whole group moving together; Delete
  *  through the veto; and the playhead's keys (Left and Right a frame, Home
  *  and End the range's ends, held to the range), a scrub in the ruler on
@@ -227,6 +232,23 @@ TEST_CASE("Sequencer: time and x through the view at two zooms, zoom about the c
     scene.canvas->inputMouseButton(2, false);
     CHECK(seq->getViewStart() == doctest::Approx(panned+100/scene.perSecond()));
     CHECK(scene.canvas->inputCapture() == nullptr);
+
+    // disabled, neither Ctrl+wheel nor Shift+wheel moves time, and the
+    // horizontal wheel is not taken
+    const double viewStart=seq->getViewStart();
+    const double viewEnd=seq->getViewEnd();
+
+    seq->setDisabled(true);
+    scene.move(cursor);
+    scene.canvas->inputModifierKey(keys::Control, true);
+    scene.canvas->inputMouseWheel(60);
+    scene.canvas->inputModifierKey(keys::Control, false);
+    scene.canvas->inputModifierKey(keys::Shift, true);
+    scene.canvas->inputMouseWheel(-60);
+    scene.canvas->inputModifierKey(keys::Shift, false);
+    CHECK(!seq->onMouseWheeledH(-60));
+    CHECK(seq->getViewStart() == viewStart);
+    CHECK(seq->getViewEnd() == viewEnd);
 }
 
 TEST_CASE("Sequencer: the hit test finds keys before clips, the later overlap, the edge grips and the ruler")
@@ -502,6 +524,12 @@ TEST_CASE("Sequencer: selection by click, Ctrl and a marquee, Escape restoring")
     scene.move(to);
     CHECK(seq->marqueeActive());
     CHECK(seq->getSelection() == std::vector<SequencerItem>{a, b, k});
+    // shrunk back over tracks 0 and 1, the key it left is unselected again,
+    // and over 3 once more it is selected
+    scene.move(Point(to.x, scene.laneMiddle(1)));
+    CHECK(seq->getSelection() == std::vector<SequencerItem>{a, b});
+    scene.move(to);
+    CHECK(seq->getSelection() == std::vector<SequencerItem>{a, b, k});
     CHECK(scene.selectionCalls == 3);
     scene.release();
     CHECK(scene.selectionCalls == 4);
@@ -527,6 +555,11 @@ TEST_CASE("Sequencer: selection by click, Ctrl and a marquee, Escape restoring")
     CHECK(seq->getSelection() == std::vector<SequencerItem>{a, c});
     scene.canvas->inputModifierKey(keys::Control, true);
     scene.press(from);
+    scene.move(Point(to.x, scene.laneMiddle(1)+2));
+    CHECK(seq->getSelection() == std::vector<SequencerItem>{b, c});
+    // back over track 0 alone, b is as at the press again
+    scene.move(Point(to.x, scene.laneMiddle(0)+2));
+    CHECK(seq->getSelection() == std::vector<SequencerItem>{c});
     scene.move(Point(to.x, scene.laneMiddle(1)+2));
     scene.release();
     scene.canvas->inputModifierKey(keys::Control, false);
@@ -622,4 +655,139 @@ TEST_CASE("Sequencer: the playhead's keys, the scrub and Space")
     scene.key(keys::Escape);
     CHECK(seq->getPlayhead() == 0.0);
     scene.release();
+}
+
+// A removal while a drag lasts: one that takes a dragged item (a Delete with
+// that item's removal vetoed, the app's removeClip() or removeTrack()) puts
+// every dragged item back first and reports nothing, and one that takes any
+// other item leaves the drag going on the same items, their indices moved,
+// so the release reports what moved under its new index.
+TEST_CASE("Sequencer: a removal during a drag puts the drag back or follows the edit")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    seq->addClip(0, 1, 2, "", 1);
+    seq->addClip(0, 6, 7, "", 2);
+    seq->addClip(1, 3, 4, "", 3);
+    seq->addKey(2, 8, 4);
+    scene.frame();
+
+    const int twoSeconds=int(std::lround(2*scene.perSecond()));
+
+    SUBCASE("a Delete with the dragged clip's removal vetoed: the clip back, no move reported")
+    {
+        scene.vetoId=1;
+        scene.drag(scene.at(0, 1.3), twoSeconds);
+        REQUIRE(seq->getClip(0, 0).start == doctest::Approx(3.0));
+        scene.key(keys::Delete);
+        CHECK(scene.requested == std::vector<size_t>{1});
+        CHECK(!seq->dragging());
+        CHECK(seq->getClip(0, 0).id == 1);
+        CHECK(seq->getClip(0, 0).start == 1.0);
+        CHECK(seq->getClip(0, 0).end == 2.0);
+        scene.move(Point(scene.at(0, 1.3).x+2*twoSeconds, scene.laneMiddle(0)));
+        CHECK(seq->getClip(0, 0).start == 1.0);
+        scene.release();
+        CHECK(scene.movedCalls == 0);
+    }
+    SUBCASE("the app removes a clip of a group being dragged: both back, no move reported")
+    {
+        seq->select(SequencerItem(Kind::Clip, 1, 0));
+        scene.canvas->inputModifierKey(keys::Shift, true);
+        scene.drag(scene.at(0, 1.5), twoSeconds);
+        scene.canvas->inputModifierKey(keys::Shift, false);
+        REQUIRE(seq->getClip(1, 0).start == doctest::Approx(5.0));
+        seq->removeClip(1, 0);
+        CHECK(!seq->dragging());
+        CHECK(seq->getClip(0, 0).start == 1.0);
+        CHECK(seq->getClipCount(1) == 0);
+        scene.release();
+        CHECK(scene.movedCalls == 0);
+    }
+    SUBCASE("the app removes the dragged clip's track: no move reported")
+    {
+        scene.drag(scene.at(1, 3.5), twoSeconds);
+        seq->removeTrack(1);
+        CHECK(!seq->dragging());
+        scene.release();
+        CHECK(scene.movedCalls == 0);
+        CHECK(seq->getSelection().empty());
+    }
+    SUBCASE("the app removes an earlier clip of the dragged one's track: the drag goes on")
+    {
+        scene.drag(scene.at(0, 6.5), -twoSeconds);
+        REQUIRE(seq->getClip(0, 1).start == doctest::Approx(4.0));
+        seq->removeClip(0, 0);
+        CHECK(seq->dragging());
+        CHECK(seq->getSelection() == std::vector<SequencerItem>{SequencerItem(Kind::Clip, 0, 0)});
+        // the next move moves the clip that is dragged, now index 0
+        scene.move(Point(scene.at(0, 6.5).x-2*twoSeconds, scene.laneMiddle(0)));
+        CHECK(seq->getClip(0, 0).id == 2);
+        CHECK(seq->getClip(0, 0).start == doctest::Approx(2.0));
+        scene.release();
+        CHECK(scene.movedCalls == 1);
+        CHECK(seq->getMovedItems() == std::vector<SequencerItem>{SequencerItem(Kind::Clip, 0, 0)});
+    }
+    SUBCASE("the app removes a key and an earlier track: the drag goes on, its track moved up")
+    {
+        scene.drag(scene.at(1, 3.5), twoSeconds);
+        seq->removeKey(2, 0);
+        seq->removeTrack(0);
+        CHECK(seq->dragging());
+        CHECK(seq->getSelection() == std::vector<SequencerItem>{SequencerItem(Kind::Clip, 0, 0)});
+        CHECK(seq->getClip(0, 0).id == 3);
+        CHECK(seq->getClip(0, 0).start == doctest::Approx(5.0));
+        scene.release();
+        CHECK(scene.movedCalls == 1);
+        CHECK(seq->getMovedItems() == std::vector<SequencerItem>{SequencerItem(Kind::Clip, 0, 0)});
+    }
+}
+
+// The cost of a drag frame: no track's search is built while the drag lasts
+// (here a group of 2001 clips over two tracks), only each dragged track's
+// once on its release.
+TEST_CASE("Sequencer: a drag frame builds no search, the release the dragged track's")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    seq->addClip(0, 1, 2, "", 1);
+    for(int i=0; i < 2000; ++i)
+        seq->addClip(3, 20+i, 20.5+i, "", 100+i);
+    for(int i=0; i < 2000; ++i)
+        seq->select(SequencerItem(Kind::Clip, 3, size_t(i)));
+    scene.frame();
+
+    const Point from=scene.at(0, 1.5);
+    SequencerItem item;
+
+    // every track's search built (the hit test builds its track's)
+    for(size_t track=0; track < 4; ++track)
+        seq->hitTest(scene.at(track, 9.0), item);
+
+    // a Ctrl press adds the clip to the selection and builds its track's
+    // search (the hit test): from there on the drag builds none
+    scene.canvas->inputModifierKey(keys::Control, true);
+    scene.press(from);
+    scene.canvas->inputModifierKey(keys::Control, false);
+
+    const size_t builds=seq->getSearchBuildCount();
+
+    for(int step=1; step <= 6; ++step)
+    {
+        scene.move(Point(from.x+step*7, from.y));
+        scene.frame();
+        CHECK(seq->getSearchBuildCount() == builds);
+    }
+    CHECK(seq->getClip(0, 0).start > 1.0);
+    CHECK(seq->getClip(3, 0).start > 20.0);
+    scene.release();
+    scene.frame();
+    // the release: the two dragged tracks' clip searches, once each, as
+    // they are next searched
+    for(size_t track=0; track < 4; ++track)
+        seq->hitTest(scene.at(track, 9.0), item);
+    CHECK(seq->getSearchBuildCount() == builds+2);
+    CHECK(scene.movedCalls == 1);
 }

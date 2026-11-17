@@ -4897,7 +4897,10 @@ two programs and the draws. What follows describes both together:
   when the lanes' contents move); a track's clips and keys are searched as the Timeline's
   bars are, through an `internal::LaneBarIndex` each (sorted by start, the running
   maximum of the ends, an overlap level per clip, the later of two overlapping clips on
-  top, drawn and picked; for keys at one instant the later is picked by the walk itself);
+  top, drawn and picked; for keys at one instant the later is picked by the walk itself,
+  and drawn in front: a track's keys share one layer, where the slot drawn first keeps
+  its pixels, so their slots are taken in descending id order, a later key's drawn
+  before an earlier one's, `tests/sequencerKeyOverlap.cpp`);
   and the renderer paints the stripes and grid through `skin::textured::lanes`'s
   `Painter::paintLanes()` in the `TimelineFrame`, `TimelineLane`, `TimelineGrid` and
   `TimelineAxis` surfaces, with the same slot lists taken back to front
@@ -4910,9 +4913,11 @@ two programs and the draws. What follows describes both together:
   span `MinViewFrames` frames to four times the range. A view change computes the ticks
   again outside any layout pass (`LaneView::computeTicks()`) and bumps
   `getItemsSerial()`: its tick labels are the renderer's own text runs, not controls
-  (`tickLabelsAreControls()` false), so **a zoom or a pan lays nothing out**, and rewrites
-  every clip, key and label in view, the ruler and the playhead: linear in what shows,
-  by design, as a NodeGraph's pan is. The playhead is `setPlayhead` (held to the range;
+  (`tickLabelsAreControls()` false), so **a zoom or a pan lays nothing out**, and draws
+  every clip, key and label again, the ruler and the playhead: linear in the items, by
+  design, as a NodeGraph's pan is (the renderer walks every track's items, each slot
+  compared with what it holds and written only if it differs, so what is written and
+  uploaded is what shows). The playhead is `setPlayhead` (held to the range;
   `onPlayheadChanged` on every change, the app's too, so a readout can follow a
   playback), scrubbed on whole frames by a press or drag in the ruler, Left and Right a
   frame, Home and End; Space fires `onPlayToggled` and the app plays (SequencerDemo with
@@ -4927,9 +4932,18 @@ two programs and the draws. What follows describes both together:
   not follow the item count), shown by the snap guide, else its start to a whole frame,
   and Alt or `setSnapping(false)` snaps to nothing; Escape puts every item back;
   `onItemsMoved` fires once on a release that moved something (`getMovedItems()`). A
-  left press on empty lane space is a marquee (Shift adding, Ctrl toggling, Escape
-  restoring), Delete removes the selection through `onRemoveRequested`/`vetoRemove()`,
-  then `onRemoved`. Moving an item to another track is not supported. **The look and
+  removal while a drag lasts (a Delete, the app's `removeClip`, `removeKey`,
+  `removeTrack`) that takes a dragged item or its track puts every dragged item back
+  first, while their indices still hold, and reports nothing, so the app never holds a
+  position it was not told of; any other removal leaves the drag going, the drag's, the
+  marquee's, the selection's and the moved items' indices moved with it (`removing()`).
+  While a drag lasts the dragged tracks' searches are left as at the press (the dragged
+  items in them passed over by the snap, keeping their overlap levels until the
+  release, which builds each dragged track's search once). A left press on empty lane
+  space is a marquee (Shift adding, Ctrl toggling, Escape restoring), each move setting
+  only the items it touched before and touches now; the selection is a set of items, so
+  what reads or clears it costs the selection, not the items. Delete removes the
+  selection through `onRemoveRequested`/`vetoRemove()`, then `onRemoved`. Moving an item to another track is not supported. **The look and
   its cost:** a clip is a `drawRoundedRect` slot in a list per track, at z+3 plus its
   overlap level, in its surface (`SequencerClip` or the app's) with
   `SequencerClipSelected`'s and `SequencerClipHover`'s fill blended over it on the CPU
@@ -4937,10 +4951,14 @@ two programs and the draws. What follows describes both together:
   `SequencerKeySelected`, a layer in front of every clip; the marquee
   (`SequencerMarquee`, fill and border in one translucent slot), the snap guide
   (`SequencerSnapGuide`) and the playhead's line and ruler head (kind 7, pointing down;
-  `SequencerPlayhead`) in front of them, `depthLayers()` 11. The items are drawn again
-  only when `getItemsSerial()` moved, each slot only when it differs; a hover draws the
-  item it left and the one it reached alone, a playhead move (`getPlayheadSerial()`) its
-  two slots. The grid's slots are taken for as many ticks as the area's width can show
+  `SequencerPlayhead`) in front of them, `depthLayers()` 11. Every item is drawn again
+  only when `getItemsSerial()` moved (the view, the layout, the scroll, the tracks, a
+  removal, whose indices move) or more than `Sequencer::MaxChangedItems` (1024) items
+  changed in one frame; otherwise the frame draws what `Sequencer::takeChangedItems()`
+  gives, the items moved, set, added or selected since the last frame and the clips a
+  rebuilt search gave a new overlap level, and the item the hover left and the one it
+  reached; each slot only when it differs. A playhead move (`getPlayheadSerial()`) draws
+  its two slots. The grid's slots are taken for as many ticks as the area's width can show
   (`area.w/60+4`), and the label runs given back with the ticks, so a zoom takes no slot
   and a width back has the slots and runs it had (`controltest_resize_each` found both).
   So a drag frame writes the dragged items' slots and the guide's, a scrub frame the
@@ -4950,8 +4968,9 @@ two programs and the draws. What follows describes both together:
   tracks at 24 fps with a locked first track (its Delete vetoed); `controltest_sequencer`
   holds a clip's and a key's snapping drags, a scrub, a zoom and a pan, the deletes and
   the playback to the counts above, and `gweni_bench`'s `sequencer-drag` drags a clip
-  along its gap among N clips over 20 tracks at the same cost (one slot) at any N (the
-  renderer still walks every clip's slot, writing none of them, when the serial moves).
+  along its gap among N clips over 20 tracks, a frame or more a step with nothing in
+  snapping reach, at the same cost (one slot, and the same render-phase instructions
+  under callgrind) at any N.
 - **The drag number: scrubbed by the mouse, typed into in a box made once.**
   `controls::DragNumber` (`include/gweni/controls/dragNumber.h`, imgui's DragFloat and
   DragInt) is a `Label` whose text is its value, centred in a field of the size asked for

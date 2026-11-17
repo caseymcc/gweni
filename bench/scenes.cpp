@@ -2021,17 +2021,21 @@ private:
 
 //-----------------------------------------------------------------------------
 // sequencer-drag: a Sequencer filling the canvas, 20 tracks of N clips between
-// them at 10 frames a second, clip k of a track from 2k to 2k+1 seconds, the
-// view fixed to the first 20 seconds, so the clips on screen are the same at
-// any N. Track 0's clip 1 is pressed in the warm-up and moved past the drag
-// threshold; each measured frame moves it 2 units on along its gap (snapping
-// to whole frames, nothing else in reach), the last one releasing it. Every
-// frame's work is the dragged clip's slot, at any N.
+// them at 10 frames a second, the view fixed to the first 20 seconds, so the
+// clips on screen are the same at any N. Track 0's first two clips are at 0..1
+// and 2..3 s, and every other clip k of a track from 8+2k to 9+2k s. Track
+// 0's clip 1 is pressed in the warm-up and moved past the drag threshold; each
+// measured frame moves it MouseStep units on (over a frame at the view's
+// scale, so it snaps to another whole frame every frame), its edges kept
+// from 2 to under 7 s, with no other edge, key or the playhead within the
+// snap distance, the last one releasing it. Every frame's work is the dragged
+// clip's slot, at any N.
 //-----------------------------------------------------------------------------
 class SequencerDragScene: public Scene
 {
 public:
     static constexpr int Tracks=20;
+    static constexpr int MouseStep=8;
 
     void build(SceneContext &ctx) override
     {
@@ -2041,16 +2045,23 @@ public:
 
         const int perTrack=std::max(2, (ctx.n+Tracks-1)/Tracks);
 
-        m_seq->setTimeRange(0.0, 2.0*perTrack);
+        m_seq->setTimeRange(0.0, 8.0+2.0*perTrack);
         m_seq->setViewRange(0.0, 20.0);
         for(int track=0; track < Tracks; ++track)
         {
             m_seq->addTrack(format("track %02d", track), uint64_t(track));
 
             const int clips=ctx.n/Tracks+((track < ctx.n%Tracks) ? 1 : 0);
+            int k=0;
 
-            for(int k=0; k < std::max(clips, track == 0 ? 2 : 0); ++k)
-                m_seq->addClip(size_t(track), 2.0*k, 2.0*k+1.0, String(), uint64_t(track)*1000000+k);
+            if(track == 0)
+            {
+                m_seq->addClip(0, 0.0, 1.0, String(), 0);
+                m_seq->addClip(0, 2.0, 3.0, String(), 1);
+                k=2;
+            }
+            for(; k < clips; ++k)
+                m_seq->addClip(size_t(track), 8.0+2.0*k, 9.0+2.0*k, String(), uint64_t(track)*1000000+k);
         }
     }
 
@@ -2075,7 +2086,7 @@ public:
         if(frame < 0)
             return;
 
-        moveMouse(ctx, m_mouse, m_origin+Point(4+2*(frame+1), 0));
+        moveMouse(ctx, m_mouse, m_origin+Point(4+MouseStep*(frame+1), 0));
         if(frame == ctx.frames-1)
             ctx.canvas->inputMouseButton(0, false);
     }

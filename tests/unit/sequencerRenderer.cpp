@@ -19,7 +19,10 @@
  *  view, the labels whose text or place changed and the playhead, and no
  *  stripe; a Delete giving the removed item's slot back to its list's spares
  *  (hidden) with the live ids unchanged, and deleting the sequencer giving
- *  every id back.
+ *  every id back; and what a frame looks at (itemsVisited()): every item for
+ *  a zoom, a handful for a drag, a Ctrl click's selection and a marquee frame
+ *  with 3000 items more on another track, and a clip whose overlap level an
+ *  edit of another clip changes drawn at its new layer.
  */
 #include "headlessFixture.h"
 
@@ -387,4 +390,114 @@ TEST_CASE("Sequencer renderer: a Delete hides the item's slot, and deleting the 
     }
     CHECK(livePrimitives() == primitives);
     CHECK(liveTexts() == texts);
+}
+
+// What a frame looks at: a frame drawing everything again (a zoom) visits
+// every clip and key, and a drag, a click's selection, a marquee and a hover
+// frame visit the items that changed alone, however many items the tracks
+// hold (here 3000 more, out of view); a clip whose overlap level an edit of
+// another changes is among them, drawn at its new layer.
+TEST_CASE("Sequencer renderer: a drag, selection or marquee frame visits the changed items alone")
+{
+    Scene scene;
+    controls::Sequencer *seq=scene.seq;
+    const SkinSequencer &drawn=scene.drawn();
+    const int z=seq->getZIndex();
+    // a handful (an item can be visited as changed and as the hover's), not
+    // the thousands the tracks hold
+    const size_t Few=6;
+    size_t seen=0;
+    // the items the frames since the last call visited
+    auto visited=[&]()
+    {
+        const size_t now=drawn.itemsVisited();
+        const size_t delta=now-seen;
+
+        seen=now;
+        return delta;
+    };
+
+    for(int i=0; i < 3000; ++i)
+        seq->addClip(3, 20+i, 20.5+i, "", 100+i);
+    scene.frame();
+    visited();
+    scene.frame();
+    CHECK(visited() == 0);
+
+    // a zoom draws every item again
+    const Point zoomAt=seq->localPosToCanvas(scene.at(0, 5));
+
+    scene.canvas->inputMouseMoved(zoomAt.x, zoomAt.y, 0, 0);
+    scene.canvas->inputModifierKey(keys::Control, true);
+    scene.canvas->inputMouseWheel(60);
+    scene.canvas->inputModifierKey(keys::Control, false);
+    scene.frame();
+    CHECK(visited() >= 3005);
+    seq->setViewRange(0, 10);
+    scene.frame();
+    scene.move(scene.at(1, 8.5));
+    scene.frame();
+
+    // a drag of clip (0, 0): the dragged clip, and the hover's
+    const Point from=scene.at(0, 1.5);
+
+    scene.move(from);
+    visited();
+    scene.canvas->inputMouseButton(0, true);
+    scene.frame();
+    CHECK(visited() <= Few);
+    for(int step=1; step <= 4; ++step)
+    {
+        scene.move(Point(from.x+step*9, from.y));
+
+        const size_t frameVisited=visited();
+
+        CHECK(frameVisited >= 1);
+        CHECK(frameVisited <= Few);
+    }
+    scene.canvas->inputMouseButton(0, false);
+    scene.frame();
+    CHECK(visited() <= Few);
+    scene.frame();
+    CHECK(visited() == 0);
+
+    // a Ctrl click on the key adds it to the selection: the key alone (and the
+    // hover)
+    scene.canvas->inputModifierKey(keys::Control, true);
+    scene.move(scene.at(2, 6));
+    scene.canvas->inputMouseButton(0, true);
+    scene.frame();
+    scene.canvas->inputMouseButton(0, false);
+    scene.canvas->inputModifierKey(keys::Control, false);
+    scene.frame();
+    CHECK(seq->getSelectionSize() == 2);
+    CHECK(visited() <= Few);
+
+    // a marquee over the second clip of track 0: the items it reaches and
+    // the selection it clears
+    const Point corner(scene.at(0, 3.2).x, seq->getBarArea().y+1);
+
+    scene.move(Point(corner.x, corner.y));
+    scene.canvas->inputMouseButton(0, true);
+    scene.frame();
+    for(int step=1; step <= 4; ++step)
+    {
+        scene.move(Point(corner.x+step*4, corner.y+step*4));
+        CHECK(visited() <= Few);
+    }
+    scene.canvas->inputMouseButton(0, false);
+    scene.frame();
+    CHECK(seq->getSelection() == std::vector<SequencerItem>{SequencerItem(SequencerItem::Kind::Clip, 0, 1)});
+
+    // a later clip over clip (0, 1) is on level 1; clip (0, 1) set apart
+    // drops it to level 0: both drawn, the later one at its new layer
+    seq->addClip(0, 3.5, 3.8, "", 50);
+    scene.frame();
+    REQUIRE(seq->getOverlapLevel(0, 2) == 1);
+    CHECK(scene.renderer.zIndices[drawn.clipPrimitives(0)[2]] == z+SkinSequencer::ClipLayer+1);
+    seq->setClip(0, 1, 7, 8);
+    scene.frame();
+    CHECK(seq->getOverlapLevel(0, 2) == 0);
+    CHECK(scene.renderer.zIndices[drawn.clipPrimitives(0)[2]] == z+SkinSequencer::ClipLayer);
+    CHECK(visited() <= Few);
 }
