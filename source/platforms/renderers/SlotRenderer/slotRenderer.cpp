@@ -1672,6 +1672,11 @@ void SlotRenderer::releaseResources()
     for(ImagePage &page:m_imagePages)
         page=ImagePage();
     m_imagePageRegrows=0;
+    if(m_layers && m_layers->allocated)
+    {
+        destroyLayerTable();
+        m_layers->allocated=false;
+    }
 }
 
 void SlotRenderer::init()
@@ -1685,6 +1690,8 @@ void SlotRenderer::init()
     m_textClipBoxesSent=0;
     m_clipTextureRows=0;
     m_textClipTextureRows=0;
+    if(m_layers)
+        m_layers->allocated=false;
 
     // Until a canvas sets its region, the whole view is visible: the shaders discard
     // everything outside the clip box, and an unset region would be an empty one.
@@ -1720,6 +1727,147 @@ void SlotRenderer::clearViewTransform()
     std::copy(identity, identity+16, m_viewTransform);
     m_hasViewTransform=false;
     viewTransformChanged();
+}
+
+void SlotRenderer::setLayerTable(bool on)
+{
+    if(on == (m_layers != nullptr))
+        return;
+
+    if(!on)
+    {
+        setLayerRemap(false);
+        if(m_layers->allocated)
+            destroyLayerTable();
+        m_layers.reset();
+        return;
+    }
+
+    m_layers=std::make_unique<LayerTable>();
+
+    LayerTable &layers=*m_layers;
+    const size_t slots=m_vertexes.size()/4;
+
+    layers.counts.assign(size_t(kMaxZIndex)+1, 0);
+    layers.table.assign(size_t(kMaxZIndex)+1, 0);
+    layers.slotLabels.assign(slots, LayerTable::kNoLabel);
+    layers.runLabels.assign(m_textRuns.size(), LayerTable::kNoLabel);
+    // what can show as of the last flush; the slots dirty since are counted
+    // again in the next one, from what they were counted at here
+    for(size_t slot=0; slot<slots; ++slot)
+    {
+        if((slot/64 < m_visibleSlots.size()) && ((m_visibleSlots[slot/64]>>(slot%64))&1))
+            setLayerLabel(layers.slotLabels, slot, m_vertexes[slot*4].z);
+    }
+    for(size_t textId=0; textId<m_textRuns.size(); ++textId)
+    {
+        const TextRun &run=m_textRuns[textId];
+
+        if(drawnRange(run).second > 0)
+            setLayerLabel(layers.runLabels, textId, uint32_t(runZ(run.zIndex)));
+    }
+    // T from label 0 up, now, so shownLayer() answers before the first flush,
+    // which uploads it whole and tells the listener
+    layers.lowestCrossed=0;
+    buildLayerSums();
+}
+
+void SlotRenderer::setLayerRemap(bool on)
+{
+    on=on && (m_layers != nullptr);
+    if(on == m_layerRemap)
+        return;
+    m_layerRemap=on;
+    layerRemapChanged();
+}
+
+size_t SlotRenderer::shownLayerCount() const
+{
+    return m_layers?m_layers->shown:0;
+}
+
+size_t SlotRenderer::shownLayer(int z) const
+{
+    return m_layers?m_layers->table[size_t(std::clamp(z, 0, kMaxZIndex))]:0;
+}
+
+void SlotRenderer::setLayerTableListener(std::function<void()> listener)
+{
+    if(m_layers)
+        m_layers->listener=std::move(listener);
+}
+
+void SlotRenderer::setLayerLabel(std::vector<uint32_t> &labels, size_t index, uint32_t label)
+{
+    LayerTable &layers=*m_layers;
+
+    if(labels.size() <= index)
+    {
+        if(label == LayerTable::kNoLabel)
+            return;
+        labels.resize(index+1, LayerTable::kNoLabel);
+    }
+
+    const uint32_t old=labels[index];
+
+    if(old == label)
+        return;
+    labels[index]=label;
+    if((old != LayerTable::kNoLabel) && (--layers.counts[old] == 0))
+    {
+        --layers.shown;
+        layers.lowestCrossed=std::min(layers.lowestCrossed, old);
+    }
+    if((label != LayerTable::kNoLabel) && (layers.counts[label]++ == 0))
+    {
+        ++layers.shown;
+        layers.lowestCrossed=std::min(layers.lowestCrossed, label);
+    }
+}
+
+size_t SlotRenderer::buildLayerSums()
+{
+    LayerTable &layers=*m_layers;
+
+    if(layers.lowestCrossed == LayerTable::kNoLabel)
+        return kLayerTableSide;
+
+    // T[z] counts the labels below z, so only those above the crossed one move
+    const size_t lowest=layers.lowestCrossed;
+
+    for(size_t z=lowest; z<size_t(kMaxZIndex); ++z)
+        layers.table[z+1]=uint16_t(layers.table[z]+((layers.counts[z] > 0)?1:0));
+    layers.lowestCrossed=LayerTable::kNoLabel;
+    layers.changed=true;
+    return (lowest+1)/kLayerTableSide;
+}
+
+void SlotRenderer::flushLayerTable()
+{
+    LayerTable &layers=*m_layers;
+    // the first row whose labels' T is new (kLayerTableSide: none)
+    size_t firstRow=buildLayerSums();
+
+    if(!layers.allocated)
+    {
+        allocateLayerTable();
+        layers.allocated=true;
+        firstRow=0;
+    }
+    if(firstRow < kLayerTableSide)
+    {
+        const size_t rows=kLayerTableSide-firstRow;
+
+        uploadLayerTableRows(firstRow, rows, layers.table.data()+firstRow*kLayerTableSide);
+        ++m_frameStats.layerUploadCalls;
+        m_frameStats.layerUploadBytes+=rows*kLayerTableSide*sizeof(uint16_t);
+    }
+    if(layers.changed)
+    {
+        layers.changed=false;
+        if(layers.listener)
+            layers.listener();
+    }
 }
 
 void SlotRenderer::begin()
@@ -1918,6 +2066,10 @@ void SlotRenderer::updateSlotVisibility(size_t slot, bool hasArea)
     const bool styled=(vertexes[0].style|vertexes[1].style|vertexes[2].style|vertexes[3].style) != 0;
     const bool culled=styled && slotBit(m_clipCulledSlots, slot);
     const bool visible=styled && hasArea && !culled;
+
+    if(m_layers)
+        setLayerLabel(m_layers->slotLabels, slot, visible?uint32_t(vertexes[0].z):LayerTable::kNoLabel);
+
     const size_t word=slot/64;
     const uint64_t bit=uint64_t(1)<<(slot%64);
 
@@ -3216,6 +3368,8 @@ void SlotRenderer::flush()
     m_frameStats.sortedGroups=0;
     m_frameStats.sortedScheduleBuilds=0;
     m_frameStats.overlapVisited=0;
+    m_frameStats.layerUploadCalls=0;
+    m_frameStats.layerUploadBytes=0;
     //the slots this frame uploads: every draw, hide, show and release since the last
     //flush, each slot once however many of them touched it
     m_frameStats.primitiveSlotsWritten=m_dirtyVertexSlots.count();
@@ -3267,6 +3421,11 @@ void SlotRenderer::flush()
             }
         }
     }
+
+    // the slots counted at their labels again with their visibility above, the
+    // runs as renderText and the rest changed them
+    if(m_layers)
+        flushLayerTable();
 
     // The overlap index, built when the first translucent slot can show, made
     // again for a new view, and otherwise kept from the slots whose vertexes or
@@ -3456,12 +3615,12 @@ void SlotRenderer::flush()
         //qualified: gweni::printf(String&, ...) would otherwise hide the C one
         ::printf("[upload] frame %zu: %zu calls, %zu bytes (mirror %zu bytes, %zu regrows), atlas %zu calls, %zu bytes,"
             " %zu of %zu primitive slots drawn in %zu ranges (%zu chunks' ranges built), %zu culled,"
-            " %zu text runs culled\n",
+            " %zu text runs culled, layer table %zu calls, %zu bytes\n",
             m_frameStats.frameIndex, m_frameStats.uploadCalls, m_frameStats.uploadBytes,
             m_frameStats.mirrorBytes, m_frameStats.bufferRegrows, m_frameStats.atlasUploadCalls,
             m_frameStats.atlasUploadBytes, m_frameStats.primitiveSlotsDrawn, m_vertexes.size()/4,
             m_frameStats.primitiveRanges, m_frameStats.primitiveRangeBuilds, m_frameStats.primitiveSlotsCulled,
-            m_frameStats.textRunsCulled);
+            m_frameStats.textRunsCulled, m_frameStats.layerUploadCalls, m_frameStats.layerUploadBytes);
         fflush(stdout);
     }
 }
@@ -4664,6 +4823,12 @@ std::pair<size_t, size_t> SlotRenderer::drawnRange(const TextRun &run)
 
 void SlotRenderer::markTextDrawList(TextRun &run, std::pair<size_t, size_t> before)
 {
+    if(m_layers)
+    {
+        setLayerLabel(m_layers->runLabels, size_t(&run-m_textRuns.data()),
+            (drawnRange(run).second > 0)?uint32_t(runZ(run.zIndex)):LayerTable::kNoLabel);
+    }
+
     // a run at text level 0 is in no draw list either way, so not counted
     const bool counted=run.culled && !run.hidden && (run.glyphs > 0) && (run.color.a != 0);
 

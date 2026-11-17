@@ -266,6 +266,11 @@ protected:
     void submitFrame() override;
     void indexChunkSlotsChanged() override;
     void viewTransformChanged() override;
+    // the layer table (setLayerTable): not drawn with yet, the remap is #744's next step
+    void allocateLayerTable() override {}
+    void uploadLayerTableRows(size_t, size_t, const uint16_t *) override {}
+    void destroyLayerTable() override {}
+    void layerRemapChanged() override {}
 
 private:
 

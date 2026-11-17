@@ -80,6 +80,10 @@ protected:
     void submitFrame() override {}
     void indexChunkSlotsChanged() override {}
     void viewTransformChanged() override {}
+    void allocateLayerTable() override {}
+    void uploadLayerTableRows(size_t, size_t, const uint16_t *) override {}
+    void destroyLayerTable() override {}
+    void layerRemapChanged() override {}
 
 private:
     //! Nothing is loaded, so no path is ever looked up.

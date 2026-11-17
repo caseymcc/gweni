@@ -353,6 +353,43 @@ public:
     //! The transform set, column-major; the identity when there is none
     const float *viewTransform() const { return m_viewTransform; }
 
+    //! The layer table, for tools::DepthView: T[z], for every z label, the
+    //! number of labels below z that a shown slot uses, so T maps each used
+    //! label to its shown layer, 0 up, and gives an unused one no depth. A
+    //! primitive slot is shown while it can show (style not 0, a quad with
+    //! area, not clip-culled: m_visibleSlots), at its Vertex::z; a text run
+    //! while drawnRange() is not empty (not hidden or culled, glyphs, a text
+    //! level above 0), at runZ(zIndex).
+    //
+    //! Kept only while it is on: setLayerTable(true) counts the slots and runs
+    //! of each label once, and from then on each flush() counts again only the
+    //! slots and runs that changed (updateSlotVisibility, markTextDrawList),
+    //! builds the prefix sums again and uploads them (FrameStats::
+    //! layerUploadCalls/layerUploadBytes, never in uploadCalls) only when a
+    //! label's count went from 0 or to 0, and calls the listener before the
+    //! draws. Off, it holds nothing, and a flush tests one pointer.
+    void setLayerTable(bool on);
+    bool layerTable() const { return m_layers != nullptr; }
+    //! Whether the vertex shaders put each z through the table before the
+    //! view transform: on only while the table is (setLayerTable(false)
+    //! turns it off), off by default, the arithmetic of the front view then
+    //! exactly what it was. Raises layerRemapChanged() in the backend.
+    void setLayerRemap(bool on);
+    bool layerRemap() const { return m_layerRemap; }
+    //! The labels a shown slot uses (0 while the table is off), so the
+    //! highest shown layer is shownLayerCount()-1
+    size_t shownLayerCount() const;
+    //! T[z], z clamped to 0..kMaxZIndex (0 while the table is off)
+    size_t shownLayer(int z) const;
+    //! Called from flush(), before its draws, whenever the shown labels
+    //! changed since the last flush (the first flush after setLayerTable(true)
+    //! included), so a listener's setViewTransform reaches that frame's draws.
+    //! It must not change the mirrors. Cleared by setLayerTable(false).
+    void setLayerTableListener(std::function<void()> listener);
+    //! The table's side, in labels: it is a kLayerTableSide x kLayerTableSide
+    //! texture, label z at (z & 255, z >> 8)
+    static constexpr size_t kLayerTableSide=256;
+
     //! Vertex::z is 16 bits unsigned, so a z index is 0..65535. A backend's
     //! projection maps z=0 to the depth-clear value, and kMaxZIndex to the front.
     static constexpr int kMaxZIndex=65535;
@@ -726,6 +763,10 @@ public:
         size_t sortedGroups=0;
         size_t sortedScheduleBuilds=0;
         size_t overlapVisited=0;
+        //! uploads of the layer table (setLayerTable): one per flush that built
+        //! it again, of its rows from the first one that changed, and their bytes
+        size_t layerUploadCalls=0;
+        size_t layerUploadBytes=0;
         //! how long this flush took, from its start to the end of submitFrame(), on
         //! platform::profileTimeMicros(): two reads of that clock per frame
         uint64_t flushMicros=0;
@@ -954,6 +995,19 @@ protected:
     //! pointing at the first) to the table at (x, y).
     virtual void uploadClipBoxRows(SlotPath path, size_t x, size_t y, size_t width, size_t height,
         const Box *boxes)=0;
+    //! The layer table's texture is made: kLayerTableSide x kLayerTableSide
+    //! 16-bit unsigned integers, read by both vertex stages, contents undefined
+    //! until uploadLayerTableRows. Called from the first flush() after
+    //! setLayerTable(true) (and after init()).
+    virtual void allocateLayerTable()=0;
+    //! Copies `rows` whole rows of kLayerTableSide labels, row firstRow first
+    //! (table pointing at its label firstRow*kLayerTableSide), to the texture.
+    virtual void uploadLayerTableRows(size_t firstRow, size_t rows, const uint16_t *table)=0;
+    //! The texture is no longer needed (setLayerTable(false), releaseResources)
+    virtual void destroyLayerTable()=0;
+    //! setLayerRemap() changed layerRemap(): the backend's vertex stages read
+    //! the table from their next draw on, or stop
+    virtual void layerRemapChanged()=0;
     //! A texture for a font's atlas, its size and depth (1: R8, 3: RGB8), contents
     //! undefined until uploadAtlasRows. Called from loadFont.
     virtual TextureHandle createAtlasTexture(const texture_atlas_t &atlas)=0;
@@ -1366,7 +1420,39 @@ private:
     //! setViewTransform's matrix, column-major, the identity when there is none
     float m_viewTransform[16]={ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 };
     bool m_hasViewTransform=false;
+    bool m_layerRemap=false;
     Color m_color;
+
+    //! The layer table's data (setLayerTable), made only while it is on
+    struct LayerTable
+    {
+        //! kNoLabel: a slot or run not counted in any label
+        static constexpr uint32_t kNoLabel=~uint32_t(0);
+        //! the slots and runs counted at each label
+        std::vector<uint32_t> counts;
+        //! the label each primitive slot and each text id is counted at
+        std::vector<uint32_t> slotLabels;
+        std::vector<uint32_t> runLabels;
+        //! T: the labels in use below each label
+        std::vector<uint16_t> table;
+        size_t shown=0;     //!< labels in use
+        //! the lowest label whose count went from or to 0 since the last
+        //! flush (kNoLabel: none), so T is built again above it
+        uint32_t lowestCrossed=kNoLabel;
+        bool changed=true;  //!< the listener is due
+        bool allocated=false; //!< the backend has its texture
+        std::function<void()> listener;
+    };
+    std::unique_ptr<LayerTable> m_layers;
+    //! Counts `slot` (or text id `run`) at `label` (LayerTable::kNoLabel: none)
+    //! instead of the label it was counted at
+    void setLayerLabel(std::vector<uint32_t> &labels, size_t index, uint32_t label);
+    //! T built again above the lowest label whose count crossed 0, if one did;
+    //! the first row of the table that changed (kLayerTableSide: none)
+    size_t buildLayerSums();
+    //! flush()'s part: T built again and uploaded if a count crossed 0, then
+    //! the listener told if the shown labels changed
+    void flushLayerTable();
 
     std::vector<Vertex> m_vertexes; //argue about vertices all you want
     std::vector<Box> m_clippingBoxes; //!< one per primitive slot
