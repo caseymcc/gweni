@@ -1545,7 +1545,7 @@ private:
 // only when it differs; otherwise the frame draws the items
 // Sequencer::takeChangedItems() gives (moved, set, added, selected, a new
 // overlap level) and the item the hover left and the one it reached, and a
-// playhead move (getPlayheadSerial()) its two slots, so a drag frame writes
+// playhead its two slots (the same bytes writing nothing), so a drag frame writes
 // the dragged items' slots and the guide's, a scrub frame the playhead's, at
 // any count of items. A track's keys share one layer, their slots taken in
 // descending id order so a later key draws in front, as hitTest() picks it.

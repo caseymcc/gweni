@@ -24,7 +24,14 @@
  *  or removeTrack() of a dragged item) putting the drag back with no event,
  *  and one of another item keeping it going on its items' moved indices; no
  *  track's search built on a drag frame, each dragged track's once after the
- *  release; onItemsMoved once per release that moved something (none for a
+ *  release; a drag whose release never comes (hidden mid-drag, a lost release
+  the next press finds) put back as Escape puts it; a press's
+  onSelectionChanged handler removing the pressed item (no drag) or an earlier
+  one (the pressed item dragged at its new index); a batch of the app's edits
+  under a resting mouse building its track's search once, the hover hit-tested
+  again in the next update; a pan or zoom mid-drag keeping the item under the
+  cursor; a removal of another item mid-drag keeping the dragged item's hover;
+  onItemsMoved once per release that moved something (none for a
  *  drag back to where it began), a whole group moving together; Delete
  *  through the veto; and the playhead's keys (Left and Right a frame, Home
  *  and End the range's ends, held to the range), a scrub in the ruler on
@@ -39,6 +46,7 @@
 #include <doctest/doctest.h>
 
 #include <cmath>
+#include <functional>
 #include <vector>
 
 using namespace gweni;
@@ -88,7 +96,12 @@ struct Scene: event::Handler
         canvas->renderCanvas();
     }
 
-    void selectionChanged(event::Info) { ++selectionCalls; }
+    void selectionChanged(event::Info)
+    {
+        ++selectionCalls;
+        if(onSelection)
+            onSelection();
+    }
     void itemsMoved(event::Info) { ++movedCalls; }
     void playheadChanged(event::Info) { ++playheadCalls; }
     void playToggled(event::Info) { ++toggleCalls; }
@@ -161,6 +174,7 @@ struct Scene: event::Handler
     size_t vetoId=static_cast<size_t>(-1);
     std::vector<size_t> requested;
     std::vector<size_t> removedIds;
+    std::function<void()> onSelection;
 };
 
 }//namespace
@@ -790,4 +804,192 @@ TEST_CASE("Sequencer: a drag frame builds no search, the release the dragged tra
         seq->hitTest(scene.at(track, 9.0), item);
     CHECK(seq->getSearchBuildCount() == builds+2);
     CHECK(scene.movedCalls == 1);
+}
+
+// A drag whose release never comes: hidden mid-drag (the input code drops the
+// mouse focus, so the release goes nowhere) or a release lost with the
+// window's focus (the next press finds the drag still set). Either way the
+// drag is put back as Escape puts it back, nothing reported, and the clip is
+// found where it is again.
+TEST_CASE("Sequencer: a drag whose release never comes is put back")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    seq->addClip(0, 1, 2, "", 1);
+    seq->addClip(1, 5, 6, "", 2);
+    scene.frame();
+
+    const int twoSeconds=int(std::lround(2*scene.perSecond()));
+    SequencerItem item;
+
+    SUBCASE("hidden mid-drag, shown, released, pressed elsewhere")
+    {
+        scene.drag(scene.at(0, 1.5), twoSeconds);
+        REQUIRE(seq->getClip(0, 0).start == doctest::Approx(3.0));
+        seq->hide();
+        scene.frame();
+        CHECK(!seq->dragging());
+        CHECK(seq->getClip(0, 0).start == 1.0);
+        CHECK(seq->getClip(0, 0).end == 2.0);
+        seq->show();
+        scene.frame();
+        scene.release();
+        scene.press(scene.at(2, 9.0));
+        scene.release();
+    }
+    SUBCASE("the release lost: the next press puts it back")
+    {
+        scene.drag(scene.at(0, 1.5), twoSeconds);
+        REQUIRE(seq->getClip(0, 0).start == doctest::Approx(3.0));
+        scene.press(scene.at(2, 9.0));
+        CHECK(seq->getClip(0, 0).start == 1.0);
+        scene.release();
+    }
+    CHECK(scene.movedCalls == 0);
+    CHECK(seq->hitTest(scene.at(0, 1.5), item) == Sequencer::Part::ClipBody);
+    CHECK(item == SequencerItem(Kind::Clip, 0, 0));
+    CHECK(seq->hitTest(scene.at(0, 3.5), item) == Sequencer::Part::None);
+}
+
+// An onSelectionChanged handler of a press's that edits the model: the press
+// drags the item it pressed at its new index, and nothing if it went.
+TEST_CASE("Sequencer: a press's selection handler removing an item")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    seq->addClip(0, 1, 2, "", 1);
+    seq->addClip(0, 4, 5, "", 2);
+    seq->addClip(0, 7, 8, "", 3);
+    scene.frame();
+
+    const int twoSeconds=int(std::lround(2*scene.perSecond()));
+
+    SUBCASE("the pressed clip removed: no drag, nothing else moved")
+    {
+        scene.onSelection=[&]() { scene.onSelection=nullptr; seq->removeClip(0, 1); };
+        scene.drag(scene.at(0, 4.5), twoSeconds);
+        CHECK(!seq->dragging());
+        REQUIRE(seq->getClipCount(0) == 2);
+        CHECK(seq->getClip(0, 0).start == 1.0);
+        CHECK(seq->getClip(0, 1).id == 3);
+        CHECK(seq->getClip(0, 1).start == 7.0);
+        scene.release();
+        CHECK(scene.movedCalls == 0);
+    }
+    SUBCASE("an earlier clip removed: the pressed one dragged at its new index")
+    {
+        scene.onSelection=[&]() { scene.onSelection=nullptr; seq->removeClip(0, 0); };
+        scene.drag(scene.at(0, 4.5), twoSeconds);
+        CHECK(seq->dragging());
+        REQUIRE(seq->getClipCount(0) == 2);
+        CHECK(seq->getClip(0, 0).id == 2);
+        CHECK(seq->getClip(0, 0).start == doctest::Approx(6.0));
+        CHECK(seq->getClip(0, 1).start == 7.0);
+        scene.release();
+        CHECK(scene.movedCalls == 1);
+    }
+}
+
+// The hover is hit-tested again after the app's edits once, at the top of the
+// next update phase: a Delete of many selected items, or many clips added,
+// with the mouse resting on their track build its search once, not per item.
+TEST_CASE("Sequencer: a batch of edits under a resting mouse builds the search once")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    for(int i=0; i < 1000; ++i)
+        seq->addClip(0, 20+i, 20.5+i, "", 100+i);
+    scene.frame();
+    // focused by a press in the ruler, then the mouse resting on track 0
+    scene.press(Point(seq->getBarArea().x+5, seq->getAxisRow().y+2));
+    scene.release();
+    scene.move(scene.at(0, 9.0));
+    scene.frame();
+
+    size_t builds=seq->getSearchBuildCount();
+
+    SUBCASE("a Delete of 300 clips")
+    {
+        for(int i=0; i < 300; ++i)
+            seq->select(SequencerItem(Kind::Clip, 0, size_t(2*i)));
+        scene.key(keys::Delete);
+        CHECK(seq->getClipCount(0) == 700);
+    }
+    SUBCASE("300 clips added")
+    {
+        for(int i=0; i < 300; ++i)
+            seq->addClip(0, 2000+i, 2000.5+i, "", 5000+i);
+    }
+    CHECK(seq->getSearchBuildCount() == builds);
+    scene.frame();
+    CHECK(seq->getSearchBuildCount() <= builds+1);
+    CHECK(!seq->isHovering());
+
+    // the hover still follows an edit: a clip added under the mouse is
+    // hovered in the next update
+    seq->addClip(0, 8.5, 9.5, "", 9999);
+    scene.frame();
+    CHECK(seq->isHovering());
+    CHECK(seq->getClip(0, seq->getHoverItem().index).id == 9999);
+}
+
+// A pan or zoom mid-drag: the item stays under the cursor (the drag goes from
+// the time under the press, not from the press's x in the view now).
+TEST_CASE("Sequencer: a pan or zoom mid-drag keeps the item under the cursor")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    seq->setSnapping(false);
+    seq->addClip(0, 1, 2, "", 1);
+    scene.frame();
+
+    const Point from=scene.at(0, 1.5);
+
+    scene.drag(from, 20);
+    REQUIRE(seq->dragging());
+
+    const Point mouse(from.x+20, from.y);
+    const double offset=seq->timeAt(mouse.x)-seq->getClip(0, 0).start;
+
+    SUBCASE("panned 1 s")
+    {
+        seq->panBy(1.0);
+    }
+    SUBCASE("zoomed in twice about 5 s")
+    {
+        seq->zoomAt(2.0, 5.0);
+    }
+    CHECK(seq->timeAt(mouse.x)-seq->getClip(0, 0).start == doctest::Approx(offset));
+    CHECK(seq->getClip(0, 0).end-seq->getClip(0, 0).start == doctest::Approx(1.0));
+    scene.release();
+    CHECK(scene.movedCalls == 1);
+}
+
+// A removal of another item mid-drag keeps the dragged item's hover look.
+TEST_CASE("Sequencer: a removal mid-drag keeps the dragged item hovered")
+{
+    Scene scene;
+    Sequencer *seq=scene.seq;
+
+    seq->addClip(0, 1, 2, "", 1);
+    seq->addClip(0, 6, 7, "", 2);
+    seq->addClip(1, 3, 4, "", 3);
+    scene.frame();
+
+    scene.drag(scene.at(0, 6.5), 20);
+    REQUIRE(seq->dragging());
+    REQUIRE(seq->isHovering());
+    seq->removeClip(1, 0);
+    CHECK(seq->isHovering());
+    CHECK(seq->getHoverItem() == SequencerItem(Kind::Clip, 0, 1));
+    seq->removeClip(0, 0);
+    scene.frame();
+    CHECK(seq->dragging());
+    CHECK(seq->isHovering());
+    CHECK(seq->getHoverItem() == SequencerItem(Kind::Clip, 0, 0));
+    scene.release();
 }

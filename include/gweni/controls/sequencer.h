@@ -10,6 +10,7 @@
 
 #include <gweni/controls/laneView.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -343,9 +344,6 @@ public:
     //! How many times a track's clip or key search was built: an edit's
     //! track once, a drag's tracks once on its release, never on a drag frame.
     size_t getSearchBuildCount() const { return m_searchBuilds; }
-    //! Bumped by a move of the playhead (and of the view and layout, which
-    //! move it on screen).
-    unsigned getPlayheadSerial() const { return m_playheadSerial; }
 
     // ---- input --------------------------------------------------------------
 
@@ -355,6 +353,9 @@ public:
     bool onMouseWheeled(int delta) override;
     bool onMouseWheeledH(int delta) override;
     InputCapture *pressGesture(int button) override;
+    //! Hidden mid-drag: the release never comes, so the drag is put back as
+    //! Escape puts it back.
+    void onVisibleChanged() override;
 
     bool onKeyLeft(bool down) override;
     bool onKeyRight(bool down) override;
@@ -369,7 +370,7 @@ protected:
     std::vector<axis::Tick> chooseTicks(double min, double max, int width) override;
     bool tickLabelsAreControls() const override { return false; }
     void laneContentMoved() override;
-    int minLaneHeight() const override { return 2*ClipInset+1; }
+    int minLaneHeight() const override { return std::max(2*ClipInset+1, KeySize); }
 
     struct Track
     {
@@ -416,6 +417,10 @@ protected:
 
     void setHover(bool hovering, const SequencerItem &item, Part part);
     void refreshHover();
+    //! An edit of the app's may have moved what is under the mouse: the hover
+    //! is hit-tested again once, at the top of the next update phase (a
+    //! post), so a batch of edits builds each track's search once.
+    void hoverMayHaveChanged();
 
     bool setSelectedFlag(const SequencerItem &item, bool selected);
     void restoreSelection(const std::vector<SequencerItem> &selection);
@@ -457,13 +462,13 @@ protected:
     bool m_snapping=true;
 
     unsigned m_itemsSerial=0;
-    unsigned m_playheadSerial=0;
 
     bool m_hovering=false;
     SequencerItem m_hoverItem;
     Part m_hoverPart=Part::None;
     bool m_mouseInside=false;
     Point m_mouse;
+    bool m_hoverRefreshPosted=false;
 
     enum class Drag
     {
@@ -485,10 +490,16 @@ protected:
     Drag m_drag=Drag::None;
     bool m_dragStarted=false;
     Point m_press;
+    //! the time under the press: a drag moves by the time under the mouse
+    //! less it, so a pan or zoom mid-drag keeps the item under the cursor
+    double m_pressTime=0.0;
     SequencerItem m_pressItem;
+    //! while a press fires onSelectionChanged: m_pressItem follows the
+    //! handler's removals, and is cleared if it is what goes
+    bool m_pressFiring=false;
+    bool m_pressItemGone=false;
     //! a plain press on a selected item: its release with no drag selects it alone
     bool m_pressSelectsOnly=false;
-    bool m_selectionChangedByPress=false;
     std::vector<Original> m_originals;
     std::vector<SequencerItem> m_moved;
     std::vector<SequencerItem> m_pressSelection;

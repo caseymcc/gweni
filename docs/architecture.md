@@ -4937,6 +4937,15 @@ two programs and the draws. What follows describes both together:
   first, while their indices still hold, and reports nothing, so the app never holds a
   position it was not told of; any other removal leaves the drag going, the drag's, the
   marquee's, the selection's and the moved items' indices moved with it (`removing()`).
+  A drag whose release never comes (the sequencer hidden mid-drag, `onVisibleChanged()`,
+  or a release lost with the window's focus, which the next press finds) is put back as
+  Escape puts it. A drag moves by the time under the mouse less the time under the press,
+  so a pan or zoom mid-drag (which drags again from the mouse) keeps the item under the
+  cursor. A press's `onSelectionChanged` handler may edit the model: the pressed item
+  follows its removals, and the press drags nothing if it went. The app's edits do not
+  hit-test the hover each: one post hit-tests it at the top of the next update, so a
+  Delete of many items or a batch of `addClip`s under a resting mouse builds the track's
+  search once.
   While a drag lasts the dragged tracks' searches are left as at the press (the dragged
   items in them passed over by the snap, keeping their overlap levels until the
   release, which builds each dragged track's search once). A left press on empty lane
@@ -4957,8 +4966,8 @@ two programs and the draws. What follows describes both together:
   changed in one frame; otherwise the frame draws what `Sequencer::takeChangedItems()`
   gives, the items moved, set, added or selected since the last frame and the clips a
   rebuilt search gave a new overlap level, and the item the hover left and the one it
-  reached; each slot only when it differs. A playhead move (`getPlayheadSerial()`) draws
-  its two slots. The grid's slots are taken for as many ticks as the area's width can show
+  reached; each slot only when it differs. The playhead's two slots are drawn on
+  every such frame, unchanged bytes writing nothing. The grid's slots are taken for as many ticks as the area's width can show
   (`area.w/60+4`), and the label runs given back with the ticks, so a zoom takes no slot
   and a width back has the slots and runs it had (`controltest_resize_each` found both).
   So a drag frame writes the dragged items' slots and the guide's, a scrub frame the

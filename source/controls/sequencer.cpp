@@ -152,8 +152,9 @@ void Sequencer::clearTracks()
     if(m_tracks.empty())
         return;
 
-    // nothing is left for a drag to hold or put back
+    // nothing is left for a drag or a press to hold or put back
     m_drag=Drag::None;
+    m_pressItemGone=true;
     m_dragStarted=false;
     m_originals.clear();
     m_pressSelection.clear();
@@ -264,6 +265,11 @@ void Sequencer::removing(const Removal &removal)
         items.swap(kept);
     };
 
+    // a press's onSelectionChanged handler removing the pressed item: the
+    // press drags nothing
+    if(m_pressFiring && !m_pressItemGone && !remap(m_pressItem, removal))
+        m_pressItemGone=true;
+
     if(m_drag == Drag::Move || m_drag == Drag::ResizeLeft || m_drag == Drag::ResizeRight)
     {
         bool held=false;
@@ -340,7 +346,7 @@ size_t Sequencer::addClip(size_t track, double start, double end, const String &
     m_tracks[track].clips.push_back(std::move(clip));
     ++m_itemCount;
     itemChanged(SequencerItem(SequencerItem::Kind::Clip, track, m_tracks[track].clips.size()-1));
-    refreshHover();
+    hoverMayHaveChanged();
     return m_tracks[track].clips.size()-1;
 }
 
@@ -360,7 +366,7 @@ void Sequencer::setClip(size_t track, size_t index, double start, double end)
     clip.start=start;
     clip.end=end;
     itemChanged(SequencerItem(SequencerItem::Kind::Clip, track, index));
-    refreshHover();
+    hoverMayHaveChanged();
 }
 
 void Sequencer::removeClip(size_t track, size_t index)
@@ -375,8 +381,7 @@ void Sequencer::removeClip(size_t track, size_t index)
     m_tracks[track].clips.erase(m_tracks[track].clips.begin()+static_cast<std::ptrdiff_t>(index));
     --m_itemCount;
     m_tracks[track].clipIndex.dirty=true;
-    m_hovering=false;
-    refreshHover();
+    hoverMayHaveChanged();
 }
 
 size_t Sequencer::getClipCount(size_t track) const
@@ -418,7 +423,7 @@ size_t Sequencer::addKey(size_t track, double time, uint64_t id)
     m_tracks[track].keys.push_back(key);
     ++m_itemCount;
     itemChanged(SequencerItem(SequencerItem::Kind::Key, track, m_tracks[track].keys.size()-1));
-    refreshHover();
+    hoverMayHaveChanged();
     return m_tracks[track].keys.size()-1;
 }
 
@@ -434,7 +439,7 @@ void Sequencer::setKey(size_t track, size_t index, double time)
 
     key.time=time;
     itemChanged(SequencerItem(SequencerItem::Kind::Key, track, index));
-    refreshHover();
+    hoverMayHaveChanged();
 }
 
 void Sequencer::removeKey(size_t track, size_t index)
@@ -449,8 +454,7 @@ void Sequencer::removeKey(size_t track, size_t index)
     m_tracks[track].keys.erase(m_tracks[track].keys.begin()+static_cast<std::ptrdiff_t>(index));
     --m_itemCount;
     m_tracks[track].keyIndex.dirty=true;
-    m_hovering=false;
-    refreshHover();
+    hoverMayHaveChanged();
 }
 
 size_t Sequencer::getKeyCount(size_t track) const
@@ -640,6 +644,9 @@ void Sequencer::viewChanged()
         renewMeasureKey();
         computeTicks();
     }
+    // a drag of items goes on from the time now under the mouse
+    if(m_dragStarted && (m_drag == Drag::Move || m_drag == Drag::ResizeLeft || m_drag == Drag::ResizeRight))
+        dragTo(m_mouse);
     laneContentMoved();
 }
 
@@ -652,7 +659,6 @@ void Sequencer::laneContentMoved()
 
 void Sequencer::playheadMoved()
 {
-    ++m_playheadSerial;
     addStateChange(StateChange_Background);
 }
 
@@ -965,6 +971,28 @@ void Sequencer::setHover(bool hovering, const SequencerItem &item, Part part)
     setCursor((part == Part::ClipLeftEdge || part == Part::ClipRightEdge) ? cursor::SizeWE : cursor::Normal);
 }
 
+void Sequencer::hoverMayHaveChanged()
+{
+    if(!m_mouseInside || m_hoverRefreshPosted)
+        return;
+
+    Canvas *canvas=getCanvas();
+
+    if(!canvas)
+        return;
+
+    const size_t id=getControlId();
+
+    m_hoverRefreshPosted=canvas->post([id]()
+        {
+            if(auto *seq=gweni_cast<Sequencer>(Base::getControlById(id)))
+            {
+                seq->m_hoverRefreshPosted=false;
+                seq->refreshHover();
+            }
+        });
+}
+
 void Sequencer::refreshHover()
 {
     // a drag keeps the item it holds; the mouse off the sequencer hovers nothing
@@ -1039,6 +1067,11 @@ void Sequencer::onMouseClickLeft(int x, int y, bool down)
         return;
     }
 
+    // a drag whose release never came (lost with the window's focus): put
+    // back, as Escape puts it back
+    if(m_drag != Drag::None)
+        endDrag(true);
+
     if(isDisabled())
         return;
 
@@ -1050,6 +1083,7 @@ void Sequencer::onMouseClickLeft(int x, int y, bool down)
     const bool ctrl=input::isControlDown();
 
     m_press=local;
+    m_pressTime=timeAt(local.x);
     m_mouse=local;
     m_drag=Drag::None;
     m_dragStarted=false;
@@ -1085,14 +1119,17 @@ void Sequencer::onMouseClickLeft(int x, int y, bool down)
 
     bool changed=false;
 
+    // the handlers of onSelectionChanged may edit the model: the pressed
+    // item followed through their removals, the press dragging nothing if
+    // it is what went
+    m_pressItem=item;
+    m_pressItemGone=false;
+    m_pressFiring=true;
     if(ctrl)
     {
         changed=setSelectedFlag(item, !isSelected(item));
         if(changed)
             fireSelectionChanged();
-        // toggled off: nothing to drag
-        if(!isSelected(item))
-            return;
     }
     else if(shift)
         changed=setSelectedFlag(item, true);
@@ -1107,8 +1144,11 @@ void Sequencer::onMouseClickLeft(int x, int y, bool down)
 
     if(changed && !ctrl)
         fireSelectionChanged();
-
-    m_pressItem=item;
+    m_pressFiring=false;
+    // gone, or toggled off with Ctrl: nothing to drag
+    if(m_pressItemGone || !isValid(m_pressItem) || (ctrl && !isSelected(m_pressItem)))
+        return;
+    item=m_pressItem;
     if(part == Part::ClipLeftEdge)
         m_drag=Drag::ResizeLeft;
     else if(part == Part::ClipRightEdge)
@@ -1148,6 +1188,16 @@ void Sequencer::onMouseClickLeft(int x, int y, bool down)
         m_originals.push_back(original(item));
 
     MouseFocus=this;
+}
+
+void Sequencer::onVisibleChanged()
+{
+    if(visible() || m_drag == Drag::None)
+        return;
+
+    endDrag(true);
+    if(MouseFocus == this)
+        MouseFocus=nullptr;
 }
 
 InputCapture *Sequencer::pressGesture(int button)
@@ -1309,7 +1359,7 @@ void Sequencer::dragTo(const Point &local)
 
     const bool snap=m_snapping && !input::isKeyDown(keys::Alt);
     const Original &pressed=m_originals.front();
-    double dt=timeAt(local.x)-timeAt(m_press.x);
+    double dt=timeAt(local.x)-m_pressTime;
     bool guide=false;
     double guideTime=0.0;
 
