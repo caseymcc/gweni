@@ -8525,7 +8525,10 @@ Native touchscreens have no feeder yet: desktop GLFW has no touch API.
   strips, `GradientEditor`'s strip and handles, `internal::NodeTitleBar`, `Pin`, and a
   `TextBox` only while it has the keyboard focus (a drag in a focused box selects; over
   an unfocused one it scrolls what holds it). A disabled one keeps none, so a finger
-  on a disabled slider in a list scrolls the list.
+  on a disabled slider in a list scrolls the list. Nor does the finger that stops a
+  fling: it is the scroller's even over a control that keeps the drag, so stopping a
+  list or a NodeGraph on a slider, a node's title bar or a pin presses, selects and
+  moves nothing there, and a drag from it pans on.
 - **Tap, pan, fling, long press.** Otherwise the canvas's `internal::TouchGesture`
   (`source/controls/touchGesture.cpp`) takes the canvas's input until the lift:
   - a lift within `Canvas::TouchSlop` (8 units) of the down is a **tap**: a move to the
@@ -8614,7 +8617,8 @@ Native touchscreens have no feeder yet: desktop GLFW has no touch API.
   canvas holds the control by its id, not a pointer: a focused control detached or
   moved to another canvas keeps the focus and may be deleted where this canvas never
   hears of it, so a press looks it up (`Base::getControlById`) and drops the word if
-  it is gone or off the canvas. A `SectionedEdit` (`DateEdit`, `TimeEdit`) reads its
+  it is gone or off the canvas, ending the platform's composition, so the page's field
+  does not go on composing it into the next focus. A `SectionedEdit` (`DateEdit`, `TimeEdit`) reads its
   text as the focus leaves, so it commits the composition first
   (`TextBox::commitCompositionOnFocusLoss`): "2:30 " typed and "pm" composing is
   2:30 PM (`tests/unit/textBoxComposition.cpp`, `timeEdit.cpp`,

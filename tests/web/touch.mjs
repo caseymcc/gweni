@@ -24,7 +24,8 @@
 //  line or a "touch.mjs: FAIL: <check>: ..." one:
 //    tap         ButtonDemo: a tap on "Toggle Me" presses it once and turns it
 //                on, leaving it neither held nor hovered and the textarea
-//                unfocused; a tap on "With Tooltip" shows no tooltip 1.5 s on
+//                unfocused; a tap on "With Tooltip" shows no tooltip 1.5 s on;
+//                a tap with a negative Touch.identifier presses it once more
 //    drag        VirtualListDemo: a finger dragged 60 px up and held still
 //                before its lift scrolls the list 60 units, and it stays there
 //    drag_button ScrollControlDemo: a drag of 40 px up that starts on the
@@ -212,16 +213,16 @@ class Page
         await settle(this.page);
     }
 
-    async touch(type, at)
+    async touch(type, at, id = 1)
     {
         await this.cdp.send('Input.dispatchTouchEvent',
-            { type, touchPoints: type === 'touchEnd' || type === 'touchCancel' ? [] : [{ x: at.x, y: at.y, id: 1 }] });
+            { type, touchPoints: type === 'touchEnd' || type === 'touchCancel' ? [] : [{ x: at.x, y: at.y, id }] });
     }
 
-    async tap(at)
+    async tap(at, id = 1)
     {
-        await this.touch('touchStart', at);
-        await this.touch('touchEnd', at);
+        await this.touch('touchStart', at, id);
+        await this.touch('touchEnd', at, id);
         await this.settle();
     }
 
@@ -283,6 +284,18 @@ async function checkTap(browser, base)
     expect('tap', !later.tooltip && later.hovered === null && (await p.probe('button With Tooltip')).presses === 1,
         `a tap on "With Tooltip" showed its tooltip (${later.tooltip}) or left ${later.hovered} hovered 1.5 s on`,
         'no tooltip 1.5 s after a tap on "With Tooltip"');
+
+    // a Touch.identifier is any long: the page hands gweni a small slot of
+    // its own, so a negative one (which inputTouch ignores) still taps
+    await p.page.evaluate(() => window.addEventListener('touchstart',
+        e => { window.lastTouchId = e.changedTouches[0].identifier; }, { capture: true }));
+    await p.tap(centre(toggle.rect), -7);
+    const negative = await p.probe('button Toggle Me');
+    const seen = await p.page.evaluate(() => window.lastTouchId);
+    expect('tap', seen < 0 && negative.presses === 2 && !negative.toggle,
+        `a tap with Touch.identifier ${seen} (negative wanted) pressed "Toggle Me" `
+        + `${negative.presses - 1} time(s) (1 wanted), leaving it ${negative.toggle ? 'on' : 'off'}`,
+        'a tap with a negative identifier presses once');
     await p.close('tap');
 }
 

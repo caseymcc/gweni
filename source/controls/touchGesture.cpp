@@ -145,7 +145,7 @@ size_t TouchGesture::stopFlings(Canvas *canvas)
 
 void TouchGesture::start(Base *target, const PointF &at, bool stoppedFling)
 {
-    m_target=(target && (target != m_canvas))?target->getControlId():0;
+    m_target=(target && (target != m_canvas))?target->getControlId():NoControl;
     m_down=at;
     m_last=at;
     m_panning=false;
@@ -161,7 +161,7 @@ void TouchGesture::start(Base *target, const PointF &at, bool stoppedFling)
     m_extremeTime[0]=m_extremeTime[1]=m_samples.back().time;
 
     // a finger that stops a fling is no long press either
-    if(m_canvas && m_target && !stoppedFling)
+    if(m_canvas && (m_target != NoControl) && !stoppedFling)
         m_longPressTimer=m_canvas->after(Canvas::LongPressSeconds, [this]() { longPress(); });
 }
 
@@ -172,7 +172,7 @@ void TouchGesture::abandon()
     m_longPressTimer=TimerHandle();
     if(active())
         m_canvas->setInputCapture(nullptr);
-    m_target=0;
+    m_target=NoControl;
     m_panning=false;
 }
 
@@ -300,7 +300,7 @@ void TouchGesture::move(const PointF &at)
 
     for(int axis=0; axis < 2; ++axis)
     {
-        if(!m_axes[axis].control)
+        if(m_axes[axis].control == NoControl)
             latch(axis);
     }
     panLatched();
@@ -366,20 +366,20 @@ void TouchGesture::panLatched()
 {
     Axis &x=m_axes[0];
     Axis &y=m_axes[1];
-    const bool same=x.control && (x.control == y.control);
+    const bool same=(x.control != NoControl) && (x.control == y.control);
 
     for(int axis=0; axis < 2; ++axis)
     {
         Axis &state=m_axes[axis];
 
-        if(!state.control || ((axis == 1) && same))
+        if((state.control == NoControl) || ((axis == 1) && same))
             continue;
 
         Base *control=Base::getControlById(state.control);
 
         if(!control || !control->visible())
         {
-            state.control=0;
+            state.control=NoControl;
             state.pending=0.0f;
             continue;
         }
@@ -455,7 +455,7 @@ void TouchGesture::fling()
     {
         const Axis &state=m_axes[axis];
 
-        if(!state.control || ((axis == 1) && (state.control == m_axes[0].control)))
+        if((state.control == NoControl) || ((axis == 1) && (state.control == m_axes[0].control)))
             continue;
 
         Base *control=Base::getControlById(state.control);

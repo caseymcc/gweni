@@ -33,7 +33,8 @@
  *  while a last move rolled back a little still flings the flick's way and
  *  a unit's sideways wobble flings as far as a straight flick; a finger
  *  held still before the lift flings nothing; a finger put down stops a
- *  fling, and its lift is no tap. Held still for Canvas::LongPressSeconds,
+ *  fling, and its lift is no tap, and it is the scroller's even over a
+ *  control that keeps the drag (it presses nothing there, and pans). Held still for Canvas::LongPressSeconds,
  *  and not before, a finger opens the context menu of the control under it
  *  with its corner at the finger, and the lift chooses nothing (nothing is
  *  even hit-tested); one moved past the slop is no long press, nor one
@@ -589,6 +590,51 @@ TEST_CASE("Touch: a finger put down stops a fling, and its lift is no tap")
     canvas->inputTouch(0, TouchPhase::Down, at.x, at.y);
     canvas->inputTouch(0, TouchPhase::Up, at.x, at.y);
     CHECK(scene.rowPresses == 1);
+}
+
+TEST_CASE("Touch: a finger that stops a fling over a control that keeps the drag presses nothing and pans")
+{
+    Scene scene;
+    controls::Canvas *canvas=scene.canvas;
+    DragTarget *target=scene.scroll->newChild<DragTarget>();
+
+    target->setSizeFlags({SizeFlag::Fixed, SizeFlag::Fixed});
+    target->setBounds(122, 0, 14, 900);
+    scene.frame();
+
+    scene.flick(scene.inScroll(60.0f, 100.0f), PointF(0.0f, -10.0f), 6);
+    scene.step(1.0/60.0);
+    scene.step(1.0/60.0);
+    REQUIRE(anim::activeCount(scene.scroll) == 1);
+
+    PointF at=scene.inScroll(128.0f, 60.0f);
+
+    REQUIRE(canvas->getControlAt(int(at.x), int(at.y)) == target);
+    canvas->inputTouch(0, TouchPhase::Down, at.x, at.y);
+    CHECK(anim::activeCount(scene.scroll) == 0);
+
+    // a jitter and then a drag: the scroller's, not the target's
+    const int stopped=scene.scroll->getVerticalScrollOffset();
+
+    canvas->inputTouch(0, TouchPhase::Move, at.x+3.0f, at.y);
+    canvas->inputTouch(0, TouchPhase::Move, at.x+3.0f, at.y-20.0f);
+    CHECK(scene.scroll->getVerticalScrollOffset() > stopped);
+    canvas->inputTouch(0, TouchPhase::Up, at.x+3.0f, at.y-20.0f);
+    CHECK(target->events.empty());
+    CHECK(canvas->inputCapture() == nullptr);
+
+    // with no fling to stop the next finger is the target's again
+    for(int i=0; i < 120; ++i)
+        scene.step(1.0/60.0);
+    REQUIRE(anim::activeCount(scene.scroll) == 0);
+    scene.frame();
+    // the jitter panned the ZoomPanel (the list scrolls no other way)
+    REQUIRE(scene.panel->pan().x == doctest::Approx(3.0f));
+    at.x+=3.0f;
+    REQUIRE(canvas->getControlAt(int(at.x), int(at.y)) == target);
+    canvas->inputTouch(0, TouchPhase::Down, at.x, at.y);
+    canvas->inputTouch(0, TouchPhase::Up, at.x, at.y);
+    CHECK_FALSE(target->events.empty());
 }
 
 TEST_CASE("Touch: a finger held still before its lift flings nothing")

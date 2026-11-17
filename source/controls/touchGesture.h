@@ -62,12 +62,16 @@ public:
 
 private:
 
-    //! An axis's pan: the control it went to (its id, 0 for none yet), its
+    //! No control: 0 is a real id (the first control made, ObjectIdBank's
+    //! first), and getControlById() finds nothing for this one.
+    static constexpr size_t NoControl=size_t(-1);
+
+    //! An axis's pan: the control it went to (its id, NoControl for none yet), its
     //! own units per canvas unit along the axis, and the motion it has not
     //! moved yet, in canvas units.
     struct Axis
     {
-        size_t control=0;
+        size_t control=NoControl;
         float scale=1.0f;
         float pending=0.0f;
     };
@@ -88,7 +92,7 @@ private:
     float unitsPerCanvasUnit(Base *control, int axis) const;
 
     Canvas *m_canvas;
-    size_t m_target=0;
+    size_t m_target=NoControl;
     PointF m_down;
     PointF m_last;
     bool m_panning=false;

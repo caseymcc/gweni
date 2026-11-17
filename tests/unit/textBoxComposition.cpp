@@ -654,7 +654,8 @@ TEST_CASE("TextBox composition: a control deleted with a word composing for it e
 
 // The canvas holds the word by the control's id: a control that keeps the
 // focus off the canvas (detached, or moved to another canvas) is not the
-// press's to type into, and one deleted there is never read again.
+// press's to type into, and one deleted there is never read again; the
+// word is dropped and the platform's composition ended.
 TEST_CASE("TextBox composition: a word held for a control taken off the canvas goes nowhere")
 {
     Scene scene;
@@ -671,6 +672,9 @@ TEST_CASE("TextBox composition: a word held for a control taken off the canvas g
         scene.canvas->inputMouseMoved(300, 250, 0, 0);
         scene.canvas->inputMouseButton(0, true);
         scene.canvas->inputMouseButton(0, false);
+        // and the platform's is ended, or the page's field would go on
+        // composing it into the next focus
+        CHECK(scene.ends == 1);
         CHECK(password->getText().empty());
         KeyboardFocus=nullptr;
         delete password;
@@ -689,6 +693,9 @@ TEST_CASE("TextBox composition: a word held for a control taken off the canvas g
         scene.canvas->inputMouseMoved(300, 250, 0, 0);
         scene.canvas->inputMouseButton(0, true);
         scene.canvas->inputMouseButton(0, false);
+        // and the platform's is ended, or the page's field would go on
+        // composing it into the next focus
+        CHECK(scene.ends == 1);
         CHECK(password->getText().empty());
         KeyboardFocus=nullptr;
         delete second;
@@ -707,6 +714,9 @@ TEST_CASE("TextBox composition: a word held for a control taken off the canvas g
         scene.canvas->inputMouseMoved(300, 250, 0, 0);
         scene.canvas->inputMouseButton(0, true);
         scene.canvas->inputMouseButton(0, false);
+        // and the platform's is ended, or the page's field would go on
+        // composing it into the next focus
+        CHECK(scene.ends == 1);
         CHECK(KeyboardFocus == nullptr);
     }
     // nothing is held any more: the next press types nothing anywhere

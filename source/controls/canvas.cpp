@@ -1167,7 +1167,11 @@ bool Canvas::inputMouseButton(int button, bool down)
         if(held && (held->getCanvas() == this))
             commitHeldComposition(held);
         else
+        {
+            // the page's field must not go on composing it into the next focus
             clearHeldComposition();
+            platform::endTextComposition();
+        }
     }
 
     // A release gets its press's answer (canvas.h, "Input"): the release of a
@@ -2573,8 +2577,10 @@ bool Canvas::inputTouch(int id, TouchPhase phase, float x, float y)
         Base *target=getControlAt(point.x, point.y);
         bool keeps=false;
 
-        // a disabled control takes no drag of its own: the finger pans
-        for(Base *control=target; control && (control != this); control=control->getActualParent())
+        // a disabled control takes no drag of its own: the finger pans; and
+        // the finger that stopped a fling is the scroller's, even over a
+        // control that keeps a drag (no press, no tap; a drag pans on)
+        for(Base *control=stoppedFling ? nullptr : target; control && (control != this); control=control->getActualParent())
         {
             if(control->keepsTouchDrag() && !control->isDisabled())
             {

@@ -426,19 +426,31 @@ EM_JS(void, gweni_js_input_listen, (int on), {
             for(var i = 0; i < e.changedTouches.length; ++i)
             {
                 var touch = e.changedTouches[i];
+                var slot;
                 if(phase === 0)
                 {
                     if(touch.target !== canvas)
                         continue;
-                    state.touches[touch.identifier] = true;
+                    // the smallest slot no finger holds: Touch.identifier may
+                    // be any long, a negative one included, which inputTouch
+                    // ignores
+                    var held = {};
+                    for(var key in state.touches)
+                        held[state.touches[key]] = true;
+                    for(slot = 0; held[slot]; ++slot) {}
+                    state.touches[touch.identifier] = slot;
                 }
-                else if(!state.touches[touch.identifier])
+                else if(!(touch.identifier in state.touches))
                     continue;
-                else if(phase >= 2)
-                    delete state.touches[touch.identifier];
+                else
+                {
+                    slot = state.touches[touch.identifier];
+                    if(phase >= 2)
+                        delete state.touches[touch.identifier];
+                }
                 ours = true;
                 ++state.touchesHanded;
-                Module['_gweni_platform_touch'](touch.identifier, phase,
+                Module['_gweni_platform_touch'](slot, phase,
                     touch.clientX - rect.left, touch.clientY - rect.top);
             }
             if(ours && e.cancelable)
