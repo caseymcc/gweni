@@ -759,12 +759,11 @@ void OpenGLCore::beginPrimitiveDraws()
         glActiveTexture(GL_TEXTURE0+FirstImageUnit+(GLenum)i);
         glBindTexture(GL_TEXTURE_2D_ARRAY, m_imagePages[i]);
     }
-    // the layer table only while the vertex stage reads it (setLayerRemap)
-    if(layerRemap())
-    {
-        glActiveTexture(GL_TEXTURE0+LayerTableUnit);
-        glBindTexture(GL_TEXTURE_2D, m_layerTexture);
-    }
+    // the layer table (0 while there is none) whether the remap reads it or
+    // not: the sampler is active, and WebGL 2 refuses a draw while an app's
+    // texture of another format is on its unit
+    glActiveTexture(GL_TEXTURE0+LayerTableUnit);
+    glBindTexture(GL_TEXTURE_2D, m_layerTexture);
     if(m_layerRemapSent != layerRemap())
     {
         m_layerRemapSent=layerRemap();
@@ -824,11 +823,9 @@ void OpenGLCore::beginTextDraws()
 
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, m_textClipTexture);
-    if(layerRemap())
-    {
-        glActiveTexture(GL_TEXTURE0+LayerTableUnit);
-        glBindTexture(GL_TEXTURE_2D, m_layerTexture);
-    }
+    // always, as beginPrimitiveDraws binds it
+    glActiveTexture(GL_TEXTURE0+LayerTableUnit);
+    glBindTexture(GL_TEXTURE_2D, m_layerTexture);
     if(m_textLayerRemapSent != layerRemap())
     {
         m_textLayerRemapSent=layerRemap();

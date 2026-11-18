@@ -10,7 +10,9 @@
  *
  *  The app's state is made unlike every default a frame relies on: its own
  *  program, vertex array, array buffer, active unit 5, 2D and 2D-array
- *  textures and sampler objects on gweni's units, blend on with other factors
+ *  textures and sampler objects on gweni's units (an RGBA8 texture on unit 7,
+ *  the layer table's, which WebGL 2 checks against its unsigned sampler at
+ *  every draw), blend on with other factors
  *  and a reverse-subtract equation, the depth test off with GL_GREATER, no
  *  depth writes and a 0.2..0.8 depth range, cull face, scissor and stencil on,
  *  a scissor box, a colour mask, a viewport, pack and unpack alignment, row
@@ -56,8 +58,9 @@ namespace
 
 using gweni::Color;
 
-//! The units the frame uses: 0 (atlas), 1 (clip boxes), 2..6 (image pages)
-constexpr int Units=7;
+//! The units the frame uses: 0 (atlas), 1 (clip boxes), 2..6 (image pages),
+//! 7 (the depth view's layer table, bound in every frame)
+constexpr int Units=8;
 
 //! Every value the app's state is checked by, by name.
 std::map<std::string, std::vector<GLint>> snapshot()
@@ -149,7 +152,7 @@ struct AppState
     GLuint vertexArray=0;
     GLuint buffer=0;
     GLuint pixelBuffer=0;
-    GLuint textures[3]={};
+    GLuint textures[4]={};
     GLuint samplers[2]={};
     std::map<std::string, std::vector<GLint>> before;
 
@@ -172,7 +175,7 @@ struct AppState
         glGenVertexArrays(1, &vertexArray);
         glGenBuffers(1, &buffer);
         glGenBuffers(1, &pixelBuffer);
-        glGenTextures(3, textures);
+        glGenTextures(4, textures);
         glGenSamplers(2, samplers);
         glSamplerParameteri(samplers[0], GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glSamplerParameteri(samplers[0], GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -180,6 +183,16 @@ struct AppState
         glUseProgram(program);
         glBindVertexArray(vertexArray);
         glBindBuffer(GL_ARRAY_BUFFER, buffer);
+        // a float texture on the layer table's unit, which gweni's programs
+        // sample as unsigned: WebGL 2 refuses every draw unless the frame
+        // binds its own there, read or not (made before the unpack state
+        // below, which its upload would read)
+        const unsigned char texel[4]={ 10, 20, 30, 255 };
+        glActiveTexture(GL_TEXTURE7);
+        glBindTexture(GL_TEXTURE_2D, textures[3]);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, texel);
         // too small for any upload gweni makes: one read from it is an error
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pixelBuffer);
         glBufferData(GL_PIXEL_UNPACK_BUFFER, 16, nullptr, GL_STREAM_DRAW);
@@ -244,7 +257,7 @@ struct AppState
         glDeleteBuffers(1, &buffer);
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
         glDeleteBuffers(1, &pixelBuffer);
-        glDeleteTextures(3, textures);
+        glDeleteTextures(4, textures);
         glDeleteSamplers(2, samplers);
         glBlendFuncSeparate((GLenum)before["blendSrcRgb"][0], (GLenum)before["blendDstRgb"][0],
             (GLenum)before["blendSrcAlpha"][0], (GLenum)before["blendDstAlpha"][0]);

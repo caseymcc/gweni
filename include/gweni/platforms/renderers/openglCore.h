@@ -70,7 +70,7 @@ public:
     //! image height or skips (rows, pixels, images), no pixel unpack buffer, and on desktop GL GL_FILL, no
     //! GL_FRAMEBUFFER_SRGB and no GL_PRIMITIVE_RESTART), and end(), after
     //! flush(), puts it all back: the program, the vertex array, the array
-    //! buffer, the active unit and units 0..6's 2D and 2D-array textures and
+    //! buffer, the active unit and units 0..7's 2D and 2D-array textures and
     //! samplers, blend enable, function (separate) and equation, depth test,
     //! function, mask and range, cull face, scissor test and box, stencil test,
     //! colour mask, viewport, pixel pack and unpack state and the pixel unpack
