@@ -667,11 +667,21 @@
  *                 (its input included); the click presses nothing; the toggle
  *                 is still hovered, the focus, tree serial and live ids as they
  *                 were; and the frame after the close is the one before the
- *                 open, byte for byte. Shots depth-view-before.png,
+ *                 open, byte for byte. Before the close, the z spacing is
+ *                 swept: + up to x20 (DepthView::MaxSpacingFactor) and once
+ *                 past it, Alt (GLFW_KEY_LEFT_ALT) and Alt+wheel notches (a
+ *                 half one first) down to x0.1 and once past it, Alt up and a
+ *                 plain notch in and out (a dolly, the spacing kept): each of
+ *                 those frames idle as above, every step one ZSpacingStep (or
+ *                 the square root of it for the half notch), the front layer
+ *                 at the same distance from the camera throughout, both ends
+ *                 reached exactly and a step past one moving nothing; the same
+ *                 sweep runs on the Demo shell below. Shots depth-view-before.png,
  *                 -perspective.png, -ortho.png and -after.png. Then the demo
  *                 shell's Depth button (Demo built on the canvas): an off
  *                 toggle docked Right in the status bar left of Stats, tooltip
- *                 "Depth view (F9, Esc leaves)", on exactly while the view is
+ *                 "Depth view (F9, Esc leaves; +/- or Alt+wheel: z spacing, R
+ *                 reset)", on exactly while the view is
  *                 open after F9, Escape, a click on it, a click on it with the
  *                 view open (which has the mouse, so nothing changes), F9, and
  *                 a shell built with the view open, then Escape; the view told
@@ -685,7 +695,8 @@
  *                 its highest shown layer: the shown page's labels must take at
  *                 least MinDepthViewPageShare (0.6) of the stack's shown
  *                 layers (page_share=, raw_share= its raw labels' share of the
- *                 canvas's highest z). Last TextBoxDemo with the clock
+ *                 canvas's highest z), then the spacing swept there too. Last
+ *                 TextBoxDemo with the clock
  *                 stepping, its first box focused, the view turned: over 90
  *                 frames the caret's blink changes no more pixels than twice
  *                 its rect's (blink_px, raw_blink_px with raw labels), the
@@ -694,7 +705,8 @@
  *                   depth-view open=visited:0,...,layer:131072 ... camera_drawn=yes
  *                   shell_button=yes layer_switch=yes layer_uploads=yes demo_fitted=yes
  *                   shown_layers=315 page_share=0.678 raw_share=0.053 blink_px=3
- *                   raw_blink_px=4 caret_px=102 blink_local=yes
+ *                   raw_blink_px=4 caret_px=102 blink_local=yes spacing_frames=89
+ *                   spacing=yes
  *                 Exits non-zero if any check is no. controltest_depth_view
  *                 (tests/depthView.cmake) runs it twice and requires the same
  *                 PNGs.
@@ -4500,6 +4512,119 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
         frames.push_back(f);
     };
 
+    // The spacing swept on `swept`: + up to x20, a + past it, Alt+wheel
+    // notches (a half one among them) down to x0.1 and one past it, Alt let
+    // go and a plain notch in and out (a dolly). Every one of those frames is
+    // idle (kept in spacingFrames, not frames), the front layer keeps its
+    // distance from the camera (distance less the stack's depth, in focal
+    // lengths) through every spacing step, both ends are reached exactly and a
+    // step past one changes nothing.
+    std::vector<DepthViewFrame> spacingFrames;
+    std::string spacingFailure;
+    auto sweepSpacing=[&](DepthView *swept, const char *where)
+    {
+        if(!swept)
+        {
+            spacingFailure=std::string(where)+": no view";
+            return;
+        }
+
+        // the hit tests counted from here, not from the frames before
+        hitTests=gweni::input::hitTestVisits();
+
+        const gweni::Rect &rect=s.renderer->viewRect();
+        const float focal=DepthView::FocalViews*(float)std::max(std::max(rect.w, rect.h), 1);
+        auto front=[&]()
+        {
+            return swept->camera().distance-swept->camera().zSpacing*swept->highestZ()/focal;
+        };
+        const float front0=front();
+        auto spacingFrame=[&](const char *step)
+        {
+            frame(std::string(where)+" "+step);
+            spacingFrames.push_back(frames.back());
+            frames.pop_back();
+            if(spacingFailure.empty() && std::fabs(front()-front0) > 1e-3f*std::fabs(front0))
+                spacingFailure=std::string(where)+": "+step+" moved the front layer from "
+                    +std::to_string(front0)+" to "+std::to_string(front())+" focal lengths";
+        };
+        auto fail=[&](const std::string &what)
+        {
+            if(spacingFailure.empty())
+                spacingFailure=std::string(where)+": "+what;
+        };
+
+        for(int i=0; i<40 && swept->spacingFactor() < DepthView::MaxSpacingFactor; ++i)
+        {
+            const float was=swept->spacingFactor();
+
+            glfwChar(s, '+');
+            spacingFrame("+");
+            if(swept->spacingFactor() < DepthView::MaxSpacingFactor
+                && std::fabs(swept->spacingFactor()-was*DepthView::ZSpacingStep) > 1e-4f*was)
+                fail("+ did not step the spacing by ZSpacingStep");
+        }
+        if(swept->spacingFactor() != DepthView::MaxSpacingFactor)
+            fail("+ did not reach x20, factor "+std::to_string(swept->spacingFactor()));
+        {
+            const DepthView::Camera top=swept->camera();
+
+            glfwChar(s, '+');
+            spacingFrame("+ past x20");
+            if(swept->camera() != top)
+                fail("a + past x20 moved the camera");
+        }
+
+        glfwKey(s, GLFW_KEY_LEFT_ALT, GLFW_PRESS, GLFW_MOD_ALT);
+        spacingFrame("alt");
+        {
+            const float was=swept->spacingFactor();
+
+            scrollWheel(s, -30);
+            spacingFrame("alt+half notch");
+            if(std::fabs(swept->spacingFactor()-was/std::sqrt(DepthView::ZSpacingStep)) > 1e-4f*was)
+                fail("half a notch was not half a step");
+        }
+        for(int i=0; i<60 && swept->spacingFactor() > DepthView::MinSpacingFactor; ++i)
+        {
+            const float was=swept->spacingFactor();
+
+            scrollWheel(s, -60);
+            spacingFrame("alt+wheel");
+            if(swept->spacingFactor() > DepthView::MinSpacingFactor
+                && std::fabs(swept->spacingFactor()-was/DepthView::ZSpacingStep) > 1e-4f*was)
+                fail("a notch did not step the spacing by ZSpacingStep");
+        }
+        if(swept->spacingFactor() != DepthView::MinSpacingFactor)
+            fail("Alt+wheel did not reach x0.1, factor "+std::to_string(swept->spacingFactor()));
+        {
+            const DepthView::Camera bottom=swept->camera();
+
+            scrollWheel(s, -60);
+            spacingFrame("alt+wheel past x0.1");
+            if(swept->camera() != bottom)
+                fail("a notch past x0.1 moved the camera");
+        }
+        glfwKey(s, GLFW_KEY_LEFT_ALT, GLFW_RELEASE, 0);
+        spacingFrame("alt up");
+
+        // Alt up: the wheel dollies again, the spacing as it was
+        const DepthView::Camera before=swept->camera();
+
+        scrollWheel(s, 60);
+        if(!(swept->spacingFactor() == DepthView::MinSpacingFactor
+            && std::fabs(swept->camera().distance-before.distance*DepthView::DollyStep)
+                <= 1e-4f*before.distance))
+            fail("the wheel did not dolly once Alt was up");
+        frame(std::string(where)+" dolly");
+        spacingFrames.push_back(frames.back());
+        frames.pop_back();
+        scrollWheel(s, -60);
+        frame(std::string(where)+" dolly back");
+        spacingFrames.push_back(frames.back());
+        frames.pop_back();
+    };
+
     // F9, as the window's key callback delivers it
     glfwKey(s, GLFW_KEY_F9, GLFW_PRESS, 0);
     glfwKey(s, GLFW_KEY_F9, GLFW_RELEASE, 0);
@@ -4575,6 +4700,8 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
 
     const bool clickIgnored=toggle->getToggleState() == toggleState && view->camera() == moved;
 
+    sweepSpacing(view, "ButtonDemo");
+
     // F9 again closes it
     glfwKey(s, GLFW_KEY_F9, GLFW_PRESS, 0);
     glfwKey(s, GLFW_KEY_F9, GLFW_RELEASE, 0);
@@ -4620,7 +4747,7 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
         const gweni::Point statsAt=statsButton->localPosToCanvas();
 
         if(!(depthButton->getText() == "Depth" && depthButton->isToggle()
-            && depthButton->getToolTipText() == "Depth view (F9, Esc leaves)"
+            && depthButton->getToolTipText() == "Depth view (F9, Esc leaves; +/- or Alt+wheel: z spacing, R reset)"
             && depthButton->getParent() == shell->statusBar()
             && depthButton->getDock() == gweni::DockPosition::Right
             && statsButton->getDock() == gweni::DockPosition::Right
@@ -4744,6 +4871,7 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
                 rawShare=double(usedHigh-usedLow)/double(std::max(s.canvas->highestZIndex(), 1));
             }
         }
+        sweepSpacing(demoView, "Demo");
         DepthView::close(s.canvas);
         forgetMouse(s);
         dropControl(s, shellControl);
@@ -4846,8 +4974,18 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
 
     for(size_t i=1; i<frames.size(); ++i)
         layerUploads=layerUploads && frames[i].layerBytes == 0;
+
+    // the spacing's frames: idle, the table never uploaded
+    for(const DepthViewFrame &f : spacingFrames)
+    {
+        if(spacingFailure.empty() && !(f.idle() && f.layerBytes == 0))
+            spacingFailure=f.name+" did work in the UI or uploaded the layer table";
+    }
+
+    const bool spacing=spacingFailure.empty() && !spacingFrames.empty();
+
     passed=idle && clickIgnored && closed && kept && same && drawn && shellFollows && layerSwitch
-        && layerUploads && pageFills && blinkLocal;
+        && layerUploads && pageFills && blinkLocal && spacing;
 
     std::cout<<"depth-view";
     for(const DepthViewFrame &f : frames)
@@ -4863,7 +5001,8 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
              <<" shown_layers="<<shownLayers<<" page_share="<<std::fixed<<std::setprecision(3)<<pageShare
              <<" raw_share="<<rawShare<<std::defaultfloat<<" blink_px="<<blinkPixels
              <<" raw_blink_px="<<rawBlinkPixels<<" caret_px="<<caretPixels
-             <<" blink_local="<<(blinkLocal?"yes":"no")<<"\n";
+             <<" blink_local="<<(blinkLocal?"yes":"no")<<" spacing_frames="<<spacingFrames.size()
+             <<" spacing="<<(spacing?"yes":"no")<<"\n";
     if(!passed)
         std::cerr<<"ControlTest: depth-view: "
                  <<(!idle ? "a frame that opened, moved or closed the view did work in the UI"
@@ -4877,6 +5016,7 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
                      : !layerUploads ? "the layer table was not uploaded as the view opened, or again later"
                      : !fitted ? "on Demo the camera at reset is not fitted to the highest shown layer"
                      : !blinkLocal ? "a caret's blink in TextBoxDemo moved more than the caret, or the layer table"
+                     : !spacing ? "the z spacing: "+spacingFailure
                      : "on Demo at 1024x768 the shown page takes less of the stack's depth than "
                          +std::to_string(MinDepthViewPageShare))<<"\n";
     return shotBefore && shotTurned && shotOrtho && shotAfter;

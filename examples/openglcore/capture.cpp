@@ -121,7 +121,7 @@ void openDepthViewOnce(controls::Canvas &canvas)
         return;
     opened.insert(canvas.getControlId());
     if(tools::DepthView::open(&canvas))
-        std::cout<<"the depth view is open; F9 or Escape closes it\n";
+        std::cout<<"the depth view is open; F9 or Escape closes it, +/- or Alt+wheel: z spacing, R reset\n";
 }
 
 bool parseScale(const char *value, float &scale)

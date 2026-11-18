@@ -186,7 +186,7 @@ void Demo::init(const String &name)
     m_depthButton->setText("Depth");
     m_depthButton->setTextPadding(Padding(8, 0, 8, 0));
     m_depthButton->setIsToggle(true);
-    m_depthButton->setToolTipText("Depth view (F9, Esc leaves)");
+    m_depthButton->setToolTipText("Depth view (F9, Esc leaves; +/- or Alt+wheel: z spacing, R reset)");
     m_depthButton->setToggleState(tools::DepthView::find(m_statsCanvas) != nullptr);
     m_depthButton->onToggleOnCaller.add(this, &Demo::onDepthToggleOn);
     m_depthButton->onToggleOffCaller.add(this, &Demo::onDepthToggleOff);
