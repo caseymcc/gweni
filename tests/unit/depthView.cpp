@@ -50,7 +50,12 @@
  *  resize at reset fits the camera to the new view; a turned one keeps its
  *  factor. Turned (yaw -35, pitch 20), in perspective and orthographic, on 3
  *  and 600 layers, every step across the range draws the front layer's
- *  corners and centre where they were, the turn kept.
+ *  corners and centre where they were, the turn kept. Seen from behind (yaw
+ *  150, 180 and -200), it is z 0 that stays where it was drawn, with the pan
+ *  and the distance untouched (the camera never pulled into the stack). With
+ *  raw labels, controls added (a renumber) keep the factor and the stack's
+ *  depth, the next + steps it further, and at reset the camera is fitted to
+ *  the new highest z. Alt with the horizontal wheel changes nothing.
  *  Deleting the canvas under an open view closes it without a call.
  */
 #include "headlessFixture.h"
@@ -995,6 +1000,127 @@ TEST_CASE("Depth view: a resize at reset fits the camera to the new view, a turn
     tools::DepthView::viewChanged(scene.canvas);
     CHECK(view->spacingFactor() == 4.0f);
     CHECK(view->camera().zSpacing == doctest::Approx(4.0f*view->defaultZSpacing()));
+}
+
+TEST_CASE("Depth view: seen from behind, the spacing keeps z 0, the end nearer the camera, where it is drawn")
+{
+    for(int count:{ 3, 600 })
+    {
+        for(float yaw:{ 150.0f, 180.0f, -200.0f })
+        {
+            for(bool perspective:{ true, false })
+            {
+                CAPTURE(count);
+                CAPTURE(yaw);
+                CAPTURE(perspective);
+
+                DrawnCanvas scene(count);
+                tools::DepthView *view=tools::DepthView::open(scene.canvas, &scene.slots);
+
+                REQUIRE(view != nullptr);
+
+                tools::DepthView::Camera camera=view->resetCamera();
+
+                camera.yaw=yaw;
+                camera.pitch=15.0f;
+                camera.perspective=perspective;
+                view->setCamera(camera);
+
+                const tools::DepthView::Camera turned=view->camera();
+                // z 0's corners and centre where they are drawn now
+                const std::vector<Point3> points={ { 0, 0, 0 }, { 640, 0, 0 }, { 0, 480, 0 },
+                    { 640, 480, 0 }, { 320, 240, 0 } };
+                std::vector<Point3> drawn;
+
+                for(const Point3 &p:points)
+                    drawn.push_back(project(scene.slots, p.x, p.y, p.z));
+
+                auto kept=[&]()
+                {
+                    for(size_t i=0; i<points.size(); ++i)
+                    {
+                        const Point3 now=project(scene.slots, points[i].x, points[i].y, points[i].z);
+
+                        CHECK(std::fabs(now.x-drawn[i].x) < 0.05f);
+                        CHECK(std::fabs(now.y-drawn[i].y) < 0.05f);
+                    }
+                    // the camera never pulled into the stack, so never clamped
+                    CHECK(view->camera().distance == turned.distance);
+                    CHECK(view->camera().panX == turned.panX);
+                    CHECK(view->camera().panY == turned.panY);
+                };
+
+                for(int i=0; i<30 && view->spacingFactor() < tools::DepthView::MaxSpacingFactor; ++i)
+                {
+                    scene.canvas->inputCharacter('+');
+                    kept();
+                }
+                CHECK(view->spacingFactor() == tools::DepthView::MaxSpacingFactor);
+                for(int i=0; i<60 && view->spacingFactor() > tools::DepthView::MinSpacingFactor; ++i)
+                {
+                    scene.canvas->inputCharacter('-');
+                    kept();
+                }
+                CHECK(view->spacingFactor() == tools::DepthView::MinSpacingFactor);
+            }
+        }
+    }
+}
+
+TEST_CASE("Depth view: with raw labels a renumber keeps the spacing factor, and the stack its depth")
+{
+    DrawnCanvas scene(40);
+    tools::DepthView *view=tools::DepthView::open(scene.canvas, &scene.slots);
+
+    REQUIRE(view != nullptr);
+    scene.canvas->inputCharacter('l');
+    REQUIRE(view->rawLabels());
+    view->setSpacingFactor(2.0f);
+
+    const float high=view->highestZ();
+    const float depth=view->camera().zSpacing*high;
+
+    // more controls: the canvas's highest z moves on
+    for(int i=0; i<20; ++i)
+        scene.canvas->newChild<controls::Base>()->setBounds(5*i, 300, 40, 20);
+    scene.canvas->updateCanvas();
+    scene.canvas->renderCanvas();
+    REQUIRE(view->highestZ() > high);
+    CHECK(view->spacingFactor() == 2.0f);
+    CHECK(view->camera().zSpacing == doctest::Approx(2.0f*view->defaultZSpacing()));
+    CHECK(view->camera().zSpacing*view->highestZ() == doctest::Approx(depth));
+
+    // the next step is one step further apart, not closer
+    scene.canvas->inputCharacter('+');
+    CHECK(view->spacingFactor() == doctest::Approx(2.0f*tools::DepthView::ZSpacingStep));
+    CHECK(view->camera().zSpacing == doctest::Approx(2.0f*tools::DepthView::ZSpacingStep*
+        view->defaultZSpacing()));
+
+    // at reset the camera is fitted to the new highest z again
+    scene.canvas->inputCharacter('r');
+    for(int i=0; i<20; ++i)
+        scene.canvas->newChild<controls::Base>()->setBounds(5*i, 340, 40, 20);
+    scene.canvas->updateCanvas();
+    scene.canvas->renderCanvas();
+    CHECK(view->camera() == view->resetCamera());
+    CHECK(view->spacingFactor() == 1.0f);
+}
+
+TEST_CASE("Depth view: Alt with the horizontal wheel neither spaces nor dollies")
+{
+    DrawnCanvas scene(40);
+    controls::Canvas *canvas=scene.canvas;
+    tools::DepthView *view=tools::DepthView::open(canvas, &scene.slots);
+
+    REQUIRE(view != nullptr);
+
+    const tools::DepthView::Camera before=view->camera();
+
+    canvas->inputModifierKey(keys::Alt, true);
+    canvas->inputMouseWheelH(60);
+    CHECK(view->spacingFactor() == 1.0f);
+    CHECK(view->camera() == before);
+    canvas->inputModifierKey(keys::Alt, false);
 }
 
 #endif//GWENI_TEST_SLOT_RENDERER

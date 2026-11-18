@@ -8343,7 +8343,9 @@ at reset to the new view, and a moved one keeps its factor as well.
 `spacingFactor()` (1 at reset), in `MinSpacingFactor`..`MaxSpacingFactor`, x0.1 to x20,
 clamped in factor space, so both ends are reached exactly and a step past one does
 nothing. The stack's depth is the factor times half the view's width whatever the
-layers or raw labels, so it is what is kept as they change. A fixed range in px could
+layers or raw labels, so it is what is kept as they change (with raw labels the
+canvas's highest z, which a renumber moves, is followed in the next flush whose shown
+layers changed and at the next spacing change: `followRawHighestZ()`). A fixed range in px could
 not do it: a page with few shown layers (ButtonDemo) has a reset spacing of tens of px
 and the Demo shell's raw labels a hundredth of one. `setSpacingFactor(f)` and
 `stepSpacing(n)` (`f` times `ZSpacingStep` to the power n) move the spacing and keep the
@@ -8358,10 +8360,16 @@ the view, as the orbit's pivot is z 0. In orthographic `distance` is only the zo
 stays. Looking straight on, the front layer stays drawn at its front-view size and the
 whole canvas on the view across the range, and turned, in either projection, its
 corners stay where they were drawn (`tests/unit/depthView.cpp`, on 3 and 600 layers).
+The front layer is the end of the stack nearer the camera: seen from behind
+(`cos(yaw)*cos(pitch) < 0`, yaw being unbounded), that is z 0, the orbit's pivot,
+which the spacing does not move, so there the spacing alone changes, with no pan or
+distance; holding the highest layer there would pull the camera into the stack (at yaw
+180, `+` to x20 met `MinDistance` and the highest layer moved 130 px).
 `distance` is clamped to `MinDistance` from the back plane and to `MaxDistance` (20)
 plus the stack's depth, from the front layer, so x20 is reached after a dolly out too. + and
-- step it once, and a wheel notch (60 units, `input::GLFW3::processScroll`) with Alt
-down once, a trackpad's fraction of a notch in proportion (`pow(ZSpacingStep,
+- step it once, and a vertical wheel notch (60 units, `input::GLFW3::processScroll`)
+with Alt down once (a horizontal wheel with Alt does nothing, so a trackpad swipe's
+sideways part does not space), a trackpad's fraction of a notch in proportion (`pow(ZSpacingStep,
 delta/60)`); the plain wheel dollies. Alt is the canvas's `keys::Alt`, which
 `input::GLFW3` sends before every key event (`syncModifiers`) and the canvas hands to
 the capture (`captureKey`, press and release); the mouse leaving the canvas lets it go,
@@ -8381,7 +8389,9 @@ disabled while the view is closed and moved to what the view reports, both throu
 `Module.gweniDepthViewSpacingChanged(factor)`, each if the page set it). In the browser
 emscripten-glfw's wheel listener prevents the page's default on the canvas, so Alt+wheel
 neither scrolls nor zooms the page, and Chromium gives it no other meaning (`site.mjs`
-checks `scrollY` and `visualViewport.scale`). Two risks no test here can reach, the
+requires the Alt+wheel event's `defaultPrevented`, read by a bubble-phase listener on
+`window`; `scrollY` and `visualViewport.scale` could not show it, an app page being
+`overflow: hidden` and headless Chromium keeping the scale at 1 even for Ctrl+wheel). Two risks no test here can reach, the
 container having Chromium and no window manager: some Linux window managers take
 Alt+wheel for themselves (xfwm4 zooms the desktop with it), and Firefox shows its menu
 bar when Alt is pressed and released alone. + and - work in both cases.

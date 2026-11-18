@@ -134,15 +134,19 @@ public:
     //! zSpacing over the reset spacing, defaultZSpacing(): 1 at reset, in
     //! [MinSpacingFactor, MaxSpacingFactor]. The stack's depth is this times
     //! half the view's width, whatever the layers or raw labels, so it is kept
-    //! as they change (and as the view does) and zSpacing follows.
+    //! as they change (and as the view does) and zSpacing follows; with raw
+    //! labels a renumber that moves the canvas's highest z is followed in the
+    //! next flush whose shown layers changed, or at the next spacing change.
     float spacingFactor() const { return m_spacingFactor; }
     //! Spaces the layers at \p factor (clamped) times the reset spacing,
-    //! keeping the front layer where it is drawn: its centre is held in place
-    //! in the camera's space (the pan takes up the depth's change across the
-    //! view, in perspective the distance its change along it), so the stack
-    //! deepens away from the camera, straight on by the back plane going back
-    //! by what the stack's depth gained. + and - and Alt+wheel step it by
-    //! ZSpacingStep.
+    //! keeping the front layer, the end nearer the camera, where it is drawn:
+    //! seen from the front the highest layer's centre is held in place in the
+    //! camera's space (the pan takes up the depth's change across the view, in
+    //! perspective the distance its change along it), straight on by the back
+    //! plane going back by what the stack's depth gained; seen from behind
+    //! (cos(yaw)*cos(pitch) < 0) z 0, which the spacing does not move. Either
+    //! way the stack deepens away from the camera. + and - and Alt+wheel step
+    //! it by ZSpacingStep.
     void setSpacingFactor(float factor);
     //! setSpacingFactor() of spacingFactor() times ZSpacingStep to the power
     //! \p steps (a wheel notch is one, a fraction of it a fraction)
@@ -222,6 +226,9 @@ private:
     float stackDepth(float zSpacing) const;
     //! zSpacing at the factor for the layers and view as they are now
     void keepSpacingFactor();
+    //! With raw labels, a new highest z (a renumber): the factor kept, zSpacing
+    //! worked out again; whether it did
+    bool followRawHighestZ();
     void spacingChanged();
     static float clampedFactor(float factor);
     void dolly(float steps);
@@ -239,6 +246,8 @@ private:
     float m_spacingFactor=1.0f;
     //! the zSpacing m_spacingFactor was last worked out for
     float m_placedSpacing=0.0f;
+    //! the highestZ() it was worked out for
+    float m_placedHighZ=0.0f;
     //! the camera is resetCamera()'s, fitted again as the shown layers change
     bool m_atReset=true;
 };

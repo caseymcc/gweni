@@ -520,8 +520,8 @@ picking SliderDemo must load `?control=SliderDemo&depth-view` with the view open
 again, none of them writing to stderr. On both, the Z spacing slider must be
 enabled at x1 with the view open and disabled while it is closed, set the app's
 factor (read back through the export), move by exactly one step for a `+` and
-for one Alt+wheel notch over the canvas with the page neither scrolled nor
-zoomed, and go back to x1 on R. It fails on a console error, an
+for one Alt+wheel notch over the canvas with the wheel's default prevented
+(`defaultPrevented`: the page neither scrolls nor zooms), and go back to x1 on R. It fails on a console error, an
 uncaught exception, a failed request or an HTTP error (a file missing from the
 site), a page without a WebGL 2 context on SwiftShader with 24 depth bits, a
 window that draws no frames or whose canvas is one colour after 5 of them, a

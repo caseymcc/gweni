@@ -43,8 +43,12 @@
 //                     set through it read back from the app's
 //                     gweni_web_depth_view_spacing export, a + key press and
 //                     one Alt+wheel notch over the canvas each moving it by
-//                     exactly one ZSpacingStep with the page neither scrolled
-//                     nor zoomed, R putting it back at x1); and picking
+//                     exactly one ZSpacingStep, the wheel event's default
+//                     prevented (defaultPrevented, read by a window listener:
+//                     the page neither scrolls nor zooms; scrollY and
+//                     visualViewport.scale, which an overflow: hidden page in
+//                     headless Chromium never changes, kept too), R putting
+//                     it back at x1); and picking
 //                     SliderDemo then loads ?control=SliderDemo&depth-view,
 //                     the view open and the checkbox checked again
 //    controltest.html?control=UnicodeTextDemo
@@ -451,8 +455,9 @@ class Visit
     // gweni_web_depth_view_spacing (0 only reads); a + key press on the canvas
     // moves it by exactly one step (log10 of DepthView::ZSpacingStep, 1.25)
     // and one Alt+wheel notch towards the user (mouse.wheel(0, 100): 100 px,
-    // one step to emscripten-glfw) one step back, the page neither scrolling
-    // nor zooming; R puts it back at x1. On the demo, which has no checkbox,
+    // one step to emscripten-glfw) one step back, its default prevented (so
+    // the page neither scrolls nor zooms) and scrollY and the scale unchanged;
+    // R puts it back at x1. On the demo, which has no checkbox,
     // Escape then closes the view and disables it, and the export opens it
     // again and enables it. Returns what passed, or null after a fail().
     async checkSpacing(visit, gallery)
@@ -499,6 +504,16 @@ class Visit
         await page.keyboard.press('+');
         await frames();
         const plus = await slider();
+        // what the page's own wheel default became: a bubble-phase listener
+        // on window runs after the canvas's (emscripten-glfw's), which
+        // prevents it there; the app pages are overflow: hidden and headless
+        // Chromium keeps visualViewport.scale at 1 even for Ctrl+wheel, so
+        // scrollY and scale alone could not show a scroll or a zoom
+        await page.evaluate(() => {
+            window.gweniSiteWheels = [];
+            window.addEventListener('wheel', event => window.gweniSiteWheels.push(
+                { defaultPrevented: event.defaultPrevented, altKey: event.altKey }), { once: true });
+        });
         await page.keyboard.down('Alt');
         await page.mouse.wheel(0, 100);
         await frames();
@@ -506,6 +521,12 @@ class Visit
         await frames();
         const wheel = await slider();
         const after = await view();
+        const wheels = await page.evaluate(() => window.gweniSiteWheels);
+        if(wheels.length !== 1 || !wheels[0].altKey || !wheels[0].defaultPrevented)
+        {
+            fail(visit.label, `the Alt+wheel over the canvas left the page its default (scroll or zoom): ${JSON.stringify(wheels)}, expected one wheel event with altKey and defaultPrevented`);
+            return null;
+        }
         if(!near(plus.value - Math.log10(4), step))
         {
             fail(visit.label, `a + key press moved the Z spacing slider from ${Math.log10(4)} to ${plus.value}, not one step (${step})`);

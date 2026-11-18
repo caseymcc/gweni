@@ -210,19 +210,26 @@ float DepthView::highestZ() const
 
 void DepthView::reset()
 {
-    place(resetCamera());
+    place(resetCamera(), 1.0f);
     m_atReset=true;
     spacingChanged();
 }
 
 void DepthView::setSpacingFactor(float factor)
 {
-    // The front layer stays where it is: its centre, (0, 0, depth) in the
-    // model turned by yaw and pitch, is held in place in the camera's space,
-    // the pan taking up what the depth's change moves across the view and, in
-    // perspective, the distance what it moves along it, so the back plane goes
-    // back by what the stack gained (straight on, distance alone). In
-    // orthographic the distance is only the zoom, which stays.
+    // The front layer stays where it is, the end of the stack nearer the
+    // camera. Seen from the front that is the highest layer: its centre,
+    // (0, 0, depth) in the model turned by yaw and pitch, is held in place in
+    // the camera's space, the pan taking up what the depth's change moves
+    // across the view and, in perspective, the distance what it moves along
+    // it, so the back plane goes back by what the stack gained (straight on,
+    // distance alone). In orthographic the distance is only the zoom, which
+    // stays. Seen from behind (the turned z axis pointing away from the
+    // camera) it is z 0, the orbit's pivot, which the spacing does not move,
+    // so the spacing alone changes and the stack deepens away from the camera
+    // there too.
+    followRawHighestZ();
+
     Camera camera=m_camera;
     const float clamped=clampedFactor(factor);
     const float spacing=clamped*defaultZSpacing();
@@ -230,10 +237,13 @@ void DepthView::setSpacingFactor(float factor)
     const float yaw=radians(m_camera.yaw);
     const float pitch=radians(m_camera.pitch);
 
-    camera.panX-=gained*std::sin(yaw);
-    camera.panY-=gained*std::cos(yaw)*std::sin(pitch);
-    if(camera.perspective)
-        camera.distance+=gained*std::cos(yaw)*std::cos(pitch)/focalLength();
+    if(std::cos(yaw)*std::cos(pitch) >= 0.0f)
+    {
+        camera.panX-=gained*std::sin(yaw);
+        camera.panY-=gained*std::cos(yaw)*std::sin(pitch);
+        if(camera.perspective)
+            camera.distance+=gained*std::cos(yaw)*std::cos(pitch)/focalLength();
+    }
     camera.zSpacing=spacing;
     if((camera != m_camera) && place(camera, clamped))
         spacingChanged();
@@ -253,6 +263,26 @@ void DepthView::keepSpacingFactor()
 {
     m_camera.zSpacing=m_spacingFactor*defaultZSpacing();
     m_placedSpacing=m_camera.zSpacing;
+    m_placedHighZ=highestZ();
+}
+
+bool DepthView::followRawHighestZ()
+{
+    // With raw labels the stack's depth follows the canvas's highest z, which
+    // a renumber moves with no change of the spacing; the factor is kept, so
+    // the stack keeps its depth (a camera at reset is fitted again)
+    if(!m_rawLabels || highestZ() == m_placedHighZ)
+        return false;
+    if(m_atReset)
+    {
+        m_camera=resetCamera();
+        m_placedSpacing=m_camera.zSpacing;
+        m_placedHighZ=highestZ();
+        m_spacingFactor=1.0f;
+    }
+    else
+        keepSpacingFactor();
+    return true;
 }
 
 void DepthView::spacingChanged()
@@ -283,10 +313,15 @@ void DepthView::layersChanged()
     // In flush(), before its draws: the shown layers are new, so a camera at
     // reset is fitted to them again and any other gets a depth range that
     // covers the stack; no redraw, this frame draws with it already. Raw
-    // labels do not depend on the table. A turned camera keeps its spacing
+    // labels do not depend on the table, only on the canvas's highest z,
+    // which followRawHighestZ() follows. A turned camera keeps its spacing
     // factor, so the stack its depth and the front layer its place.
     if(m_rawLabels)
+    {
+        if(followRawHighestZ())
+            apply(false);
         return;
+    }
     if(m_atReset)
         m_camera=resetCamera();
     else
@@ -332,6 +367,7 @@ bool DepthView::place(const Camera &camera, float factor)
     m_camera.distance=std::min(std::max(m_camera.distance, MinDistance),
         MaxDistance+stackDepth(m_camera.zSpacing));
     m_placedSpacing=m_camera.zSpacing;
+    m_placedHighZ=highestZ();
     apply();
     return m_spacingFactor != before;
 }
@@ -471,14 +507,18 @@ void DepthView::captureMouseButton(int button, bool down)
         m_panning=down;
 }
 
-void DepthView::captureMouseWheel(int delta, Dim /*dim*/)
+void DepthView::captureMouseWheel(int delta, Dim dim)
 {
     // a notch is 60; away from the user (positive) dollies in, or with Alt
-    // spaces the layers further apart
+    // spaces the layers further apart (the vertical wheel alone, so a
+    // trackpad's sideways part of a swipe does not)
     if(!delta)
         return;
     if(m_alt)
-        stepSpacing((float)delta/60.0f);
+    {
+        if(dim == Dim::Y)
+            stepSpacing((float)delta/60.0f);
+    }
     else
         dolly((float)delta/60.0f);
 }
