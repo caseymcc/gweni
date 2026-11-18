@@ -1,0 +1,48 @@
+#
+#  Gweni
+#  Copyright (c) 2010 Facepunch Studios
+#  MIT License, see LICENSE
+#
+#  find_package(gweni CONFIG): an installed gweni (cmake --install, or a vcpkg
+#  port). It gives
+#
+#    gweni::gweni              the static library and every usage requirement
+#                              an app needs to compile and link against it
+#                              (include dirs, compile definitions, and on the
+#                              web WebGL 2, -fexceptions and the malloc export)
+#    GWENI_RESOURCE_DIR        the textured skin's files (share/gweni/resources)
+#    gweni_add_resources(<target>)
+#                              those files where the target's
+#                              RelativeToExecutablePaths("resources") finds them
+#                              (gweniResources.cmake)
+#    gweni_RENDER_OPENGL_CORE, gweni_RENDER_VULKAN, gweni_GL_ES
+#                              ON or OFF: the renderers the package was built
+#                              with (renderer::OpenGLCore, renderer::Vulkan)
+#                              and whether its GL is GLES 3.0
+#
+#  On the web the app sets its own stack and heap (-sSTACK_SIZE=4MB,
+#  -sALLOW_MEMORY_GROWTH=1, or more): Emscripten takes the last -s of a name,
+#  so a value given here would override the app's.
+#
+
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# GL through glvnd, as gweni's own configure finds it
+if(NOT DEFINED OpenGL_GL_PREFERENCE)
+    set(OpenGL_GL_PREFERENCE GLVND)
+endif()
+
+@GWENI_CONFIG_DEPENDENCIES@
+
+include("${CMAKE_CURRENT_LIST_DIR}/gweniTargets.cmake")
+
+set(gweni_RENDER_OPENGL_CORE @GWENI_CONFIG_GWENI_RENDER_OPENGL_CORE@)
+set(gweni_RENDER_VULKAN @GWENI_CONFIG_GWENI_RENDER_VULKAN@)
+set(gweni_GL_ES @GWENI_CONFIG_GWENI_GL_ES@)
+
+set_and_check(GWENI_RESOURCE_DIR "@PACKAGE_GWENI_INSTALL_RESOURCE_DIR@")
+include("${CMAKE_CURRENT_LIST_DIR}/gweniResources.cmake")
+
+check_required_components(gweni)

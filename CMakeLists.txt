@@ -786,6 +786,28 @@ if(GWENI_WEB_LINK_OPTIONS)
     target_link_options(gweni INTERFACE ${GWENI_WEB_LINK_OPTIONS})
 endif()
 
+# A backend's public headers need that backend's dependencies, so they are
+# installed, and compiled alone by the tests' header check (gweni_header_check,
+# tests/CMakeLists.txt), only in a tree that builds the backend. Paths are
+# relative to include/.
+set(GWENI_UNBUILT_BACKEND_HEADERS)
+if(NOT GWENI_RENDER_OPENGL_CORE)
+    # glew or the GLES headers come with the GL renderer
+    list(APPEND GWENI_UNBUILT_BACKEND_HEADERS
+        gweni/platforms/renderers/glApi.h
+        gweni/platforms/renderers/openglCore.h)
+endif()
+if(NOT GWENI_RENDER_OPENGL_CORE AND NOT GWENI_RENDER_VULKAN)
+    # freetype-gl and the slot core come with either renderer
+    list(APPEND GWENI_UNBUILT_BACKEND_HEADERS
+        gweni/platforms/renderers/slotRenderer.h
+        gweni/tools/depthView.h)
+endif()
+if(NOT GWENI_RENDER_VULKAN)
+    # volk comes with the vcpkg feature vulkan
+    list(APPEND GWENI_UNBUILT_BACKEND_HEADERS gweni/platforms/renderers/vulkan.h)
+endif()
+
 if(GWENI_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif(GWENI_BUILD_EXAMPLES)
@@ -803,15 +825,123 @@ if(GWENI_BUILD_TESTS AND GWENI_BUILD_EXAMPLES AND TARGET gweni_capture AND NOT E
     add_subdirectory(bench)
 endif()
 
+# The installed package, one prefix for cmake --install (and a vcpkg port):
+#   lib/libgweni.a                  gweni, with freetype-gl's and imglib's objects
+#   include/gweni/**                the public headers (the built backends' only)
+#   include/gweni/third_party/      the vendored freetype-gl and imglib headers
+#                                   (deps/CMakeLists.txt)
+#   share/gweni/gweniConfig.cmake   find_package(gweni CONFIG): the gweni::gweni
+#                                   target, its dependencies, GWENI_RESOURCE_DIR
+#                                   and gweni_add_resources (gweniResources.cmake)
+#   share/gweni/resources/          the textured skin's files
+include(CMakePackageConfigHelpers)
+set(GWENI_INSTALL_CMAKE_DIR share/gweni)
+set(GWENI_INSTALL_RESOURCE_DIR share/gweni/resources)
+
+set(gweni_install_header_excludes)
+foreach(header IN LISTS GWENI_UNBUILT_BACKEND_HEADERS)
+    string(REPLACE "." "\\." header_regex "${header}")
+    list(APPEND gweni_install_header_excludes REGEX "/${header_regex}$" EXCLUDE)
+endforeach()
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/gweni
         DESTINATION include
+        ${gweni_install_header_excludes}
 )
 install(FILES ${GWENI_GENERATED_INCLUDE_DIR}/gweni/version.h
         DESTINATION include/gweni
 )
 
-install(TARGETS gweni
+# The library and the interface targets its exported link names: gweni_vulkan
+# (cmake/Vulkan.cmake), as gweni::gweni_vulkan
+set(gweni_export_targets gweni)
+if(TARGET gweni_vulkan)
+    list(APPEND gweni_export_targets gweni_vulkan)
+endif()
+install(TARGETS ${gweni_export_targets}
+        EXPORT gweniTargets
         RUNTIME DESTINATION bin
         LIBRARY DESTINATION lib
         ARCHIVE DESTINATION lib
+)
+install(EXPORT gweniTargets
+        NAMESPACE gweni::
+        DESTINATION ${GWENI_INSTALL_CMAKE_DIR}
+)
+
+# What gweniConfig.cmake finds before it loads the targets: every imported
+# target gweni's exported link interface names, as this tree found it
+set(GWENI_CONFIG_DEPENDENCIES
+    "find_dependency(RapidJSON CONFIG)"
+    "find_dependency(glm CONFIG)"
+    "find_dependency(md4c CONFIG)"
+    "find_dependency(PNG)"
+    "find_dependency(JPEG)")
+if(GWENI_RENDER_OPENGL_CORE OR GWENI_RENDER_VULKAN)
+    list(APPEND GWENI_CONFIG_DEPENDENCIES "find_dependency(freetype CONFIG)")
+endif()
+if(GWENI_RENDER_OPENGL_CORE AND NOT EMSCRIPTEN)
+    if(GWENI_GL_ES)
+        list(APPEND GWENI_CONFIG_DEPENDENCIES "find_dependency(OpenGL COMPONENTS GLES3 EGL)")
+    else()
+        list(APPEND GWENI_CONFIG_DEPENDENCIES
+            "find_dependency(OpenGL)"
+            "find_dependency(GLEW)")
+    endif()
+endif()
+if(GWENI_RENDER_VULKAN)
+    list(APPEND GWENI_CONFIG_DEPENDENCIES
+        "find_dependency(VulkanHeaders CONFIG)"
+        "find_dependency(volk CONFIG)")
+endif()
+if(GWENI_USE_FILESYSTEM STREQUAL GWENI_BOOST)
+    list(APPEND GWENI_CONFIG_DEPENDENCIES
+        "find_dependency(Boost CONFIG COMPONENTS system filesystem)")
+endif()
+string(REPLACE ";" "\n" GWENI_CONFIG_DEPENDENCIES "${GWENI_CONFIG_DEPENDENCIES}")
+# what the package was built with, for an app to choose its renderer by
+foreach(option GWENI_RENDER_OPENGL_CORE GWENI_RENDER_VULKAN GWENI_GL_ES)
+    if(${option})
+        set(GWENI_CONFIG_${option} ON)
+    else()
+        set(GWENI_CONFIG_${option} OFF)
+    endif()
+endforeach()
+if(EMSCRIPTEN AND GWENI_RENDER_OPENGL_CORE)
+    # the web's GL is WebGL 2, GLES 3.0 (GWENI_GL_ES is defined there without the option)
+    set(GWENI_CONFIG_GWENI_GL_ES ON)
+endif()
+
+configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gweniConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/generated/gweniConfig.cmake
+    INSTALL_DESTINATION ${GWENI_INSTALL_CMAKE_DIR}
+    PATH_VARS GWENI_INSTALL_RESOURCE_DIR)
+# 0.x: a minor version is an incompatible one
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/generated/gweniConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMinorVersion)
+install(FILES
+        ${CMAKE_CURRENT_BINARY_DIR}/generated/gweniConfig.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/generated/gweniConfigVersion.cmake
+        ${CMAKE_CURRENT_SOURCE_DIR}/cmake/gweniResources.cmake
+        ${CMAKE_CURRENT_SOURCE_DIR}/cmake/mirrorDirectory.cmake
+        DESTINATION ${GWENI_INSTALL_CMAKE_DIR}
+)
+
+# The textured skin's files, what gweni_add_resources gives an app: the atlas
+# and its description, the default face's four styles, the mono face (the glyph
+# fallback chain's first), each with its license. Not the demos' images and
+# faces, nor the lazy CJK face (resources-lazy/).
+install(FILES
+        resources/DefaultSkin.json
+        resources/DefaultSkin.png
+        resources/OpenSans.ttf
+        resources/OpenSans-Bold.ttf
+        resources/OpenSans-Italic.ttf
+        resources/OpenSans-BoldItalic.ttf
+        resources/OpenSans-LICENSE.txt
+        resources/DejaVuSansMono.ttf
+        resources/DejaVuSansMono-LICENSE.txt
+        DESTINATION ${GWENI_INSTALL_RESOURCE_DIR}
 )

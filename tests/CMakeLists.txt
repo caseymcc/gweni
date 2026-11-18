@@ -1168,24 +1168,8 @@ foreach(header IN LISTS gweni_public_headers)
     endif()
 endforeach()
 # A backend's headers are checked only in a tree that builds it, the one that
-# has its dependencies.
-set(gweni_header_check_excluded)
-if(NOT GWENI_RENDER_OPENGL_CORE)
-    # glew or the GLES headers come with the GL renderer
-    list(APPEND gweni_header_check_excluded
-        gweni/platforms/renderers/glApi.h
-        gweni/platforms/renderers/openglCore.h)
-endif()
-if(NOT GWENI_RENDER_OPENGL_CORE AND NOT GWENI_RENDER_VULKAN)
-    # freetype-gl and glm come with the slot core, under either renderer
-    list(APPEND gweni_header_check_excluded
-        gweni/platforms/renderers/slotRenderer.h
-        gweni/tools/depthView.h)
-endif()
-if(NOT GWENI_RENDER_VULKAN)
-    # volk comes with the vcpkg feature vulkan
-    list(APPEND gweni_header_check_excluded gweni/platforms/renderers/vulkan.h)
-endif()
+# has its dependencies: the list CMakeLists.txt also leaves out of the install.
+set(gweni_header_check_excluded ${GWENI_UNBUILT_BACKEND_HEADERS})
 # GLFW's headers (vcpkg's glfw3, or Emscripten's port on the web)
 if(NOT EMSCRIPTEN)
     find_package(glfw3 CONFIG QUIET)
