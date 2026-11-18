@@ -399,13 +399,21 @@ template<typename _Class> forceInit<std::string &,ControlRegister<_Class>::m_typ
 //
 //} Textures;
 
+// Anchor symbol of texturedControls.cpp, whose renderers register themselves
+// from static initializers: gweni is a static library, so that object is linked
+// (and its initializers run) only if something references it. TexturedSkin's
+// constructor calls it.
+GWENI_EXPORT void registerTexturedRenderers();
+
 class TexturedSkin: public gweni::skin::Base
 {
 public:
 
     TexturedSkin(gweni::renderer::Base *renderer)
         : gweni::skin::Base(renderer)
-    {}
+    {
+        registerTexturedRenderers();
+    }
 
     ~TexturedSkin()
     {

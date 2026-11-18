@@ -8365,6 +8365,10 @@ template class ControlRegister<DataTableRow>;
 template class ControlRegister<TreeTableExpander>;
 template class ControlRegister<DateEditButton>;
 
+// The anchor (texturedSkin.h): pulls this object out of libgweni.a, and with it
+// every ControlRegister initializer above.
+void registerTexturedRenderers() {}
+
 }//namespace textured
 }//namespace skin
 }//namespace gweni

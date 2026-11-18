@@ -701,9 +701,12 @@ source_group("platforms" FILES ${GWENI_PLATFORM_SOURCES})
 source_group("platforms\\renderers" FILES ${GWENI_RENDER_SOURCES})
 source_group("properties" FILES ${GWENI_PROPERTY_SOURCES})
 
-# gweni library
-if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
-
+# gweni library: a static library in every tree, in-tree as installed, so
+# what the suite tests is what an app links. The linker takes an object out of
+# libgweni.a only for a symbol something references, so a translation unit that
+# only registers itself from static initializers (the textured skin's renderers,
+# texturedControls.cpp) needs an anchor function its users call
+# (registerTexturedRenderers(), from TexturedSkin's constructor).
 add_library(gweni STATIC
     ${GWENI_SOURCES}
     ${GWENI_CONTROL_SOURCES}
@@ -716,24 +719,9 @@ add_library(gweni STATIC
     ${GWENI_PLATFORM_SOURCES}
     ${GWENI_RENDER_SOURCES}
 )
-target_link_options(gweni PUBLIC "/WHOLEARCHIVE:$<TARGET_FILE:gweni>")
-
-else()
-
-add_library(gweni OBJECT
-    ${GWENI_SOURCES}
-    ${GWENI_CONTROL_SOURCES}
-    ${GWENI_TOOL_SOURCES}
-    ${GWENI_LAYOUT_SOURCES}
-    ${GWENI_DIALOG_SOURCES}
-    ${GWENI_PROPERTY_SOURCES}
-    ${GWENI_SKIN_SIMPLE_SOURCES}
-    ${GWENI_SKIN_TEXTURED_SOURCES}
-    ${GWENI_PLATFORM_SOURCES}
-    ${GWENI_RENDER_SOURCES}
-)
-
-endif()
+# the name an app writes whether it takes gweni with add_subdirectory or
+# find_package
+add_library(gweni::gweni ALIAS gweni)
 
 gweni_set_warnings(gweni)
 
@@ -743,16 +731,20 @@ target_link_libraries(gweni
     ${GWENI_ADDITIONAL_LIBRARIES}
 #    gweni${GWENI_RENDER_NAME}
 )
-#if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
-#    target_link_options(gweni PUBLIC "/WHOLEARCHIVE:$<TARGET_FILE:gweni>")
-#else()
-#    target_link_options(gweni PUBLIC -W1,--whole-archive $<TARGET_FILE:gweni> -W1,--no-whole-archive)
-#endif()
 
 target_compile_definitions(gweni PUBLIC ${GWENI_COMPILE_DEFINITIONS})
 if(GWENI_VULKAN_SHADERS)
     # renderer::Vulkan's SPIR-V, each wrapper #including its body from shaders/
     gweni_add_spirv(gweni ${GWENI_VULKAN_SHADERS})
+endif()
+if(EMSCRIPTEN)
+    # crossPlatform.cpp's EM_JS functions hand strings back through
+    # stringToNewUTF8, which calls malloc from JavaScript, so malloc must be a
+    # wasm export. Emscripten exports a JS library function's native
+    # dependencies only for the functions it knows before linking, which an
+    # EM_JS_DEPS in an archive member is not: gweni says so itself, additively
+    # (an app's own -sEXPORTED_FUNCTIONS is left as it is).
+    list(APPEND GWENI_WEB_LINK_OPTIONS "-Wl,--export-if-defined=malloc")
 endif()
 if(GWENI_WEB_LINK_OPTIONS)
     target_link_options(gweni INTERFACE ${GWENI_WEB_LINK_OPTIONS})
