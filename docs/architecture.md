@@ -8355,7 +8355,10 @@ and again only when the set of shown labels changes (`layer:` in the scenario's 
 **Backends.** The table is a 256x256 integer texture read with `texelFetch` at
 `(z & 255, z >> 8)` in the vertex stage: on GL on a unit of its own
 (`OpenGLCore::LayerTableUnit`, after the image pages, saved with the app's state), bound
-and each program's `layerRemap` uniform sent as its draws begin, only when it changed;
+as each program's draws begin whether the remap reads it or not (0 while there is none:
+the programs' unsigned sampler there is active either way, and WebGL 2 refuses a draw
+while an app's texture of another format is on that unit), and each program's
+`layerRemap` uniform sent as its draws begin, only when it changed;
 on Vulkan binding 2 of both set layouts (`VK_SHADER_STAGE_VERTEX_BIT`), uploaded like the
 clip-box tables through the frame's transfer commands (the image barriers take the
 vertex stage), `layerRemap` in both push blocks, and while there is no table the binding
