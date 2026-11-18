@@ -55,7 +55,14 @@
  *  and the distance untouched (the camera never pulled into the stack). With
  *  raw labels, controls added (a renumber) keep the factor and the stack's
  *  depth, the next + steps it further, and at reset the camera is fitted to
- *  the new highest z. Alt with the horizontal wheel changes nothing.
+ *  the new highest z. With raw labels, hidden controls added (a renumber no
+ *  flush follows) keep the spacing drawn and the factor is worked out again
+ *  from it before a camera change: an orbit keeps it, + spaces the layers one
+ *  step apart and - back, and at x20 + does nothing (the factor past the end)
+ *  and - brings it back inside the range. A camera saved before a refit at
+ *  reset (a resize, new shown layers) is clamped by setCamera() and given its
+ *  own factor, and - then brings the layers together. Alt with the
+ *  horizontal wheel changes nothing.
  *  Deleting the canvas under an open view closes it without a call.
  */
 #include "headlessFixture.h"
@@ -1199,6 +1206,59 @@ TEST_CASE("Depth view: with raw labels a renumber no flush follows keeps the spa
         scene.canvas->inputCharacter('-');
         CHECK(view->camera().zSpacing < before.zSpacing);
         CHECK(view->spacingFactor() <= tools::DepthView::MaxSpacingFactor);
+    }
+}
+
+TEST_CASE("Depth view: a camera saved before a refit at reset is clamped and given its own factor")
+{
+    // after a refit at reset the camera drawn is the reset one, so a camera
+    // saved before it is compared with that: its factor is its own spacing's,
+    // clamped, and - brings the layers together
+    auto checkRestored=[](tools::DepthView &view, const tools::DepthView::Camera &saved)
+    {
+        view.setCamera(saved);
+        CHECK(view.spacingFactor() >= tools::DepthView::MinSpacingFactor);
+        CHECK(view.spacingFactor() <= tools::DepthView::MaxSpacingFactor);
+        CHECK(view.spacingFactor() == doctest::Approx(view.camera().zSpacing/view.defaultZSpacing()));
+
+        const float before=view.camera().zSpacing;
+
+        view.canvas()->inputCharacter('-');
+        CHECK(view.camera().zSpacing < before);
+    };
+
+    SUBCASE("a resize")
+    {
+        DrawnCanvas scene(40, 640, 480);
+        tools::DepthView *view=tools::DepthView::open(scene.canvas, &scene.slots);
+
+        REQUIRE(view != nullptr);
+
+        const tools::DepthView::Camera saved=view->camera();
+
+        scene.slots.setViewRect(Rect(0, 0, 1024, 480));
+        scene.canvas->setSize(1024, 480);
+        tools::DepthView::viewChanged(scene.canvas);
+        scene.canvas->updateCanvas();
+        scene.canvas->renderCanvas();
+        REQUIRE(view->camera().zSpacing != saved.zSpacing);
+        checkRestored(*view, saved);
+    }
+    SUBCASE("new shown layers")
+    {
+        DrawnCanvas scene(3);
+        tools::DepthView *view=tools::DepthView::open(scene.canvas, &scene.slots);
+
+        REQUIRE(view != nullptr);
+
+        const tools::DepthView::Camera saved=view->camera();
+
+        for(int i=0; i<200; ++i)
+            scene.canvas->newChild<controls::Base>()->setBounds((i*7)%600, (i*3)%460, 40, 20);
+        scene.canvas->updateCanvas();
+        scene.canvas->renderCanvas();
+        REQUIRE(view->camera().zSpacing != saved.zSpacing);
+        checkRestored(*view, saved);
     }
 }
 

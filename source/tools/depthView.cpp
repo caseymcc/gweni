@@ -143,7 +143,7 @@ void DepthView::viewChanged(controls::Canvas *canvas)
     // the reset camera is fitted to the new view, any other keeps its spacing
     // factor (so the stack's depth, half the new width times it)
     if(view->m_atReset)
-        view->m_camera=view->resetCamera();
+        view->refitAtReset();
     else
         view->keepSpacingFactor();
     view->apply();
@@ -291,15 +291,21 @@ bool DepthView::followRawHighestZ()
     if(!m_rawLabels || highestZ() == m_placedHighZ)
         return false;
     if(m_atReset)
-    {
-        m_camera=resetCamera();
-        m_placedSpacing=m_camera.zSpacing;
-        m_placedHighZ=highestZ();
-        m_spacingFactor=1.0f;
-    }
+        refitAtReset();
     else
         keepSpacingFactor();
     return true;
+}
+
+void DepthView::refitAtReset()
+{
+    // the camera drawn is the reset one, so a later setCamera() compares its
+    // spacing with this one's (one saved before the refit is clamped and
+    // given its own factor)
+    m_camera=resetCamera();
+    m_placedSpacing=m_camera.zSpacing;
+    m_placedHighZ=highestZ();
+    m_spacingFactor=1.0f;
 }
 
 bool DepthView::syncRawFactor()
@@ -360,7 +366,7 @@ void DepthView::layersChanged()
         return;
     }
     if(m_atReset)
-        m_camera=resetCamera();
+        refitAtReset();
     else
         keepSpacingFactor();
     apply(false);

@@ -131,8 +131,8 @@ public:
     //! MaxSpacingFactor] times defaultZSpacing(), distance to MinDistance and
     //! to MaxDistance from the front layer, pitch to +-90) and redraws
     void setCamera(const Camera &camera);
-    //! zSpacing over the reset spacing, defaultZSpacing(): 1 at reset, in
-    //! [MinSpacingFactor, MaxSpacingFactor]. The stack's depth is this times
+    //! zSpacing over the reset spacing, defaultZSpacing(): 1 at reset, kept
+    //! in [MinSpacingFactor, MaxSpacingFactor] by every set. The stack's depth is this times
     //! half the view's width, whatever the layers or raw labels, so it is kept
     //! as they change (and as the view does) and zSpacing follows; with raw
     //! labels a renumber that moves the canvas's highest z is followed so in
@@ -152,7 +152,9 @@ public:
     //! it by ZSpacingStep.
     void setSpacingFactor(float factor);
     //! setSpacingFactor() of spacingFactor() times ZSpacingStep to the power
-    //! \p steps (a wheel notch is one, a fraction of it a fraction)
+    //! \p steps (a wheel notch is one, a fraction of it a fraction). A step
+    //! never moves the layers the other way: one that the clamp would turn
+    //! round (a factor worked out past an end) does nothing
     void stepSpacing(float steps);
     //! The camera at reset: in front of the canvas, perspective, with
     //! defaultZSpacing() and at distance 1 + zSpacing*highest z/focal length,
@@ -232,6 +234,10 @@ private:
     //! With raw labels, a new highest z (a renumber): the factor kept, zSpacing
     //! worked out again; whether it did
     bool followRawHighestZ();
+    //! A camera at reset fitted again (a new view, new shown layers or raw
+    //! labels' highest z): resetCamera(), factor 1, and the placed spacing
+    //! and highest z its own
+    void refitAtReset();
     //! With raw labels, a new highest z no flush followed: the spacing drawn
     //! kept, the factor worked out again from it; whether it changed
     bool syncRawFactor();
