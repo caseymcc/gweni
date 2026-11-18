@@ -4516,10 +4516,10 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
     // The spacing swept on `swept`: + up to x20, a + past it, Alt+wheel
     // notches (a half one among them) down to x0.1 and one past it, Alt let
     // go and a plain notch in and out (a dolly). Every one of those frames is
-    // idle (kept in spacingFrames, not frames), the front layer keeps its
-    // distance from the camera (distance less the stack's depth, in focal
-    // lengths) through every spacing step, both ends are reached exactly and a
-    // step past one changes nothing.
+    // idle (kept in spacingFrames, not frames), the front layer is drawn where
+    // it was (its corners and centre within 0.05 device px) through every
+    // spacing step, both ends are reached exactly and a step past one changes
+    // nothing.
     std::vector<DepthViewFrame> spacingFrames;
     std::string spacingFailure;
     auto sweepSpacing=[&](DepthView *swept, const char *where)

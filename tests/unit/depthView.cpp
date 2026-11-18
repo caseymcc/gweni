@@ -663,7 +663,6 @@ void checkFrontKept(const renderer::SlotRenderer &slots, const tools::DepthView 
     float h)
 {
     const float high=view.highestZ();
-    const float cx=0.5f*w, cy=0.5f*h;
     const float k=(float)renderer::SlotRenderer::kMaxZIndex;
     const float slack=1e-3f;
 
@@ -691,8 +690,6 @@ void checkFrontKept(const renderer::SlotRenderer &slots, const tools::DepthView 
             CHECK(out.z <= k);
         }
     }
-    (void)cx;
-    (void)cy;
 }
 
 //! The front layer's distance from the camera, in focal lengths
