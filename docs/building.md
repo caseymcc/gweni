@@ -145,8 +145,11 @@ An app that draws with Vulkan alone takes gweni as a subproject:
 set(GWENI_RENDER_OPENGL_CORE OFF)
 set(GWENI_RENDER_VULKAN ON)
 add_subdirectory(external/gweni gweni)
-target_link_libraries(app PRIVATE gweni)
+target_link_libraries(app PRIVATE gweni::gweni)
 ```
+
+(or, without a checkout, an installed gweni: "gweni as an installed package"
+below; the target is the same `gweni::gweni`).
 
 - A plain `set()` before the `add_subdirectory`, as above, sets an option, and
   so does a cache entry (`-D` or `set(... CACHE BOOL "")`): gweni's minimum
@@ -163,6 +166,12 @@ target_link_libraries(app PRIVATE gweni)
 - Configuring writes nothing under gweni's source tree. `<gweni/version.h>`
   (`GWENI_VERSION`, `GWENI_VERSION_STR`) is generated into the build tree and is
   on `gweni`'s include path; `cmake --install` installs it with the headers.
+- `gweni` is a static library, `libgweni.a`, holding the vendored freetype-gl's
+  and imglib's objects too (`libgwenid.a` in a tree with
+  `CMAKE_DEBUG_POSTFIX=d`, as generate.sh's debug trees). Every textured-skin
+  renderer is linked into an app that makes a `TexturedSkin`: its constructor
+  calls `registerTexturedRenderers()`, the anchor that pulls the renderers'
+  object, which registers them from static initializers, out of the archive.
 
 The dependencies come from vcpkg, through the app's own manifest:
 `rapidjson`, `glm`, `freetype`, `libpng`, `libjpeg-turbo`, `md4c` (the
@@ -212,6 +221,95 @@ there, whatever the resources directory is); a web page serves it beside the
 page. Without it, CJK draws as the missing glyph, as before the face was added,
 and the first CJK miss prints one line on stderr naming the path tried; text
 without CJK never looks for it (`docs/architecture.md` -> "The lazy CJK face").
+
+## gweni as an installed package
+
+`cmake --install <tree> --prefix <prefix>` makes a package any CMake project
+takes with `find_package`, with no gweni checkout:
+
+```cmake
+find_package(gweni CONFIG REQUIRED)       # CMAKE_PREFIX_PATH=<prefix>
+add_executable(app main.cpp)
+target_link_libraries(app PRIVATE gweni::gweni)
+gweni_add_resources(app)
+```
+
+The prefix holds:
+
+- `lib/libgweni.a`, the one library: gweni with the vendored freetype-gl's and
+  imglib's objects;
+- `include/gweni/**`, the public headers, those of the renderers the tree built
+  only (no `vulkan.h` in a tree without Vulkan, no `glApi.h`/`openglCore.h`
+  without the GL renderer), and under `include/gweni/third_party/` the vendored
+  freetype-gl and imglib headers gweni's own headers include;
+- `share/gweni/`: `gweniConfig.cmake` (with its version file: a 0.x minor
+  version is an incompatible one), the exported targets, `gweniResources.cmake`
+  and `mirrorDirectory.cmake`;
+- `share/gweni/resources/`, the textured skin's files: `DefaultSkin.json` and
+  `DefaultSkin.png`, the four OpenSans styles, DejaVu Sans Mono and their
+  licenses. Not the demos' images and faces, and not the lazy CJK face
+  (`resources-lazy/`, below).
+
+No installed file names a path of the machine it was built on, so the prefix
+can be moved. `find_package(gweni)` finds the dependencies the tree was built
+with (RapidJSON, glm, md4c, libpng, libjpeg and FreeType always; GL and GLEW,
+GLES 3 and EGL, or nothing on the web; Vulkan's headers and volk with Vulkan),
+from the app's own vcpkg (or other) packages, so the app's manifest lists
+them: `rapidjson`, `glm`, `freetype`, `libpng`, `libjpeg-turbo`, `md4c`, and
+`glew` for desktop GL, `vulkan-headers` and `volk` for Vulkan. It sets
+`gweni_RENDER_OPENGL_CORE`, `gweni_RENDER_VULKAN` and `gweni_GL_ES` to what the
+package was built with, and `GWENI_RESOURCE_DIR` to its `resources/`.
+
+`gweni::gweni` carries what an app compiles and links against it with: the
+include directories, the compile definitions (`GWENI_USE_FILESYSTEM`,
+`GWENI_HAS_VULKAN`, `GWENI_GL_ES`, ...) and, on the web, the link options every
+page needs, `-sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2` (OpenGLCore's GLES 3.0
+calls), `-fexceptions` (without it the app's link turns catching off, and a
+throw gweni catches itself aborts the page) and `-Wl,--export-if-defined=malloc`
+(gweni's JavaScript hands strings back through malloc). An app's own settings
+stay its own, the stack and heap in particular: give a page at least
+`-sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=4MB` (gweni's layout and render walks
+recurse once per level of the control tree; Emscripten's default stack is
+64 KB). gweni does not export them because Emscripten takes the last `-s` of a
+name, so an exported one would override an app asking for more.
+
+`gweni_add_resources(<target>)` puts the skin's files where
+`RelativeToExecutablePaths("resources")` finds them:
+
+- natively it mirrors them to `resources/` in the target's output directory
+  on every build (the rules of `cmake/mirrorDirectory.cmake`: a file the
+  package no longer has is removed from the copy). The directory is the
+  target's `RUNTIME_OUTPUT_DIRECTORY`, else `CMAKE_RUNTIME_OUTPUT_DIRECTORY`,
+  else its binary directory, read when the function is called, so set those
+  first;
+- on the web it preloads them into the page's `.data` at `/resources`, the
+  license texts left out, as link dependencies (an update relinks).
+
+On the web, configure the app with the vcpkg toolchain chainloading emsdk's
+`Emscripten.cmake` (`-DVCPKG_TARGET_TRIPLET=wasm32-emscripten
+-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake`).
+Emscripten's toolchain finds packages only inside its sysroot and the paths it
+is given as roots (vcpkg's installed tree among them), so a plain install prefix
+needs `-Dgweni_DIR=<prefix>/share/gweni` (or the prefix on
+`CMAKE_FIND_ROOT_PATH`); a gweni installed by vcpkg is found as any port is.
+
+Limits and caveats:
+
+- static only: `GWENI_EXPORT` is empty, there is no shared library;
+- Linux x64 and wasm32 are what is built and tested;
+- the vendored freetype-gl is gweni's patched copy, built into `libgweni.a`
+  under freetype-gl's own C names: an app that also links vcpkg's `freetype-gl`
+  port gets duplicate symbols (its headers do not collide: gweni's are under
+  `include/gweni/third_party/`);
+- the lazy CJK face is not in the package: CJK text draws as the missing glyph,
+  after one stderr line, unless the app ships `resources-lazy/` beside its
+  executable (above);
+- an app using `input::GLFW3` or `glfwLoop.h` (header-only) links GLFW itself:
+  vcpkg's `glfw3` natively, `--use-port=contrib.glfw3` on the web.
+
+`package_consumer` (every native tree) and `package_consumer_web` (both web
+trees) install the tree into a scratch prefix and build and run an app of this
+kind against it (`tests/packageConsumer.cmake`, `tests/package/`).
 
 ## gweni as a HUD: HudExample
 
