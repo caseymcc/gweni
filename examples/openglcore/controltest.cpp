@@ -4759,7 +4759,7 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
     // changes the caret's pixels alone, with shown layers as with raw labels,
     // and the table is not uploaded again
     size_t blinkPixels=0, rawBlinkPixels=0, caretPixels=0;
-    bool blinkSteady=false;
+    bool blinkSteady=false, rawSteady=false;
     {
         s.freezeClock=false;
 
@@ -4815,8 +4815,6 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
                     }
                     return most;
                 };
-                bool rawSteady=false;
-
                 blinkPixels=blink(blinkSteady);
                 blinkView->setRawLabels(true);
                 rawBlinkPixels=blink(rawSteady);
@@ -4835,7 +4833,8 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
         renderFrames(s, 1);
         s.freezeClock=true;
     }
-    const bool blinkLocal=blinkSteady && blinkPixels > 0 && rawBlinkPixels > 0 && blinkPixels <= caretPixels;
+    const bool blinkLocal=blinkSteady && rawSteady && blinkPixels > 0 && rawBlinkPixels > 0
+        && blinkPixels <= caretPixels && rawBlinkPixels <= caretPixels;
 
     bool idle=true;
 
