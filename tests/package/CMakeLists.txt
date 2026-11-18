@@ -50,8 +50,24 @@ endif()
 if(gweni_RENDER_VULKAN AND NOT "GWENI_HAS_VULKAN" IN_LIST gweni_definitions)
     package_fail("was built with Vulkan but does not define GWENI_HAS_VULKAN")
 endif()
-if(gweni_GL_ES AND NOT EMSCRIPTEN AND NOT "GWENI_GL_ES" IN_LIST gweni_definitions)
+if(gweni_GL_ES AND NOT "GWENI_GL_ES" IN_LIST gweni_definitions)
     package_fail("was built for GLES but does not define GWENI_GL_ES")
+endif()
+
+# On the web, the link options every app must link with: WebGL 2 (OpenGLCore's
+# GLES 3.0 entry points), -fexceptions (catching on, or a throw gweni catches
+# aborts the page) and the malloc export its JavaScript needs
+if(EMSCRIPTEN)
+    get_target_property(gweni_link_options gweni::gweni INTERFACE_LINK_OPTIONS)
+    set(web_options -fexceptions -Wl,--export-if-defined=malloc)
+    if(gweni_RENDER_OPENGL_CORE)
+        list(APPEND web_options -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2)
+    endif()
+    foreach(option IN LISTS web_options)
+        if(NOT option IN_LIST gweni_link_options)
+            package_fail("does not give every app the link option ${option} (INTERFACE_LINK_OPTIONS: ${gweni_link_options})")
+        endif()
+    endforeach()
 endif()
 
 if(NOT gweni_includes)
@@ -95,11 +111,31 @@ endif()
 # The app
 add_executable(package_consumer main.cpp)
 target_link_libraries(package_consumer PRIVATE gweni::gweni)
-if(gweni_RENDER_OPENGL_CORE AND NOT EMSCRIPTEN)
-    # its own context, as any GL app has: surfaceless EGL
-    find_package(OpenGL REQUIRED COMPONENTS EGL)
-    target_link_libraries(package_consumer PRIVATE OpenGL::EGL)
+if(gweni_RENDER_OPENGL_CORE)
     target_compile_definitions(package_consumer PRIVATE PACKAGE_HAS_GL)
+    if(NOT EMSCRIPTEN)
+        # its own context, as any GL app has: surfaceless EGL
+        find_package(OpenGL REQUIRED COMPONENTS EGL)
+        target_link_libraries(package_consumer PRIVATE OpenGL::EGL)
+    endif()
+endif()
+if(EMSCRIPTEN)
+    # The app's own settings, as any Emscripten app's: the heap may grow, and
+    # the stack is 4 MB (Emscripten's default is 64 KB; gweni's layout and
+    # render walks recurse once per tree level). Nothing of gweni's: what it
+    # needs comes with gweni::gweni, and the configure checks above say so.
+    target_link_options(package_consumer PRIVATE -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=4MB)
+    # Test plumbing, not an app's: the repo's test page (shell.html, pre.js),
+    # with which tests/web/run.mjs runs it and reads the run, and the runtime
+    # exiting when main returns, so the run ends. PACKAGE_WEB_PAGE_DIR is
+    # examples/openglcore/web.
+    if(PACKAGE_WEB_PAGE_DIR)
+        set_target_properties(package_consumer PROPERTIES SUFFIX ".html")
+        target_link_options(package_consumer PRIVATE
+            "SHELL:--shell-file ${PACKAGE_WEB_PAGE_DIR}/shell.html"
+            "SHELL:--pre-js ${PACKAGE_WEB_PAGE_DIR}/pre.js"
+            -sEXIT_RUNTIME=1)
+    endif()
 endif()
 gweni_add_resources(package_consumer)
 add_dependencies(package_consumer package_header_check)

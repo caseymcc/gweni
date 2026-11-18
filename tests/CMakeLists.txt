@@ -1125,14 +1125,25 @@ endif()
 # tree builds. Label package, not gpu: the install and the build take no lock,
 # and the script runs the consumer under the render lock itself (through mm).
 # The Vulkan run is validated, with gweni_vulkan_test_environment's variables
-# (its labels are not this test's).
-if(NOT EMSCRIPTEN AND (GWENI_RENDER_OPENGL_CORE OR GWENI_RENDER_VULKAN))
-    add_test(NAME package_consumer
+# (its labels are not this test's). In the web trees it is package_consumer_web,
+# label web: the consumer built through the web toolchain as a page on the
+# repo's test shell and run in headless Chromium by web/run.mjs (no lock).
+if(GWENI_RENDER_OPENGL_CORE OR GWENI_RENDER_VULKAN)
+    set(package_test package_consumer)
+    set(package_web_args)
+    if(EMSCRIPTEN)
+        set(package_test package_consumer_web)
+        set(package_web_args
+            -DNODE=${CMAKE_CROSSCOMPILING_EMULATOR}
+            -DRUNNER=${CMAKE_CURRENT_SOURCE_DIR}/web/run.mjs
+            -DWEB_PAGE_DIR=${GWENI_SOURCE_DIR}/examples/openglcore/web)
+    endif()
+    add_test(NAME ${package_test}
         COMMAND ${CMAKE_COMMAND}
             -DTREE=${CMAKE_BINARY_DIR}
             -DSOURCE_DIR=${GWENI_SOURCE_DIR}
             -DCONSUMER_DIR=${CMAKE_CURRENT_SOURCE_DIR}/package
-            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/package_consumer
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/${package_test}
             "-DGENERATOR=${CMAKE_GENERATOR}"
             -DBUILD_TYPE=${CMAKE_BUILD_TYPE}
             -DTOOLCHAIN=${CMAKE_TOOLCHAIN_FILE}
@@ -1142,8 +1153,13 @@ if(NOT EMSCRIPTEN AND (GWENI_RENDER_OPENGL_CORE OR GWENI_RENDER_VULKAN))
             -DC_COMPILER=${CMAKE_C_COMPILER}
             -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
             -DSANITIZE=${GWENI_SANITIZE}
+            ${package_web_args}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/packageConsumer.cmake)
-    set_tests_properties(package_consumer PROPERTIES LABELS package TIMEOUT 1200)
+    if(EMSCRIPTEN)
+        set_tests_properties(${package_test} PROPERTIES LABELS web TIMEOUT 1200)
+    else()
+        set_tests_properties(${package_test} PROPERTIES LABELS package TIMEOUT 1200)
+    endif()
     if(GWENI_RENDER_VULKAN)
         gweni_vulkan_test_environment_variables(package_vulkan_environment)
         set_property(TEST package_consumer APPEND PROPERTY ENVIRONMENT ${package_vulkan_environment})

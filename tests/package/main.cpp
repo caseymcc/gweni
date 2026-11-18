@@ -23,6 +23,16 @@
  *  3.3 core through glew or, with GWENI_GL_ES (the GLES tree), GLES 3.0. The
  *  Vulkan device is validated when GWENI_VULKAN_VALIDATION=1, which the test
  *  sets.
+ *
+ *  On the web (package_consumer_web, run in headless Chromium by
+ *  tests/web/run.mjs) the context is WebGL 2 on the page's #canvas, reported
+ *  to the page through Module.gweniWebGLContext as run.mjs requires, with the
+ *  same offscreen framebuffer; the resources are the ones gweni_add_resources
+ *  preloaded at /resources. It also fails unless the library's
+ *  EMSCRIPTEN_KEEPALIVE functions, which gweni's own JavaScript calls back
+ *  (gweni_platform_url_changed on popstate, gweni_lazy_face_arrived when a
+ *  lazy face's fetch ends), are on Module: an object of libgweni.a left out of
+ *  the link takes its exports with it.
  */
 #include <gweni/controls/button.h>
 #include <gweni/controls/canvas.h>
@@ -36,8 +46,13 @@
 #ifdef PACKAGE_HAS_GL
 #include <gweni/platforms/renderers/glApi.h>
 #include <gweni/platforms/renderers/openglCore.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <emscripten/html5.h>
+#else
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
+#endif
 #endif
 #ifdef GWENI_HAS_VULKAN
 #include <gweni/platforms/renderers/vulkan.h>
@@ -125,16 +140,14 @@ bool drawFrame(renderer::SlotRenderer &renderer, const char *backend)
 }
 
 #ifdef PACKAGE_HAS_GL
-//! A surfaceless EGL context with an offscreen framebuffer bound, as an app
-//! drawing headless makes one (gweni has none to give: capture.cpp is its
-//! examples')
+//! A headless GL context with an offscreen framebuffer bound, as an app drawing
+//! headless makes one (gweni has none to give: capture.cpp is its examples'):
+//! surfaceless EGL natively, WebGL 2 on the page's #canvas on the web
 class GlContext
 {
 public:
     ~GlContext()
     {
-        if(m_display == EGL_NO_DISPLAY)
-            return;
         if(m_fbo)
         {
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -142,13 +155,76 @@ public:
             glDeleteRenderbuffers(1, &m_depth);
             glDeleteTextures(1, &m_color);
         }
+#ifdef __EMSCRIPTEN__
+        if(m_webgl > 0)
+        {
+            emscripten_webgl_make_context_current(0);
+            emscripten_webgl_destroy_context(m_webgl);
+        }
+#else
+        if(m_display == EGL_NO_DISPLAY)
+            return;
         eglMakeCurrent(m_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         if(m_context != EGL_NO_CONTEXT)
             eglDestroyContext(m_display, m_context);
         eglTerminate(m_display);
+#endif
     }
 
     bool create(std::string &error)
+    {
+        if(!createContext(error))
+            return false;
+        glGenTextures(1, &m_color);
+        glBindTexture(GL_TEXTURE_2D, m_color);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, Width, Height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glGenRenderbuffers(1, &m_depth);
+        glBindRenderbuffer(GL_RENDERBUFFER, m_depth);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, Width, Height);
+        glGenFramebuffers(1, &m_fbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_color, 0);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, m_depth);
+        if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        {
+            error="the offscreen framebuffer is incomplete";
+            return false;
+        }
+        glViewport(0, 0, Width, Height);
+        return true;
+    }
+
+private:
+#ifdef __EMSCRIPTEN__
+    bool createContext(std::string &error)
+    {
+        EmscriptenWebGLContextAttributes attributes;
+
+        emscripten_webgl_init_context_attributes(&attributes);
+        attributes.majorVersion=2;
+        attributes.minorVersion=0;
+        attributes.depth=EM_TRUE;
+        attributes.antialias=EM_FALSE;
+        // SwiftShader, a CPU rasteriser, is what the test's browser has
+        attributes.failIfMajorPerformanceCaveat=EM_FALSE;
+        attributes.enableExtensionsByDefault=EM_TRUE;
+        m_webgl=emscripten_webgl_create_context("#canvas", &attributes);
+        if(m_webgl <= 0 || emscripten_webgl_make_context_current(m_webgl) != EMSCRIPTEN_RESULT_SUCCESS)
+        {
+            error="no WebGL 2 context on #canvas";
+            return false;
+        }
+        // the page's runner (tests/web/run.mjs) checks the context it made
+        EM_ASM({
+            if(Module['gweniWebGLContext'])
+                Module['gweniWebGLContext'](GLctx);
+        });
+        return true;
+    }
+
+    EMSCRIPTEN_WEBGL_CONTEXT_HANDLE m_webgl=0;
+#else
+    bool createContext(std::string &error)
     {
         m_display=eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, nullptr);
         if(m_display == EGL_NO_DISPLAY || !eglInitialize(m_display, nullptr, nullptr))
@@ -200,28 +276,12 @@ public:
         }
         glGetError();
 #endif
-        glGenTextures(1, &m_color);
-        glBindTexture(GL_TEXTURE_2D, m_color);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, Width, Height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-        glGenRenderbuffers(1, &m_depth);
-        glBindRenderbuffer(GL_RENDERBUFFER, m_depth);
-        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, Width, Height);
-        glGenFramebuffers(1, &m_fbo);
-        glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_color, 0);
-        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, m_depth);
-        if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        {
-            error="the offscreen framebuffer is incomplete";
-            return false;
-        }
-        glViewport(0, 0, Width, Height);
         return true;
     }
 
-private:
     EGLDisplay m_display=EGL_NO_DISPLAY;
     EGLContext m_context=EGL_NO_CONTEXT;
+#endif
     GLuint m_color=0;
     GLuint m_depth=0;
     GLuint m_fbo=0;
@@ -284,6 +344,17 @@ int main()
 {
     int renderers=0;
     bool ok=true;
+
+#ifdef __EMSCRIPTEN__
+    const int exported=EM_ASM_INT({
+        return (typeof Module['_gweni_platform_url_changed'] === 'function' ? 1 : 0)
+            + (typeof Module['_gweni_lazy_face_arrived'] === 'function' ? 2 : 0);
+    });
+    if(!(exported&1))
+        ok=fail("web", "Module._gweni_platform_url_changed is missing: the page's popstate cannot reach gweni");
+    if(!(exported&2))
+        ok=fail("web", "Module._gweni_lazy_face_arrived is missing: a lazy face's fetch cannot reach gweni");
+#endif
 
 #ifdef PACKAGE_HAS_GL
     ++renderers;

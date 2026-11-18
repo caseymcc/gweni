@@ -11,7 +11,9 @@
 #            -DSCRATCH_DIR=<dir> -DGENERATOR=<generator> -DBUILD_TYPE=<type>
 #            -DTOOLCHAIN=<vcpkg.cmake> -DCHAINLOAD=<toolchain> -DTRIPLET=<triplet>
 #            -DINSTALLED_DIR=<the tree's vcpkg_installed> -DC_COMPILER=... -DCXX_COMPILER=...
-#            [-DSANITIZE=address] -P packageConsumer.cmake
+#            [-DSANITIZE=address]
+#            [-DNODE=<emsdk's node> -DRUNNER=<tests/web/run.mjs> -DWEB_PAGE_DIR=<examples/openglcore/web>]
+#            -P packageConsumer.cmake
 #
 #  1. cmake --install of the tree into <scratch>/prefix. It fails, naming the
 #     file, if
@@ -31,6 +33,12 @@
 #     has, under the render lock (mm run --lock render) when mm is on PATH. No
 #     lock is held around the install or the build. The test's environment
 #     (ASAN_OPTIONS, the Vulkan layer and driver pins) reaches it.
+#
+#  With RUNNER (package_consumer_web, the web trees) the toolchain is the web
+#  tree's (vcpkg's, chainloading emsdk's Emscripten.cmake, wasm32-emscripten),
+#  the consumer is built as a page on WEB_PAGE_DIR's shell.html and pre.js (test
+#  plumbing; it links no Emscripten setting of gweni's own) and run.mjs runs it
+#  in headless Chromium on SwiftShader, which takes no lock.
 #
 
 foreach(var TREE SOURCE_DIR CONSUMER_DIR SCRATCH_DIR GENERATOR BUILD_TYPE TOOLCHAIN TRIPLET INSTALLED_DIR)
@@ -99,7 +107,10 @@ set(configure_args
     "-DVCPKG_TARGET_TRIPLET=${TRIPLET}"
     "-DVCPKG_INSTALLED_DIR=${INSTALLED_DIR}"
     -DVCPKG_MANIFEST_MODE=OFF
-    "-DCMAKE_PREFIX_PATH=${prefix}")
+    "-DCMAKE_PREFIX_PATH=${prefix}"
+    # the config itself too: Emscripten's toolchain finds packages inside its
+    # sysroot and vcpkg_installed alone (CMAKE_FIND_ROOT_PATH), not in a prefix
+    "-Dgweni_DIR=${prefix}/share/gweni")
 if(CHAINLOAD)
     list(APPEND configure_args "-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=${CHAINLOAD}")
 endif()
@@ -108,6 +119,9 @@ if(C_COMPILER)
 endif()
 if(CXX_COMPILER)
     list(APPEND configure_args "-DCMAKE_CXX_COMPILER=${CXX_COMPILER}")
+endif()
+if(WEB_PAGE_DIR)
+    list(APPEND configure_args "-DPACKAGE_WEB_PAGE_DIR=${WEB_PAGE_DIR}")
 endif()
 if(SANITIZE)
     list(APPEND configure_args
@@ -121,11 +135,16 @@ check_run("building tests/package against the package"
 
 # 3. the run
 set(consumer "${build}/package_consumer")
+if(RUNNER)
+    string(APPEND consumer ".html")
+endif()
 if(NOT EXISTS "${consumer}")
     message(FATAL_ERROR "package_consumer: the build made no ${consumer}")
 endif()
 find_program(mm_program mm)
-if(mm_program)
+if(RUNNER)
+    set(run_command "${NODE}" "${RUNNER}" "${consumer}")
+elseif(mm_program)
     set(run_command "${mm_program}" run --lock render -- "${consumer}")
 else()
     message(STATUS "package_consumer: mm is not on PATH, so the run takes no render lock")
