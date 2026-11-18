@@ -161,7 +161,8 @@ if(IMGLIB_USE_OPENCL)
 endif()
 
 
-add_library(imglib
+# gweni: an OBJECT library, built into libgweni.a (deps/CMakeLists.txt)
+add_library(imglib OBJECT
     ${imglib_sources}
     ${imglib_headers}
     ${embededFiles}

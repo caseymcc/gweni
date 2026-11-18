@@ -88,12 +88,14 @@ if(freetype-gl_USE_HUNTER)
     set(FREETYPE_TARGET_LIBS freetype::freetype)
 
 else()
-    find_package(Freetype REQUIRED)
-    set(FREETYPE_TARGET_LIBS ${FREETYPE_LIBRARIES})
+    # gweni patch: vcpkg's freetype config and its imported target, never
+    # FindFreetype's FREETYPE_LIBRARIES (absolute paths, which gweni's exported
+    # targets would carry into an installed package)
+    find_package(freetype CONFIG REQUIRED)
+    set(FREETYPE_TARGET_LIBS freetype)
 endif()
 
 include_directories(
-    ${FREETYPE_INCLUDE_DIRS}
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/include/freetype-gl
 )
@@ -135,7 +137,8 @@ set(FREETYPE_GL_SRC
     vertex-buffer.c
 )
 
-add_library(freetype-gl STATIC
+# gweni patch: an OBJECT library, built into libgweni.a (deps/CMakeLists.txt)
+add_library(freetype-gl OBJECT
     ${FREETYPE_GL_SRC}
     ${FREETYPE_GL_HDR}
 )
@@ -167,50 +170,10 @@ if(freetype-gl_BUILD_MAKEFONT)
 endif()
 
 
-#install
-include(GNUInstallDirs) 
-
-set(CONFIG_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}")
-set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
-set(VERSION_CONFIG "${GENERATED_DIR}/${PROJECT_NAME}ConfigVersion.cmake")
-set(PROJECT_CONFIG "${GENERATED_DIR}/${PROJECT_NAME}Config.cmake")
-set(TARGETS_EXPORT_NAME "${PROJECT_NAME}Targets")
-set(TARGET_NAMESPACE "${PROJECT_NAME}::")
-
-include(CMakePackageConfigHelpers)
-
-write_basic_package_version_file(
-    "${VERSION_CONFIG}" COMPATIBILITY SameMajorVersion
-)
-
-configure_package_config_file(
-    "cmake/config.cmake.in"
-    "${PROJECT_CONFIG}"
-    INSTALL_DESTINATION "${CONFIG_INSTALL_DIR}"
-)
-
-install(TARGETS freetype-gl
-    EXPORT "${TARGETS_EXPORT_NAME}"
-    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-    RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
-    INCLUDES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
-)
-
-install(FILES ${FREETYPE_GL_HDR}
-  DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/${PROJECT_NAME}"
-)
-
-install(
-    FILES "${PROJECT_CONFIG}" "${VERSION_CONFIG}"
-    DESTINATION "${CONFIG_INSTALL_DIR}"
-)
-
-install(
-    EXPORT "${TARGETS_EXPORT_NAME}"
-    NAMESPACE "${TARGET_NAMESPACE}"
-    DESTINATION "${CONFIG_INSTALL_DIR}"
-)
+# gweni patch: no install rules. freetype-gl is an OBJECT library whose objects
+# go into gweni's own archive (libgweni.a), and gweni installs its headers under
+# include/gweni/third_party/, so nothing here is installed: vcpkg's freetype-gl
+# port owns include/freetype-gl/, lib/libfreetype-gl.a and lib/cmake/freetype-gl/.
 
 message(STATUS "freetype-gl_BUILD_APIDOC ${freetype-gl_BUILD_APIDOC}")
 #additional projects

@@ -498,8 +498,14 @@ set(GWENI_PROPERTY_SOURCES
 )
 
 set(GWENI_RENDER_SOURCES "")
-# imglib with every renderer or none: the textured skin loads its atlas with it
-set(GWENI_ADDITIONAL_LIBRARIES imglib)
+# imglib with every renderer or none: the textured skin loads its atlas with it.
+# imglib and freetype-gl are OBJECT libraries (deps/): linked here, their
+# objects go into libgweni.a. BUILD_INTERFACE keeps the targets themselves out
+# of what an installed gweni exports; their dependencies are gweni's own, by
+# their imported targets (PNG::PNG, JPEG::JPEG here, freetype with the slot core).
+find_package(PNG REQUIRED)
+find_package(JPEG REQUIRED)
+set(GWENI_ADDITIONAL_LIBRARIES $<BUILD_INTERFACE:imglib> PNG::PNG JPEG::JPEG)
 set(GWENI_COMPILE_DEFINITIONS "")
 
 # RapidJSON is header-only; the vcpkg config exposes RAPIDJSON_INCLUDE_DIRS
@@ -546,7 +552,7 @@ if(GWENI_RENDER_OPENGL_CORE OR GWENI_RENDER_VULKAN)
     set(GWENI_ADDITIONAL_LIBRARIES ${GWENI_ADDITIONAL_LIBRARIES}
         glm::glm
         freetype
-        freetype-gl
+        $<BUILD_INTERFACE:freetype-gl>
     )
 
     set(GWENI_COMPILE_DEFINITIONS ${GWENI_COMPILE_DEFINITIONS}
