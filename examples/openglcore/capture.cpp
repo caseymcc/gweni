@@ -124,6 +124,64 @@ void openDepthViewOnce(controls::Canvas &canvas)
         std::cout<<"the depth view is open; F9 or Escape closes it, +/- or Alt+wheel: z spacing, R reset\n";
 }
 
+#if GWENI_EXAMPLE_WEBGL
+namespace
+{
+
+struct PageDepthViewNotice: public event::Handler
+{
+    controls::Canvas *canvas=nullptr;
+
+    void onOpenChanged(event::Info info)
+    {
+        if(info.control != canvas)
+            return;
+        EM_ASM({
+            if(Module['gweniDepthViewChanged'])
+                Module['gweniDepthViewChanged']($0 != 0);
+        }, (int)info.integer);
+    }
+
+    void onSpacingChanged(event::Info info)
+    {
+        const tools::DepthView *view=(info.control == canvas)?tools::DepthView::find(canvas):nullptr;
+
+        if(!view)
+            return;
+        EM_ASM({
+            if(Module['gweniDepthViewSpacingChanged'])
+                Module['gweniDepthViewSpacingChanged']($0);
+        }, (double)view->spacingFactor());
+    }
+};
+
+}//namespace
+
+void tellPageOfDepthView(controls::Canvas *canvas)
+{
+    PageDepthViewNotice *notice=new PageDepthViewNotice;
+
+    notice->canvas=canvas;
+    tools::DepthView::onOpenChangedCaller.add(notice, &PageDepthViewNotice::onOpenChanged);
+    tools::DepthView::onSpacingChangedCaller.add(notice, &PageDepthViewNotice::onSpacingChanged);
+}
+
+std::string depthViewSpacing(controls::Canvas *canvas, double factor)
+{
+    tools::DepthView *view=canvas?tools::DepthView::find(canvas):nullptr;
+
+    if(!view)
+        return "view=closed factor=0";
+    if(factor > 0.0)
+        view->setSpacingFactor((float)factor);
+
+    char text[64];
+
+    std::snprintf(text, sizeof(text), "view=open factor=%.6g", (double)view->spacingFactor());
+    return text;
+}
+#endif
+
 bool parseScale(const char *value, float &scale)
 {
     char *end=nullptr;

@@ -37,6 +37,13 @@ header .built-from .commit { display: flex; flex-wrap: wrap; justify-content: fl
                              min-width: 0; height: 18px; overflow: hidden; padding-right: 16px; }
 header .built-from .commit::before { content: ''; height: 18px; }
 header .built-from .date { white-space: pre; }
+/* the depth view's Z spacing slider and its factor, fixed width so the row
+   does not move as it changes */
+header .z-spacing { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+header .z-spacing input { width: 120px; margin: 0; accent-color: #7aa2f7; }
+header .z-spacing input:disabled { opacity: 0.4; }
+header .z-spacing output { display: inline-block; width: 4.5em; color: #c0caf5;
+                           font-variant-numeric: tabular-nums; }
 header input[type=checkbox] { accent-color: #7aa2f7; vertical-align: middle; margin: 0 4px 0 0; }
 select { background: #24283b; color: #c0caf5; border: 1px solid #414868; border-radius: 4px;
          padding: 3px 6px; font: inherit; }

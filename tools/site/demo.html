@@ -17,7 +17,13 @@
   after that default, which opens the depth view (gweni::tools::DepthView)
   once the first frame is drawn, with the overlay open too; the "Depth"
   button left of "Stats" opens it as F9 does, and the view takes the mouse,
-  so Escape or F9 closes it again, the button following. The header's
+  so Escape or F9 closes it again, the button following. The header's "Z
+  spacing" slider is the open view's spacing factor on a log scale, x0.1 to x20
+  of its reset spacing (gweni_web_depth_view_spacing), disabled while the view
+  is closed (OpenGLCore tells the page as it opens or closes,
+  Module.gweniDepthViewChanged) and moved to the factor the view tells the
+  page of (Module.gweniDepthViewSpacingChanged: +/- and Alt+wheel in the view,
+  R, the open); let go, the canvas has the keyboard again. The header's
   built-from comment becomes the commit the site was built from, linked to it,
   on the header's one row, so the canvas keeps its height.
 -->
@@ -33,6 +39,7 @@
 <header>
 <a class="name" href="index.html">gweni</a>
 <span>Demo</span>
+<label class="z-spacing" title="The depth view's spacing between layers, x0.1 to x20 of its reset spacing: +/- or Alt+wheel in the view, R resets">Z spacing <input type="range" id="z-spacing" min="-1" max="1.30103" step="any" value="0" disabled> <output id="z-spacing-value">&times;1.00</output></label>
 <nav>
 <span class="built-from"><!-- gweni:built-from --></span>
 <a href="controltest.html">Gallery</a>
@@ -43,7 +50,43 @@
 <canvas id="canvas" width="64" height="64" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
 </div>
 <pre id="output"></pre>
-<script>var Module = { gweniDefaultArgs: ['--stats-overlay'] };</script>
+<script>
+var Module = { gweniDefaultArgs: ['--stats-overlay'] };
+(function()
+{
+    var canvas = document.getElementById('canvas');
+    // The "Z spacing" slider: the depth view's spacing factor on a log scale,
+    // x0.1 to x20 (log10 -1 to 1.30103), through gweni_web_depth_view_spacing,
+    // enabled only while the view is open, and set to the factor the view
+    // tells the page of (Module.gweniDepthViewSpacingChanged: +/-, Alt+wheel,
+    // R, the open)
+    var spacing = document.getElementById('z-spacing');
+    var spacingValue = document.getElementById('z-spacing-value');
+    function showSpacing(factor)
+    {
+        spacing.value = Math.log10(factor);
+        spacingValue.textContent = '\u00d7' + factor.toFixed(2);
+    }
+    function setSpacingOpen(open)
+    {
+        spacing.disabled = !open;
+    }
+    spacing.addEventListener('input', function()
+    {
+        var state = Module.ccall('gweni_web_depth_view_spacing', 'string', ['number'],
+            [Math.pow(10, Number(spacing.value))]);
+        var factor = /factor=([0-9.e+-]+)/.exec(state);
+        if(factor && state.startsWith('view=open'))
+            showSpacing(Number(factor[1]));
+    });
+    // let go: the view's keys go to the canvas again
+    spacing.addEventListener('change', function() { canvas.focus(); });
+    Module.gweniDepthViewSpacingChanged = showSpacing;
+    // OpenGLCore tells the page as the view opens or closes (F9, Escape, the
+    // shell's Depth button, ?depth-view)
+    Module.gweniDepthViewChanged = setSpacingOpen;
+})();
+</script>
 <script async src="OpenGLCore.js"></script>
 </body>
 </html>

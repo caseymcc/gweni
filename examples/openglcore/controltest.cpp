@@ -27119,6 +27119,18 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_depth_view(int on)
     return state.c_str();
 }
 
+//! The window canvas's depth view's spacing factor: \p factor > 0 sets it
+//! (clamped to x0.1..x20), anything else only reads. Returns "view=open
+//! factor=<f>" or "view=closed factor=0", after; valid until the next call.
+//! The gallery page's "Z spacing" slider calls it (tools/site/controltest.html).
+extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_depth_view_spacing(double factor)
+{
+    static std::string state;
+
+    state=gweni::capture::depthViewSpacing(g_canvas, factor);
+    return state.c_str();
+}
+
 //! What the window's frames did since the last gweni_web_probe("reset"), and
 //! the last one: summed over the frames, so a gesture's every frame counts
 //! (tests/web/touch.mjs: a pan lays nothing out).
@@ -27385,22 +27397,6 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_probe(const char *query)
     return result.c_str();
 }
 
-//! Tells the page when the window canvas's depth view opens or closes, however
-//! (F9, Escape, --depth-view, gweni_web_depth_view), by calling
-//! Module.gweniDepthViewChanged(open) if the page set one, so its checkbox
-//! follows the view.
-struct WebDepthViewNotice: public gweni::event::Handler
-{
-    void onOpenChanged(gweni::event::Info info)
-    {
-        if(info.control != g_canvas)
-            return;
-        EM_ASM({
-            if(Module['gweniDepthViewChanged'])
-                Module['gweniDepthViewChanged']($0 != 0);
-        }, (int)info.integer);
-    }
-};
 #endif//GWENI_EXAMPLE_WEBGL
 
 //-----------------------------------------------------------------------------
@@ -28849,9 +28845,8 @@ int main(int argc, char *argv[])
         control->setDock(gweni::DockPosition::Center);
 #if GWENI_EXAMPLE_WEBGL
         g_windowLabel=which;
-        // never deleted: the window loop does not return in the browser
-        gweni::tools::DepthView::onOpenChangedCaller.add(new WebDepthViewNotice,
-            &WebDepthViewNotice::onOpenChanged);
+        // the page's depth view controls follow the view
+        gweni::capture::tellPageOfDepthView(canvas);
 #endif
 
         // --window-test and --idle-test take no input: the X pointer is

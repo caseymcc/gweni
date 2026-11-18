@@ -299,6 +299,18 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_depth_view(int on)
     return state.c_str();
 }
 
+//! The depth view's spacing factor: \p factor > 0 sets it (clamped to
+//! x0.1..x20), anything else only reads. Returns "view=open factor=<f>" or
+//! "view=closed factor=0", after; valid until the next call. The hosted
+//! demo.html's "Z spacing" slider calls it.
+extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_depth_view_spacing(double factor)
+{
+    static std::string state;
+
+    state=gweni::capture::depthViewSpacing(g_canvas, factor);
+    return state.c_str();
+}
+
 //! The shell's navigation, for tests/web/navigation.mjs: the page shown, the
 //! status bar link's rect on the canvas (logical units) and currentUrl(), as
 //! "demo=<Name> link=x,y,w,h url=<url>". Valid until the next call.
@@ -753,6 +765,10 @@ int main(int argc, char *argv[])
 
     g_renderer=renderer;
     g_canvas=canvas;
+#if GWENI_EXAMPLE_WEBGL
+    // the page's depth view controls (demo.html's Z spacing) follow the view
+    gweni::capture::tellPageOfDepthView(canvas);
+#endif
 
 //#define SINGLE_CONTROL
 

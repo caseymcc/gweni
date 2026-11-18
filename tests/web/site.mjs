@@ -30,12 +30,21 @@
 //                     --depth-view after the default --stats-overlay in its
 //                     argv, the app saying on stdout that both are open, and
 //                     its gweni_web_depth_view export reading the view open
-//                     and the shell's Depth button on
+//                     and the shell's Depth button on; then the header's "Z
+//                     spacing" slider (checkSpacing, below), and Escape
+//                     disabling it and the export's open enabling it again
 //    controltest.html?control=ButtonDemo&depth-view
 //                     the gallery with the view open (the export) and its
 //                     "Depth view" checkbox checked; unchecking it closes the
 //                     view and takes depth-view out of the URL, checking it
-//                     again opens the view and puts it back, and picking
+//                     again opens the view and puts it back, the "Z spacing"
+//                     slider disabled while it is closed; the slider as on the
+//                     demo (checkSpacing: enabled at x1 with the view open, x4
+//                     set through it read back from the app's
+//                     gweni_web_depth_view_spacing export, a + key press and
+//                     one Alt+wheel notch over the canvas each moving it by
+//                     exactly one ZSpacingStep with the page neither scrolled
+//                     nor zoomed, R putting it back at x1); and picking
 //                     SliderDemo then loads ?control=SliderDemo&depth-view,
 //                     the view open and the checkbox checked again
 //    controltest.html?control=UnicodeTextDemo
@@ -400,27 +409,33 @@ class Visit
             const checkedAtLoad = await box.isChecked();
             await box.click();
             await frames();
-            const off = { state: await state(), checked: await box.isChecked(), url: inUrl() };
+            const off = { state: await state(), checked: await box.isChecked(), url: inUrl(),
+                spacing: await page.locator('#z-spacing').isDisabled() };
             await box.click();
             await frames();
-            const on = { state: await state(), checked: await box.isChecked(), url: inUrl() };
+            const on = { state: await state(), checked: await box.isChecked(), url: inUrl(),
+                spacing: await page.locator('#z-spacing').isDisabled() };
             if(!checkedAtLoad)
             {
                 fail(visit.label, 'the "Depth view" checkbox is not checked with ?depth-view');
                 return false;
             }
-            if(off.state !== 'view=closed' || off.checked || off.url)
+            if(off.state !== 'view=closed' || off.checked || off.url || !off.spacing)
             {
-                fail(visit.label, `unchecking "Depth view" left ${off.state}, checked ${off.checked}, depth-view in the URL ${off.url}`);
+                fail(visit.label, `unchecking "Depth view" left ${off.state}, checked ${off.checked}, depth-view in the URL ${off.url}, Z spacing disabled ${off.spacing}`);
                 return false;
             }
-            if(on.state !== 'view=open' || !on.checked || !on.url)
+            if(on.state !== 'view=open' || !on.checked || !on.url || on.spacing)
             {
-                fail(visit.label, `checking "Depth view" again left ${on.state}, checked ${on.checked}, depth-view in the URL ${on.url}`);
+                fail(visit.label, `checking "Depth view" again left ${on.state}, checked ${on.checked}, depth-view in the URL ${on.url}, Z spacing disabled ${on.spacing}`);
                 return false;
             }
-            detail += ', the checkbox closes and opens it, the URL following';
+            detail += ', the checkbox closes and opens it, the URL and the Z spacing slider following';
         }
+        const spacing = await this.checkSpacing(visit, gallery);
+        if(!spacing)
+            return false;
+        detail += `, ${spacing}`;
         const stderr = await page.evaluate(() => gweniRun.output.filter(l => l.stream === 'stderr').map(l => l.text));
         if(stderr.length)
         {
@@ -429,6 +444,107 @@ class Visit
         }
         this.detail += `, ${detail}`;
         return true;
+    }
+
+    // The header's "Z spacing" slider with the depth view open: enabled, at x1
+    // (log10 0); set to x4 it sets the app's factor to 4, read back through
+    // gweni_web_depth_view_spacing (0 only reads); a + key press on the canvas
+    // moves it by exactly one step (log10 of DepthView::ZSpacingStep, 1.25)
+    // and one Alt+wheel notch towards the user (mouse.wheel(0, 100): 100 px,
+    // one step to emscripten-glfw) one step back, the page neither scrolling
+    // nor zooming; R puts it back at x1. On the demo, which has no checkbox,
+    // Escape then closes the view and disables it, and the export opens it
+    // again and enables it. Returns what passed, or null after a fail().
+    async checkSpacing(visit, gallery)
+    {
+        const { page } = visit;
+        const step = Math.log10(1.25);
+        const slider = () => page.evaluate(() => {
+            const input = document.getElementById('z-spacing');
+            return input ? { value: Number(input.value), disabled: input.disabled } : null;
+        });
+        const factor = async () => {
+            const state = await page.evaluate(() => Module.ccall('gweni_web_depth_view_spacing', 'string', ['number'], [0]));
+            const found = /^view=open factor=([0-9.e+-]+)$/.exec(state);
+            return found ? Number(found[1]) : NaN;
+        };
+        const view = () => page.evaluate(() => ({ scrollY: window.scrollY, scale: window.visualViewport.scale }));
+        const near = (a, b) => Math.abs(a - b) < 1e-4;
+        const frames = () => settle(page, 3);
+
+        const start = await slider();
+        if(!start || start.disabled || !near(start.value, 0) || !near(await factor(), 1))
+        {
+            fail(visit.label, `with the view open the Z spacing slider is ${JSON.stringify(start)}, the factor ${await factor()}: expected enabled at x1`);
+            return null;
+        }
+        // moved by the visitor (an input event, as a drag sends)
+        await page.evaluate(value => {
+            const input = document.getElementById('z-spacing');
+            input.value = String(value);
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+        }, Math.log10(4));
+        await frames();
+        const moved = await factor();
+        if(!near(moved, 4))
+        {
+            fail(visit.label, `the Z spacing slider at x4 gave the app a factor of ${moved}`);
+            return null;
+        }
+        const before = await view();
+        // + on the canvas, which has the keyboard after the slider's change
+        const box = await page.locator('#canvas').boundingBox();
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.keyboard.press('+');
+        await frames();
+        const plus = await slider();
+        await page.keyboard.down('Alt');
+        await page.mouse.wheel(0, 100);
+        await frames();
+        await page.keyboard.up('Alt');
+        await frames();
+        const wheel = await slider();
+        const after = await view();
+        if(!near(plus.value - Math.log10(4), step))
+        {
+            fail(visit.label, `a + key press moved the Z spacing slider from ${Math.log10(4)} to ${plus.value}, not one step (${step})`);
+            return null;
+        }
+        if(!near(plus.value - wheel.value, step) || !near(Math.pow(10, wheel.value), await factor()))
+        {
+            fail(visit.label, `an Alt+wheel notch moved the Z spacing slider from ${plus.value} to ${wheel.value}, not one step back, the factor ${await factor()}`);
+            return null;
+        }
+        if(before.scrollY !== after.scrollY || before.scale !== after.scale)
+        {
+            fail(visit.label, `Alt+wheel scrolled or zoomed the page: scrollY ${before.scrollY} -> ${after.scrollY}, scale ${before.scale} -> ${after.scale}`);
+            return null;
+        }
+        await page.keyboard.press('r');
+        await frames();
+        const reset = await slider();
+        if(!near(reset.value, 0) || !near(await factor(), 1))
+        {
+            fail(visit.label, `R left the Z spacing slider at ${reset.value}, the factor ${await factor()}: expected x1`);
+            return null;
+        }
+        if(!gallery)
+        {
+            await page.keyboard.press('Escape');
+            await frames();
+            const closed = await slider();
+            await page.evaluate(() => Module.ccall('gweni_web_depth_view', 'string', ['number'], [1]));
+            await frames();
+            const open = await slider();
+            if(!closed.disabled || open.disabled)
+            {
+                fail(visit.label, `the Z spacing slider is ${closed.disabled ? '' : 'not '}disabled once Escape closed the view, and ${open.disabled ? '' : 'not '}enabled once it opened again`);
+                return null;
+            }
+        }
+        return 'the Z spacing slider sets the factor, follows +, Alt+wheel and R'
+            + (gallery ? '' : ', disabled while the view is closed');
     }
 
     // \a depth: undefined, or 'demo' or 'gallery' for a page opened with

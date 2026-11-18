@@ -124,6 +124,22 @@ bool onOffArgument(int argc, char *argv[], int &i);
 //! closes it for good.
 void openDepthViewOnce(controls::Canvas &canvas);
 
+#if GWENI_EXAMPLE_WEBGL
+//! Tells the page of \p canvas's depth view from now on, each call only if the
+//! page set it: Module.gweniDepthViewChanged(open) as the view opens or closes
+//! (F9, Escape, the shell's Depth button, --depth-view, an export), and
+//! Module.gweniDepthViewSpacingChanged(factor) as its spacing factor
+//! (DepthView::spacingFactor()) changes, R and the open included, so a page's
+//! controls follow the view. Call once per canvas; never undone (the window
+//! loop does not return in the browser).
+void tellPageOfDepthView(controls::Canvas *canvas);
+//! gweni_web_depth_view_spacing's work, in both apps: \p factor > 0 sets the
+//! open view's spacing factor (clamped to x0.1..x20, the front layer kept),
+//! anything else only reads; returns "view=open factor=<f>" or
+//! "view=closed factor=0", after
+std::string depthViewSpacing(controls::Canvas *canvas, double factor);
+#endif
+
 //-----------------------------------------------------------------------------
 // Scale: device pixels per logical unit. The canvas is laid out in logical
 // units and the renderer draws it at framebuffer pixels; the effective scale is
