@@ -8345,7 +8345,11 @@ clamped in factor space, so both ends are reached exactly and a step past one do
 nothing. The stack's depth is the factor times half the view's width whatever the
 layers or raw labels, so it is what is kept as they change (with raw labels the
 canvas's highest z, which a renumber moves, is followed in the next flush whose shown
-layers changed and at the next spacing change: `followRawHighestZ()`). A fixed range in px could
+layers changed: `followRawHighestZ()`; a renumber no such flush follows, hidden
+controls added, keeps the spacing drawn, and the factor is worked out again from it
+before the next camera change acts, `syncRawFactor()`, so the slider reads what is drawn
+and `+` and `-` always move the layers apart and together; a factor worked out past
+an end stays there until a spacing is set, a step further past it doing nothing). A fixed range in px could
 not do it: a page with few shown layers (ButtonDemo) has a reset spacing of tens of px
 and the Demo shell's raw labels a hundredth of one. `setSpacingFactor(f)` and
 `stepSpacing(n)` (`f` times `ZSpacingStep` to the power n) move the spacing and keep the

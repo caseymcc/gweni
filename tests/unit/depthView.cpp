@@ -1106,6 +1106,102 @@ TEST_CASE("Depth view: with raw labels a renumber keeps the spacing factor, and 
     CHECK(view->spacingFactor() == 1.0f);
 }
 
+TEST_CASE("Depth view: with raw labels a renumber no flush follows keeps the spacing drawn, the factor true and + apart")
+{
+    // hidden controls take z labels, so the canvas's highest z moves while no
+    // shown label crosses 0: the layer table does not change and no flush
+    // follows the move
+    auto addHidden=[](DrawnCanvas &scene, int y)
+    {
+        for(int i=0; i<20; ++i)
+        {
+            controls::Base *control=scene.canvas->newChild<controls::Base>();
+
+            control->setBounds(5*i, y, 40, 20);
+            control->hide();
+        }
+        scene.canvas->updateCanvas();
+        scene.canvas->renderCanvas();
+    };
+
+    SUBCASE("an orbit, then +")
+    {
+        DrawnCanvas scene(40);
+        tools::DepthView *view=tools::DepthView::open(scene.canvas, &scene.slots);
+
+        REQUIRE(view != nullptr);
+        scene.canvas->inputCharacter('l');
+        view->setSpacingFactor(2.0f);
+        scene.canvas->updateCanvas();
+        scene.canvas->renderCanvas();
+
+        const float high=view->highestZ();
+        const float spacing=view->camera().zSpacing;
+
+        addHidden(scene, 300);
+        REQUIRE(view->highestZ() > high);
+        CHECK(view->camera().zSpacing == spacing);
+
+        // a left drag orbits: the spacing drawn stays, the factor reads it
+        scene.canvas->inputMouseMoved(300, 200, 0, 0);
+        scene.canvas->inputMouseButton(0, true);
+        scene.canvas->inputMouseMoved(310, 205, 10, 5);
+        scene.canvas->inputMouseButton(0, false);
+        CHECK(view->camera().zSpacing == spacing);
+        CHECK(view->spacingFactor() == doctest::Approx(view->camera().zSpacing/view->defaultZSpacing()));
+        CHECK(view->spacingFactor() > 2.0f);
+
+        // + spaces the layers one step further apart than drawn
+        scene.canvas->inputCharacter('+');
+        CHECK(view->camera().zSpacing == doctest::Approx(spacing*tools::DepthView::ZSpacingStep));
+        CHECK(view->spacingFactor() == doctest::Approx(view->camera().zSpacing/view->defaultZSpacing()));
+    }
+    SUBCASE("+ and -, with no camera change between")
+    {
+        DrawnCanvas scene(40);
+        tools::DepthView *view=tools::DepthView::open(scene.canvas, &scene.slots);
+
+        REQUIRE(view != nullptr);
+        scene.canvas->inputCharacter('l');
+        view->setSpacingFactor(2.0f);
+        scene.canvas->updateCanvas();
+        scene.canvas->renderCanvas();
+        addHidden(scene, 300);
+
+        const float spacing=view->camera().zSpacing;
+
+        scene.canvas->inputCharacter('+');
+        CHECK(view->camera().zSpacing == doctest::Approx(spacing*tools::DepthView::ZSpacingStep));
+        scene.canvas->inputCharacter('-');
+        CHECK(view->camera().zSpacing == doctest::Approx(spacing));
+    }
+    SUBCASE("at x20 the factor lands past the end, where + does nothing and the camera is what is drawn")
+    {
+        DrawnCanvas scene(40);
+        tools::DepthView *view=tools::DepthView::open(scene.canvas, &scene.slots);
+
+        REQUIRE(view != nullptr);
+        scene.canvas->inputCharacter('l');
+        view->setSpacingFactor(tools::DepthView::MaxSpacingFactor);
+        scene.canvas->updateCanvas();
+        scene.canvas->renderCanvas();
+        addHidden(scene, 300);
+
+        const tools::DepthView::Camera before=view->camera();
+
+        // + does nothing: the camera is the one drawn, as it was
+        scene.canvas->inputCharacter('+');
+        CHECK(view->camera() == before);
+        CHECK(view->spacingFactor() > tools::DepthView::MaxSpacingFactor);
+        CHECK(view->spacingFactor() == doctest::Approx(view->camera().zSpacing/view->defaultZSpacing()));
+
+        // - brings them together, back inside the range
+        scene.canvas->inputCharacter('-');
+        CHECK(view->camera().zSpacing < before.zSpacing);
+        CHECK(view->spacingFactor() <= tools::DepthView::MaxSpacingFactor);
+    }
+}
+
 TEST_CASE("Depth view: Alt with the horizontal wheel neither spaces nor dollies")
 {
     DrawnCanvas scene(40);

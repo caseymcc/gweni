@@ -228,8 +228,7 @@ void DepthView::setSpacingFactor(float factor)
     // camera) it is z 0, the orbit's pivot, which the spacing does not move,
     // so the spacing alone changes and the stack deepens away from the camera
     // there too.
-    followRawHighestZ();
-
+    const bool synced=syncRawFactor();
     Camera camera=m_camera;
     const float clamped=clampedFactor(factor);
     const float spacing=clamped*defaultZSpacing();
@@ -237,7 +236,9 @@ void DepthView::setSpacingFactor(float factor)
     const float yaw=radians(m_camera.yaw);
     const float pitch=radians(m_camera.pitch);
 
-    if(std::cos(yaw)*std::cos(pitch) >= 0.0f)
+    // edge-on counts as the front; the tolerance takes in float's cos of the
+    // pitch clamp's 90 degrees, -4.4e-8
+    if(std::cos(yaw)*std::cos(pitch) > -1e-6f)
     {
         camera.panX-=gained*std::sin(yaw);
         camera.panY-=gained*std::cos(yaw)*std::sin(pitch);
@@ -245,13 +246,29 @@ void DepthView::setSpacingFactor(float factor)
             camera.distance+=gained*std::cos(yaw)*std::cos(pitch)/focalLength();
     }
     camera.zSpacing=spacing;
-    if((camera != m_camera) && place(camera, clamped))
+    if(camera != m_camera)
+    {
+        if(place(camera, clamped) || synced)
+            spacingChanged();
+    }
+    else if(synced)
         spacingChanged();
 }
 
 void DepthView::stepSpacing(float steps)
 {
-    setSpacingFactor(m_spacingFactor*std::pow(ZSpacingStep, steps));
+    const bool synced=syncRawFactor();
+    const float target=clampedFactor(m_spacingFactor*std::pow(ZSpacingStep, steps));
+
+    // a step never moves the layers the other way: a factor re-derived past
+    // an end (syncRawFactor()) is clamped back by an explicit set alone
+    if((steps > 0.0f && target <= m_spacingFactor) || (steps < 0.0f && target >= m_spacingFactor))
+    {
+        if(synced)
+            spacingChanged();
+        return;
+    }
+    setSpacingFactor(target);
 }
 
 float DepthView::clampedFactor(float factor)
@@ -283,6 +300,26 @@ bool DepthView::followRawHighestZ()
     else
         keepSpacingFactor();
     return true;
+}
+
+bool DepthView::syncRawFactor()
+{
+    // With raw labels a renumber that changes no shown layer (hidden controls
+    // added) moves the canvas's highest z with no flush following it
+    // (layersChanged() is not called), so the spacing drawn is no longer the
+    // factor's. Before any camera change the factor is worked out again from
+    // the spacing drawn, which stays, so the picture does not move and a step
+    // goes on from what is drawn. The factor may land past an end here; it is
+    // not clamped until a spacing is set.
+    if(!m_rawLabels || highestZ() == m_placedHighZ)
+        return false;
+
+    const float before=m_spacingFactor;
+
+    m_atReset=false;
+    m_spacingFactor=m_camera.zSpacing/defaultZSpacing();
+    m_placedHighZ=highestZ();
+    return m_spacingFactor != before;
 }
 
 void DepthView::spacingChanged()
@@ -346,6 +383,7 @@ bool DepthView::place(const Camera &camera, float factor)
 {
     const float before=m_spacingFactor;
 
+    syncRawFactor();
     m_atReset=false;
     m_camera=camera;
     m_camera.pitch=std::min(std::max(m_camera.pitch, -90.0f), 90.0f);

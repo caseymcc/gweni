@@ -135,8 +135,11 @@ public:
     //! [MinSpacingFactor, MaxSpacingFactor]. The stack's depth is this times
     //! half the view's width, whatever the layers or raw labels, so it is kept
     //! as they change (and as the view does) and zSpacing follows; with raw
-    //! labels a renumber that moves the canvas's highest z is followed in the
-    //! next flush whose shown layers changed, or at the next spacing change.
+    //! labels a renumber that moves the canvas's highest z is followed so in
+    //! the next flush whose shown layers changed. One no such flush follows
+    //! (hidden controls added) keeps the spacing drawn, and the factor is
+    //! worked out again from it at the next camera change, before it acts, so
+    //! it may then lie past an end until a spacing is set.
     float spacingFactor() const { return m_spacingFactor; }
     //! Spaces the layers at \p factor (clamped) times the reset spacing,
     //! keeping the front layer, the end nearer the camera, where it is drawn:
@@ -229,6 +232,9 @@ private:
     //! With raw labels, a new highest z (a renumber): the factor kept, zSpacing
     //! worked out again; whether it did
     bool followRawHighestZ();
+    //! With raw labels, a new highest z no flush followed: the spacing drawn
+    //! kept, the factor worked out again from it; whether it changed
+    bool syncRawFactor();
     void spacingChanged();
     static float clampedFactor(float factor);
     void dolly(float steps);
