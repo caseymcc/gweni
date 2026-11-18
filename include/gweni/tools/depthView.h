@@ -40,8 +40,10 @@ namespace tools
 //! W/S dolly in and out, the arrows and A/D move the camera, P switches
 //! perspective and orthographic, + and - and Alt+wheel space the layers
 //! further apart and closer (spacingFactor(), x0.1 to x20 of the reset
-//! spacing, the front layer kept at its distance from the camera), L switches between shown layers and raw z labels, R resets and
-//! Escape closes it. The layers come towards the camera from the back plane,
+//! spacing, the front layer kept where it is drawn; Alt is tracked through
+//! captureKey, read from input::isKeyDown as the view opens and let go when
+//! the mouse leaves or the window loses the focus), L switches between shown
+//! layers and raw z labels, R resets and Escape closes it. The layers come towards the camera from the back plane,
 //! each shown layer zSpacing device px from the next, by default enough to put
 //! the highest one half the view's width in front. A shown layer is a z label
 //! some shown slot uses: open, the view holds the renderer's layer table and
@@ -117,7 +119,8 @@ public:
     static event::Caller onSpacingChangedCaller;
 
     //! The renderer's view rect changed: builds the camera's transform from it
-    //! again. Nothing when the canvas has no view.
+    //! again, a camera at reset fitted to the new view and any other keeping
+    //! its spacing factor. Nothing when the canvas has no view.
     static void viewChanged(controls::Canvas *canvas);
 
     controls::Canvas *canvas() const { return m_canvas; }
@@ -134,9 +137,12 @@ public:
     //! as they change (and as the view does) and zSpacing follows.
     float spacingFactor() const { return m_spacingFactor; }
     //! Spaces the layers at \p factor (clamped) times the reset spacing,
-    //! keeping the front layer's distance from the camera: the back plane goes
-    //! back by what the stack's depth gained, so the stack deepens away from
-    //! it. + and - and Alt+wheel step it by ZSpacingStep.
+    //! keeping the front layer where it is drawn: its centre is held in place
+    //! in the camera's space (the pan takes up the depth's change across the
+    //! view, in perspective the distance its change along it), so the stack
+    //! deepens away from the camera, straight on by the back plane going back
+    //! by what the stack's depth gained. + and - and Alt+wheel step it by
+    //! ZSpacingStep.
     void setSpacingFactor(float factor);
     //! setSpacingFactor() of spacingFactor() times ZSpacingStep to the power
     //! \p steps (a wheel notch is one, a fraction of it a fraction)

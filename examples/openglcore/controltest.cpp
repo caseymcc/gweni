@@ -674,7 +674,8 @@
  *                 plain notch in and out (a dolly, the spacing kept): each of
  *                 those frames idle as above, every step one ZSpacingStep (or
  *                 the square root of it for the half notch), the front layer
- *                 at the same distance from the camera throughout, both ends
+ *                 drawn where it was throughout (its corners and centre within
+ *                 0.05 device px, in the turned orthographic view), both ends
  *                 reached exactly and a step past one moving nothing; the same
  *                 sweep runs on the Demo shell below. Shots depth-view-before.png,
  *                 -perspective.png, -ortho.png and -after.png. Then the demo
@@ -4532,21 +4533,42 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
         // the hit tests counted from here, not from the frames before
         hitTests=gweni::input::hitTestVisits();
 
+        // where the view transform draws the front layer's corners and centre
+        // (the highest shown layer, at its z), device px
         const gweni::Rect &rect=s.renderer->viewRect();
-        const float focal=DepthView::FocalViews*(float)std::max(std::max(rect.w, rect.h), 1);
         auto front=[&]()
         {
-            return swept->camera().distance-swept->camera().zSpacing*swept->highestZ()/focal;
+            const float *m=swept->transform();
+            const float z=swept->highestZ();
+            std::vector<float> drawn;
+
+            for(const gweni::Point &corner:{ gweni::Point(rect.x, rect.y), gweni::Point(rect.x+rect.w, rect.y),
+                gweni::Point(rect.x, rect.y+rect.h), gweni::Point(rect.x+rect.w, rect.y+rect.h),
+                gweni::Point(rect.x+rect.w/2, rect.y+rect.h/2) })
+            {
+                const float x=(float)corner.x, y=(float)corner.y;
+                const float w=m[3]*x+m[7]*y+m[11]*z+m[15];
+
+                drawn.push_back((m[0]*x+m[4]*y+m[8]*z+m[12])/w);
+                drawn.push_back((m[1]*x+m[5]*y+m[9]*z+m[13])/w);
+            }
+            return drawn;
         };
-        const float front0=front();
+        const std::vector<float> front0=front();
         auto spacingFrame=[&](const char *step)
         {
             frame(std::string(where)+" "+step);
             spacingFrames.push_back(frames.back());
             frames.pop_back();
-            if(spacingFailure.empty() && std::fabs(front()-front0) > 1e-3f*std::fabs(front0))
-                spacingFailure=std::string(where)+": "+step+" moved the front layer from "
-                    +std::to_string(front0)+" to "+std::to_string(front())+" focal lengths";
+
+            const std::vector<float> now=front();
+            float moved=0.0f;
+
+            for(size_t i=0; i<now.size(); ++i)
+                moved=std::max(moved, std::fabs(now[i]-front0[i]));
+            if(spacingFailure.empty() && moved > 0.05f)
+                spacingFailure=std::string(where)+": "+step+" moved the front layer "
+                    +std::to_string(moved)+" device px from where it was drawn";
         };
         auto fail=[&](const std::string &what)
         {

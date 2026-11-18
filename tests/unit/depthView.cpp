@@ -48,7 +48,9 @@
  *  dollies again; a view opened with Alt down reads it. L and back at x0.1,
  *  x1 and x20 keeps the factor and the front and gives the camera back. A
  *  resize at reset fits the camera to the new view; a turned one keeps its
- *  factor.
+ *  factor. Turned (yaw -35, pitch 20), in perspective and orthographic, on 3
+ *  and 600 layers, every step across the range draws the front layer's
+ *  corners and centre where they were, the turn kept.
  *  Deleting the canvas under an open view closes it without a call.
  */
 #include "headlessFixture.h"
@@ -809,6 +811,68 @@ TEST_CASE("Depth view: + and - step the spacing across x0.1..x20, the front laye
 
         tools::DepthView::close(scene.canvas);
         tools::DepthView::onSpacingChangedCaller.removeHandler(&listener);
+    }
+}
+
+TEST_CASE("Depth view: turned, in either projection, the spacing keeps the front layer where it is drawn")
+{
+    for(int count:{ 3, 600 })
+    {
+        for(bool perspective:{ true, false })
+        {
+            CAPTURE(count);
+            CAPTURE(perspective);
+
+            DrawnCanvas scene(count);
+            tools::DepthView *view=tools::DepthView::open(scene.canvas, &scene.slots);
+
+            REQUIRE(view != nullptr);
+
+            tools::DepthView::Camera camera=view->resetCamera();
+
+            camera.yaw=-35.0f;
+            camera.pitch=20.0f;
+            camera.distance=1.6f;
+            camera.perspective=perspective;
+            view->setCamera(camera);
+
+            // the front layer's corners and centre where they are drawn now
+            const float high=view->highestZ();
+            const std::vector<Point3> points={ { 0, 0, high }, { 640, 0, high }, { 0, 480, high },
+                { 640, 480, high }, { 320, 240, high } };
+            std::vector<Point3> drawn;
+
+            for(const Point3 &p:points)
+                drawn.push_back(project(scene.slots, p.x, p.y, p.z));
+
+            auto kept=[&]()
+            {
+                for(size_t i=0; i<points.size(); ++i)
+                {
+                    const Point3 now=project(scene.slots, points[i].x, points[i].y, points[i].z);
+
+                    CHECK(std::fabs(now.x-drawn[i].x) < 0.05f);
+                    CHECK(std::fabs(now.y-drawn[i].y) < 0.05f);
+                }
+            };
+
+            for(int i=0; i<30 && view->spacingFactor() < tools::DepthView::MaxSpacingFactor; ++i)
+            {
+                scene.canvas->inputCharacter('+');
+                kept();
+            }
+            CHECK(view->spacingFactor() == tools::DepthView::MaxSpacingFactor);
+            for(int i=0; i<60 && view->spacingFactor() > tools::DepthView::MinSpacingFactor; ++i)
+            {
+                scene.canvas->inputCharacter('-');
+                kept();
+            }
+            CHECK(view->spacingFactor() == tools::DepthView::MinSpacingFactor);
+            // the turn itself is the user's, kept
+            CHECK(view->camera().yaw == -35.0f);
+            CHECK(view->camera().pitch == 20.0f);
+            CHECK(view->camera().perspective == perspective);
+        }
     }
 }
 

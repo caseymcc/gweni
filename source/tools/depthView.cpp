@@ -217,13 +217,23 @@ void DepthView::reset()
 
 void DepthView::setSpacingFactor(float factor)
 {
-    // the front layer keeps its distance from the camera: the back plane goes
-    // back by what the stack gained
+    // The front layer stays where it is: its centre, (0, 0, depth) in the
+    // model turned by yaw and pitch, is held in place in the camera's space,
+    // the pan taking up what the depth's change moves across the view and, in
+    // perspective, the distance what it moves along it, so the back plane goes
+    // back by what the stack gained (straight on, distance alone). In
+    // orthographic the distance is only the zoom, which stays.
     Camera camera=m_camera;
     const float clamped=clampedFactor(factor);
     const float spacing=clamped*defaultZSpacing();
+    const float gained=(spacing-m_camera.zSpacing)*highestZ();
+    const float yaw=radians(m_camera.yaw);
+    const float pitch=radians(m_camera.pitch);
 
-    camera.distance+=stackDepth(spacing)-stackDepth(m_camera.zSpacing);
+    camera.panX-=gained*std::sin(yaw);
+    camera.panY-=gained*std::cos(yaw)*std::sin(pitch);
+    if(camera.perspective)
+        camera.distance+=gained*std::cos(yaw)*std::cos(pitch)/focalLength();
     camera.zSpacing=spacing;
     if((camera != m_camera) && place(camera, clamped))
         spacingChanged();

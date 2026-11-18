@@ -8291,11 +8291,11 @@ towards the camera:
 - the model: the canvas centre on z 0 at the origin, each shown layer `zSpacing` px
   towards the camera; by default (`defaultZSpacing()`) the highest shown layer
   (`highestZ()`, the renderer's `shownLayerCount()` less 1) half the view's width in
-  front, clamped to 0.01..64 px a layer. With raw labels (L, `setRawLabels`) the
+  front (the reset spacing; the spacing itself is a factor of it, below). With raw labels (L, `setRawLabels`) the
   renderer draws z as it is, each label `zSpacing` px apart, its gaps and hidden pages as
   they are, and `highestZ()` is the canvas's highest z (`Canvas::highestZIndex()`, the
-  last renumber's); switching converts the spacing so spacing times `highestZ()`, the
-  stack's depth, is kept and the front layer stays where it is;
+  last renumber's); switching keeps the spacing factor, so spacing times `highestZ()`,
+  the stack's depth, is kept and the front layer stays where it is;
 - turned by `yaw` (about the vertical axis) then `pitch` (clamped to ±90°) round that
   centre, and panned across the view;
 - perspective: a camera `distance` focal lengths from z 0, the focal length
@@ -8314,8 +8314,8 @@ towards the camera:
   front view's rect scaled about its centre, so the whole canvas is on the view whatever
   it holds and wherever (`tests/unit/depthView.cpp`, on a landscape and a portrait
   view). Orthographic draws every layer at that z 0 size, so P at reset does not move
-  the back plane. A spacing widened with + after a reset can push the front layer past
-  the edges again; R fits it again;
+  the back plane. A spacing changed after a reset keeps the front layer where it is (the
+  spacing, below), so the picture stays on the view; R puts the spacing back at x1;
 - the z index out is fitted to the scene: everything is within the radius of the view's
   half-diagonal and its highest z from the centre, so perspective maps the nearest and
   farthest distances that radius allows to `kMaxZIndex` and 0 (`a + b/d`, which as
@@ -8326,15 +8326,65 @@ towards the camera:
 The mouse and the keys: left-drag orbits (0.4° a unit), right- or middle-drag pans by
 the mouse's device px, the wheel and W/S dolly (0.85 a notch, away from the user is in),
 the arrows and A/D move the camera 24 units, P switches perspective and orthographic, +
-and - space the layers 1.25 times further or closer, L switches between shown layers
+and - and Alt+wheel space the layers 1.25 times further or closer a press or a notch
+(the spacing, below), L switches between shown layers
 (the default) and raw labels, R resets (straight on, perspective, the default spacing,
 the highest layer at its front-view size) and Escape closes it, as F9 does in the
 examples. The view opens at reset. A camera at reset, until the next `setCamera()` (a
 key, a drag, the wheel), is fitted again in each flush whose shown layers changed (a
 tooltip shown, a page switched): the table's listener (`DepthView::layersChanged`)
 rebuilds the transform there, before the draws and with no redraw, so that frame draws
-with it; a camera the user moved keeps itself and gets a depth range covering the new
-stack.
+with it; a camera the user moved keeps itself, its spacing factor (so the stack's depth
+and the front layer's place) included, `zSpacing` following the new layer count, and
+gets a depth range covering the new stack. `viewChanged()` after a resize fits a camera
+at reset to the new view, and a moved one keeps its factor as well.
+
+**The spacing.** `zSpacing` is held as a factor of the reset spacing,
+`spacingFactor()` (1 at reset), in `MinSpacingFactor`..`MaxSpacingFactor`, x0.1 to x20,
+clamped in factor space, so both ends are reached exactly and a step past one does
+nothing. The stack's depth is the factor times half the view's width whatever the
+layers or raw labels, so it is what is kept as they change. A fixed range in px could
+not do it: a page with few shown layers (ButtonDemo) has a reset spacing of tens of px
+and the Demo shell's raw labels a hundredth of one. `setSpacingFactor(f)` and
+`stepSpacing(n)` (`f` times `ZSpacingStep` to the power n) move the spacing and keep the
+**front layer where it is drawn**: its centre, the stack's depth along the turned
+model's z axis, is held in place in the camera's space, the pan taking up what the
+depth's change moves across the view and, in perspective, `distance` what it moves
+along it. Straight on that is `distance` gaining the depth's gain in focal lengths,
+`Δs*high/focal`, so the stack deepens away from the camera instead of growing into it
+from z 0, where the shell's chrome, numbered last, passed the camera after a few
+presses; turned, a distance alone would keep the front layer's depth but slide it off
+the view, as the orbit's pivot is z 0. In orthographic `distance` is only the zoom and
+stays. Looking straight on, the front layer stays drawn at its front-view size and the
+whole canvas on the view across the range, and turned, in either projection, its
+corners stay where they were drawn (`tests/unit/depthView.cpp`, on 3 and 600 layers).
+`distance` is clamped to `MinDistance` from the back plane and to `MaxDistance` (20)
+plus the stack's depth, from the front layer, so x20 is reached after a dolly out too. + and
+- step it once, and a wheel notch (60 units, `input::GLFW3::processScroll`) with Alt
+down once, a trackpad's fraction of a notch in proportion (`pow(ZSpacingStep,
+delta/60)`); the plain wheel dollies. Alt is the canvas's `keys::Alt`, which
+`input::GLFW3` sends before every key event (`syncModifiers`) and the canvas hands to
+the capture (`captureKey`, press and release); the mouse leaving the canvas lets it go,
+and so does a lost window focus (`GLFW3::processFocus` releases every key through
+`inputModifierKey`, which reaches the capture). A view opened with Alt already down reads
+it from `input::isKeyDown(keys::Alt)` and its release reaches the view and the canvas
+both. `onSpacingChangedCaller` is called with the canvas on every change of the factor,
+on every reset (R and the open) whether it changed or not; a change of the layers or the
+view keeps the factor and calls nothing.
+
+The hosted pages (`demo.html`, `controltest.html`, "The hosted site" in AGENTS.md) have a
+"Z spacing" range input in their header: the factor on a log scale, x0.1 to x20, set
+through both apps' `gweni_web_depth_view_spacing(factor)` export (a factor above 0 sets
+it, anything else only reads; "view=open factor=<f>" or "view=closed factor=0"),
+disabled while the view is closed and moved to what the view reports, both through
+`capture::tellPageOfDepthView` (`Module.gweniDepthViewChanged(open)` and
+`Module.gweniDepthViewSpacingChanged(factor)`, each if the page set it). In the browser
+emscripten-glfw's wheel listener prevents the page's default on the canvas, so Alt+wheel
+neither scrolls nor zooms the page, and Chromium gives it no other meaning (`site.mjs`
+checks `scrollY` and `visualViewport.scale`). Two risks no test here can reach, the
+container having Chromium and no window manager: some Linux window managers take
+Alt+wheel for themselves (xfwm4 zooms the desktop with it), and Firefox shows its menu
+bar when Alt is pressed and released alone. + and - work in both cases.
 
 **`--depth-view`** opens it once the first frame has numbered the z labels
 (`capture::openDepthViewOnce`, after each `updateCanvas()` in the apps' loops), before
@@ -8388,8 +8438,12 @@ every one of those frames enters no control, changes, writes and uploads nothing
 out nothing, renumbers no z and hit-tests nothing, the click presses nothing, the
 hover, focus, tree serial and live ids are kept, and the frame after the close is the
 one before the open, byte for byte; L and L again are two more such frames, the stack's
-depth kept; the table is uploaded in the open frame alone; and on the demo shell at
-1024x768 the shown page takes at least 0.6 of the shown layers at reset.
+depth kept; the table is uploaded in the open frame alone; on ButtonDemo and on the
+demo shell the spacing is swept (+ to x20 and once past it, Alt+wheel notches, a half
+one among them, to x0.1 and once past it, Alt up and a plain notch in and out), every
+frame of it idle, the front layer drawn where it was (within 0.05 device px, turned
+and orthographic on ButtonDemo) and both ends reached exactly; and on the demo shell at 1024x768 the shown page takes at least 0.6 of the
+shown layers at reset.
 `backend_pixels` holds its shots on Vulkan to GL's.
 
 ## The URL, history, links and storage (`platform.h`)
