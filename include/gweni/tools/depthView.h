@@ -38,8 +38,9 @@ namespace tools
 //! The camera, in the view's device px: left-drag orbits round the canvas's
 //! centre on its back plane (z 0), right- or middle-drag pans, the wheel and
 //! W/S dolly in and out, the arrows and A/D move the camera, P switches
-//! perspective and orthographic, + and - space the layers further apart and
-//! closer, L switches between shown layers and raw z labels, R resets and
+//! perspective and orthographic, + and - and Alt+wheel space the layers
+//! further apart and closer (spacingFactor(), x0.1 to x20 of the reset
+//! spacing, the front layer kept at its distance from the camera), L switches between shown layers and raw z labels, R resets and
 //! Escape closes it. The layers come towards the camera from the back plane,
 //! each shown layer zSpacing device px from the next, by default enough to put
 //! the highest one half the view's width in front. A shown layer is a z label
@@ -108,6 +109,12 @@ public:
     //! the info's control are the canvas, its integer 1 for an open, 0 for a
     //! close.
     static event::Caller onOpenChangedCaller;
+    //! Called when a view's spacingFactor() changes: a key, the wheel,
+    //! setSpacingFactor() or setCamera(), and on every reset (R, and as it
+    //! opens), changed or not. The caller and the info's control are the
+    //! canvas. A change of the shown layers or the view keeps the factor and
+    //! calls nothing.
+    static event::Caller onSpacingChangedCaller;
 
     //! The renderer's view rect changed: builds the camera's transform from it
     //! again. Nothing when the canvas has no view.
@@ -117,9 +124,23 @@ public:
     renderer::SlotRenderer *renderer() const { return m_renderer; }
 
     const Camera &camera() const { return m_camera; }
-    //! Puts the camera there (zSpacing clamped to [MinZSpacing, MaxZSpacing],
-    //! distance to [MinDistance, MaxDistance], pitch to +-90) and redraws
+    //! Puts the camera there (zSpacing clamped to [MinSpacingFactor,
+    //! MaxSpacingFactor] times defaultZSpacing(), distance to MinDistance and
+    //! to MaxDistance from the front layer, pitch to +-90) and redraws
     void setCamera(const Camera &camera);
+    //! zSpacing over the reset spacing, defaultZSpacing(): 1 at reset, in
+    //! [MinSpacingFactor, MaxSpacingFactor]. The stack's depth is this times
+    //! half the view's width, whatever the layers or raw labels, so it is kept
+    //! as they change (and as the view does) and zSpacing follows.
+    float spacingFactor() const { return m_spacingFactor; }
+    //! Spaces the layers at \p factor (clamped) times the reset spacing,
+    //! keeping the front layer's distance from the camera: the back plane goes
+    //! back by what the stack's depth gained, so the stack deepens away from
+    //! it. + and - and Alt+wheel step it by ZSpacingStep.
+    void setSpacingFactor(float factor);
+    //! setSpacingFactor() of spacingFactor() times ZSpacingStep to the power
+    //! \p steps (a wheel notch is one, a fraction of it a fraction)
+    void stepSpacing(float steps);
     //! The camera at reset: in front of the canvas, perspective, with
     //! defaultZSpacing() and at distance 1 + zSpacing*highest z/focal length,
     //! so the highest z is drawn at its front-view size and every lower one
@@ -129,7 +150,7 @@ public:
     //! change until the next setCamera() (a key, a drag, the wheel)
     void reset();
     //! Device px a layer that puts the highest one, highestZ(), half the view's
-    //! width in front of z 0
+    //! width in front of z 0: the reset spacing, factor 1
     float defaultZSpacing() const;
     //! What the camera spaces: the highest shown layer (the renderer's layer
     //! table, SlotRenderer::shownLayerCount() less 1), or with rawLabels()
@@ -154,8 +175,11 @@ public:
     static constexpr float KeyMoveUnits=24.0f;
     static constexpr float DollyStep=0.85f;
     static constexpr float ZSpacingStep=1.25f;
-    static constexpr float MinZSpacing=0.01f;
-    static constexpr float MaxZSpacing=64.0f;
+    //! The spacing's range, in reset spacings (spacingFactor())
+    static constexpr float MinSpacingFactor=0.1f;
+    static constexpr float MaxSpacingFactor=20.0f;
+    //! Camera::distance's range: at least MinDistance from the back plane, at
+    //! most MaxDistance from the front layer
     static constexpr float MinDistance=0.05f;
     static constexpr float MaxDistance=20.0f;
 
@@ -184,6 +208,16 @@ private:
     float scale() const;
     //! FocalViews times the view's longer side (at least 1), device px
     float focalLength() const;
+    //! setCamera() without the spacing call; whether the factor changed.
+    //! \p factor > 0 is the camera's zSpacing over defaultZSpacing(), exact.
+    bool place(const Camera &camera, float factor=0.0f);
+    //! The stack's depth at \p zSpacing in focal lengths: what it adds to the
+    //! front layer's distance
+    float stackDepth(float zSpacing) const;
+    //! zSpacing at the factor for the layers and view as they are now
+    void keepSpacingFactor();
+    void spacingChanged();
+    static float clampedFactor(float factor);
     void dolly(float steps);
     void move(float dx, float dy);
 
@@ -194,6 +228,11 @@ private:
     bool m_orbiting=false;
     bool m_panning=false;
     bool m_rawLabels=false;
+    //! Alt is down: the wheel spaces the layers instead of dollying
+    bool m_alt=false;
+    float m_spacingFactor=1.0f;
+    //! the zSpacing m_spacingFactor was last worked out for
+    float m_placedSpacing=0.0f;
     //! the camera is resetCamera()'s, fitted again as the shown layers change
     bool m_atReset=true;
 };

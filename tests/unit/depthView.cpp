@@ -35,7 +35,20 @@
  *  canvas's first update and before its first render (as --depth-view opens
  *  it) fits the table that render builds, and a camera the user turned keeps
  *  itself as the layers change, with a new depth range handed to the
- *  renderer.
+ *  renderer and its spacing factor (the stack's depth) kept.
+ *  The spacing: on a canvas of 3 and of 600 controls, + steps it by
+ *  ZSpacingStep from x1 to exactly x20 and - down to exactly x0.1, and after
+ *  every step, looking straight on, the front layer is at its distance from
+ *  the camera, drawn at its front-view size with the whole canvas on the view;
+ *  a step past an end does nothing and calls nothing, each change calls
+ *  onSpacingChangedCaller (as the open and R do), and setSpacingFactor()
+ *  clamps to the ends. Dollied out to MaxDistance, x20 is still reached with
+ *  the front kept. Alt+wheel steps a notch's step (half a notch half of it),
+ *  the plain wheel dollies, and once Alt goes up or the mouse leaves the wheel
+ *  dollies again; a view opened with Alt down reads it. L and back at x0.1,
+ *  x1 and x20 keeps the factor and the front and gives the camera back. A
+ *  resize at reset fits the camera to the new view; a turned one keeps its
+ *  factor.
  *  Deleting the canvas under an open view closes it without a call.
  */
 #include "headlessFixture.h"
@@ -529,8 +542,7 @@ TEST_CASE("Depth view: a hidden subtree takes no depth and leaves the reset came
         CHECK(view->highestZ() == shownHigh+1.0f+(float)hidden);
         // the camera at reset follows them, fitted in the flush
         CHECK(view->camera() == view->resetCamera());
-        CHECK(view->camera().zSpacing == doctest::Approx(
-            std::min(0.5f*640.0f/view->highestZ(), tools::DepthView::MaxZSpacing)));
+        CHECK(view->camera().zSpacing == doctest::Approx(0.5f*640.0f/view->highestZ()));
         // hidden, they keep their layers for the renderer's hold (a blink
         // moves nothing), and leave them in the first flush after it
         scene.container->hide();
@@ -579,25 +591,349 @@ TEST_CASE("Depth view: opened before the canvas's first frame, the camera fits t
     for(int i=0; i<16; ++i)
         CHECK(slots.viewTransform()[i] == view->transform()[i]);
 
-    // a camera the user moved keeps itself, its depth range following the stack
+    // a camera the user moved keeps itself, its depth range following the
+    // stack and its spacing factor kept (so the stack's depth: the spacing
+    // follows the layer count)
     canvas->inputMouseButton(0, true);
     canvas->inputMouseMoved(310, 205, 10, 5);
     canvas->inputMouseButton(0, false);
+    canvas->inputCharacter('+');
 
     const tools::DepthView::Camera turned=view->camera();
+    const float factor=view->spacingFactor();
     const std::vector<float> before(view->transform(), view->transform()+16);
 
+    CHECK(factor == doctest::Approx(tools::DepthView::ZSpacingStep));
     canvas->newChild<controls::Base>()->setBounds(300, 300, 50, 50);
     canvas->updateCanvas();
     canvas->renderCanvas();
     CHECK(view->highestZ() == 13.0f);
-    CHECK(view->camera() == turned);
+    CHECK(view->spacingFactor() == factor);
+    CHECK(view->camera().zSpacing*13.0f == doctest::Approx(turned.zSpacing*12.0f));
+    {
+        tools::DepthView::Camera kept=view->camera();
+
+        kept.zSpacing=turned.zSpacing;
+        CHECK(kept == turned);
+    }
     CHECK_FALSE(std::equal(before.begin(), before.end(), view->transform()));
     for(int i=0; i<16; ++i)
         CHECK(slots.viewTransform()[i] == view->transform()[i]);
 
     delete canvas;
     CHECK_FALSE(slots.layerTable());
+}
+
+namespace
+{
+
+//! A drawn \p width x \p height canvas of \p count controls, each its own layer
+struct DrawnCanvas
+{
+    test::MirrorOnlyRenderer slots;
+    DrawingSkin skin{&slots};
+    controls::Canvas *canvas=nullptr;
+
+    DrawnCanvas(int count, int width=640, int height=480)
+    {
+        slots.setViewRect(Rect(0, 0, width, height));
+        canvas=new controls::Canvas(&skin);
+        canvas->setSize(width, height);
+        for(int i=0; i<count; ++i)
+            canvas->newChild<controls::Base>()->setBounds((i*7)%(width-40), (i*3)%(height-20), 40, 20);
+        canvas->updateCanvas();
+        canvas->renderCanvas();
+    }
+
+    DrawnCanvas(const DrawnCanvas &)=delete;
+    DrawnCanvas &operator=(const DrawnCanvas &)=delete;
+
+    ~DrawnCanvas()
+    {
+        tools::DepthView::close(canvas);
+        delete canvas;
+    }
+};
+
+//! Looking straight on: the highest layer drawn at its front-view size, the
+//! whole canvas, at every layer, on the view and inside the z range
+void checkFrontKept(const renderer::SlotRenderer &slots, const tools::DepthView &view, float w,
+    float h)
+{
+    const float high=view.highestZ();
+    const float cx=0.5f*w, cy=0.5f*h;
+    const float k=(float)renderer::SlotRenderer::kMaxZIndex;
+    const float slack=1e-3f;
+
+    for(const Point3 &p:{ Point3{ 0, 0, 0 }, Point3{ w, h, 0 }, Point3{ 100, 0.8f*h, 0 } })
+    {
+        const Point3 front=project(slots, p.x, p.y, high);
+
+        // a thousandth of a device px
+        CHECK(std::fabs(front.x-p.x) < 1e-3f);
+        CHECK(std::fabs(front.y-p.y) < 1e-3f);
+    }
+    for(float z:{ 0.0f, 1.0f, high*0.5f, high })
+    {
+        CAPTURE(z);
+        for(const Point3 &corner:{ Point3{ 0, 0, z }, Point3{ w, 0, z }, Point3{ 0, h, z },
+            Point3{ w, h, z } })
+        {
+            const Point3 out=project(slots, corner.x, corner.y, corner.z);
+
+            CHECK(out.x >= -slack);
+            CHECK(out.x <= w+slack);
+            CHECK(out.y >= -slack);
+            CHECK(out.y <= h+slack);
+            CHECK(out.z >= 0.0f);
+            CHECK(out.z <= k);
+        }
+    }
+    (void)cx;
+    (void)cy;
+}
+
+//! The front layer's distance from the camera, in focal lengths
+float frontDistance(const tools::DepthView &view)
+{
+    const Rect &rect=view.renderer()->viewRect();
+    const float focal=tools::DepthView::FocalViews*(float)std::max(rect.w, rect.h);
+
+    return view.camera().distance-view.camera().zSpacing*view.highestZ()/focal;
+}
+
+class SpacingListener: public event::Handler
+{
+public:
+    void changed(event::Info info)
+    {
+        ++calls;
+        canvas=info.control;
+    }
+
+    int calls=0;
+    controls::Base *canvas=nullptr;
+};
+
+}//namespace
+
+TEST_CASE("Depth view: + and - step the spacing across x0.1..x20, the front layer kept on few and many layers")
+{
+    for(int count:{ 3, 600 })
+    {
+        CAPTURE(count);
+
+        DrawnCanvas scene(count);
+        SpacingListener listener;
+
+        tools::DepthView::onSpacingChangedCaller.add(&listener, &SpacingListener::changed);
+
+        tools::DepthView *view=tools::DepthView::open(scene.canvas, &scene.slots);
+
+        REQUIRE(view != nullptr);
+        // the open's reset tells
+        CHECK(listener.calls == 1);
+        CHECK((listener.canvas == scene.canvas));
+        CHECK(view->spacingFactor() == 1.0f);
+
+        const float reset=view->defaultZSpacing();
+        const float front=frontDistance(*view);
+
+        CHECK(front == doctest::Approx(1.0f));
+        checkFrontKept(scene.slots, *view, 640.0f, 480.0f);
+
+        // up to the top, every step one ZSpacingStep with the front kept
+        int steps=0;
+
+        while(view->spacingFactor() < tools::DepthView::MaxSpacingFactor)
+        {
+            const float before=view->spacingFactor();
+            const int calls=listener.calls;
+
+            scene.canvas->inputCharacter('+');
+            ++steps;
+            REQUIRE(steps < 100);
+            CHECK(listener.calls == calls+1);
+            CHECK(view->spacingFactor() == doctest::Approx(
+                std::min(before*tools::DepthView::ZSpacingStep, tools::DepthView::MaxSpacingFactor)));
+            CHECK(view->camera().zSpacing == doctest::Approx(view->spacingFactor()*reset));
+            CHECK(frontDistance(*view) == doctest::Approx(front).epsilon(1e-4));
+            checkFrontKept(scene.slots, *view, 640.0f, 480.0f);
+        }
+        // reached exactly, and a step past it does nothing
+        CHECK(view->spacingFactor() == tools::DepthView::MaxSpacingFactor);
+        CHECK(steps == (int)std::ceil(std::log(20.0)/std::log(1.25)-1e-6));
+        {
+            const tools::DepthView::Camera top=view->camera();
+            const int calls=listener.calls;
+
+            scene.canvas->inputCharacter('+');
+            CHECK(view->camera() == top);
+            CHECK(listener.calls == calls);
+        }
+
+        // and down to the bottom
+        while(view->spacingFactor() > tools::DepthView::MinSpacingFactor)
+        {
+            scene.canvas->inputCharacter('-');
+            ++steps;
+            REQUIRE(steps < 200);
+            CHECK(frontDistance(*view) == doctest::Approx(front).epsilon(1e-4));
+            checkFrontKept(scene.slots, *view, 640.0f, 480.0f);
+        }
+        CHECK(view->spacingFactor() == tools::DepthView::MinSpacingFactor);
+        {
+            const tools::DepthView::Camera bottom=view->camera();
+
+            scene.canvas->inputCharacter('-');
+            CHECK(view->camera() == bottom);
+        }
+
+        // R puts it back at x1, and tells
+        {
+            const int calls=listener.calls;
+
+            scene.canvas->inputCharacter('r');
+            CHECK(view->spacingFactor() == 1.0f);
+            CHECK(listener.calls == calls+1);
+        }
+
+        // set straight to either end and past it
+        view->setSpacingFactor(1000.0f);
+        CHECK(view->spacingFactor() == tools::DepthView::MaxSpacingFactor);
+        CHECK(frontDistance(*view) == doctest::Approx(front).epsilon(1e-4));
+        checkFrontKept(scene.slots, *view, 640.0f, 480.0f);
+        view->setSpacingFactor(0.0001f);
+        CHECK(view->spacingFactor() == tools::DepthView::MinSpacingFactor);
+        checkFrontKept(scene.slots, *view, 640.0f, 480.0f);
+
+        tools::DepthView::close(scene.canvas);
+        tools::DepthView::onSpacingChangedCaller.removeHandler(&listener);
+    }
+}
+
+TEST_CASE("Depth view: MaxDistance does not stop the spacing after a dolly out")
+{
+    DrawnCanvas scene(40);
+    tools::DepthView *view=tools::DepthView::open(scene.canvas, &scene.slots);
+
+    REQUIRE(view != nullptr);
+    // dollied out as far as it goes: the front layer MaxDistance away
+    for(int i=0; i<100; ++i)
+        scene.canvas->inputMouseWheel(-60);
+    CHECK(frontDistance(*view) == doctest::Approx(tools::DepthView::MaxDistance));
+
+    const float front=frontDistance(*view);
+
+    view->setSpacingFactor(tools::DepthView::MaxSpacingFactor);
+    CHECK(view->spacingFactor() == tools::DepthView::MaxSpacingFactor);
+    CHECK(frontDistance(*view) == doctest::Approx(front).epsilon(1e-4));
+    CHECK(view->camera().distance > tools::DepthView::MaxDistance);
+}
+
+TEST_CASE("Depth view: Alt+wheel spaces the layers, the plain wheel dollies")
+{
+    DrawnCanvas scene(40);
+    controls::Canvas *canvas=scene.canvas;
+    tools::DepthView *view=tools::DepthView::open(canvas, &scene.slots);
+
+    REQUIRE(view != nullptr);
+
+    const tools::DepthView::Camera reset=view->camera();
+    const float front=frontDistance(*view);
+
+    // a notch away from the user: one step further apart, the front kept
+    canvas->inputModifierKey(keys::Alt, true);
+    canvas->inputMouseWheel(60);
+    CHECK(view->spacingFactor() == doctest::Approx(tools::DepthView::ZSpacingStep));
+    CHECK(frontDistance(*view) == doctest::Approx(front).epsilon(1e-4));
+    // a trackpad's half notch towards the user: half a step closer
+    canvas->inputMouseWheel(-30);
+    CHECK(view->spacingFactor() == doctest::Approx(std::sqrt(tools::DepthView::ZSpacingStep)));
+    canvas->inputMouseWheel(-30);
+    CHECK(view->spacingFactor() == doctest::Approx(1.0f));
+    CHECK(view->camera().distance == doctest::Approx(reset.distance));
+
+    // Alt let go: the wheel dollies again
+    canvas->inputModifierKey(keys::Alt, false);
+    {
+        const float factor=view->spacingFactor();
+        const float distance=view->camera().distance;
+
+        canvas->inputMouseWheel(60);
+        CHECK(view->spacingFactor() == factor);
+        CHECK(view->camera().distance == doctest::Approx(distance*tools::DepthView::DollyStep));
+    }
+
+    // the mouse leaving lets Alt go too
+    canvas->inputModifierKey(keys::Alt, true);
+    canvas->inputMouseLeave();
+    {
+        const float factor=view->spacingFactor();
+        const float distance=view->camera().distance;
+
+        canvas->inputMouseWheel(60);
+        CHECK(view->spacingFactor() == factor);
+        CHECK(view->camera().distance == doctest::Approx(distance*tools::DepthView::DollyStep));
+    }
+    canvas->inputModifierKey(keys::Alt, false);
+
+    // a view opened with Alt already down spaces from its first notch
+    tools::DepthView::close(canvas);
+    canvas->inputModifierKey(keys::Alt, true);
+    view=tools::DepthView::open(canvas, &scene.slots);
+    REQUIRE(view != nullptr);
+    canvas->inputMouseWheel(60);
+    CHECK(view->spacingFactor() == doctest::Approx(tools::DepthView::ZSpacingStep));
+    // its release goes up on the canvas and in the view
+    canvas->inputModifierKey(keys::Alt, false);
+    canvas->inputMouseWheel(60);
+    CHECK(view->spacingFactor() == doctest::Approx(tools::DepthView::ZSpacingStep));
+}
+
+TEST_CASE("Depth view: L and back at either end of the spacing gives the camera back")
+{
+    DrawnCanvas scene(40);
+    tools::DepthView *view=tools::DepthView::open(scene.canvas, &scene.slots);
+
+    REQUIRE(view != nullptr);
+    for(float factor:{ tools::DepthView::MinSpacingFactor, 1.0f, tools::DepthView::MaxSpacingFactor })
+    {
+        CAPTURE(factor);
+        view->setSpacingFactor(factor);
+
+        const tools::DepthView::Camera before=view->camera();
+        const float front=frontDistance(*view);
+
+        scene.canvas->inputCharacter('l');
+        CHECK(view->rawLabels());
+        CHECK(view->spacingFactor() == factor);
+        CHECK(frontDistance(*view) == doctest::Approx(front).epsilon(1e-4));
+        scene.canvas->inputCharacter('l');
+        CHECK_FALSE(view->rawLabels());
+        CHECK(view->camera().zSpacing == doctest::Approx(before.zSpacing).epsilon(1e-6));
+        CHECK(view->camera().distance == before.distance);
+    }
+}
+
+TEST_CASE("Depth view: a resize at reset fits the camera to the new view, a turned one keeps its factor")
+{
+    DrawnCanvas scene(40);
+    tools::DepthView *view=tools::DepthView::open(scene.canvas, &scene.slots);
+
+    REQUIRE(view != nullptr);
+    scene.slots.setViewRect(Rect(0, 0, 800, 600));
+    scene.canvas->setSize(800, 600);
+    tools::DepthView::viewChanged(scene.canvas);
+    CHECK(view->camera() == view->resetCamera());
+    checkFrontKept(scene.slots, *view, 800.0f, 600.0f);
+
+    view->setSpacingFactor(4.0f);
+    scene.slots.setViewRect(Rect(0, 0, 640, 480));
+    scene.canvas->setSize(640, 480);
+    tools::DepthView::viewChanged(scene.canvas);
+    CHECK(view->spacingFactor() == 4.0f);
+    CHECK(view->camera().zSpacing == doctest::Approx(4.0f*view->defaultZSpacing()));
 }
 
 #endif//GWENI_TEST_SLOT_RENDERER

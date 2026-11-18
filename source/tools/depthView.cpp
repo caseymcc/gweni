@@ -5,6 +5,7 @@
  */
 #include <gweni/tools/depthView.h>
 
+#include <gweni/inputHandler.h>
 #include <gweni/platforms/renderers/slotRenderer.h>
 #include <gweni/skin.h>
 
@@ -40,6 +41,7 @@ float radians(float degrees)
 }//namespace
 
 event::Caller DepthView::onOpenChangedCaller;
+event::Caller DepthView::onSpacingChangedCaller;
 
 bool DepthView::Camera::operator==(const Camera &other) const
 {
@@ -86,6 +88,8 @@ DepthView *DepthView::open(controls::Canvas *canvas, renderer::Base *render)
     slots->setLayerTable(true);
     slots->setLayerRemap(true);
     slots->setLayerTableListener([view]{ view->layersChanged(); });
+    // an Alt held as it opens goes up through the capture too
+    view->m_alt=input::isKeyDown(keys::Alt);
     view->reset();
 
     event::Info info(canvas);
@@ -132,8 +136,17 @@ DepthView *DepthView::find(controls::Canvas *canvas)
 
 void DepthView::viewChanged(controls::Canvas *canvas)
 {
-    if(DepthView *view=find(canvas))
-        view->apply();
+    DepthView *view=find(canvas);
+
+    if(!view)
+        return;
+    // the reset camera is fitted to the new view, any other keeps its spacing
+    // factor (so the stack's depth, half the new width times it)
+    if(view->m_atReset)
+        view->m_camera=view->resetCamera();
+    else
+        view->keepSpacingFactor();
+    view->apply();
 }
 
 DepthView::DepthView(controls::Canvas *canvas, renderer::SlotRenderer *renderer)
@@ -179,7 +192,12 @@ float DepthView::defaultZSpacing() const
 {
     const Rect &view=m_renderer->viewRect();
 
-    return std::min(std::max(0.5f*(float)view.w/highestZ(), MinZSpacing), MaxZSpacing);
+    return 0.5f*(float)std::max(view.w, 1)/highestZ();
+}
+
+float DepthView::stackDepth(float zSpacing) const
+{
+    return zSpacing*highestZ()/focalLength();
 }
 
 float DepthView::highestZ() const
@@ -192,8 +210,49 @@ float DepthView::highestZ() const
 
 void DepthView::reset()
 {
-    setCamera(resetCamera());
+    place(resetCamera());
     m_atReset=true;
+    spacingChanged();
+}
+
+void DepthView::setSpacingFactor(float factor)
+{
+    // the front layer keeps its distance from the camera: the back plane goes
+    // back by what the stack gained
+    Camera camera=m_camera;
+    const float clamped=clampedFactor(factor);
+    const float spacing=clamped*defaultZSpacing();
+
+    camera.distance+=stackDepth(spacing)-stackDepth(m_camera.zSpacing);
+    camera.zSpacing=spacing;
+    if((camera != m_camera) && place(camera, clamped))
+        spacingChanged();
+}
+
+void DepthView::stepSpacing(float steps)
+{
+    setSpacingFactor(m_spacingFactor*std::pow(ZSpacingStep, steps));
+}
+
+float DepthView::clampedFactor(float factor)
+{
+    return std::min(std::max(factor, MinSpacingFactor), MaxSpacingFactor);
+}
+
+void DepthView::keepSpacingFactor()
+{
+    m_camera.zSpacing=m_spacingFactor*defaultZSpacing();
+    m_placedSpacing=m_camera.zSpacing;
+}
+
+void DepthView::spacingChanged()
+{
+    if(!m_canvas)
+        return;
+
+    event::Info info(m_canvas);
+
+    onSpacingChangedCaller.call(m_canvas, info);
 }
 
 void DepthView::setRawLabels(bool raw)
@@ -201,19 +260,12 @@ void DepthView::setRawLabels(bool raw)
     if(raw == m_rawLabels)
         return;
 
-    // the stack keeps its depth, spacing times its highest z, so the front
-    // layer stays where it is
-    const float before=highestZ();
-
+    // the stack keeps its depth (the spacing factor times half the view's
+    // width), so the front layer stays where it is
     m_rawLabels=raw;
     m_renderer->setLayerRemap(!raw);
-
-    Camera camera=m_camera;
-    const bool atReset=m_atReset;
-
-    camera.zSpacing*=before/highestZ();
-    setCamera(camera);
-    m_atReset=atReset;
+    keepSpacingFactor();
+    apply();
 }
 
 void DepthView::layersChanged()
@@ -221,11 +273,14 @@ void DepthView::layersChanged()
     // In flush(), before its draws: the shown layers are new, so a camera at
     // reset is fitted to them again and any other gets a depth range that
     // covers the stack; no redraw, this frame draws with it already. Raw
-    // labels do not depend on the table.
+    // labels do not depend on the table. A turned camera keeps its spacing
+    // factor, so the stack its depth and the front layer its place.
     if(m_rawLabels)
         return;
     if(m_atReset)
         m_camera=resetCamera();
+    else
+        keepSpacingFactor();
     apply(false);
 }
 
@@ -238,12 +293,37 @@ float DepthView::focalLength() const
 
 void DepthView::setCamera(const Camera &camera)
 {
+    if(place(camera))
+        spacingChanged();
+}
+
+bool DepthView::place(const Camera &camera, float factor)
+{
+    const float before=m_spacingFactor;
+
     m_atReset=false;
     m_camera=camera;
     m_camera.pitch=std::min(std::max(m_camera.pitch, -90.0f), 90.0f);
-    m_camera.distance=std::min(std::max(m_camera.distance, MinDistance), MaxDistance);
-    m_camera.zSpacing=std::min(std::max(m_camera.zSpacing, MinZSpacing), MaxZSpacing);
+    // the spacing as a factor of the reset one, clamped there, so its ends are
+    // exact; an unchanged spacing keeps its factor as it is, and one given
+    // with its factor takes that
+    if(factor > 0.0f)
+        m_spacingFactor=factor;
+    else if(m_camera.zSpacing != m_placedSpacing)
+    {
+        const float reset=defaultZSpacing();
+
+        m_spacingFactor=clampedFactor(m_camera.zSpacing/reset);
+        if(m_spacingFactor != m_camera.zSpacing/reset)
+            m_camera.zSpacing=m_spacingFactor*reset;
+    }
+    // MaxDistance from the front layer, so a deeper stack backs the camera
+    // off past it
+    m_camera.distance=std::min(std::max(m_camera.distance, MinDistance),
+        MaxDistance+stackDepth(m_camera.zSpacing));
+    m_placedSpacing=m_camera.zSpacing;
     apply();
+    return m_spacingFactor != before;
 }
 
 float DepthView::scale() const
@@ -383,13 +463,20 @@ void DepthView::captureMouseButton(int button, bool down)
 
 void DepthView::captureMouseWheel(int delta, Dim /*dim*/)
 {
-    // away from the user (positive) dollies in
-    if(delta)
+    // a notch is 60; away from the user (positive) dollies in, or with Alt
+    // spaces the layers further apart
+    if(!delta)
+        return;
+    if(m_alt)
+        stepSpacing((float)delta/60.0f);
+    else
         dolly((float)delta/60.0f);
 }
 
 void DepthView::captureKey(int key, bool down)
 {
+    if(key == keys::Alt)
+        m_alt=down;
     if(!down)
         return;
 
@@ -417,14 +504,8 @@ void DepthView::captureCharacter(gweni::UnicodeChar chr)
         camera.perspective=!camera.perspective;
         setCamera(camera);
         break;
-    case '+': case '=':
-        camera.zSpacing*=ZSpacingStep;
-        setCamera(camera);
-        break;
-    case '-': case '_':
-        camera.zSpacing/=ZSpacingStep;
-        setCamera(camera);
-        break;
+    case '+': case '=': stepSpacing(1.0f); break;
+    case '-': case '_': stepSpacing(-1.0f); break;
     case 'r': case 'R':
         reset();
         break;
@@ -443,6 +524,7 @@ void DepthView::captureMouseLeave()
 {
     m_orbiting=false;
     m_panning=false;
+    m_alt=false;
 }
 
 }//namespace tools
