@@ -30,7 +30,8 @@
  *  A hidden subtree of 1, 10 or 1000 controls between two shown ones takes no
  *  depth and leaves the reset camera as without it; shown, each of its
  *  controls is a layer and the camera at reset is fitted to them in the
- *  flush; hidden again, the camera is the first one. A view opened after the
+ *  flush; hidden again, they keep their layers for the renderer's hold and the
+ *  camera is the first one in the first flush after it. A view opened after the
  *  canvas's first update and before its first render (as --depth-view opens
  *  it) fits the table that render builds, and a camera the user turned keeps
  *  itself as the layers change, with a new depth range handed to the
@@ -44,6 +45,7 @@
 
 #include <gweni/controls/button.h>
 #include <gweni/tools/depthView.h>
+#include <gweni/platforms/platform.h>
 
 #include <doctest/doctest.h>
 
@@ -487,6 +489,13 @@ struct HiddenSubtree
 
 TEST_CASE("Depth view: a hidden subtree takes no depth and leaves the reset camera as it is")
 {
+    double clock=10.0;
+    struct ClockGuard
+    {
+        explicit ClockGuard(double &clock) { platform::setTimeSource([&clock]() { return clock; }); }
+        ~ClockGuard() { platform::setTimeSource(nullptr); }
+    } guard(clock);
+
     HiddenSubtree none(0);
     tools::DepthView *noneView=tools::DepthView::open(none.canvas, &none.slots);
 
@@ -522,7 +531,12 @@ TEST_CASE("Depth view: a hidden subtree takes no depth and leaves the reset came
         CHECK(view->camera() == view->resetCamera());
         CHECK(view->camera().zSpacing == doctest::Approx(
             std::min(0.5f*640.0f/view->highestZ(), tools::DepthView::MaxZSpacing)));
+        // hidden, they keep their layers for the renderer's hold (a blink
+        // moves nothing), and leave them in the first flush after it
         scene.container->hide();
+        scene.frame();
+        CHECK(view->highestZ() == shownHigh+1.0f+(float)hidden);
+        clock+=renderer::SlotRenderer::kLayerHoldSeconds;
         scene.frame();
         CHECK(view->highestZ() == shownHigh);
         CHECK(view->camera() == reference);

@@ -685,10 +685,16 @@
  *                 its highest shown layer: the shown page's labels must take at
  *                 least MinDepthViewPageShare (0.6) of the stack's shown
  *                 layers (page_share=, raw_share= its raw labels' share of the
- *                 canvas's highest z). One line
+ *                 canvas's highest z). Last TextBoxDemo with the clock
+ *                 stepping, its first box focused, the view turned: over 90
+ *                 frames the caret's blink changes no more pixels than twice
+ *                 its rect's (blink_px, raw_blink_px with raw labels), the
+ *                 renderer holding a briefly unused label's layer, and the
+ *                 table is not uploaded again. One line
  *                   depth-view open=visited:0,...,layer:131072 ... camera_drawn=yes
  *                   shell_button=yes layer_switch=yes layer_uploads=yes demo_fitted=yes
- *                   shown_layers=315 page_share=0.678 raw_share=0.053
+ *                   shown_layers=315 page_share=0.678 raw_share=0.053 blink_px=3
+ *                   raw_blink_px=4 caret_px=102 blink_local=yes
  *                 Exits non-zero if any check is no. controltest_depth_view
  *                 (tests/depthView.cmake) runs it twice and requires the same
  *                 PNGs.
@@ -1891,6 +1897,7 @@
 #include <gweni/controls/properties.h>
 #include <gweni/controls/zoomPanel.h>
 #include <gweni/tools/depthView.h>
+#include <gweni/controls/caretBlink.h>
 #include <gweni/controls/pageControl.h>
 #include <gweni/tools/inspector.h>
 #include <gweni/tools/statsOverlay.h>
@@ -4390,7 +4397,7 @@ static bool runInspectorScenario(Session &s, const std::string &shotDir, bool &p
 //-----------------------------------------------------------------------------
 
 // The least share of the stack's depth the Demo shell's shown page takes at
-// reset, at 1024x768: measured 0.681 on GL (#744; 0.053 in raw labels)
+// reset, at 1024x768: measured 0.678 on GL (#744; 0.053 in raw labels)
 static constexpr double MinDepthViewPageShare=0.6;
 
 // What one frame did, of the work the view must not cause
@@ -4684,7 +4691,7 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
     // The demo shell at 1024x768, the view opened at reset: the shown page's
     // share of the stack's depth, its lowest to its highest shown layer over
     // every shown layer, against what its raw labels would take of the
-    // canvas's highest z (step 1 of #744 measured 0.681 against 0.053)
+    // canvas's highest z (#744 measured 0.678 against 0.053)
     double pageShare=0.0, rawShare=0.0;
     size_t shownLayers=0;
     bool fitted=false;
@@ -4746,6 +4753,90 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
     // well past half, with room for the shell to change
     const bool pageFills=fitted && pageShare >= MinDepthViewPageShare;
 
+    // A focused TextBox's caret, at a z label of its own, blinks with the
+    // clock stepping: the renderer holds the label's layer while it is off
+    // (SlotRenderer::layerHoldSeconds), so across a blink the turned view
+    // changes the caret's pixels alone, with shown layers as with raw labels,
+    // and the table is not uploaded again
+    size_t blinkPixels=0, rawBlinkPixels=0, caretPixels=0;
+    bool blinkSteady=false;
+    {
+        s.freezeClock=false;
+
+        gweni::controls::Base *boxes=addControl(s, "TextBoxDemo");
+        auto *box=static_cast<gweni::controls::TextBox *>(boxes?findControl(boxes, "TextBox", 0):nullptr);
+
+        if(box)
+        {
+            renderFrames(s, 3);
+
+            const gweni::Point at=centreOf(box);
+
+            clickMouse(s, at.x, at.y);
+            // past the caret's solid time after the focus (CaretBlink::SolidTime)
+            renderFrames(s, int(std::ceil(gweni::controls::internal::CaretBlink::SolidTime*60.0))+3);
+
+            DepthView *blinkView=DepthView::open(s.canvas);
+
+            renderFrames(s, 1);
+            if(blinkView)
+            {
+                DepthView::Camera turn=blinkView->resetCamera();
+
+                turn.yaw=-35.0f;
+                turn.pitch=20.0f;
+                blinkView->setCamera(turn);
+
+                // the most pixels a frame differs from the first one of 90
+                // (a second and a half: the caret off and on again twice), and
+                // whether the table stayed as it was
+                auto blink=[&](bool &steady)
+                {
+                    // a whole blink first: a caret dark as the view opened is
+                    // no layer until it first shows
+                    renderFrames(s, 60);
+
+                    const std::vector<uint8_t> first=framePixels(s);
+                    const size_t layers=s.renderer->shownLayerCount();
+                    size_t most=0;
+
+                    steady=true;
+                    for(int i=0; i<90; ++i)
+                    {
+                        renderFrames(s, 1);
+
+                        const std::vector<uint8_t> now=framePixels(s);
+                        size_t differ=0;
+
+                        for(size_t p=0; p+3<now.size() && p+3<first.size(); p+=4)
+                            differ+=(std::memcmp(&now[p], &first[p], 4) != 0)?1:0;
+                        most=std::max(most, differ);
+                        steady=steady && gpu.layerUploadBytes == 0 && s.renderer->shownLayerCount() == layers;
+                    }
+                    return most;
+                };
+                bool rawSteady=false;
+
+                blinkPixels=blink(blinkSteady);
+                blinkView->setRawLabels(true);
+                rawBlinkPixels=blink(rawSteady);
+                // the caret's rect in device px, twice over for its edges
+                // drawn turned
+                const gweni::Rect caret=box->getCaretBounds();
+                const float scale=s.canvas->scale();
+
+                caretPixels=2*size_t(std::ceil((caret.w+2)*scale)*std::ceil((caret.h+2)*scale));
+            }
+            DepthView::close(s.canvas);
+        }
+        forgetMouse(s);
+        if(boxes)
+            dropControl(s, boxes);
+        renderFrames(s, 1);
+        s.freezeClock=true;
+    }
+    const bool blinkLocal=blinkSteady && blinkPixels > 0 && rawBlinkPixels > 0 && blinkPixels <= caretPixels;
+
     bool idle=true;
 
     for(const DepthViewFrame &f : frames)
@@ -4757,7 +4848,7 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
     for(size_t i=1; i<frames.size(); ++i)
         layerUploads=layerUploads && frames[i].layerBytes == 0;
     passed=idle && clickIgnored && closed && kept && same && drawn && shellFollows && layerSwitch
-        && layerUploads && pageFills;
+        && layerUploads && pageFills && blinkLocal;
 
     std::cout<<"depth-view";
     for(const DepthViewFrame &f : frames)
@@ -4771,7 +4862,9 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
              <<" shell_button="<<(shellFollows?"yes":"no")<<" layer_switch="<<(layerSwitch?"yes":"no")
              <<" layer_uploads="<<(layerUploads?"yes":"no")<<" demo_fitted="<<(fitted?"yes":"no")
              <<" shown_layers="<<shownLayers<<" page_share="<<std::fixed<<std::setprecision(3)<<pageShare
-             <<" raw_share="<<rawShare<<std::defaultfloat<<"\n";
+             <<" raw_share="<<rawShare<<std::defaultfloat<<" blink_px="<<blinkPixels
+             <<" raw_blink_px="<<rawBlinkPixels<<" caret_px="<<caretPixels
+             <<" blink_local="<<(blinkLocal?"yes":"no")<<"\n";
     if(!passed)
         std::cerr<<"ControlTest: depth-view: "
                  <<(!idle ? "a frame that opened, moved or closed the view did work in the UI"
@@ -4784,6 +4877,7 @@ static bool runDepthViewScenario(Session &s, const std::string &shotDir, bool &p
                      : !layerSwitch ? "L did not switch to raw labels and back with the stack's depth kept"
                      : !layerUploads ? "the layer table was not uploaded as the view opened, or again later"
                      : !fitted ? "on Demo the camera at reset is not fitted to the highest shown layer"
+                     : !blinkLocal ? "a caret's blink in TextBoxDemo moved more than the caret, or the layer table"
                      : "on Demo at 1024x768 the shown page takes less of the stack's depth than "
                          +std::to_string(MinDepthViewPageShare))<<"\n";
     return shotBefore && shotTurned && shotOrtho && shotAfter;

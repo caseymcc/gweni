@@ -361,7 +361,9 @@ public:
     //! primitive slot is shown while it can show (style not 0, a quad with
     //! area, not clip-culled: m_visibleSlots), at its Vertex::z; a text run
     //! while drawnRange() is not empty (not hidden or culled, glyphs, a text
-    //! level above 0), at runZ(zIndex).
+    //! level above 0), at runZ(zIndex). A label no shown slot uses any more
+    //! keeps its layer for layerHoldSeconds(), so a slot hidden for a moment
+    //! (a blinking caret on a label of its own) moves no layer in front of it.
     //
     //! Kept only while it is on: setLayerTable(true) counts the slots and runs
     //! of each label once, and from then on each flush() counts again only the
@@ -388,7 +390,16 @@ public:
     //! changed since the last flush (the first flush after setLayerTable(true)
     //! included), so a listener's setViewTransform reaches that frame's draws.
     //! It must not change the mirrors. Cleared by setLayerTable(false).
+    //! It is ignored while the table is off.
     void setLayerTableListener(std::function<void()> listener);
+    //! How long a label no shown slot uses any more keeps its layer, in
+    //! seconds of platform::getTimeInSeconds(), checked in each flush(): a
+    //! slot hidden and shown again within it (a caret's blink) moves no layer
+    //! and uploads nothing. 0 drops a label in the flush that finds it unused.
+    //! Kept across setLayerTable(false) and (true), kLayerHoldSeconds by default.
+    void setLayerHoldSeconds(double seconds);
+    double layerHoldSeconds() const { return m_layerHoldSeconds; }
+    static constexpr double kLayerHoldSeconds=1.0;
     //! The table's side, in labels: it is a kLayerTableSide x kLayerTableSide
     //! texture, label z at (z & 255, z >> 8)
     static constexpr size_t kLayerTableSide=256;
@@ -1424,6 +1435,7 @@ private:
     float m_viewTransform[16]={ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 };
     bool m_hasViewTransform=false;
     bool m_layerRemap=false;
+    double m_layerHoldSeconds=kLayerHoldSeconds;
     Color m_color;
 
     //! The layer table's data (setLayerTable), made only while it is on
@@ -1442,6 +1454,11 @@ private:
         //! the lowest label whose count went from or to 0 since the last
         //! flush (kNoLabel: none), so T is built again above it
         uint32_t lowestCrossed=kNoLabel;
+        //! labels whose count went to 0 and that still take their layer, with
+        //! the clock read of the flush that found them unused (negative: not
+        //! yet stamped); isHeld[z] says whether z is one of them
+        std::vector<std::pair<uint32_t, double>> held;
+        std::vector<uint8_t> isHeld;
         bool changed=true;  //!< the listener is due
         bool allocated=false; //!< the backend has its texture
         std::function<void()> listener;
@@ -1453,6 +1470,9 @@ private:
     //! T built again above the lowest label whose count crossed 0, if one did;
     //! the first row of the table that changed (kLayerTableSide: none)
     size_t buildLayerSums();
+    //! The held labels unused for m_layerHoldSeconds are let go (stamping the
+    //! ones held since the last flush with the clock)
+    void releaseHeldLayers();
     //! flush()'s part: T built again and uploaded if a count crossed 0, then
     //! the listener told if the shown labels changed
     void flushLayerTable();

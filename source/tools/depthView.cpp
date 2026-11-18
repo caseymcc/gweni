@@ -289,10 +289,12 @@ void DepthView::apply(bool redraw)
 
     const glm::mat4 camera=pan*turn*spacing*model;
 
-    // Everything is within the radius of the view's half diagonal and its
-    // highest z from the centre, so the depth range is fitted to that.
+    // Everything is within the radius of the view's half diagonal and one
+    // layer past its highest z from the centre (the top run's glyphs sit up to
+    // a layer above it), so the depth range is fitted to that.
     const float halfW=0.5f*(float)view.w, halfH=0.5f*(float)view.h;
-    const float radius=std::sqrt(halfW*halfW+halfH*halfH+high*s*high*s)+1.0f;
+    const float top=(high+1.0f)*s;
+    const float radius=std::sqrt(halfW*halfW+halfH*halfH+top*top)+1.0f;
     glm::mat4 projection(0.0f);
 
     if(m_camera.perspective)

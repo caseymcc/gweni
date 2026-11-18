@@ -18,7 +18,12 @@
  *  flush where a label's count went from or to 0 uploading the rows from the
  *  first one whose T changed and telling the listener, and a flush where none
  *  did (a second slot at a used label hidden, nothing changed) uploading
- *  nothing and telling nobody. setLayerTable(false) forgets it and turns the
+ *  nothing and telling nobody (those cases with no hold, setLayerHoldSeconds(0)).
+ *  With the default hold (kLayerHoldSeconds, 1 s of the platform clock), a
+ *  slot hidden for half a second and shown again (a caret's blink) uploads
+ *  nothing and tells nobody, one hidden for longer keeps its layer until a
+ *  flush finds it unused for the hold, and a hide after that holds it again.
+ *  setLayerTable(false) forgets it and turns the
  *  remap off; the remap cannot be turned on while the table is off.
  */
 #include "headlessFixture.h"
@@ -27,6 +32,8 @@
 #ifdef GWENI_TEST_SLOT_RENDERER
 
 #include <doctest/doctest.h>
+
+#include <gweni/platforms/platform.h>
 
 #include <vector>
 
@@ -43,6 +50,10 @@ public:
     {
         size_t firstRow, rows;
     };
+
+    //! No hold unless a case sets one: a label unused is dropped in the flush
+    //! that finds it so
+    Recorder() { setLayerHoldSeconds(0.0); }
 
     //! One frame drawing `draw`
     template<typename Draw>
@@ -291,6 +302,78 @@ TEST_CASE("Layer table: a text run's layer follows its hide, show, emptying, z a
 
     renderer.frame([&]{ renderer.releaseTextPrimitive(text); });
     CHECK(renderer.shownLayerCount() == 2);
+}
+
+TEST_CASE("Layer table: a label hidden for less than the hold keeps its layer, one hidden longer leaves it")
+{
+    Recorder renderer;
+    double clock=100.0;
+    size_t a=0, caret=0, c=0;
+    int listened=0;
+
+    struct ClockGuard
+    {
+        explicit ClockGuard(double &clock) { platform::setTimeSource([&clock]() { return clock; }); }
+        ~ClockGuard() { platform::setTimeSource(nullptr); }
+    } guard(clock);
+
+    CHECK(renderer::SlotRenderer::kLayerHoldSeconds == 1.0);
+    renderer.setLayerHoldSeconds(renderer::SlotRenderer::kLayerHoldSeconds);
+    renderer.frame([&]
+    {
+        a=renderer.primitive(10);
+        caret=renderer.primitive(18);
+        c=renderer.primitive(26);
+    });
+    renderer.setLayerTable(true);
+    renderer.setLayerTableListener([&]{ ++listened; });
+    renderer.frame();
+    REQUIRE(renderer.uploads.size() == 1);
+    REQUIRE(listened == 1);
+    CHECK(renderer.shownLayer(26) == 3);
+
+    // a blink: off for half a second, then on again, flushing each frame
+    renderer.frame([&]{ renderer.hidePrimitive(caret); });
+    for(int i=0; i<30; ++i)
+    {
+        clock+=1.0/60;
+        renderer.frame();
+    }
+    renderer.frame([&]{ renderer.showPrimitive(4, caret); });
+    clock+=2.0;
+    renderer.frame();
+    CHECK(renderer.uploads.size() == 1);
+    CHECK(listened == 1);
+    CHECK(renderer.shownLayerCount() == 4);
+    CHECK(renderer.shownLayer(26) == 3);
+
+    // hidden for longer: kept until a flush finds it unused for the hold
+    renderer.frame([&]{ renderer.hidePrimitive(caret); });
+    clock+=0.99;
+    renderer.frame();
+    CHECK(renderer.uploads.size() == 1);
+    CHECK(renderer.shownLayer(26) == 3);
+    clock+=0.01;
+    renderer.frame();
+    REQUIRE(renderer.uploads.size() == 2);
+    CHECK(listened == 2);
+    CHECK(renderer.shownLayerCount() == 3);
+    CHECK(renderer.shownLayer(26) == 2);
+
+    // hidden again after it left: the hold starts again
+    renderer.frame([&]{ renderer.showPrimitive(4, caret); });
+    CHECK(renderer.shownLayerCount() == 4);
+    renderer.frame([&]{ renderer.hidePrimitive(caret); });
+    clock+=0.5;
+    renderer.frame([&]{ renderer.showPrimitive(4, caret); });
+    clock+=0.6;
+    renderer.frame();
+    CHECK(renderer.uploads.size() == 3);
+    CHECK(listened == 3);
+    CHECK(renderer.shownLayerCount() == 4);
+
+    (void)a;
+    (void)c;
 }
 
 #endif//GWENI_TEST_SLOT_RENDERER

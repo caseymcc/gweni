@@ -8226,7 +8226,13 @@ while it is on (no field on `TextRun`). Only a flush in which some label's count
 from or to 0 builds the prefix sums again, above the lowest such label, uploads the rows
 of the 256x256 R16UI table from the first that changed (`FrameStats::layerUploadCalls`,
 `layerUploadBytes`, never in `uploadCalls`/`uploadBytes`, on the `GWENI_UPLOAD_STATS`
-line) and calls the listener (`setLayerTableListener`) before its draws.
+line) and calls the listener (`setLayerTableListener`) before its draws. A label whose
+count goes to 0 keeps its layer for `layerHoldSeconds()` (`kLayerHoldSeconds`, 1 s of
+`platform::getTimeInSeconds()`, stepped in a capture), checked in each flush, and one used
+again meanwhile never leaves it: a focused TextBox's or CodeEditor's caret is drawn at a
+label of its own and hidden on every blink-off, and without the hold every layer in front
+of it moved one spacing twice a second. A label let go after the hold leaves at the first
+flush past it (a flush comes only with work, so a settled window may keep it longer).
 `setLayerRemap(true)` makes both vertex bodies put each z through it before the view
 transform (`shownLayerZ()` in `primitive.vert.glsl` and `text.vert.glsl`, under the
 prologue's `LAYER_REMAP` and `LAYER_FETCH`): `T[floor z]` plus z's fraction of the way to

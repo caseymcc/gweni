@@ -1750,6 +1750,7 @@ void SlotRenderer::setLayerTable(bool on)
 
     layers.counts.assign(size_t(kMaxZIndex)+1, 0);
     layers.table.assign(size_t(kMaxZIndex)+1, 0);
+    layers.isHeld.assign(size_t(kMaxZIndex)+1, 0);
     layers.slotLabels.assign(slots, LayerTable::kNoLabel);
     layers.runLabels.assign(m_textRuns.size(), LayerTable::kNoLabel);
     // what can show as of the last flush; the slots dirty since are counted
@@ -1791,6 +1792,11 @@ size_t SlotRenderer::shownLayer(int z) const
     return m_layers?m_layers->table[size_t(std::clamp(z, 0, kMaxZIndex))]:0;
 }
 
+void SlotRenderer::setLayerHoldSeconds(double seconds)
+{
+    m_layerHoldSeconds=std::max(0.0, seconds);
+}
+
 void SlotRenderer::setLayerTableListener(std::function<void()> listener)
 {
     if(m_layers)
@@ -1813,17 +1819,54 @@ void SlotRenderer::setLayerLabel(std::vector<uint32_t> &labels, size_t index, ui
     if(old == label)
         return;
     labels[index]=label;
-    // label 0 is layer 0 whether or not it is used (buildLayerSums)
+    // label 0 is layer 0 whether or not it is used (buildLayerSums). A label
+    // going unused keeps its layer for m_layerHoldSeconds (flushLayerTable),
+    // and one used again meanwhile never left it
     if((old != LayerTable::kNoLabel) && (--layers.counts[old] == 0) && (old > 0))
     {
-        --layers.shown;
-        layers.lowestCrossed=std::min(layers.lowestCrossed, old);
+        layers.isHeld[old]=1;
+        layers.held.emplace_back(old, -1.0);
     }
     if((label != LayerTable::kNoLabel) && (layers.counts[label]++ == 0) && (label > 0))
     {
-        ++layers.shown;
-        layers.lowestCrossed=std::min(layers.lowestCrossed, label);
+        if(layers.isHeld[label])
+        {
+            layers.isHeld[label]=0;
+            layers.held.erase(std::find_if(layers.held.begin(), layers.held.end(),
+                [label](const std::pair<uint32_t, double> &entry) { return entry.first == label; }));
+        }
+        else
+        {
+            ++layers.shown;
+            layers.lowestCrossed=std::min(layers.lowestCrossed, label);
+        }
     }
+}
+
+void SlotRenderer::releaseHeldLayers()
+{
+    LayerTable &layers=*m_layers;
+
+    if(layers.held.empty())
+        return;
+
+    const double now=platform::getTimeInSeconds();
+    size_t kept=0;
+
+    for(std::pair<uint32_t, double> &entry:layers.held)
+    {
+        if(entry.second < 0.0)
+            entry.second=now;
+        if(now-entry.second >= m_layerHoldSeconds)
+        {
+            layers.isHeld[entry.first]=0;
+            --layers.shown;
+            layers.lowestCrossed=std::min(layers.lowestCrossed, entry.first);
+        }
+        else
+            layers.held[kept++]=entry;
+    }
+    layers.held.resize(kept);
 }
 
 size_t SlotRenderer::buildLayerSums()
@@ -1839,7 +1882,7 @@ size_t SlotRenderer::buildLayerSums()
     const size_t lowest=layers.lowestCrossed;
 
     for(size_t z=lowest; z<size_t(kMaxZIndex); ++z)
-        layers.table[z+1]=uint16_t(layers.table[z]+(((z == 0) || (layers.counts[z] > 0))?1:0));
+        layers.table[z+1]=uint16_t(layers.table[z]+(((z == 0) || (layers.counts[z] > 0) || layers.isHeld[z])?1:0));
     layers.lowestCrossed=LayerTable::kNoLabel;
     layers.changed=true;
     return (lowest+1)/kLayerTableSide;
@@ -1848,6 +1891,8 @@ size_t SlotRenderer::buildLayerSums()
 void SlotRenderer::flushLayerTable()
 {
     LayerTable &layers=*m_layers;
+
+    releaseHeldLayers();
     // the first row whose labels' T is new (kLayerTableSide: none)
     size_t firstRow=buildLayerSums();
 
@@ -1868,8 +1913,11 @@ void SlotRenderer::flushLayerTable()
     if(layers.changed)
     {
         layers.changed=false;
-        if(layers.listener)
-            layers.listener();
+        // a copy: the listener may turn the table off, which destroys its own
+        const std::function<void()> listener=layers.listener;
+
+        if(listener)
+            listener();
     }
 }
 
