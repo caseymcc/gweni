@@ -451,7 +451,12 @@ It holds three pages, their files and nothing else:
   `docs/architecture.md` → "The depth view") as well, once the first frame is
   drawn; the shell's **Depth** button, left of Stats in its status bar, opens it
   as F9 does, and since the view takes the mouse, Escape or F9 closes it again,
-  the button following. The overlay's times
+  the button following. A **Z spacing** slider in the header is the open
+  view's spacing factor on a log scale, x0.1 to x20 of its reset spacing
+  (`gweni_web_depth_view_spacing(factor)`, in both apps: above 0 sets, else
+  reads), disabled while the view is closed and following +/-, Alt+wheel, R
+  and the open (`Module.gweniDepthViewChanged`,
+  `Module.gweniDepthViewSpacingChanged`). The overlay's times
   are the browser's `performance.now()`, which Chromium coarsens to about
   100 µs on a page without COOP/COEP headers, so a settled frame's phases read
   0.0 to 0.1 ms;
@@ -464,7 +469,8 @@ It holds three pages, their files and nothing else:
   anything else only reads); it starts as `?depth-view` says, follows F9 and
   Escape in the view (ControlTest calls the page's
   `Module.gweniDepthViewChanged`), and keeps `depth-view` in the URL as it is,
-  so a control picked next opens with the view as it was.
+  so a control picked next opens with the view as it was. The **Z spacing**
+  slider beside it is the one on `demo.html`.
 
 Beside them is `resources-lazy/`, the lazy package: the CJK face (Droid Sans
 Fallback Full, `docs/architecture.md` → "The lazy CJK face"), in no page's
@@ -511,7 +517,11 @@ OpenGLCore's `gweni_web_depth_view`), and `controltest.html?control=ButtonDemo&d
 with the view open and the checkbox checked; unchecking and checking it must
 close and open the view, `depth-view` leaving the URL and coming back, and
 picking SliderDemo must load `?control=SliderDemo&depth-view` with the view open
-again, none of them writing to stderr. It fails on a console error, an
+again, none of them writing to stderr. On both, the Z spacing slider must be
+enabled at x1 with the view open and disabled while it is closed, set the app's
+factor (read back through the export), move by exactly one step for a `+` and
+for one Alt+wheel notch over the canvas with the page neither scrolled nor
+zoomed, and go back to x1 on R. It fails on a console error, an
 uncaught exception, a failed request or an HTTP error (a file missing from the
 site), a page without a WebGL 2 context on SwiftShader with 24 depth bits, a
 window that draws no frames or whose canvas is one colour after 5 of them, a
