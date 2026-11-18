@@ -1119,6 +1119,37 @@ if(EMSCRIPTEN)
     set_tests_properties(mirror_directory PROPERTIES LABELS web)
 endif()
 
+# The tree, installed, as a package an app builds against (packageConsumer.cmake,
+# tests/package/): cmake --install into a scratch prefix, a consumer project
+# configured and built against it, and its run, one frame on each renderer the
+# tree builds. Label package, not gpu: the install and the build take no lock,
+# and the script runs the consumer under the render lock itself (through mm).
+# The Vulkan run is validated, with gweni_vulkan_test_environment's variables
+# (its labels are not this test's).
+if(NOT EMSCRIPTEN AND (GWENI_RENDER_OPENGL_CORE OR GWENI_RENDER_VULKAN))
+    add_test(NAME package_consumer
+        COMMAND ${CMAKE_COMMAND}
+            -DTREE=${CMAKE_BINARY_DIR}
+            -DSOURCE_DIR=${GWENI_SOURCE_DIR}
+            -DCONSUMER_DIR=${CMAKE_CURRENT_SOURCE_DIR}/package
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/package_consumer
+            "-DGENERATOR=${CMAKE_GENERATOR}"
+            -DBUILD_TYPE=${CMAKE_BUILD_TYPE}
+            -DTOOLCHAIN=${CMAKE_TOOLCHAIN_FILE}
+            -DCHAINLOAD=${VCPKG_CHAINLOAD_TOOLCHAIN_FILE}
+            -DTRIPLET=${VCPKG_TARGET_TRIPLET}
+            -DINSTALLED_DIR=${VCPKG_INSTALLED_DIR}
+            -DC_COMPILER=${CMAKE_C_COMPILER}
+            -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+            -DSANITIZE=${GWENI_SANITIZE}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/packageConsumer.cmake)
+    set_tests_properties(package_consumer PROPERTIES LABELS package TIMEOUT 1200)
+    if(GWENI_RENDER_VULKAN)
+        gweni_vulkan_test_environment_variables(package_vulkan_environment)
+        set_property(TEST package_consumer APPEND PROPERTY ENVIRONMENT ${package_vulkan_environment})
+    endif()
+endif()
+
 # Resource tooling runs on the host even in a cross-compiled tree.
 add_test(NAME fetch_pinned_file
     COMMAND ${CMAKE_COMMAND}

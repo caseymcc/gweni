@@ -31,6 +31,10 @@
 #                                  pinned to Mesa's lavapipe
 #                                  (GWENI_VULKAN_TEST_ICD); also the labels gpu
 #                                  and vulkan
+#    gweni_vulkan_test_environment_variables(<var>)
+#                                  that environment alone, into <var>, for a
+#                                  test that carries other labels
+#                                  (package_consumer)
 #
 #  The Vulkan headers, volk and glslangValidator are required in every build.
 #  The validation layer (vcpkg's vulkan-validationlayers, a heavy port) only
@@ -162,7 +166,10 @@ if(NOT GWENI_VULKAN_TEST_ICD)
     set(GWENI_VULKAN_TEST_ICD "")
 endif()
 
-function(gweni_vulkan_test_environment)
+# The environment variables of gweni_vulkan_test_environment, into <var>, for a
+# test that runs a Vulkan program among other work and so carries other labels
+# (package_consumer, which builds before it draws).
+function(gweni_vulkan_test_environment_variables var)
     # VK_LAYER_PATH replaces the explicit layer search path, so only this
     # layer, the one built with the headers, can be the one enabled.
     # VK_ICD_FILENAMES is what the container's loader (1.3.204) reads; newer
@@ -175,6 +182,11 @@ function(gweni_vulkan_test_environment)
             "VK_ICD_FILENAMES=${GWENI_VULKAN_TEST_ICD}"
             "VK_DRIVER_FILES=${GWENI_VULKAN_TEST_ICD}")
     endif()
+    set(${var} ${environment} PARENT_SCOPE)
+endfunction()
+
+function(gweni_vulkan_test_environment)
+    gweni_vulkan_test_environment_variables(environment)
     set_property(TEST ${ARGN} APPEND PROPERTY ENVIRONMENT ${environment})
     set_property(TEST ${ARGN} APPEND PROPERTY LABELS gpu vulkan)
 endfunction()
