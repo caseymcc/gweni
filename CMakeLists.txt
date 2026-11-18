@@ -1,7 +1,9 @@
 # CMake build instructions for gweni
 
 # configure cmake
-cmake_minimum_required(VERSION 3.12)
+# 3.16: policy CMP0077 NEW, so a project taking gweni with add_subdirectory can
+# set gweni's options with a plain set() before it (GitHub issue #702)
+cmake_minimum_required(VERSION 3.16)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -13,6 +15,14 @@ endif()
 # is supplied via CMAKE_TOOLCHAIN_FILE by generate.sh; all builds run inside the
 # Docker container (see run_docker.sh).
 cmake_policy(SET CMP0074 NEW)
+
+# GL through glvnd (libOpenGL, libGLX, libEGL), not the legacy libGL, whatever
+# toolchain configures this tree: generate.sh's chainloaded
+# cmake/linux_toolchain.cmake says the same, and a vcpkg port's configure must
+# agree with it. The installed gweniConfig.cmake sets it before finding OpenGL.
+if(NOT DEFINED OpenGL_GL_PREFERENCE)
+    set(OpenGL_GL_PREFERENCE GLVND)
+endif()
 
 option(GWENI_RENDER_OPENGL_CORE "Opengl 3.0+ Renderer" ON)
 # OpenGLCore, the examples, the tests and the bench against <GLES3/gl3.h> and
@@ -498,33 +508,45 @@ set(GWENI_PROPERTY_SOURCES
 )
 
 set(GWENI_RENDER_SOURCES "")
+# What gweni links: GWENI_ADDITIONAL_LIBRARIES publicly (what its public headers
+# include, or what they need defined: an app compiling against them gets it),
+# GWENI_PRIVATE_LIBRARIES privately (only gweni's sources use it; a static
+# library still hands them to the app's link, as $<LINK_ONLY:...>). Every item
+# is an imported target or a plain library name, so an installed gweni's
+# exported targets name no path of this machine.
+#
 # imglib with every renderer or none: the textured skin loads its atlas with it.
 # imglib and freetype-gl are OBJECT libraries (deps/): linked here, their
 # objects go into libgweni.a. BUILD_INTERFACE keeps the targets themselves out
-# of what an installed gweni exports; their dependencies are gweni's own, by
-# their imported targets (PNG::PNG, JPEG::JPEG here, freetype with the slot core).
+# of what an installed gweni exports (their headers are installed under
+# include/gweni/third_party/, on its installed include path); their dependencies
+# are gweni's own, by their imported targets (PNG::PNG, JPEG::JPEG here,
+# freetype with the slot core).
 find_package(PNG REQUIRED)
 find_package(JPEG REQUIRED)
-set(GWENI_ADDITIONAL_LIBRARIES $<BUILD_INTERFACE:imglib> PNG::PNG JPEG::JPEG)
+set(GWENI_ADDITIONAL_LIBRARIES $<BUILD_INTERFACE:imglib>)
+set(GWENI_PRIVATE_LIBRARIES PNG::PNG JPEG::JPEG)
 set(GWENI_COMPILE_DEFINITIONS "")
 
-# RapidJSON is header-only; the vcpkg config exposes RAPIDJSON_INCLUDE_DIRS
-# rather than an imported target.
+# RapidJSON is header-only, and public: utils/json.h includes it. vcpkg's
+# config defines the imported INTERFACE target RapidJSON.
 find_package(RapidJSON CONFIG REQUIRED)
-include_directories(${RAPIDJSON_INCLUDE_DIRS})
+list(APPEND GWENI_ADDITIONAL_LIBRARIES RapidJSON)
+
+# glm, public: uiTypes.h and platformTypes.h include it, in every tree
+find_package(glm CONFIG REQUIRED)
+list(APPEND GWENI_ADDITIONAL_LIBRARIES glm::glm)
 
 # md4c (MIT, plain C): the CommonMark parser text::parseMarkdown builds its
 # blocks from; only source/text/markdown.cpp includes its header
 find_package(md4c CONFIG REQUIRED)
-list(APPEND GWENI_ADDITIONAL_LIBRARIES md4c::md4c)
+list(APPEND GWENI_PRIVATE_LIBRARIES md4c::md4c)
 
 # The slot core, with either renderer: SlotRenderer, the API-independent part
 # of a retained renderer (the mirrors, the vertex packing, the text runs and
 # fonts over freetype-gl, which is GL-free), the depth view, which draws through
 # its view transform, and the fallback font. Nothing in it is GL.
 if(GWENI_RENDER_OPENGL_CORE OR GWENI_RENDER_VULKAN)
-    find_package(glm CONFIG REQUIRED)
-
     find_package(freetype CONFIG REQUIRED)
 
     # The built-in fallback font SlotRenderer::loadFont draws a missing or
@@ -549,11 +571,9 @@ if(GWENI_RENDER_OPENGL_CORE OR GWENI_RENDER_VULKAN)
         source/tools/depthView.cpp
         ${GWENI_FALLBACK_FONT_SOURCE}
     )
-    set(GWENI_ADDITIONAL_LIBRARIES ${GWENI_ADDITIONAL_LIBRARIES}
-        glm::glm
-        freetype
-        $<BUILD_INTERFACE:freetype-gl>
-    )
+    # freetype-gl's headers are public (slotRenderer.h), FreeType's are not
+    list(APPEND GWENI_ADDITIONAL_LIBRARIES $<BUILD_INTERFACE:freetype-gl>)
+    list(APPEND GWENI_PRIVATE_LIBRARIES freetype)
 
     set(GWENI_COMPILE_DEFINITIONS ${GWENI_COMPILE_DEFINITIONS}
         GLM_HAS_TEMPLATE_ALIASES
@@ -679,9 +699,9 @@ else()
         set(GWENI_USE_FILESYSTEM ${GWENI_EXPERIMENTAL_FILESYSTEM})
         if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 8.0)
             set(GWENI_USE_FILESYSTEM ${GWENI_STD_FILESYSTEM})
-            # Append, don't overwrite: this list already holds glm/freetype/
-            # freetype-gl/imglib and their usage requirements (include dirs).
-            set(GWENI_ADDITIONAL_LIBRARIES ${GWENI_ADDITIONAL_LIBRARIES} "stdc++fs")
+            # Append, don't overwrite: this list already holds md4c, libpng,
+            # libjpeg and FreeType.
+            list(APPEND GWENI_PRIVATE_LIBRARIES stdc++fs)
         endif()
     endif()
 endif()
@@ -731,12 +751,17 @@ add_library(gweni::gweni ALIAS gweni)
 
 gweni_set_warnings(gweni)
 
-target_include_directories(gweni PUBLIC "${CMAKE_CURRENT_LIST_DIR}/include"
-    "${GWENI_GENERATED_INCLUDE_DIR}")
+# include/ and the generated <gweni/version.h> in the tree; installed, both are
+# include/, and the vendored freetype-gl's and imglib's headers are
+# include/gweni/third_party/ (in the tree those come with the OBJECT targets)
+target_include_directories(gweni PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>
+    $<BUILD_INTERFACE:${GWENI_GENERATED_INCLUDE_DIR}>
+    $<INSTALL_INTERFACE:include>
+    $<INSTALL_INTERFACE:include/gweni/third_party>)
 target_link_libraries(gweni
-    ${GWENI_ADDITIONAL_LIBRARIES}
-#    gweni${GWENI_RENDER_NAME}
-)
+    PUBLIC ${GWENI_ADDITIONAL_LIBRARIES}
+    PRIVATE ${GWENI_PRIVATE_LIBRARIES})
 
 target_compile_definitions(gweni PUBLIC ${GWENI_COMPILE_DEFINITIONS})
 if(GWENI_VULKAN_SHADERS)
@@ -751,6 +776,11 @@ if(EMSCRIPTEN)
     # EM_JS_DEPS in an archive member is not: gweni says so itself, additively
     # (an app's own -sEXPORTED_FUNCTIONS is left as it is).
     list(APPEND GWENI_WEB_LINK_OPTIONS "-Wl,--export-if-defined=malloc")
+    # C++ exceptions caught as natively (the directory-level -fexceptions near
+    # the top): an app's link without it turns catching off, and a throw gweni
+    # catches itself (std::filesystem's, texturedSkin.cpp) aborts the page.
+    # Given here so every app linking gweni, installed or not, links with it.
+    list(APPEND GWENI_WEB_LINK_OPTIONS -fexceptions)
 endif()
 if(GWENI_WEB_LINK_OPTIONS)
     target_link_options(gweni INTERFACE ${GWENI_WEB_LINK_OPTIONS})

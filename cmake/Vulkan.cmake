@@ -46,8 +46,15 @@ set(gweni_vulkan_installed "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
 
 # Plain paths in vcpkg's fixed layout, not cached find_*() results: a cached
 # path would outlive the feature being dropped from an existing tree, and the
-# check below would pass with the files gone.
-set(GWENI_GLSLANG_VALIDATOR "${gweni_vulkan_installed}/tools/glslang/glslangValidator")
+# check below would pass with the files gone. GWENI_GLSLANG_VALIDATOR may be
+# given (a vcpkg port's build passes the host's, from
+# CURRENT_HOST_INSTALLED_DIR, since there glslang is a host dependency); empty,
+# it is the one in this tree's vcpkg_installed.
+set(GWENI_GLSLANG_VALIDATOR "" CACHE FILEPATH
+    "glslangValidator to compile the Vulkan shaders with (empty: vcpkg_installed's tools/glslang)")
+if(NOT GWENI_GLSLANG_VALIDATOR)
+    set(GWENI_GLSLANG_VALIDATOR "${gweni_vulkan_installed}/tools/glslang/glslangValidator")
+endif()
 set(gweni_vulkan_files GWENI_GLSLANG_VALIDATOR)
 set(gweni_vulkan_layer_text "")
 if(GWENI_BUILD_TESTS)

@@ -18,7 +18,8 @@
 #  tests/mirrorDirectory.cmake checks it.
 #
 #  Plain file() and cmake -E copy_if_different, so it runs on the project's
-#  minimum CMake (3.12).
+#  minimum CMake (3.16), and on an app's that runs it from an installed gweni
+#  (gweni_add_resources).
 #
 
 # a -P script starts with no policies set, and before CMake 4 GLOB_RECURSE then

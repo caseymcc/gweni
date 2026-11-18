@@ -142,16 +142,16 @@ reaching one of them fails the build naming the header.
 An app that draws with Vulkan alone takes gweni as a subproject:
 
 ```cmake
-set(GWENI_RENDER_OPENGL_CORE OFF CACHE BOOL "")
-set(GWENI_RENDER_VULKAN ON CACHE BOOL "")
+set(GWENI_RENDER_OPENGL_CORE OFF)
+set(GWENI_RENDER_VULKAN ON)
 add_subdirectory(external/gweni gweni)
 target_link_libraries(app PRIVATE gweni)
 ```
 
-- Set the options as cache entries, as above: gweni's minimum CMake (3.12)
-  predates policy CMP0077, so on a first configure its `option()` ignores a
-  plain `set()` of the same name and takes its own default (CMake warns, naming
-  CMP0077).
+- A plain `set()` before the `add_subdirectory`, as above, sets an option, and
+  so does a cache entry (`-D` or `set(... CACHE BOOL "")`): gweni's minimum
+  CMake is 3.16, so policy CMP0077 is NEW and its `option()` takes the variable
+  the parent set.
 - `GWENI_BUILD_EXAMPLES` and `GWENI_BUILD_TESTS` default to OFF when gweni is
   not the top-level project, so this builds the library alone. With
   `GWENI_BUILD_TESTS` on, the tests need the validation layer, `doctest` and
