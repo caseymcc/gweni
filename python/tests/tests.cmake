@@ -13,6 +13,8 @@
 #    python_exports     the module exports PyInit__gweni alone (exports.cmake)
 #    python_stubs       python/gweni/_gweni.pyi is the stub nanobind's stubgen
 #                       gives for the built module (python/stubs.cmake)
+#    python_wheel       the wheel built, installed and smoke-tested (wheel.sh;
+#                       the release tree only)
 #    python_mypy        mypy --strict over python/examples/, with the staged
 #                       package's stubs
 #    python_parity      ButtonDemo from Python against ControlTest's (parity.py;
@@ -91,3 +93,17 @@ add_test(NAME python_mypy
 set_tests_properties(python_mypy PROPERTIES
     LABELS python
     ENVIRONMENT "${gweni_pytest_env}")
+
+# python_wheel: the wheel built offline by tools/build_wheel.sh, installed with
+# pip and with uv into fresh venvs and smoke-tested from the installed package
+# (wheel.sh's header). In the release tree only, as web_site_smoke is: it
+# builds the whole library a second time. No gpu label: its one GL step takes
+# the render lock itself.
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    add_test(NAME python_wheel
+        COMMAND bash ${CMAKE_CURRENT_LIST_DIR}/wheel.sh ${CMAKE_BINARY_DIR})
+    set_tests_properties(python_wheel PROPERTIES
+        LABELS python
+        ENVIRONMENT "GWENI_PYTHON=${Python_EXECUTABLE}"
+        TIMEOUT 3600)
+endif()

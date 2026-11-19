@@ -46,3 +46,6 @@ vcpkg_installed/
 # Python bytecode caches
 __pycache__/
 *.py[cod]
+
+# wheels built by tools/build_wheel.sh
+/dist/

@@ -113,6 +113,38 @@ install(CODE "
     endif()"
     COMPONENT python EXCLUDE_FROM_ALL)
 
+# The licenses of what the module links statically, in gweni/licenses/ (named
+# in python/THIRD_PARTY_NOTICES.md, which the wheel's metadata carries): the
+# vcpkg ports' copyright files, the vendored freetype-gl's and imglib's, and
+# nanobind's from the package it was built with. gweni's own LICENSE and the
+# fonts' are the wheel's license files (pyproject.toml); the fonts' are in
+# resources/ too.
+set(gweni_python_ports freetype libpng zlib bzip2 brotli libjpeg-turbo glfw3 glew md4c rapidjson glm)
+set(gweni_python_port_share "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share")
+foreach(port IN LISTS gweni_python_ports)
+    if(EXISTS "${gweni_python_port_share}/${port}/copyright")
+        install(FILES "${gweni_python_port_share}/${port}/copyright" RENAME "${port}.txt"
+            DESTINATION gweni/licenses COMPONENT python EXCLUDE_FROM_ALL)
+    else()
+        message(WARNING "gweni: no ${gweni_python_port_share}/${port}/copyright for the Python package's licenses")
+    endif()
+endforeach()
+install(FILES ${GWENI_SOURCE_DIR}/deps/freetype-gl/LICENSE RENAME freetype-gl.txt
+    DESTINATION gweni/licenses COMPONENT python EXCLUDE_FROM_ALL)
+install(FILES ${GWENI_SOURCE_DIR}/deps/imglib/LICENSE RENAME imglib.txt
+    DESTINATION gweni/licenses COMPONENT python EXCLUDE_FROM_ALL)
+install(FILES ${GWENI_SOURCE_DIR}/LICENSE RENAME gweni.txt
+    DESTINATION gweni/licenses COMPONENT python EXCLUDE_FROM_ALL)
+file(GLOB gweni_nanobind_license "${gweni_nanobind_dir}/../../nanobind-*.dist-info/licenses/LICENSE"
+    "${gweni_nanobind_dir}/../LICENSE")
+if(gweni_nanobind_license)
+    list(GET gweni_nanobind_license 0 gweni_nanobind_license)
+    install(FILES "${gweni_nanobind_license}" RENAME nanobind.txt
+        DESTINATION gweni/licenses COMPONENT python EXCLUDE_FROM_ALL)
+else()
+    message(WARNING "gweni: no nanobind LICENSE beside ${gweni_nanobind_dir}")
+endif()
+
 # Stage the package on every build, as the wheel lays it out:
 # <tree>/python/gweni/
 add_custom_target(gweni_python_stage ALL

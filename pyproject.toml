@@ -1,0 +1,64 @@
+# The Python package gweni (python/): a scikit-build-core build of this
+# CMake project with the Python module on, installing its "python" component
+# (python/CMakeLists.txt) into the wheel. tools/build_wheel.sh builds it with
+# the configuration ./generate.sh decides (--print-cmake-args); building it
+# without that script (plain `pip wheel .`) leaves out the vcpkg toolchain and
+# is not a supported build.
+
+[build-system]
+requires = ["scikit-build-core>=1.1.2", "nanobind>=3.1.0"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "gweni"
+dynamic = ["version"]
+description = "A retained-mode, change-tracked GUI library on OpenGL, in a window it owns"
+readme = "python/README.md"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = [
+    "LICENSE",
+    "python/THIRD_PARTY_NOTICES.md",
+    "resources/*-LICENSE.txt",
+]
+authors = [{ name = "Casey McCandless" }]
+keywords = ["gui", "opengl", "retained-mode", "widgets"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: C++",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: User Interfaces",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/caseymcc/gweni"
+Documentation = "https://github.com/caseymcc/gweni/blob/main/docs/python.md"
+Demo = "https://caseymcc.github.io/gweni/"
+
+[tool.scikit-build]
+minimum-version = "build-system.requires"
+cmake.version = ">=3.16"
+cmake.build-type = "Release"
+# persistent, so a rebuild is incremental (tools/build_wheel.sh, python_wheel)
+build-dir = "build_linux_x64_release_wheel"
+# one stable-ABI wheel for CPython 3.12 and newer: cp312-abi3
+wheel.py-api = "cp312"
+# the package is laid out by the CMake install rules of the component
+wheel.packages = []
+install.components = ["python"]
+install.strip = false
+sdist.exclude = ["build_*", "site", ".vcpkg-cache", "vcpkg_installed"]
+
+# the version is project(gweni VERSION ...)'s and is written nowhere else
+[[tool.dynamic-metadata]]
+provider = "scikit_build_core.metadata.regex"
+field = "version"
+input = "CMakeLists.txt"
+regex = 'project\(gweni VERSION (?P<value>[0-9]+\.[0-9]+\.[0-9]+)'

@@ -25,6 +25,7 @@
 #include <cstddef>
 #include <functional>
 #include <string>
+#include <type_traits>
 #include <typeinfo>
 
 namespace gweni
@@ -45,12 +46,18 @@ template<typename T>
 T *resolve(const Control &handle)
 {
     controls::Base *base=resolveBase(handle);
-    T *control=dynamic_cast<T *>(base);
 
-    if(control == nullptr)
-        throw std::logic_error(std::string("gweni: control #")+std::to_string(handle.id)+" is a "
-            +base->getTypeName()+", not the type its handle was made for");
-    return control;
+    if constexpr(std::is_same_v<T, controls::Base>)
+        return base;
+    else
+    {
+        T *control=dynamic_cast<T *>(base);
+
+        if(control == nullptr)
+            throw std::logic_error(std::string("gweni: control #")+std::to_string(handle.id)+" is a "
+                +base->getTypeName()+", not the type its handle was made for");
+        return control;
+    }
 }
 
 //! The handle of \p control as its bound class: the class registered for its
