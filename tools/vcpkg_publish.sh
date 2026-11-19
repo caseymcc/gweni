@@ -19,8 +19,10 @@
 #     ports/gweni/vcpkg.json are one version.
 #  2. The SHA512 is that of GitHub's archive of the tag
 #     (https://github.com/caseymcc/gweni/archive/refs/tags/<tag>.tar.gz, so
-#     the tag must be pushed first), or of --archive FILE (a local one, e.g.
-#     git archive --format=tar.gz --prefix=gweni-<version>/ <tag>, the tests').
+#     the tag must be pushed first), or of --archive FILE: for a release a
+#     copy of that very file (what vcpkg_from_github downloads, so nothing
+#     checks it), and for the tests a git archive --format=tar.gz
+#     --prefix=gweni-<version>/ <tag>, whose bytes need not be GitHub's.
 #  3. A scratch repository (--work DIR, which must not exist, or a new
 #     /tmp/gweni-vcpkg-registry-XXXXXX) on vcpkg-registry as the repository has
 #     it (its branch vcpkg-registry, else origin/vcpkg-registry), or a new
@@ -66,6 +68,9 @@ while [ $# -gt 0 ]; do
     esac
 done
 [ -n "$tag" ] || usage
+# absolute: git -C and vcpkg below run in the scratch repositories
+repo_dir="$(cd "$repo" 2>/dev/null && pwd)" || fail "no directory $repo"
+repo="$repo_dir"
 branch=vcpkg-registry
 github_repo=caseymcc/gweni
 
@@ -111,6 +116,7 @@ if [ -z "$work" ]; then
 else
     [ ! -e "$work" ] || fail "$work exists already"
     mkdir -p "$work"
+    work="$(cd "$work" && pwd)"
 fi
 git init --quiet "$work"
 git_reg() { git -C "$work" "$@"; }

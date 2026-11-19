@@ -436,7 +436,9 @@ commit to tag). Agents never push or tag; the owner:
 2. runs `tools/vcpkg_publish.sh v0.1.0` in the build container (from the
    host, `./run_docker.sh tools/vcpkg_publish.sh v0.1.0`: it needs vcpkg): it refuses
    unless the three versions agree, downloads GitHub's archive of the tag for
-   its SHA512 (`--archive FILE` takes a local one), and in a scratch repository
+   its SHA512 (`--archive FILE` takes a local copy of that very file instead:
+   nothing checks it, and a `git archive` of the tag need not have GitHub's
+   bytes), and in a scratch repository
    under `/tmp` writes the tag's `ports/gweni/` (its `REF` the tag, its `SHA512`
    the archive's) onto `vcpkg-registry` (the repository's branch, else
    `origin/vcpkg-registry` — `git fetch origin` first — else a new orphan

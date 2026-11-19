@@ -1,7 +1,13 @@
-# gweni's vcpkg port. The copy on main (ports/gweni/) is the one the tests
-# build (vcpkg_port, vcpkg_port_web: the source is the checkout itself);
-# tools/vcpkg_publish.sh copies it into the vcpkg-registry branch with the
-# tag's REF and SHA512.
+#
+#  Gweni
+#  Copyright (c) 2010 Facepunch Studios
+#  MIT License, see LICENSE
+#
+#  gweni's vcpkg port. The copy on main (ports/gweni/) is the one the tests
+#  build (vcpkg_port, vcpkg_port_web: the source is the checkout itself);
+#  tools/vcpkg_publish.sh copies it into the vcpkg-registry branch with the
+#  tag's REF and SHA512.
+#
 
 # export.h defines GWENI_EXPORT empty: there is no shared gweni
 vcpkg_check_linkage(ONLY_STATIC_LIBRARY)
