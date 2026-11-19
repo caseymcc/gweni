@@ -1,0 +1,45 @@
+#
+#  Gweni
+#  Copyright (c) 2010 Facepunch Studios
+#  MIT License, see LICENSE
+#
+#  The Python module's tests (included by python/CMakeLists.txt with
+#  GWENI_BUILD_TESTS), every one labelled python:
+#    python_pytest      the pytest suite (python/tests/test_*.py) less what
+#                       makes a context (-m "not gpu"), against the staged
+#                       package <tree>/python/gweni/
+#    python_pytest_gpu  the suite's gpu-marked tests (a Headless or an App):
+#                       label gpu, so under the render lock
+#    python_exports     the module exports PyInit__gweni alone (exports.cmake)
+#
+
+set(gweni_pytest_env
+    "PYTHONPATH=${GWENI_PYTHON_STAGE}"
+    "PYTHONDONTWRITEBYTECODE=1"
+    "GWENI_PYTHON_STAGE=${GWENI_PYTHON_STAGE}")
+
+foreach(variant "" _gpu)
+    if(variant STREQUAL "_gpu")
+        set(marks "gpu")
+        set(labels "python;gpu")
+    else()
+        set(marks "not gpu")
+        set(labels "python")
+    endif()
+    add_test(NAME python_pytest${variant}
+        COMMAND ${Python_EXECUTABLE} -m pytest
+            -p no:cacheprovider -q -m ${marks}
+            --rootdir ${CMAKE_CURRENT_LIST_DIR}
+            ${CMAKE_CURRENT_LIST_DIR}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+    set_tests_properties(python_pytest${variant} PROPERTIES
+        LABELS "${labels}"
+        ENVIRONMENT "${gweni_pytest_env}"
+        TIMEOUT 600)
+endforeach()
+
+add_test(NAME python_exports
+    COMMAND ${CMAKE_COMMAND}
+        -DMODULE=$<TARGET_FILE:_gweni>
+        -P ${CMAKE_CURRENT_LIST_DIR}/exports.cmake)
+set_tests_properties(python_exports PROPERTIES LABELS python)

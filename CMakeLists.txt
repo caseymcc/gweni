@@ -103,6 +103,18 @@ if(GWENI_FRAME_POINTERS)
     add_compile_options(-fno-omit-frame-pointer)
 endif()
 
+# The Python module (GWENI_BUILD_PYTHON, python/) links gweni, gweni_app and
+# the vendored freetype-gl and imglib into a shared object, so they are built
+# position-independent: set before deps, like the sanitizers. Every symbol of
+# the module but PyInit__gweni is local (python/exports.map), so nothing in it
+# can be interposed, and -fno-semantic-interposition lets GCC inline and call
+# directly as under the executables' -fPIE.
+if(GWENI_BUILD_PYTHON)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+    add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,GNU>:-fno-semantic-interposition>
+        $<$<COMPILE_LANG_AND_ID:C,GNU>:-fno-semantic-interposition>)
+endif()
+
 # The web tree: C++ exceptions as natively. Emscripten builds with catching
 # off by default, so a throw (std::filesystem's, say) aborts the page.
 # -fexceptions is Emscripten's JavaScript-based exception handling, the one
@@ -848,6 +860,12 @@ endif(GWENI_BUILD_TESTS)
 # tests. Not in the web tree: the browser runs captures, not timed scenes.
 if(GWENI_BUILD_TESTS AND GWENI_BUILD_EXAMPLES AND TARGET gweni_capture AND NOT EMSCRIPTEN)
     add_subdirectory(bench)
+endif()
+
+# the Python module gweni (python/), on gweni_app; after the tests, which it
+# registers its own beside
+if(GWENI_BUILD_PYTHON)
+    add_subdirectory(python)
 endif()
 
 # The installed package, one prefix for cmake --install (and a vcpkg port):

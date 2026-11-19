@@ -59,6 +59,9 @@ public:
     const Padding &getPadding() const { return m_padding; }
     void setPadding(const Padding &padding);
 
+    //! Horizontal or Vertical (a default-made item has neither)
+    LayoutType getType() const { return m_type; }
+
     //! gap between consecutive children along the stacking axis
     int getSpacing() const { return m_spacing; }
     void setSpacing(int spacing);
