@@ -301,13 +301,15 @@ Limits and caveats:
 - Linux x64 and wasm32 are what is built and tested;
 - the vendored freetype-gl is gweni's patched copy, built into `libgweni.a`
   under freetype-gl's own C names and included by gweni's headers as
-  `<freetype-gl/...>` from `include/gweni/third_party/`, so gweni cannot be used
-  beside vcpkg's `freetype-gl` port. An app linking both gets duplicate symbols.
-  The headers collide as well: the port's `include/freetype-gl/` shadows
-  gweni's copies wherever it comes first on the include path, so gweni's headers
-  compile against the unpatched port. It always comes first when both are
-  installed into one prefix (one `vcpkg_installed/<triplet>/`), because an
-  installed gweni lists `include/` before `include/gweni/third_party/`;
+  `<freetype-gl/...>` from `include/gweni/third_party/`, so an app cannot link
+  gweni and vcpkg's `freetype-gl` port together: it gets duplicate symbols.
+  Installing both into one prefix (one `vcpkg_installed/<triplet>/`) works: no
+  file of one is the other's, and an installed gweni lists
+  `include/gweni/third_party/` before `include/`, so its headers find its own
+  copy rather than the port's `include/freetype-gl/` (and gweni's own build
+  puts its copy ahead of `vcpkg_installed`'s too). An app whose own include
+  directory holding the port's headers comes before gweni's can still shadow
+  them, and then gweni's headers compile against the unpatched port;
 - the lazy CJK face is not in the package: CJK text draws as the missing glyph,
   after one stderr line, unless the app ships `resources-lazy/` beside its
   executable (above);
@@ -317,6 +319,120 @@ Limits and caveats:
 `package_consumer` (every native tree) and `package_consumer_web` (both web
 trees) install the tree into a scratch prefix and build and run an app of this
 kind against it (`tests/packageConsumer.cmake`, `tests/package/`).
+
+## gweni from vcpkg
+
+`ports/gweni/` is a vcpkg port of gweni (its `vcpkg.json`, `portfile.cmake`
+and `usage`). It is published in a vcpkg registry of its own, the orphan branch
+`vcpkg-registry` of caseymcc/gweni, which holds only `ports/gweni/` and
+`versions/`. A project takes it by naming that registry in its
+`vcpkg-configuration.json` and gweni in its `vcpkg.json`:
+
+```json
+// vcpkg-configuration.json
+{"registries": [{"kind": "git", "repository": "https://github.com/caseymcc/gweni",
+  "reference": "vcpkg-registry", "baseline": "<sha>", "packages": ["gweni"]}]}
+// vcpkg.json
+"dependencies": ["gweni"]          // or {"name": "gweni", "features": ["vulkan"]} (native only)
+```
+
+`<sha>` is a commit of `vcpkg-registry`, the baseline a release prints (below).
+Without the registry, the port works as an overlay (`--overlay-ports=<dir>`
+on `vcpkg install`, `VCPKG_OVERLAY_PORTS`, or the CMake toolchain's
+`VCPKG_OVERLAY_PORTS`): `<dir>` the `ports/` of a checkout of
+`vcpkg-registry` for a release (its portfile has the release's `SHA512`), or
+`<gweni>/ports` of a gweni checkout with `vcpkg install --head`, which builds
+GitHub's `main` (the copy on `main` keeps a placeholder `SHA512`, which only
+`--head` skips). Either way the source is downloaded from GitHub, never the
+checkout's own files.
+
+The app's CMake is that of any installed gweni ("gweni as an installed
+package"):
+
+```cmake
+find_package(gweni CONFIG REQUIRED)
+target_link_libraries(app PRIVATE gweni::gweni)
+gweni_add_resources(app)           # the skin's files where RelativeToExecutablePaths("resources") finds them
+```
+
+The features:
+
+- `opengl`, the default: `renderer::OpenGLCore` (`GWENI_RENDER_OPENGL_CORE`),
+  desktop GL through glew natively, WebGL 2 on the web;
+- `vulkan`, native only: `renderer::Vulkan` (`GWENI_RENDER_VULKAN`), with
+  `vulkan-headers` and `volk`, its shaders compiled by the host's
+  `glslang[tools]` (a host dependency, so cross builds use the build machine's
+  `glslangValidator`);
+- `"default-features": false` and neither: the controls, skins and layout with
+  no renderer, for an app with a `renderer::Base` of its own.
+
+The port always takes `rapidjson`, `glm`, `freetype` (vcpkg's, for its SDF
+module), `libpng`, `libjpeg-turbo` and `md4c`, and builds gweni without its
+examples and tests (nothing is downloaded at configure time). It takes no
+`glfw3`: `input/glfw3.h` and `glfwLoop.h` are header-only, and an app using
+them adds vcpkg's `glfw3` itself natively, or links with
+`--use-port=contrib.glfw3` on the web.
+
+On Linux, vcpkg's `glew` and gweni's GL renderer link the system's GL through
+glvnd, so the machine needs its development packages: on Ubuntu or Debian
+`libgl1-mesa-dev`, `libglu1-mesa-dev` and `libopengl-dev` (the build image's
+`Dockerfile` installs them, with the X11 ones vcpkg's `glfw3` asks for).
+
+On the web, configure the app as for any vcpkg Emscripten project:
+`-DVCPKG_TARGET_TRIPLET=wasm32-emscripten
+-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake`.
+vcpkg builds the port itself with its triplet's own toolchain (which
+chainloads vcpkg's `scripts/toolchains/emscripten.cmake`, around the same
+`Emscripten.cmake`); `EMSCRIPTEN` is set either way, and only the image's
+emsdk 6.0.13 is tested. Then:
+
+- the stack and heap are the app's: link with at least
+  `-sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=4MB` (gweni's walks recurse once per
+  level of the control tree; Emscripten's default stack is 64 KB);
+- `gweni::gweni` brings WebGL 2, `-fexceptions` and the malloc export
+  ("gweni as an installed package"); `-fwasm-exceptions` is not supported, as
+  for vcpkg's own ports, which are built with JavaScript exceptions and
+  setjmp/longjmp;
+- do not link Emscripten's own `-sUSE_FREETYPE=1` or `-sUSE_LIBPNG=1`: gweni
+  uses vcpkg's FreeType and libpng, and two copies of one library collide.
+
+Limits:
+
+- x64-linux and wasm32-emscripten (`"supports": "(linux & x64) | emscripten"`;
+  other targets may build with `--allow-unsupported`, untested);
+- static only (`vcpkg_check_linkage(ONLY_STATIC_LIBRARY)`);
+- the vendored freetype-gl is in `libgweni.a` under its own C names, so an app
+  cannot link vcpkg's `freetype-gl` port beside gweni ("gweni as an installed
+  package"); installing both is fine;
+- the lazy CJK face is not in the port: CJK text draws as the missing glyph,
+  after one stderr line, unless the app ships `resources-lazy/` beside its
+  executable ("gweni in a Vulkan app").
+
+### Publishing a version (the owner's steps)
+
+A version is a tag `v<major>.<minor>.<patch>` whose `project(gweni VERSION ...)`
+and `ports/gweni/vcpkg.json` `version-semver` are that version (bump both in the
+commit to tag). Agents never push or tag; the owner:
+
+1. tags `main` and pushes the tag: `git tag v0.1.0 && git push origin v0.1.0`
+   (GitHub's archive of the tag is what the port downloads);
+2. runs `tools/vcpkg_publish.sh v0.1.0` in the build container: it refuses
+   unless the three versions agree, downloads GitHub's archive of the tag for
+   its SHA512 (`--archive FILE` takes a local one), and in a scratch repository
+   under `/tmp` writes the tag's `ports/gweni/` (its `REF` the tag, its `SHA512`
+   the archive's) onto `vcpkg-registry` (the repository's branch, else
+   `origin/vcpkg-registry` — `git fetch origin` first — else a new orphan
+   branch), commits, runs `vcpkg x-add-version` and commits `versions/`;
+3. runs the two commands it prints (a `git fetch` of the branch into the
+   repository and `git push origin vcpkg-registry`);
+4. gives consumers the `baseline:` it printed, for their
+   `vcpkg-configuration.json`.
+
+`vcpkg_port` (the native release tree) and `vcpkg_port_web` (the release web
+tree) install the port through an overlay whose source is the checkout and
+build and run `tests/package/` against it (`tests/vcpkgPort.cmake`);
+`vcpkg_publish` (every native tree) runs the script on a scratch repository
+and resolves gweni from what it wrote (`tests/vcpkgPublish.sh`).
 
 ## gweni as a HUD: HudExample
 

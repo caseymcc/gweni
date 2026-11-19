@@ -4,7 +4,8 @@
 #  MIT License, see LICENSE
 #
 #  The consumer of an installed gweni (tests/packageConsumer.cmake configures
-#  and builds it against a scratch prefix, with the tree's vcpkg toolchain): a
+#  and builds it against a scratch prefix, tests/vcpkgPort.cmake against the
+#  vcpkg port's install, each with the tree's vcpkg toolchain): a
 #  project of its own, which takes gweni only as an app would, through
 #  find_package(gweni CONFIG REQUIRED), gweni::gweni and gweni_add_resources.
 #

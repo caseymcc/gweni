@@ -210,6 +210,34 @@ page of its own (`ControlTest --list`); the node graph and zoom panel demos of t
 shell's "Canvas" category ([`demo.html?demo=NodeGraphDemo`](https://caseymcc.github.io/gweni/demo.html?demo=NodeGraphDemo)). All of these images are rendered
 offscreen by `tools/capture_samples.sh` (see `AGENTS.md`).
 
+## Using gweni in your project
+
+gweni is a vcpkg port, in a registry of its own (the `vcpkg-registry` branch of this repository),
+for x64 Linux and WebAssembly. Name the registry in your `vcpkg-configuration.json` and gweni in
+your `vcpkg.json`:
+
+```json
+{"registries": [{"kind": "git", "repository": "https://github.com/caseymcc/gweni",
+  "reference": "vcpkg-registry", "baseline": "<sha>", "packages": ["gweni"]}]}
+```
+
+```json
+"dependencies": ["gweni"]
+```
+
+and take it in CMake:
+
+```cmake
+find_package(gweni CONFIG REQUIRED)
+target_link_libraries(app PRIVATE gweni::gweni)
+gweni_add_resources(app)   # the skin's files beside the executable
+```
+
+The features (`opengl`, the default, and `vulkan`), the web settings, the limits and how a
+version is published are in [`docs/building.md`](docs/building.md) → "gweni from vcpkg";
+without vcpkg, `cmake --install` of a build tree is the same package ("gweni as an installed
+package").
+
 ## Running the examples
 
 The examples are built in the build container (`./run_docker.sh ./generate.sh linux`, then
