@@ -1,6 +1,7 @@
 # Dependencies come from vcpkg, not Hunter. With USE_HUNTER off, freetype-gl
-# locates freetype/glew via CMake's standard find modules (satisfied by the
-# vcpkg toolchain).
+# finds freetype with find_package(freetype CONFIG) and links its imported
+# target (no GL or GLEW: it is GL-free), and imglib links PNG::PNG and
+# JPEG::JPEG, so gweni's export names no absolute library path.
 set(freetype-gl_USE_HUNTER OFF CACHE BOOL "" FORCE)
 set(freetype-gl_BUILD_DEMOS OFF CACHE BOOL "Build the freetype-gl example programs" FORCE)
 set(freetype-gl_BUILD_APIDOC OFF CACHE BOOL "Build the freetype-gl API documentation" FORCE)

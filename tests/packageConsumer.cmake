@@ -130,8 +130,16 @@ if(SANITIZE)
 endif()
 check_run("configuring tests/package against the package"
     COMMAND "${CMAKE_COMMAND}" ${configure_args})
+# A job count of its own: a bare --parallel is an unlimited make -j, which
+# ignores CMAKE_BUILD_PARALLEL_LEVEL and, one translation unit per installed
+# header, ran 200 compilers at once (the Pages runner has 4 cores, #579).
+if(DEFINED ENV{CMAKE_BUILD_PARALLEL_LEVEL} AND NOT "$ENV{CMAKE_BUILD_PARALLEL_LEVEL}" STREQUAL "")
+    set(jobs "$ENV{CMAKE_BUILD_PARALLEL_LEVEL}")
+else()
+    cmake_host_system_information(RESULT jobs QUERY NUMBER_OF_LOGICAL_CORES)
+endif()
 check_run("building tests/package against the package"
-    COMMAND "${CMAKE_COMMAND}" --build "${build}" --parallel)
+    COMMAND "${CMAKE_COMMAND}" --build "${build}" --parallel ${jobs})
 
 # 3. the run
 set(consumer "${build}/package_consumer")

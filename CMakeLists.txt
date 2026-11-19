@@ -893,7 +893,7 @@ if(GWENI_RENDER_VULKAN)
         "find_dependency(VulkanHeaders CONFIG)"
         "find_dependency(volk CONFIG)")
 endif()
-if(GWENI_USE_FILESYSTEM STREQUAL GWENI_BOOST)
+if(GWENI_USE_FILESYSTEM STREQUAL "GWENI_BOOST")
     list(APPEND GWENI_CONFIG_DEPENDENCIES
         "find_dependency(Boost CONFIG COMPONENTS system filesystem)")
 endif()

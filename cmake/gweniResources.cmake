@@ -10,10 +10,11 @@
 #  - natively, mirrored to resources/ in the target's output directory on every
 #    build, by mirrorDirectory.cmake's rules (installed beside this file): a
 #    file the package no longer has is removed from the copy, an unchanged one
-#    is not rewritten. The directory is the target's RUNTIME_OUTPUT_DIRECTORY,
-#    else CMAKE_RUNTIME_OUTPUT_DIRECTORY, else its binary directory (with the
-#    configuration's under a multi-config generator), read when this is called,
-#    so set those first. $<TARGET_FILE_DIR> cannot be used: the copy is a
+#    is not rewritten. The directory is the target's RUNTIME_OUTPUT_DIRECTORY
+#    (which CMAKE_RUNTIME_OUTPUT_DIRECTORY sets on a target made after it),
+#    else its binary directory, with the configuration's under a multi-config
+#    generator unless it names it in a generator expression, read when this is
+#    called, so set it first. $<TARGET_FILE_DIR> cannot be used: the copy is a
 #    target the executable depends on, so it would depend on itself;
 #  - on the web (Emscripten), preloaded into the target's .data at /resources,
 #    where platform::getExecutableDir() ("/") puts RelativeToExecutablePaths,
@@ -50,17 +51,17 @@ function(gweni_add_resources target)
         return()
     endif()
 
+    # CMake's own rule: the target's RUNTIME_OUTPUT_DIRECTORY (which
+    # CMAKE_RUNTIME_OUTPUT_DIRECTORY sets on a target made after it), else its
+    # binary dir, with the configuration's appended under a multi-config
+    # generator unless the directory names it through a generator expression
     get_target_property(output_dir ${target} RUNTIME_OUTPUT_DIRECTORY)
     if(NOT output_dir)
-        if(CMAKE_RUNTIME_OUTPUT_DIRECTORY)
-            set(output_dir "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
-        else()
-            get_target_property(output_dir ${target} BINARY_DIR)
-        endif()
-        get_property(multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
-        if(multi_config)
-            string(APPEND output_dir "/$<CONFIG>")
-        endif()
+        get_target_property(output_dir ${target} BINARY_DIR)
+    endif()
+    get_property(multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+    if(multi_config AND NOT output_dir MATCHES "\\$<")
+        string(APPEND output_dir "/$<CONFIG>")
     endif()
 
     add_custom_target(${target}_gweni_resources
