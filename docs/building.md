@@ -236,11 +236,13 @@ gweni_add_resources(app)
 
 The prefix holds:
 
-- `lib/libgweni.a`, the one library: gweni with the vendored freetype-gl's and
-  imglib's objects;
+- `lib/libgweni.a`, gweni with the vendored freetype-gl's and imglib's
+  objects, and in a tree with the GL renderer `lib/libgweni_app.a`, the app
+  shell `gweni::app` (below, "A window with gweni_app");
 - `include/gweni/**`, the public headers, those of the renderers the tree built
   only (no `vulkan.h` in a tree without Vulkan, no `glApi.h`/`openglCore.h`
-  without the GL renderer), and under `include/gweni/third_party/` the vendored
+  without the GL renderer, no `gweni/app/` without `gweni_app`), and under
+  `include/gweni/third_party/` the vendored
   freetype-gl and imglib headers gweni's own headers include;
 - `share/gweni/`: `gweniConfig.cmake` (with its version file: a 0.x minor
   version is an incompatible one), the exported targets, `gweniResources.cmake`
@@ -253,10 +255,12 @@ The prefix holds:
 No installed file names a path of the machine it was built on, so the prefix
 can be moved. `find_package(gweni)` finds the dependencies the tree was built
 with (RapidJSON, glm, md4c, libpng, libjpeg and FreeType always; GL and GLEW,
-GLES 3 and EGL, or nothing on the web; Vulkan's headers and volk with Vulkan),
+GLES 3 and EGL, or nothing on the web; Vulkan's headers and volk with Vulkan;
+vcpkg's `glfw3` and natively EGL for `gweni::app`),
 from the app's own vcpkg (or other) packages, so the app's manifest lists
 them: `rapidjson`, `glm`, `freetype`, `libpng`, `libjpeg-turbo`, `md4c`, and
-`glew` for desktop GL, `vulkan-headers` and `volk` for Vulkan. It sets
+`glew` for desktop GL, `vulkan-headers` and `volk` for Vulkan, `glfw3` in a
+package with `gweni::app` (natively; the web's GLFW is Emscripten's port). It sets
 `gweni_RENDER_OPENGL_CORE`, `gweni_RENDER_VULKAN` and `gweni_GL_ES` to what the
 package was built with, and `GWENI_RESOURCE_DIR` to its `resources/`.
 
@@ -316,12 +320,92 @@ Limits and caveats:
 - the lazy CJK face is not in the package: CJK text draws as the missing glyph,
   after one stderr line, unless the app ships `resources-lazy/` beside its
   executable (above);
-- an app using `input::GLFW3` or `glfwLoop.h` (header-only) links GLFW itself:
-  vcpkg's `glfw3` natively, `--use-port=contrib.glfw3` on the web.
+- an app using `input::GLFW3` or `glfwLoop.h` (header-only) without
+  `gweni::app` links GLFW itself: vcpkg's `glfw3` natively,
+  `--use-port=contrib.glfw3` on the web (`gweni::app` carries it).
 
 `package_consumer` (every native tree) and `package_consumer_web` (both web
 trees) install the tree into a scratch prefix and build and run an app of this
-kind against it (`tests/packageConsumer.cmake`, `tests/package/`).
+kind against it (`tests/packageConsumer.cmake`, `tests/package/`), and where
+the tree has `gweni_app` one linking `gweni::app` alone that draws through
+`app::Headless` (`tests/package/app.cpp`).
+
+## A window with gweni_app
+
+`gweni_app` (`gweni::app` in the installed package, `cmake/App.cmake`) is the
+app shell the examples, the bench and the GL tests are built on: the device a
+UI draws with (a GLFW window, surfaceless EGL or WebGL 2 in a page, the
+offscreen target and its PNG readback, the Vulkan device and window with
+Vulkan, `include/gweni/app/device.h`), `app::Shell` (the device, its renderer,
+the textured skin and the canvas, `shell.h`), `app::Window` (a Shell in a
+window with every GLFW callback wired, the idle loop and hooks for the input
+the UI did not take and around the frame, `window.h`) and `app::Headless` (a
+Shell offscreen on a stepped clock, driven by script steps and read back as
+pixels, a PNG and the frame's counters, `headless.h`). One `Window` or
+`Headless` is alive at a time in a process. `examples/app/hello.cpp`, built in
+every tree with `gweni_app` (`HelloWindow`) as a compile check:
+
+```cpp
+#include <gweni/app/window.h>
+#include <gweni/controls.h>
+
+#include <string>
+
+int main()
+{
+    using namespace gweni;
+
+    auto *app=new app::Window(app::ShellOptions());
+    auto *window=app->canvas()->newChild<controls::WindowControl>();
+    auto *label=window->newChild<controls::Label>();
+    auto *button=window->newChild<controls::Button>();
+
+    window->setTitle("Hello");
+    window->setBounds(20, 20, 240, 120);
+    label->setText("0 clicks");
+    label->setDock(DockPosition::Top);
+    button->setText("Click me");
+    button->setDock(DockPosition::Top);
+    button->onPressCaller.addCallback(button, [label, clicks=0](event::Handler &, event::Info) mutable
+    {
+        label->setText(std::to_string(++clicks)+" clicks");
+    });
+    app->run();
+    delete app;
+    return 0;
+}
+```
+
+```cmake
+find_package(gweni CONFIG REQUIRED)
+add_executable(hello hello.cpp)
+target_link_libraries(hello PRIVATE gweni::app)
+gweni_add_resources(hello)
+```
+
+The Window is on the heap and the handler holds what it needs by value because
+in a browser page `run()` never returns and main's stack is unwound before the
+first frame; natively `run()` returns when the window closes.
+
+What it links and needs:
+
+- **links:** `gweni::gweni`, GLFW (vcpkg's `glfw3` natively, Emscripten's
+  `contrib.glfw3` port on the web) and natively EGL, the headless path
+  (`libEGL`, glvnd); with Vulkan the Vulkan window, through the loader gweni
+  opens at run time (volk). It is built with the GL renderer only: not in the
+  Vulkan-only tree, and an `add_subdirectory` app that wants no GLFW sets
+  `GWENI_BUILD_APP` off;
+- **at run time:** a display for a window (X11 or Wayland through GLFW) and a
+  GL 3.3 core or GLES 3.0 driver through glvnd (`libGLX.so.0`,
+  `libOpenGL.so.0`, `libEGL.so.1`), or a Vulkan 1.3 driver and `libvulkan.so.1`
+  with `ShellOptions::backend` `app::Backend::Vulkan`; `app::Headless` needs no
+  display (surfaceless EGL or a headless Vulkan device); the skin's
+  `resources/` beside the executable (`gweni_add_resources`), and
+  `resources-lazy/` for CJK text (not in the package; without it CJK draws as
+  the missing glyph after one stderr line). `HeadlessOptions::preloadGlyphFallbacks`
+  reads every fallback face before the first frame, so with no
+  `resources-lazy/` a Headless is `degraded()`; an app shipping only the
+  package's resources turns it off.
 
 ## gweni from vcpkg
 

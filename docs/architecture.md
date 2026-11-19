@@ -2051,6 +2051,37 @@ unchanged on Vulkan: each is registered again as `<name>_vulkan`
 in its environment, which the exes and every child a script starts take as their
 `--renderer`. A run on Vulkan without a capture is the window, below.
 
+**The app shell, gweni_app.** The device layer is the bottom of `gweni_app`
+(`cmake/App.cmake`, `include/gweni/app/`, `source/app/`, `gweni::app` in the
+installed package), a static library over `gweni` that alone links GLFW and EGL.
+Over it `app::Shell` (`shell.h`) opens, in this order, the resource paths, the
+device, its renderer `init()`ed, the textured skin and the canvas, and gives them
+back in the reverse one; `app::Window` (`window.h`) shows a Shell in its window,
+wiring every GLFW callback through `input::GLFW3` (keys, characters, focus, the
+cursor and its entering, buttons, the wheel, and the framebuffer size and content
+scale through `fitCanvasToWindow`), the system clipboard and, in a page, the
+browser's input, and runs `Device::runWindowLoop`; its hooks are what the apps
+add: `keyFirst` before the canvas (the F9-F12 tools), `key`, `mouseMove`,
+`mouseButton` and `scroll` after it with whether the UI took the input
+(HudExample's orbit and zoom), and `beforeUpdate`, `afterUpdate`, `beforeRender`,
+`afterRender` and `afterIteration` around the frame. `app::Headless`
+(`headless.h`) is a Shell offscreen on the library's clock stepped from 0 for
+each instance, driven as ControlTest's flags drive a capture (the key names and
+chords of `keys.h`, the counters of `frameStats.h`, which ControlTest's `--stats`
+line is made of). Both open with `input::resetPointerState()`, so a fresh canvas
+inherits no click, mouse position or held key of an earlier one, and only one of
+either is alive in a process at a time (the clock, the input handler and GLFW
+are process-wide): a second is refused with an error, not a crash. In a page
+`run()` never returns and main's stack is gone, so a Window is held on the heap
+there. What the exes' command lines take (`--scale`, `--loop`, `--renderer`, the
+degraded exit status, the fixed profile clock, `--depth-view`, the tool keys)
+stays in the examples' `gweni_capture` (`examples/openglcore/capture.h`), over
+`gweni_app`. ControlTest's `--window-test` and `--idle-test` drive the `Device`
+themselves: they take no input and step their own loop, which `app::Window`'s
+run does not; `--clipboard-test` runs its script as any script runs, through
+synthesised events on the shown window's device, with no callbacks. `docs/building.md` → "A window with gweni_app" has the hello
+window and what it links.
+
 ### gweni on an application's Vulkan device
 
 An application that draws with Vulkan itself (an engine, #690) makes its own device and

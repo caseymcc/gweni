@@ -68,7 +68,7 @@ void Headless::open(const HeadlessOptions &options)
     shell.headless=true;
     // every glyph fallback face before the first layout, so what it draws
     // never waits on a lazy face
-    shell.preloadGlyphFallbacks=true;
+    shell.preloadGlyphFallbacks=options.preloadGlyphFallbacks;
     if(!m_shell.open(shell))
     {
         m_error="app::Headless: the headless device did not open";

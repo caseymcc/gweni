@@ -11,7 +11,7 @@
 #            -DSCRATCH_DIR=<dir> -DGENERATOR=<generator> -DBUILD_TYPE=<type>
 #            -DTOOLCHAIN=<vcpkg.cmake> -DCHAINLOAD=<toolchain> -DTRIPLET=<triplet>
 #            -DINSTALLED_DIR=<the tree's vcpkg_installed> -DC_COMPILER=... -DCXX_COMPILER=...
-#            [-DSANITIZE=address]
+#            [-DSANITIZE=address] [-DHAS_APP=ON]
 #            [-DNODE=<emsdk's node> -DRUNNER=<tests/web/run.mjs> -DWEB_PAGE_DIR=<examples/openglcore/web>]
 #            -P packageConsumer.cmake
 #
@@ -30,7 +30,10 @@
 #     SANITIZE the tree's sanitizer flags; that project's configure checks what
 #     gweni::gweni exports and compiles every installed header alone.
 #  3. runs package_consumer, which draws a frame on each renderer the package
-#     has, under the render lock (mm run --lock render) when mm is on PATH. No
+#     has, and with HAS_APP (the tree builds gweni_app, so the package has
+#     gweni::app) package_consumer_app, which does through app::Headless and
+#     must have been built, each under the render lock (mm run --lock render)
+#     when mm is on PATH. No
 #     lock is held around the install or the build. The test's environment
 #     (ASAN_OPTIONS, the Vulkan layer and driver pins) reaches it.
 #

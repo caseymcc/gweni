@@ -1122,8 +1122,10 @@ endif()
 # The tree, installed, as a package an app builds against (packageConsumer.cmake,
 # tests/package/): cmake --install into a scratch prefix, a consumer project
 # configured and built against it, and its run, one frame on each renderer the
-# tree builds. Label package, not gpu: the install and the build take no lock,
-# and the script runs the consumer under the render lock itself (through mm).
+# tree builds, and where the tree builds gweni_app the same through
+# gweni::app's app::Headless (HAS_APP). Label package, not gpu: the install
+# and the build take no lock, and the script runs the consumer under the render
+# lock itself (through mm).
 # The Vulkan run is validated, with gweni_vulkan_test_environment's variables
 # (its labels are not this test's). In the web trees it is package_consumer_web,
 # label web: the consumer built through the web toolchain as a page on the
@@ -1153,6 +1155,7 @@ if(GWENI_RENDER_OPENGL_CORE OR GWENI_RENDER_VULKAN)
             -DC_COMPILER=${CMAKE_C_COMPILER}
             -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
             -DSANITIZE=${GWENI_SANITIZE}
+            -DHAS_APP=$<TARGET_EXISTS:gweni_app>
             ${package_web_args}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/packageConsumer.cmake)
     if(EMSCRIPTEN)

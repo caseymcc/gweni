@@ -849,11 +849,13 @@ endif()
 
 # The installed package, one prefix for cmake --install (and a vcpkg port):
 #   lib/libgweni.a                  gweni, with freetype-gl's and imglib's objects
+#   lib/libgweni_app.a              gweni_app (cmake/App.cmake), where it is built
 #   include/gweni/**                the public headers (the built backends' only)
 #   include/gweni/third_party/      the vendored freetype-gl and imglib headers
 #                                   (deps/CMakeLists.txt)
 #   share/gweni/gweniConfig.cmake   find_package(gweni CONFIG): the gweni::gweni
-#                                   target, its dependencies, GWENI_RESOURCE_DIR
+#                                   target (and gweni::app where gweni_app is
+#                                   built), its dependencies, GWENI_RESOURCE_DIR
 #                                   and gweni_add_resources (gweniResources.cmake)
 #   share/gweni/resources/          the textured skin's files
 include(CMakePackageConfigHelpers)
@@ -861,9 +863,9 @@ set(GWENI_INSTALL_CMAKE_DIR share/gweni)
 set(GWENI_INSTALL_RESOURCE_DIR share/gweni/resources)
 
 set(gweni_install_header_excludes)
-# gweni/app/ is not part of the package yet: an installed header must compile
-# with gweni::gweni alone
-foreach(header IN LISTS GWENI_UNBUILT_BACKEND_HEADERS GWENI_APP_HEADERS)
+# gweni/app/ is in GWENI_UNBUILT_BACKEND_HEADERS where gweni_app is not built:
+# installed, it compiles with gweni::app
+foreach(header IN LISTS GWENI_UNBUILT_BACKEND_HEADERS)
     string(REPLACE "." "\\." header_regex "${header}")
     list(APPEND gweni_install_header_excludes REGEX "/${header_regex}$" EXCLUDE)
 endforeach()
@@ -881,10 +883,19 @@ install(FILES ${GWENI_GENERATED_INCLUDE_DIR}/gweni/version.h
 )
 
 # The library and the interface targets its exported link names: gweni_vulkan
-# (cmake/Vulkan.cmake), as gweni::gweni_vulkan
+# (cmake/Vulkan.cmake), as gweni::gweni_vulkan; and gweni_app as gweni::app,
+# with on the web the INTERFACE glfw target it links (emscripten-glfw's port
+# options, cmake/App.cmake), as gweni::glfw
 set(gweni_export_targets gweni)
 if(TARGET gweni_vulkan)
     list(APPEND gweni_export_targets gweni_vulkan)
+endif()
+if(TARGET gweni_app)
+    set_target_properties(gweni_app PROPERTIES EXPORT_NAME app)
+    list(APPEND gweni_export_targets gweni_app)
+    if(EMSCRIPTEN)
+        list(APPEND gweni_export_targets glfw)
+    endif()
 endif()
 install(TARGETS ${gweni_export_targets}
         EXPORT gweniTargets
@@ -921,6 +932,14 @@ if(GWENI_RENDER_VULKAN)
     list(APPEND GWENI_CONFIG_DEPENDENCIES
         "find_dependency(VulkanHeaders CONFIG)"
         "find_dependency(volk CONFIG)")
+endif()
+# gweni::app's: GLFW (vcpkg's glfw3; on the web the exported gweni::glfw) and,
+# natively, EGL, its headless path
+if(TARGET gweni_app AND NOT EMSCRIPTEN)
+    list(APPEND GWENI_CONFIG_DEPENDENCIES "find_dependency(glfw3 CONFIG)")
+    if(UNIX AND NOT APPLE)
+        list(APPEND GWENI_CONFIG_DEPENDENCIES "find_dependency(OpenGL COMPONENTS EGL)")
+    endif()
 endif()
 if(GWENI_USE_FILESYSTEM STREQUAL "GWENI_BOOST")
     list(APPEND GWENI_CONFIG_DEPENDENCIES

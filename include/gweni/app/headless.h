@@ -46,6 +46,12 @@ struct HeadlessOptions
     Backend backend=Backend::GL;
     //! what stats() calls the control (its control= field)
     std::string label="Headless";
+    //! read every glyph fallback face before the first layout, so a frame
+    //! never waits on one; a face that is not there (the lazy CJK face, which
+    //! the installed package and gweni_add_resources leave out) makes the
+    //! Headless degraded(). Off, a face is read at its first miss, as in a
+    //! window.
+    bool preloadGlyphFallbacks=true;
 };
 
 class Headless

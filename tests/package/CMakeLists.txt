@@ -18,9 +18,14 @@
 #  alone (package_header_check), so a header the install left out, or one
 #  needing an include dir the package does not export, fails the build. The
 #  GLFW input headers are compiled only where vcpkg's glfw3 is found: gweni does
-#  not link GLFW, an app using them adds it.
+#  not link GLFW, an app using them adds it. The gweni/app/ headers are compiled
+#  the same way against gweni::app alone (package_app_header_check).
 #
-#  main.cpp is package_consumer, run by the test.
+#  main.cpp is package_consumer, run by the test. Where the package has
+#  gweni::app (its gweni_app, the GL renderer's trees), configuring fails unless
+#  it installed the gweni/app/ headers, and app.cpp is package_consumer_app,
+#  linking gweni::app alone and drawing through app::Headless, run by the test
+#  too; where it has none, configuring fails if it installed them.
 #
 cmake_minimum_required(VERSION 3.16)
 project(gweni_package_consumer CXX)
@@ -95,17 +100,33 @@ if(NOT installed_headers)
 endif()
 find_package(glfw3 CONFIG QUIET)
 set(header_sources)
+set(app_header_sources)
 foreach(header IN LISTS installed_headers)
-    if(header MATCHES "^gweni/platforms/input/glfw" AND NOT TARGET glfw)
+    if(header MATCHES "^gweni/platforms/input/glfw" AND NOT TARGET glfw AND NOT TARGET gweni::app)
         continue()
     endif()
     set(source "${CMAKE_CURRENT_BINARY_DIR}/header_check/${header}.cpp")
     file(WRITE "${source}" "#include <${header}>\n")
-    list(APPEND header_sources "${source}")
+    if(header MATCHES "^gweni/app/")
+        list(APPEND app_header_sources "${source}")
+    else()
+        list(APPEND header_sources "${source}")
+    endif()
 endforeach()
+if(TARGET gweni::app AND NOT app_header_sources)
+    message(FATAL_ERROR "package_consumer: the package has gweni::app, but not the gweni/app/ headers")
+endif()
+if(NOT TARGET gweni::app AND app_header_sources)
+    message(FATAL_ERROR "package_consumer: the package installs the gweni/app/ headers, but has no gweni::app")
+endif()
 add_library(package_header_check OBJECT ${header_sources})
 target_link_libraries(package_header_check PRIVATE gweni::gweni)
-if(TARGET glfw)
+if(TARGET gweni::app)
+    # the GLFW input headers too: gweni::app carries GLFW (on the web its port's options)
+    target_link_libraries(package_header_check PRIVATE gweni::app)
+    add_library(package_app_header_check OBJECT ${app_header_sources})
+    target_link_libraries(package_app_header_check PRIVATE gweni::app)
+elseif(TARGET glfw)
     target_include_directories(package_header_check PRIVATE $<TARGET_PROPERTY:glfw,INTERFACE_INCLUDE_DIRECTORIES>)
 endif()
 
@@ -140,3 +161,21 @@ if(EMSCRIPTEN)
 endif()
 gweni_add_resources(package_consumer)
 add_dependencies(package_consumer package_header_check)
+
+# The app on gweni::app: nothing of its own but the test plumbing package_consumer has
+if(TARGET gweni::app)
+    add_executable(package_consumer_app app.cpp)
+    target_link_libraries(package_consumer_app PRIVATE gweni::app)
+    if(EMSCRIPTEN)
+        target_link_options(package_consumer_app PRIVATE -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=4MB)
+        if(PACKAGE_WEB_PAGE_DIR)
+            set_target_properties(package_consumer_app PROPERTIES SUFFIX ".html")
+            target_link_options(package_consumer_app PRIVATE
+                "SHELL:--shell-file ${PACKAGE_WEB_PAGE_DIR}/shell.html"
+                "SHELL:--pre-js ${PACKAGE_WEB_PAGE_DIR}/pre.js"
+                -sEXIT_RUNTIME=1)
+        endif()
+    endif()
+    gweni_add_resources(package_consumer_app)
+    add_dependencies(package_consumer_app package_app_header_check)
+endif()

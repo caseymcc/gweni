@@ -10,6 +10,12 @@
 #                              an app needs to compile and link against it
 #                              (include dirs, compile definitions, and on the
 #                              web WebGL 2, -fexceptions and the malloc export)
+#    gweni::app                where the package was built with gweni_app (the
+#                              GL renderer, GWENI_BUILD_APP): the app shell,
+#                              app::Window and app::Headless (gweni/app/),
+#                              linking gweni::gweni, GLFW and natively EGL
+#                              (found here with them: vcpkg's glfw3, the
+#                              system's libEGL); test with if(TARGET gweni::app)
 #    GWENI_RESOURCE_DIR        the textured skin's files (share/gweni/resources)
 #    gweni_add_resources(<target>)
 #                              those files where the target's

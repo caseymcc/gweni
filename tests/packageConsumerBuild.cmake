@@ -14,6 +14,7 @@
 #    build              the consumer's build directory
 #    CONSUMER_DIR GENERATOR BUILD_TYPE TOOLCHAIN TRIPLET INSTALLED_DIR SCRATCH_DIR
 #    and optionally CHAINLOAD C_COMPILER CXX_COMPILER WEB_PAGE_DIR SANITIZE NODE RUNNER
+#    HAS_APP (the package has gweni::app: package_consumer_app runs too)
 #
 
 # the consumer, configured and built against it
@@ -58,21 +59,32 @@ endif()
 check_run("building tests/package against the package"
     COMMAND "${CMAKE_COMMAND}" --build "${build}" --parallel ${jobs})
 
-# the run
-set(consumer "${build}/package_consumer")
-if(RUNNER)
-    string(APPEND consumer ".html")
-endif()
-if(NOT EXISTS "${consumer}")
-    message(FATAL_ERROR "${package_test_name}: the build made no ${consumer}")
+# the runs: package_consumer, and package_consumer_app where the package has
+# gweni::app (HAS_APP; vcpkg_port's package has none)
+set(consumers package_consumer)
+if(HAS_APP)
+    list(APPEND consumers package_consumer_app)
+elseif(EXISTS "${build}/package_consumer_app" OR EXISTS "${build}/package_consumer_app.html")
+    message(FATAL_ERROR "${package_test_name}: the tree builds no gweni_app, but the package's consumer found gweni::app")
 endif()
 find_program(mm_program mm)
-if(RUNNER)
-    set(run_command "${NODE}" "${RUNNER}" "${consumer}")
-elseif(mm_program)
-    set(run_command "${mm_program}" run --lock render -- "${consumer}")
-else()
-    message(STATUS "${package_test_name}: mm is not on PATH, so the run takes no render lock")
-    set(run_command "${consumer}")
+if(NOT RUNNER AND NOT mm_program)
+    message(STATUS "${package_test_name}: mm is not on PATH, so the runs take no render lock")
 endif()
-check_run("${package_test_name}" COMMAND ${run_command} WORKING_DIRECTORY "${SCRATCH_DIR}")
+foreach(name IN LISTS consumers)
+    set(consumer "${build}/${name}")
+    if(RUNNER)
+        string(APPEND consumer ".html")
+    endif()
+    if(NOT EXISTS "${consumer}")
+        message(FATAL_ERROR "${package_test_name}: the build made no ${consumer}")
+    endif()
+    if(RUNNER)
+        set(run_command "${NODE}" "${RUNNER}" "${consumer}")
+    elseif(mm_program)
+        set(run_command "${mm_program}" run --lock render -- "${consumer}")
+    else()
+        set(run_command "${consumer}")
+    endif()
+    check_run("${name}" COMMAND ${run_command} WORKING_DIRECTORY "${SCRATCH_DIR}")
+endforeach()
