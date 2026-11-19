@@ -1223,6 +1223,25 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release" AND GWENI_RENDER_OPENGL_CORE AND NOT GWEN
     endif()
 endif()
 
+# tools/vcpkg_publish.sh (vcpkgPublish.sh): on a scratch repository of this
+# checkout's CMakeLists.txt and ports/gweni/ with local tags, it refuses tags
+# whose versions differ and writes a vcpkg-registry branch vcpkg resolves gweni
+# from (--dry-run, building nothing). Headless, seconds, every native tree;
+# label package.
+if(NOT EMSCRIPTEN)
+    if(Z_VCPKG_ROOT_DIR)
+        set(gweni_publish_vcpkg_root "${Z_VCPKG_ROOT_DIR}")
+    else()
+        get_filename_component(gweni_publish_vcpkg_root "${CMAKE_TOOLCHAIN_FILE}/../../.." ABSOLUTE)
+    endif()
+    add_test(NAME vcpkg_publish
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/vcpkgPublish.sh
+            ${GWENI_SOURCE_DIR}
+            ${CMAKE_CURRENT_BINARY_DIR}/vcpkg_publish
+            ${gweni_publish_vcpkg_root})
+    set_tests_properties(vcpkg_publish PROPERTIES LABELS package TIMEOUT 300)
+endif()
+
 # Resource tooling runs on the host even in a cross-compiled tree.
 add_test(NAME fetch_pinned_file
     COMMAND ${CMAKE_COMMAND}
