@@ -874,6 +874,10 @@ if(NOT GWENI_RENDER_OPENGL_CORE AND NOT GWENI_RENDER_VULKAN)
     # would be installed empty (a vcpkg post-build warning)
     list(APPEND gweni_install_header_excludes REGEX "/gweni/platforms/renderers$" EXCLUDE)
 endif()
+if(NOT TARGET gweni_app)
+    # the same for gweni/app/, every header of which is gweni_app's
+    list(APPEND gweni_install_header_excludes REGEX "/gweni/app$" EXCLUDE)
+endif()
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/gweni
         DESTINATION include
         ${gweni_install_header_excludes}
