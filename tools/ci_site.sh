@@ -24,8 +24,10 @@
 #       Vulkan on is reconfigured without it.
 #    2. the release web tree, build_web_wasm32_release/, whole: the pages, the
 #       wasm unit tests and gweni_unittests.html.
-#    3. ctest -L web in it: the browser tests, web_site_smoke and the
-#       web_*_native comparisons included. Their native runs take the render
+#    3. ctest -L web -LE package in it: the browser tests, web_site_smoke and
+#       the web_*_native comparisons included, but not vcpkg_port_web (label
+#       package too), which builds gweni twice through vcpkg and is a port test,
+#       not the site's (no workflow runs the port tests). Their native runs take the render
 #       lock through mm when mm is on PATH, and run unlocked (with one line
 #       saying so) where it is not, as on a GitHub runner.
 #    4. tools/build_site.sh --out DIR: the site, and its size against the
@@ -89,7 +91,7 @@ step "2/5 release web tree"
 cmake --build build_web_wasm32_release
 
 step "3/5 the web tests"
-ctest --test-dir build_web_wasm32_release -L web --output-on-failure
+ctest --test-dir build_web_wasm32_release -L web -LE package --output-on-failure
 
 step "4/5 stage the site in $out"
 "$repo/tools/build_site.sh" --out "$out"

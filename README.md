@@ -212,13 +212,15 @@ offscreen by `tools/capture_samples.sh` (see `AGENTS.md`).
 
 ## Using gweni in your project
 
-gweni is a vcpkg port, in a registry of its own (the `vcpkg-registry` branch of this repository),
-for x64 Linux and WebAssembly. Name the registry in your `vcpkg-configuration.json` and gweni in
-your `vcpkg.json`:
+gweni is a vcpkg port for x64 Linux and WebAssembly, published in a registry of its own (the
+`vcpkg-registry` branch of this repository, from its first release on). Name the registry in your
+`vcpkg-configuration.json`, with a baseline for vcpkg's own default registry too (`<vcpkg sha>`, a
+microsoft/vcpkg commit), and gweni in your `vcpkg.json`:
 
 ```json
-{"registries": [{"kind": "git", "repository": "https://github.com/caseymcc/gweni",
-  "reference": "vcpkg-registry", "baseline": "<sha>", "packages": ["gweni"]}]}
+{"default-registry": {"kind": "builtin", "baseline": "<vcpkg sha>"},
+ "registries": [{"kind": "git", "repository": "https://github.com/caseymcc/gweni",
+   "reference": "vcpkg-registry", "baseline": "<sha>", "packages": ["gweni"]}]}
 ```
 
 ```json

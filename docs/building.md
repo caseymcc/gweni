@@ -303,13 +303,16 @@ Limits and caveats:
   under freetype-gl's own C names and included by gweni's headers as
   `<freetype-gl/...>` from `include/gweni/third_party/`, so an app cannot link
   gweni and vcpkg's `freetype-gl` port together: it gets duplicate symbols.
-  Installing both into one prefix (one `vcpkg_installed/<triplet>/`) works: no
-  file of one is the other's, and an installed gweni lists
-  `include/gweni/third_party/` before `include/`, so its headers find its own
-  copy rather than the port's `include/freetype-gl/` (and gweni's own build
-  puts its copy ahead of `vcpkg_installed`'s too). An app whose own include
-  directory holding the port's headers comes before gweni's can still shadow
-  them, and then gweni's headers compile against the unpatched port;
+  Both can be installed into one prefix (one `vcpkg_installed/<triplet>/`): no
+  file of one is the other's. But then the app's include order decides which
+  `<freetype-gl/...>` gweni's headers get. An installed gweni lists
+  `include/gweni/third_party/` before `include/`, so with `gweni::gweni` first
+  in the app's `target_link_libraries` its own copy wins; any target before
+  it that brings the prefix's `include/` (`glm::glm`, any vcpkg port), or an
+  include directory of the app's own holding the port's headers, puts
+  `include/freetype-gl/` first, and gweni's headers then compile, silently,
+  against the unpatched port (#868). gweni's own build puts its copy first
+  whatever it links;
 - the lazy CJK face is not in the package: CJK text draws as the missing glyph,
   after one stderr line, unless the app ships `resources-lazy/` beside its
   executable (above);
@@ -330,21 +333,33 @@ and `usage`). It is published in a vcpkg registry of its own, the orphan branch
 
 ```json
 // vcpkg-configuration.json
-{"registries": [{"kind": "git", "repository": "https://github.com/caseymcc/gweni",
-  "reference": "vcpkg-registry", "baseline": "<sha>", "packages": ["gweni"]}]}
+{"default-registry": {"kind": "builtin", "baseline": "<vcpkg sha>"},
+ "registries": [{"kind": "git", "repository": "https://github.com/caseymcc/gweni",
+   "reference": "vcpkg-registry", "baseline": "<sha>", "packages": ["gweni"]}]}
 // vcpkg.json
 "dependencies": ["gweni"]          // or {"name": "gweni", "features": ["vulkan"]} (native only)
 ```
 
 `<sha>` is a commit of `vcpkg-registry`, the baseline a release prints (below).
+vcpkg refuses a configuration with registries unless the default registry has
+a baseline too, so `<vcpkg sha>` is a microsoft/vcpkg commit (the
+`git rev-parse HEAD` of the app's `VCPKG_ROOT`; the dependencies' versions
+come from it); a `"builtin-baseline"` in the app's `vcpkg.json` does the same
+in place of the `default-registry` entry, and so does a `default-registry` of
+`"kind": "git"` with that baseline for a `VCPKG_ROOT` that is no git clone.
+Until the first version is published the branch does not exist, and the
+registry cannot be used yet.
+
 Without the registry, the port works as an overlay (`--overlay-ports=<dir>`
 on `vcpkg install`, `VCPKG_OVERLAY_PORTS`, or the CMake toolchain's
 `VCPKG_OVERLAY_PORTS`): `<dir>` the `ports/` of a checkout of
-`vcpkg-registry` for a release (its portfile has the release's `SHA512`), or
-`<gweni>/ports` of a gweni checkout with `vcpkg install --head`, which builds
-GitHub's `main` (the copy on `main` keeps a placeholder `SHA512`, which only
-`--head` skips). Either way the source is downloaded from GitHub, never the
-checkout's own files.
+`vcpkg-registry` for a release (its portfile has the release's `SHA512`), in
+manifest or classic mode. `<gweni>/ports` of a gweni checkout works only in
+classic mode, `vcpkg install gweni --head --overlay-ports=<gweni>/ports`,
+which builds GitHub's `main`: the copy on `main` keeps a placeholder
+`SHA512`, which only `--head` skips, and `--head` is a classic-mode option (a
+manifest or the CMake toolchain cannot pass it). Either way the source is
+downloaded from GitHub, never the checkout's own files.
 
 The app's CMake is that of any installed gweni ("gweni as an installed
 package"):
@@ -402,8 +417,10 @@ Limits:
   other targets may build with `--allow-unsupported`, untested);
 - static only (`vcpkg_check_linkage(ONLY_STATIC_LIBRARY)`);
 - the vendored freetype-gl is in `libgweni.a` under its own C names, so an app
-  cannot link vcpkg's `freetype-gl` port beside gweni ("gweni as an installed
-  package"); installing both is fine;
+  cannot link vcpkg's `freetype-gl` port beside gweni; both can be installed
+  in one `vcpkg_installed`, but then gweni's headers find its own copy only
+  with `gweni::gweni` first in the app's `target_link_libraries` ("gweni as
+  an installed package", #868);
 - the lazy CJK face is not in the port: CJK text draws as the missing glyph,
   after one stderr line, unless the app ships `resources-lazy/` beside its
   executable ("gweni in a Vulkan app").
@@ -416,17 +433,23 @@ commit to tag). Agents never push or tag; the owner:
 
 1. tags `main` and pushes the tag: `git tag v0.1.0 && git push origin v0.1.0`
    (GitHub's archive of the tag is what the port downloads);
-2. runs `tools/vcpkg_publish.sh v0.1.0` in the build container: it refuses
+2. runs `tools/vcpkg_publish.sh v0.1.0` in the build container (from the
+   host, `./run_docker.sh tools/vcpkg_publish.sh v0.1.0`: it needs vcpkg): it refuses
    unless the three versions agree, downloads GitHub's archive of the tag for
    its SHA512 (`--archive FILE` takes a local one), and in a scratch repository
    under `/tmp` writes the tag's `ports/gweni/` (its `REF` the tag, its `SHA512`
    the archive's) onto `vcpkg-registry` (the repository's branch, else
    `origin/vcpkg-registry` — `git fetch origin` first — else a new orphan
    branch), commits, runs `vcpkg x-add-version` and commits `versions/`;
-3. runs the two commands it prints (a `git fetch` of the branch into the
-   repository and `git push origin vcpkg-registry`);
-4. gives consumers the `baseline:` it printed, for their
-   `vcpkg-configuration.json`.
+3. runs the two commands it prints: the `git -C <repo> fetch` of the branch
+   into the repository in the container, where the scratch repository is
+   (from the host, prefixed with `./run_docker.sh`; its container persists,
+   and with it `/tmp`), and then `git push origin vcpkg-registry` on the host,
+   in the checkout (the same files, mounted), since only the host has the
+   GitHub credentials;
+4. gives consumers the `baseline:` it printed, in the
+   `vcpkg-configuration.json` it prints (whose `default-registry` baseline is
+   the vcpkg commit it ran with; any other works).
 
 `vcpkg_port` (the native release tree) and `vcpkg_port_web` (the release web
 tree) install the port through an overlay whose source is the checkout and
@@ -786,8 +809,8 @@ It stops at the first step that fails:
    dependency build. A tree of that name configured with Vulkan on is
    reconfigured without it;
 2. the whole release web tree, `build_web_wasm32_release/`;
-3. `ctest -L web` in it, `web_site_smoke` and the comparisons with native
-   included. On a runner, without `mm`, their native runs take no lock and say
+3. `ctest -L web -LE package` in it, `web_site_smoke` and the comparisons with
+   native included (`vcpkg_port_web`, a port test, left out). On a runner, without `mm`, their native runs take no lock and say
    so;
 4. `tools/build_site.sh`, the site and its size against the budget;
 5. `tools/check_site_links.py README.md site/`, which fails unless:

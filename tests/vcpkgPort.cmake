@@ -29,8 +29,11 @@
 #  3. installs, in manifest mode through that overlay, a manifest of gweni with
 #     FEATURES and EXTRA_PORTS beside it (natively vcpkg's own freetype-gl, so a
 #     file both ports install fails the install), for TRIPLET, with its own
-#     install, buildtrees and packages roots under the scratch dir (nothing a
-#     concurrent configure uses is touched). The binary cache is read only
+#     install, buildtrees and packages roots under the scratch dir, cleaned
+#     after the build (--clean-buildtrees-after-build and
+#     --clean-packages-after-build, never --clean-after-build, which also
+#     empties the shared downloads cache, $VCPKG_DOWNLOADS, that the trees'
+#     configures and CI read). The binary cache is read only
 #     (--binarysource=clear;default,read): the dependencies come from what the
 #     trees' configures stored, and no per-tree gweni is stored. It fails if
 #     vcpkg fails or prints a warning (a post-build check), naming the log.
@@ -140,7 +143,8 @@ execute_process(
             "--x-buildtrees-root=${SCRATCH_DIR}/buildtrees"
             "--x-packages-root=${SCRATCH_DIR}/packages"
             "--binarysource=clear;default,read"
-            --clean-after-build
+            --clean-buildtrees-after-build
+            --clean-packages-after-build
     WORKING_DIRECTORY "${SCRATCH_DIR}"
     OUTPUT_VARIABLE vcpkg_output ERROR_VARIABLE vcpkg_output
     RESULT_VARIABLE status)

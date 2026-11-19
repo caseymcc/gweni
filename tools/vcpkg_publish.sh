@@ -29,8 +29,11 @@
 #     commit, then vcpkg x-add-version writes versions/baseline.json and
 #     versions/g-/gweni.json (the port's git-tree) and a second commit takes
 #     them: vcpkg's two steps.
-#  4. Prints the registry directory, the fetch and push commands the owner
-#     runs, and the baseline: the second commit's sha.
+#  4. Prints the registry directory, the fetch (in the container, where the
+#     scratch repository is) and push (on the host, with its credentials)
+#     commands the owner runs, the baseline (the second commit's sha) and the
+#     vcpkg-configuration.json consumers write, with a default registry at the
+#     vcpkg commit this ran with (vcpkg wants a baseline for it too).
 #
 #  Needs git, vcpkg (VCPKG_ROOT's or on PATH), sha512sum and, without
 #  --archive, curl. Runs in the build container, no lock.
@@ -156,14 +159,22 @@ baseline="$(git_reg rev-parse HEAD)"
 
 # 4. what the owner runs
 origin_url="$(git -C "$repo" remote get-url origin 2>/dev/null || echo "https://github.com/$github_repo.git")"
+vcpkg_baseline="$(git -C "$(dirname "$vcpkg")" rev-parse HEAD 2>/dev/null || echo "<a microsoft/vcpkg commit>")"
 cat <<EOF
 vcpkg_publish: gweni $version written to $branch in $work (nothing pushed)
 registry: $work
 baseline: $baseline
-To publish it, from the repository:
+To publish it:
+  1. here, where $work is (the build container: from a host,
+     prefix it with ./run_docker.sh, whose container keeps its /tmp), take the
+     branch into the repository:
     git -C "$repo" fetch "$work" $branch:$branch
-    git -C "$repo" push origin $branch
-($origin_url). Consumers then name, in vcpkg-configuration.json:
-    {"kind": "git", "repository": "https://github.com/$github_repo",
-     "reference": "$branch", "baseline": "$baseline", "packages": ["gweni"]}
+  2. on the host, in that checkout, with its GitHub credentials (the container
+     has none), push it ($origin_url):
+    git push origin $branch
+Consumers then write, in vcpkg-configuration.json (the default registry needs
+a baseline too: any microsoft/vcpkg commit, here the one this ran with):
+    {"default-registry": {"kind": "builtin", "baseline": "$vcpkg_baseline"},
+     "registries": [{"kind": "git", "repository": "https://github.com/$github_repo",
+       "reference": "$branch", "baseline": "$baseline", "packages": ["gweni"]}]}
 EOF

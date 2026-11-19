@@ -11,7 +11,8 @@
 #      tests/vcpkgPublish.sh <repo> <scratch dir> <vcpkg root>
 #
 #  It works on a scratch git repository holding this checkout's CMakeLists.txt
-#  and ports/gweni/ as they are on disk (uncommitted changes included), with
+#  and ports/gweni/ as they are on disk (uncommitted changes included, their
+#  versions set to 0.1.0, so a release's bump changes nothing here), with
 #  local tags, and an archive of each tag made by git archive (--archive), so
 #  nothing is downloaded or pushed. It fails, saying which, unless
 #  1. the script refuses, writing no registry, a tag that is not
@@ -24,9 +25,10 @@
 #     SHA512 the archive's, versions/g-/gweni.json 0.1.0 at the git-tree of
 #     ports/gweni, versions/baseline.json 0.1.0, the printed baseline its
 #     head;
-#  3. vcpkg install --dry-run of a manifest depending on gweni, with that
-#     registry (a file path as repository) at the printed baseline, plans
-#     gweni 0.1.0 from it at that git-tree, building nothing;
+#  3. vcpkg install --dry-run of a manifest of "dependencies": ["gweni"] alone,
+#     with the vcpkg-configuration.json the script printed (its repository
+#     the registry's file path), plans gweni 0.1.0 from it at that git-tree,
+#     building nothing;
 #  4. the printed fetch command takes the branch into the repository, and a
 #     second version (v0.4.0, both bumped) goes on top of it: two versions in
 #     gweni.json, the newest first, baseline.json 0.4.0, the first baseline
@@ -63,11 +65,15 @@ git init --quiet "$repo"
 git_repo() { git -C "$repo" -c user.name=vcpkg_publish -c user.email=vcpkg_publish@localhost "$@"; }
 cp "$source_dir/CMakeLists.txt" "$repo/"
 cp -r "$source_dir/ports/gweni" "$repo/ports/"
+# the tags below are worked out from 0.1.0, whatever version the checkout is at
+sed -i "s/^project(gweni VERSION [0-9.]*/project(gweni VERSION 0.1.0/" "$repo/CMakeLists.txt"
+sed -i "s/\"version-semver\": \"[^\"]*\"/\"version-semver\": \"0.1.0\"/" "$repo/ports/gweni/vcpkg.json"
 git_repo add -A
 git_repo commit --quiet -m "gweni" || die "could not commit the scratch repository"
 base="$(git_repo rev-parse HEAD)"
 project_version="$(sed -n 's/^project(gweni VERSION \([0-9.]*\).*/\1/p' "$repo/CMakeLists.txt")"
-[ "$project_version" = "0.1.0" ] || die "project(gweni VERSION ...) is '$project_version', this test is written for 0.1.0"
+[ "$project_version" = "0.1.0" ] || die "could not set project(gweni VERSION ...) to 0.1.0 (it is '$project_version')"
+grep -q '"version-semver": "0.1.0"' "$repo/ports/gweni/vcpkg.json" || die "could not set the port's version-semver to 0.1.0"
 
 # a commit on top of the base with the project's and the port's versions set
 # ("" keeps one), tagged
@@ -140,15 +146,14 @@ baseline_json="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))
 # 3. vcpkg resolves gweni 0.1.0 from it, building nothing
 manifest="$scratch/manifest"
 mkdir -p "$manifest" "$scratch/registries-cache"
-builtin_baseline="$(git -C "$VCPKG_ROOT" rev-parse HEAD)"
 cat > "$manifest/vcpkg.json" <<EOF
-{"name": "registry-consumer", "version": "0", "builtin-baseline": "$builtin_baseline",
- "dependencies": [{"name": "gweni", "version>=": "0.1.0"}]}
+{"name": "registry-consumer", "version": "0", "dependencies": ["gweni"]}
 EOF
-cat > "$manifest/vcpkg-configuration.json" <<EOF
-{"registries": [{"kind": "git", "repository": "$registry", "reference": "vcpkg-registry",
-  "baseline": "$baseline", "packages": ["gweni"]}]}
-EOF
+# the vcpkg-configuration.json the script printed, the registry a file path
+configuration="$(sed -n '/^Consumers then write/,$p' <<<"$output" | sed -n '/^    /p' \
+    | sed "s|https://github.com/caseymcc/gweni|$registry|")"
+[ -n "$configuration" ] || die "v0.1.0 printed no vcpkg-configuration.json"
+printf '%s\n' "$configuration" > "$manifest/vcpkg-configuration.json"
 plan="$(cd "$scratch" && X_VCPKG_REGISTRIES_CACHE="$scratch/registries-cache" "$VCPKG_ROOT/vcpkg" install --dry-run \
     "--x-manifest-root=$manifest" "--x-install-root=$scratch/installed" \
     "--x-buildtrees-root=$scratch/buildtrees" "--x-packages-root=$scratch/packages" \

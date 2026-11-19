@@ -857,6 +857,11 @@ foreach(header IN LISTS GWENI_UNBUILT_BACKEND_HEADERS)
     string(REPLACE "." "\\." header_regex "${header}")
     list(APPEND gweni_install_header_excludes REGEX "/${header_regex}$" EXCLUDE)
 endforeach()
+if(NOT GWENI_RENDER_OPENGL_CORE AND NOT GWENI_RENDER_VULKAN)
+    # every header in it is a backend's: leave out the directory itself, which
+    # would be installed empty (a vcpkg post-build warning)
+    list(APPEND gweni_install_header_excludes REGEX "/gweni/platforms/renderers$" EXCLUDE)
+endif()
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/gweni
         DESTINATION include
         ${gweni_install_header_excludes}
