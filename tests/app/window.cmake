@@ -9,6 +9,9 @@
 #  unless the exe exited 0 and printed "app_window: passed"; without xvfb-run
 #  or Xvfb it fails, saying so, never skips.
 #
+#  -noreset: the test opens a second window after the first is gone, and an
+#  Xvfb whose last client left resets, refusing a connection made meanwhile.
+#
 #  -DEXE=<gweni_app_window_test> -DRESOURCES=<resources dir>
 #  [-DSERVERNUM=<n>]: the display xvfb-run -a searches up from, one of its
 #  own for each variant, so a parallel ctest's other X servers (from 99) do
@@ -31,7 +34,7 @@ if(NOT SERVERNUM)
 endif()
 
 execute_process(
-    COMMAND ${XVFB_RUN} -a -n ${SERVERNUM} -s "-screen 0 1280x1024x24 -nolisten tcp" ${EXE} ${RESOURCES}
+    COMMAND ${XVFB_RUN} -a -n ${SERVERNUM} -s "-screen 0 1280x1024x24 -nolisten tcp -noreset" ${EXE} ${RESOURCES}
     RESULT_VARIABLE result
     OUTPUT_VARIABLE output
     ERROR_VARIABLE errors
