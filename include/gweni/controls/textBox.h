@@ -282,6 +282,7 @@ public:
     //! (platform::setTextInputRect); made so while composing, it commits
     //! what was composed first.
     virtual void setEditable(bool b);
+    bool isEditable() const { return m_editable; }
 
     //! Makes this box ask for its string's width instead of its request,
     //! however it is flagged (see sizedByRequest): for a box whose parent

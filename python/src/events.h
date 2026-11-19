@@ -125,6 +125,11 @@ struct Event
 
 Event toEvent(const event::Info &info);
 
+//! Calls \p callable(Event) for \p info as a callback, the Event made once
+//! the GIL is taken (a GLFW callback in run()'s wait comes without it); its
+//! control is the one with id \p controlId, when not 0.
+void callEvent(const Callable &callable, const event::Info &info, size_t controlId);
+
 //! Binds \p name (on_press, ...) on \p cls: a method taking a callable of one
 //! Event, adding it to the control's \p caller, and returning it, so it is a
 //! decorator too.
@@ -136,7 +141,24 @@ void bindEvent(Class &cls, const char *name, event::Caller T::*caller, const cha
             CallablePtr callable=std::make_shared<Callable>(function);
 
             (control->*caller).addCallback(control, [callable](event::Handler &, event::Info info) {
-                    callBack(*callable, toEvent(info));
+                    callEvent(*callable, info, 0);
+                });
+            return function;
+        }, nanobind::arg("callback"), doc);
+}
+
+//! As bindEvent, for a caller of a part of the control (a CheckBoxWithLabel's
+//! CheckBox): \p caller finds it; the Event's control is the bound control.
+template<typename Class, typename T, typename Find>
+void bindPartEvent(Class &cls, const char *name, Find caller, const char *doc)
+{
+    cls.def(name, [caller](const Control &self, nanobind::object function) {
+            T *control=resolve<T>(self);
+            CallablePtr callable=std::make_shared<Callable>(function);
+            const size_t id=self.id;
+
+            caller(control).addCallback(control, [callable, id](event::Handler &, event::Info info) {
+                    callEvent(*callable, info, id);
                 });
             return function;
         }, nanobind::arg("callback"), doc);

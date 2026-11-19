@@ -8,6 +8,7 @@
 
 #include "control.h"
 #include "events.h"
+#include "handles.h"
 
 #include <gweni/controls/button.h>
 #include <gweni/controls/canvas.h>
@@ -24,10 +25,6 @@ namespace gweni
 namespace python
 {
 
-struct Canvas: Control {};
-struct Panel: Control {};
-struct Label: Control {};
-struct Button: Label {};
 
 void bindControls(nb::module_ &m)
 {

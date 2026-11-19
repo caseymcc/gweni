@@ -12,6 +12,7 @@
 #include <gweni/uiTypes.h>
 
 #include <nanobind/stl/string.h>
+#include <nanobind/stl/optional.h>
 #include <nanobind/stl/tuple.h>
 #include <nanobind/stl/vector.h>
 
@@ -250,6 +251,71 @@ void bindControl(nb::module_ &m)
             [](const Control &self) { return resolveBase(self)->getToolTipText(); },
             [](const Control &self, const std::string &text) { resolveBase(self)->setToolTipText(text); },
             "The text the canvas's tooltip shows after the hover delay (\"\" for none).")
+        .def_prop_rw("position",
+            [](const Control &self) {
+                const Point pos=resolveBase(self)->getPos();
+                return std::make_tuple(pos.x, pos.y);
+            },
+            [](const Control &self, std::tuple<int, int> pos) {
+                inCall([&]() { resolveBase(self)->setPos(std::get<0>(pos), std::get<1>(pos)); });
+            },
+            "(x, y) in its parent, in logical units; a dock or a layout may place it again.")
+        .def_prop_rw("margin",
+            [](const Control &self) {
+                const Margin &m=resolveBase(self)->getMargin();
+                return std::make_tuple(m.left, m.top, m.right, m.bottom);
+            },
+            [](const Control &self, std::tuple<int, int, int, int> m) {
+                resolveBase(self)->setMargin(Margin(std::get<0>(m), std::get<1>(m), std::get<2>(m), std::get<3>(m)));
+            },
+            "(left, top, right, bottom) space kept around it in its parent.")
+        .def_prop_rw("padding",
+            [](const Control &self) {
+                const Padding &p=resolveBase(self)->getPadding();
+                return std::make_tuple(p.left, p.top, p.right, p.bottom);
+            },
+            [](const Control &self, std::tuple<int, int, int, int> p) {
+                resolveBase(self)->setPadding(Padding(std::get<0>(p), std::get<1>(p), std::get<2>(p), std::get<3>(p)));
+            },
+            "(left, top, right, bottom) space kept inside it around its children.")
+        .def_prop_rw("hidden",
+            [](const Control &self) { return resolveBase(self)->hidden(); },
+            [](const Control &self, bool hidden) { inCall([&]() { resolveBase(self)->setHidden(hidden); }); },
+            "Its own hidden flag (an ancestor's does not change it: see visible).")
+        .def_prop_ro("visible", [](const Control &self) { return resolveBase(self)->visible(); },
+            "Whether it is drawn: neither it nor an ancestor is hidden.")
+        .def("show", [](const Control &self) { inCall([&]() { resolveBase(self)->show(); }); }, "hidden = False.")
+        .def("hide", [](const Control &self) { inCall([&]() { resolveBase(self)->hide(); }); }, "hidden = True.")
+        .def_prop_rw("opacity",
+            [](const Control &self) -> std::optional<float> {
+                controls::Base *control=resolveBase(self);
+
+                if(!control->hasOwnOpacity())
+                    return std::nullopt;
+                return control->ownSurfaceOpacity();
+            },
+            [](const Control &self, std::optional<float> level) {
+                controls::Base *control=resolveBase(self);
+
+                if(level)
+                    control->setOpacity(*level);
+                else
+                    control->clearOpacity();
+            },
+            "Its own opacity, 0..1, for it and everything in it (None: the parent's).")
+        .def("set_opacity", [](const Control &self, float surface, float text) {
+                resolveBase(self)->setOpacity(surface, text);
+            }, nb::arg("surface"), nb::arg("text"), "Its fills and its text at levels of their own.")
+        .def("focus", [](const Control &self) { inCall([&]() { resolveBase(self)->focus(); }); },
+            "Gives it the keyboard focus.")
+        .def("unfocus", [](const Control &self) { inCall([&]() { resolveBase(self)->unfocus(); }); },
+            "Takes the keyboard focus from it, if it has it.")
+        .def_prop_ro("focused", [](const Control &self) { return resolveBase(self)->isFocussed(); },
+            "Whether it has the keyboard focus.")
+        .def_prop_ro("canvas_bounds", [](const Control &self) {
+                const Rect bounds=resolveBase(self)->getCanvasBounds();
+                return std::make_tuple(bounds.x, bounds.y, bounds.w, bounds.h);
+            }, "(x, y, width, height) on the canvas, as drawn: where to click it.")
         .def_prop_ro("bounds", [](const Control &self) {
                 const Rect &bounds=resolveBase(self)->getBounds();
                 return std::make_tuple(bounds.x, bounds.y, bounds.w, bounds.h);

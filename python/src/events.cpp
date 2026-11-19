@@ -166,6 +166,20 @@ Event toEvent(const event::Info &info)
     return event;
 }
 
+void callEvent(const Callable &callable, const event::Info &info, size_t controlId)
+{
+    nb::gil_scoped_acquire gil;
+
+    if(finalizing())
+        return;
+
+    Event event=toEvent(info);
+
+    if(controlId != 0)
+        event.control=wrap(controls::Base::getControlById(controlId));
+    callBack(callable, event);
+}
+
 void bindEvents(nb::module_ &m)
 {
     nb::class_<Event>(m, "Event", "What an event callback gets (event::Info).")

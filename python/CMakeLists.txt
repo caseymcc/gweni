@@ -77,6 +77,8 @@ nanobind_add_module(_gweni STABLE_ABI NB_STATIC
     src/controls.cpp
     src/events.h
     src/events.cpp
+    src/handles.h
+    src/simple.cpp
 )
 target_link_libraries(_gweni PRIVATE gweni_app)
 gweni_set_warnings(_gweni)
