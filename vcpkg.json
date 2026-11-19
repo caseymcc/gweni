@@ -3,7 +3,8 @@
     "name": "gweni",
     "version": "0.1.0",
     "description": "GUI Without Extravagant Nonsense - an OpenGL-aware retained-mode GUI library",
-    "homepage": "https://github.com/garrynewman/GWEN",
+    "homepage": "https://github.com/caseymcc/gweni",
+    "license": "MIT",
     "dependencies": [
         "rapidjson",
         "glm",

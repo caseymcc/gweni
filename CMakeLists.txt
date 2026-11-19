@@ -751,14 +751,28 @@ add_library(gweni::gweni ALIAS gweni)
 
 gweni_set_warnings(gweni)
 
+if(TARGET freetype-gl)
+    # The vendored freetype-gl's headers ahead of every dependency's, gweni's
+    # own and its in-tree users': they are -isystem (deps/), as vcpkg_installed's
+    # include/ is, which comes first through RapidJSON's and glm's targets, and
+    # with vcpkg's freetype-gl port installed beside gweni (an app's manifest,
+    # vcpkg_port) holds an unpatched <freetype-gl/...>
+    target_include_directories(gweni SYSTEM BEFORE PUBLIC
+        $<BUILD_INTERFACE:${GWENI_SOURCE_DIR}/deps/freetype-gl/include>)
+endif()
+
 # include/ and the generated <gweni/version.h> in the tree; installed, both are
 # include/, and the vendored freetype-gl's and imglib's headers are
-# include/gweni/third_party/ (in the tree those come with the OBJECT targets)
+# include/gweni/third_party/ (in the tree those come with the OBJECT targets).
+# third_party first: installed by vcpkg, include/ is vcpkg_installed's, where
+# vcpkg's own freetype-gl port puts an unpatched <freetype-gl/...>, so the
+# other order would compile slotRenderer.h against it (an app's own include
+# directory ahead of gweni's can still put it first)
 target_include_directories(gweni PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}/include>
     $<BUILD_INTERFACE:${GWENI_GENERATED_INCLUDE_DIR}>
-    $<INSTALL_INTERFACE:include>
-    $<INSTALL_INTERFACE:include/gweni/third_party>)
+    $<INSTALL_INTERFACE:include/gweni/third_party>
+    $<INSTALL_INTERFACE:include>)
 target_link_libraries(gweni
     PUBLIC ${GWENI_ADDITIONAL_LIBRARIES}
     PRIVATE ${GWENI_PRIVATE_LIBRARIES})

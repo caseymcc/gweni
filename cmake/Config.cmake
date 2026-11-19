@@ -77,10 +77,12 @@ if(GWENI_RENDER_OPENGL_CORE)
     # The renderers find and link their own libraries (CMakeLists.txt): GL and
     # GLEW (or GLES and EGL) with OpenGLCore alone, nothing GL for the slot core.
     # GLFW is found here, at the top level, for the examples, the bench and the
-    # tests, which link it.
+    # tests, which link it; the library does not (input/glfw3.h and glfwLoop.h
+    # are header-only), so a build of the library alone (a vcpkg port's) needs
+    # no glfw3.
     # on the web GLFW is Emscripten's contrib.glfw3 port, which the examples
     # link through --use-port (examples/openglcore/CMakeLists.txt)
-    if(GWENI_USE_GLFW AND NOT EMSCRIPTEN)
+    if(GWENI_USE_GLFW AND NOT EMSCRIPTEN AND (GWENI_BUILD_EXAMPLES OR GWENI_BUILD_TESTS))
         find_package(glfw3 CONFIG REQUIRED)
     endif()
 elseif(GWENI_RENDER_VULKAN)
