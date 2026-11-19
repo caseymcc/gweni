@@ -213,7 +213,8 @@ target_include_directories(gweni_demo PUBLIC
 )
 target_link_libraries(gweni_demo gweni)
 
-if(GWENI_RENDER_OPENGL_CORE)
+# the GL examples are built on the app shell, gweni_app (cmake/App.cmake)
+if(TARGET gweni_app)
     add_subdirectory(openglcore)
     # gweni over an app's own GL scene; not a page in the web tree
     if(NOT EMSCRIPTEN)

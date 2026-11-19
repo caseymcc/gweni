@@ -4,18 +4,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(example_name "OpenGLCore")
 
-if(EMSCRIPTEN)
-    # The web tree: GLFW is Emscripten's contrib.glfw3 port (emscripten-glfw),
-    # compiled and linked with --use-port (vcpkg's glfw3 is not built for wasm32,
-    # vcpkg.json), behind an INTERFACE target named as vcpkg's, so the targets
-    # below link "glfw" as natively.
-    add_library(glfw INTERFACE)
-    target_compile_options(glfw INTERFACE --use-port=contrib.glfw3)
-    target_link_options(glfw INTERFACE --use-port=contrib.glfw3)
-else()
-    find_package(glfw3 CONFIG REQUIRED)
-endif()
-
 set(${example_name}_sources
     openglcore.cpp)
 
@@ -25,24 +13,15 @@ else()
     set(${example_name}_build_type )
 endif()
 
-# Offscreen capture plumbing (GL context with or without a display, offscreen
-# target, PNG readback), shared by both examples and the unit tests (tests/) so
-# capture.cpp is compiled once. EGL stays here, out of the gweni library, and so
-# does the Vulkan window's swapchain (vulkanWindow.cpp, empty without
-# GWENI_RENDER_VULKAN).
-add_library(gweni_capture STATIC capture.cpp vulkanWindow.cpp)
+# What the examples' command lines and their tests add to the app shell
+# (capture.h: --scale, --loop, --renderer, the degraded exit status, the fixed
+# profile clock, --depth-view), over gweni_app (cmake/App.cmake), which holds
+# the device layer, GLFW and EGL. Shared by the examples, the bench and the GL
+# unit tests (tests/), so capture.cpp is compiled once.
+add_library(gweni_capture STATIC capture.cpp)
 gweni_set_warnings(gweni_capture)
 target_include_directories(gweni_capture PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(gweni_capture PUBLIC
-    gweni
-    glfw
-)
-
-if(UNIX AND NOT APPLE AND NOT EMSCRIPTEN)
-    # Surfaceless EGL is the offscreen path used when there is no display at all.
-    find_package(OpenGL REQUIRED COMPONENTS EGL)
-    target_link_libraries(gweni_capture PUBLIC OpenGL::EGL)
-endif()
+target_link_libraries(gweni_capture PUBLIC gweni_app)
 
 add_executable(${example_name} ${${example_name}_build_type} ${${example_name}_sources})
 

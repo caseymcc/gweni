@@ -212,7 +212,7 @@ TEST_CASE("Text atlases: two fonts in one frame each draw as they do alone")
         both=drawFrame({ smallId, largeId }, { smallDraw(), largeDraw() });
 
         if(const char *path=std::getenv("GWENI_TEXT_ATLASES_PNG"))
-            gweni::capture::writeRgbaPng(both, gweni::test::viewSize().x, gweni::test::viewSize().y, path);
+            gweni::app::writeRgbaPng(both, gweni::test::viewSize().x, gweni::test::viewSize().y, path);
     }
 
     SUBCASE("large run first")

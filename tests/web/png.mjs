@@ -5,14 +5,14 @@
 //
 //  The PNGs the captures write, in and out of node, with nothing but node's own
 //  zlib: decodePng reads the 8-bit RGB/RGBA, non-interlaced PNGs that
-//  capture::writeRgbaPng writes, encodePng writes an 8-bit RGBA one (pngdiff.mjs'
+//  app::writeRgbaPng writes, encodePng writes an 8-bit RGBA one (pngdiff.mjs'
 //  diff images). shot.mjs, site.mjs and pngdiff.mjs share them.
 //
 
 import { deflateSync, inflateSync } from 'node:zlib';
 
 // width, height, bytes per pixel and the unfiltered rows of an 8-bit RGB or
-// RGBA PNG (what capture::writeRgbaPng writes); throws on anything else
+// RGBA PNG (what app::writeRgbaPng writes); throws on anything else
 export function decodePng(bytes)
 {
     if(bytes.length < 8 || bytes.readUInt32BE(0) !== 0x89504e47)

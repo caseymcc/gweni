@@ -6,7 +6,7 @@
  *  doctest main for gweni_unittests: sets up one device and one renderer with
  *  OpenSans loaded, runs every test case against them, then tears them down.
  *  GWENI_RENDERER picks the backend: gl (the default) is a GL context on the
- *  examples' surfaceless EGL path (gweni_capture) and an OpenGLCore drawing into
+ *  app shell's surfaceless EGL path (gweni_app) and an OpenGLCore drawing into
  *  an offscreen framebuffer; vulkan is a Vulkan device with the validation layer
  *  (any warning or error aborts) and a renderer::Vulkan drawing into a
  *  VulkanTarget, with no GL or EGL context at all. The tests see either as the
@@ -46,7 +46,7 @@ static renderer::SlotRenderer *g_renderer=nullptr;
 static Font g_openSans;
 static const Point g_viewSize(448, 160);
 // set in a GL run: the offscreen framebuffer every renderer draws into
-static capture::Framebuffer *g_framebuffer=nullptr;
+static app::Framebuffer *g_framebuffer=nullptr;
 #ifdef GWENI_HAS_VULKAN
 // set in a Vulkan run: the device and the target every renderer draws into
 static renderer::VulkanDevice *g_vulkanDevice=nullptr;
@@ -375,28 +375,28 @@ int runCases(doctest::Context &context, renderer::SlotRenderer *renderer)
 
 int runGl(doctest::Context &context)
 {
-    capture::Context ctx;
+    app::Context ctx;
 
-#if GWENI_EXAMPLE_EGL
-    if(!capture::initEglContext(ctx))
+#if GWENI_APP_EGL
+    if(!app::initEglContext(ctx))
         return EXIT_FAILURE;
 #else
     std::cerr<<"gweni_unittests: needs the surfaceless EGL path (Linux)\n";
     return EXIT_FAILURE;
 #endif
 
-    if(!capture::initGL(ctx))
+    if(!app::initGL(ctx))
     {
-        capture::destroyContext(ctx);
+        app::destroyContext(ctx);
         return EXIT_FAILURE;
     }
 
     const Point viewSize=test::viewSize();
-    capture::Framebuffer fb;
+    app::Framebuffer fb;
 
-    if(!capture::createFramebuffer(fb, viewSize.x, viewSize.y))
+    if(!app::createFramebuffer(fb, viewSize.x, viewSize.y))
     {
-        capture::destroyContext(ctx);
+        app::destroyContext(ctx);
         return EXIT_FAILURE;
     }
 
@@ -411,8 +411,8 @@ int runGl(doctest::Context &context)
     test::g_framebuffer=nullptr;
 
     delete renderer;
-    capture::destroyFramebuffer(fb);
-    capture::destroyContext(ctx);
+    app::destroyFramebuffer(fb);
+    app::destroyContext(ctx);
     return result;
 }
 
@@ -476,7 +476,7 @@ int main(int argc, char **argv)
     if(context.shouldExit())
         return context.run();
 
-    capture::setToolName("gweni_unittests");
+    app::setToolName("gweni_unittests");
 
     const char *backend=getenv("GWENI_RENDERER");
     const std::string name=backend?backend:"gl";

@@ -1330,6 +1330,15 @@ elseif(TARGET glfw)
     target_include_directories(gweni_header_check PRIVATE
         $<TARGET_PROPERTY:glfw,INTERFACE_INCLUDE_DIRECTORIES>)
 endif()
+# gweni/app/ (gweni_app, where it is built) needs GLFW's and EGL's headers too:
+# its usage requirements, taken through generator expressions, so the check
+# does not wait for gweni_app to build
+if(TARGET gweni_app)
+    target_include_directories(gweni_header_check PRIVATE
+        $<TARGET_PROPERTY:gweni_app,INTERFACE_INCLUDE_DIRECTORIES>)
+    target_compile_definitions(gweni_header_check PRIVATE
+        $<TARGET_PROPERTY:gweni_app,INTERFACE_COMPILE_DEFINITIONS>)
+endif()
 
 # The renderer headers a Vulkan app includes are GL-free in every tree:
 # vulkan.h, slotRenderer.h (freetype-gl's headers with it) and depthView.h each

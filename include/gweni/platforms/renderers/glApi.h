@@ -9,7 +9,7 @@
  *    <GLES3/gl3.h> with <GLES2/gl2ext.h> for the extensions' enums, and no
  *    loader: the core entry points are linked from libGLESv2 directly, so a call
  *    newer than GLES 3.0 does not compile. GWENI_GL_ES is defined in both.
- *  - otherwise: glew, whose glewInit (capture::initGL) loads the desktop entry
+ *  - otherwise: glew, whose glewInit (app::initGL) loads the desktop entry
  *    points.
  */
 #ifndef _gweni_renders_glApi_h_

@@ -13,7 +13,7 @@
 //  getContext('webgl2', {depth: true}). It prints the context's RENDERER and
 //  VERSION strings (the unmasked ones where WEBGL_debug_renderer_info gives
 //  them) and DEPTH_BITS, and exits 1 unless the context exists, is WebGL 2
-//  and has at least 24 depth bits (the z layering's need, as capture.cpp's
+//  and has at least 24 depth bits (the z layering's need, as source/app/device.cpp's
 //  GL_DEPTH_COMPONENT24), or if the page logs a console error.
 //
 //  launchOptions() asks for ANGLE on SwiftShader explicitly, and launches it

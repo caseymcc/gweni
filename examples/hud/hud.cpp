@@ -504,7 +504,7 @@ void fitCanvas(GLFWwindow *window)
 {
     glfwGetFramebufferSize(window, &g_framebuffer.x, &g_framebuffer.y);
     if(g_renderer && g_canvas)
-        gweni::capture::fitCanvasToWindow(window, g_manualScale, *g_renderer, *g_canvas, g_glfwInput);
+        gweni::app::fitCanvasToWindow(window, g_manualScale, *g_renderer, *g_canvas, g_glfwInput);
 }
 
 void framebufferCallback(GLFWwindow *window, int, int)
@@ -581,7 +581,7 @@ int main(int argc, char *argv[])
 {
     const gweni::Point screenSize(960, 600);
 
-    gweni::capture::setToolName("HudExample");
+    gweni::app::setToolName("HudExample");
 
     std::string shotPath;
     std::string resourceDir;
@@ -639,11 +639,11 @@ int main(int argc, char *argv[])
     if(!gweni::capture::manualScale(scaleGiven, g_manualScale))
         return EXIT_FAILURE;
 
-    gweni::capture::Backend backend;
+    gweni::app::Backend backend;
 
     if(!gweni::capture::chooseBackend(rendererName, backend))
         return EXIT_FAILURE;
-    if(backend != gweni::capture::Backend::GL)
+    if(backend != gweni::app::Backend::GL)
     {
         std::cerr<<"HudExample: --renderer vulkan: the HUD example draws its scene with GL;"
                    " a Vulkan one is not there yet\n";
@@ -657,27 +657,27 @@ int main(int argc, char *argv[])
         std::cerr<<"HudExample: --headless has no window to show; pass --screenshot\n";
         return EXIT_FAILURE;
     }
-    if(capturing && !gweni::capture::ensureDirectory(fs::path(shotPath).parent_path()))
+    if(capturing && !gweni::app::ensureDirectory(fs::path(shotPath).parent_path()))
         return EXIT_FAILURE;
 
     bool resourcesFound=true;
-    const std::unique_ptr<gweni::ResourcePaths> paths=gweni::capture::resourcePaths(resourceDir, resourcesFound);
+    const std::unique_ptr<gweni::ResourcePaths> paths=gweni::app::resourcePaths(resourceDir, resourcesFound);
 
-    gweni::capture::installGlfwErrorHandler();
+    gweni::app::installGlfwErrorHandler();
 
-    gweni::capture::DeviceOptions deviceOptions;
+    gweni::app::DeviceOptions deviceOptions;
 
     deviceOptions.size=screenSize;
     deviceOptions.title="gweni HUD over a GL scene";
     deviceOptions.capturing=capturing;
     deviceOptions.headless=forceHeadless;
 
-    std::unique_ptr<gweni::capture::Device> device=gweni::capture::openDevice(backend, deviceOptions);
+    std::unique_ptr<gweni::app::Device> device=gweni::app::openDevice(backend, deviceOptions);
 
     if(!device)
         return EXIT_FAILURE;
 
-    const gweni::capture::Context &ctx=device->context();
+    const gweni::app::Context &ctx=device->context();
 
     Cube cube;
 
@@ -696,7 +696,7 @@ int main(int argc, char *argv[])
 
     if(!skin->init("DefaultSkin.json"))
         degraded=true;
-    if(gweni::capture::loadDefaultFont(*renderer, skin->getDefaultFont()) != gweni::Font::Status::Loaded)
+    if(gweni::app::loadDefaultFont(*renderer, skin->getDefaultFont()) != gweni::Font::Status::Loaded)
         degraded=true;
 
     // The HUD's panel is the theme's Panel surface, flat and translucent, so
@@ -707,7 +707,7 @@ int main(int argc, char *argv[])
     // The canvas draws no background (Canvas::setDrawBackground is off by
     // default): the scene shows wherever no control draws.
     gweni::controls::Canvas *canvas=new gweni::controls::Canvas(skin);
-    const gweni::Point canvasSize=gweni::capture::logicalSize(screenSize, g_manualScale);
+    const gweni::Point canvasSize=gweni::app::logicalSize(screenSize, g_manualScale);
 
     canvas->setScale(g_manualScale);
     canvas->setSize(canvasSize.x, canvasSize.y);
@@ -762,7 +762,7 @@ int main(int argc, char *argv[])
             ++g_clockSteps;
         }
 
-        if(gweni::capture::writeRendererPng(*renderer, screenSize.x, screenSize.y, shotPath))
+        if(gweni::app::writeRendererPng(*renderer, screenSize.x, screenSize.y, shotPath))
         {
             // where the test reads its pixels: the scene clear of the cube and
             // the panel, a Button inside its border left of its text, and the
@@ -808,7 +808,7 @@ int main(int argc, char *argv[])
         fitCanvas(ctx.window);
 
         // the scene moves every frame, so the loop draws every frame
-        gweni::platform::LoopOptions options=gweni::capture::loopOptions();
+        gweni::platform::LoopOptions options=gweni::app::loopOptions();
 
         options.mode=gweni::platform::LoopMode::Continuous;
         g_scene.lastTime=gweni::platform::getTimeInSeconds();

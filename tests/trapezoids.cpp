@@ -212,7 +212,7 @@ void dump(const Frame &frame, const std::string &name)
 
     const Point size=gweni::test::viewSize();
 
-    gweni::capture::writeRgbaPng(frame.pixels, size.x, size.y, std::string(dir)+"/"+name+".png");
+    gweni::app::writeRgbaPng(frame.pixels, size.x, size.y, std::string(dir)+"/"+name+".png");
 }
 
 }//namespace

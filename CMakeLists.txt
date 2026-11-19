@@ -822,6 +822,14 @@ if(NOT GWENI_RENDER_VULKAN)
     list(APPEND GWENI_UNBUILT_BACKEND_HEADERS gweni/platforms/renderers/vulkan.h)
 endif()
 
+# gweni_app (cmake/App.cmake), the window and headless app shell: built with
+# the GL renderer unless GWENI_BUILD_APP is off. Its headers need GLFW's and
+# EGL's, so in a tree without it they are left out like a backend's.
+include(${GWENI_SOURCE_DIR}/cmake/App.cmake)
+if(NOT TARGET gweni_app)
+    list(APPEND GWENI_UNBUILT_BACKEND_HEADERS ${GWENI_APP_HEADERS})
+endif()
+
 if(GWENI_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif(GWENI_BUILD_EXAMPLES)
@@ -832,8 +840,8 @@ if(GWENI_BUILD_TESTS)
     add_subdirectory(tests)
 endif(GWENI_BUILD_TESTS)
 
-# gweni_bench (bench/): needs gweni_capture from the examples (built with the
-# GL renderer, examples/openglcore/), and registers its smoke test with the
+# gweni_bench (bench/): needs gweni_capture from the examples (built with
+# gweni_app, examples/openglcore/), and registers its smoke test with the
 # tests. Not in the web tree: the browser runs captures, not timed scenes.
 if(GWENI_BUILD_TESTS AND GWENI_BUILD_EXAMPLES AND TARGET gweni_capture AND NOT EMSCRIPTEN)
     add_subdirectory(bench)
@@ -853,7 +861,9 @@ set(GWENI_INSTALL_CMAKE_DIR share/gweni)
 set(GWENI_INSTALL_RESOURCE_DIR share/gweni/resources)
 
 set(gweni_install_header_excludes)
-foreach(header IN LISTS GWENI_UNBUILT_BACKEND_HEADERS)
+# gweni/app/ is not part of the package yet: an installed header must compile
+# with gweni::gweni alone
+foreach(header IN LISTS GWENI_UNBUILT_BACKEND_HEADERS GWENI_APP_HEADERS)
     string(REPLACE "." "\\." header_regex "${header}")
     list(APPEND gweni_install_header_excludes REGEX "/${header_regex}$" EXCLUDE)
 endforeach()

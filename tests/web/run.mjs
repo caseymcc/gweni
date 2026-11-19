@@ -20,7 +20,7 @@
 //  It fails, exit 1 whatever the run's status, with one "run.mjs: FAIL: ..."
 //  line, if the page logs a console error or throws an uncaught exception, if
 //  the run aborts, if it times out, or unless the run made a WebGL 2 context
-//  (capture::initEglContext reports it to the page) on ANGLE's SwiftShader with
+//  (app::initEglContext reports it to the page) on ANGLE's SwiftShader with
 //  a depth buffer of at least 24 bits, as web_probe asks of a fresh canvas: in a
 //  browser with no WebGL 2 a run must not pass because it drew nothing.
 //

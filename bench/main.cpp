@@ -73,11 +73,11 @@ public:
 };
 
 //! The renderer the bench times, of \a device's backend, drawing into its target.
-gweni::renderer::SlotRenderer *newBenchRenderer(gweni::capture::Device &device, gweni::ResourcePaths &paths,
+gweni::renderer::SlotRenderer *newBenchRenderer(gweni::app::Device &device, gweni::ResourcePaths &paths,
     const gweni::Rect &viewRect)
 {
 #ifdef GWENI_HAS_VULKAN
-    if(device.backend() == gweni::capture::Backend::Vulkan)
+    if(device.backend() == gweni::app::Backend::Vulkan)
         return new TimedFlush<gweni::renderer::Vulkan>(paths, viewRect, *device.vulkanDevice(),
             *device.vulkanTarget());
 #else
@@ -89,7 +89,7 @@ gweni::renderer::SlotRenderer *newBenchRenderer(gweni::capture::Device &device, 
 //! What every frame clears the target to, and how it waits for the device (a
 //! glFinish, a vkQueueWaitIdle): set once both are made.
 gweni::renderer::SlotRenderer *g_renderer=nullptr;
-gweni::capture::Device *g_device=nullptr;
+gweni::app::Device *g_device=nullptr;
 gweni::Color g_background;
 
 // The per-frame phases, in output order.
@@ -552,7 +552,7 @@ bool parseSize(const std::string &value, gweni::Point &size)
 
 int main(int argc, char *argv[])
 {
-    gweni::capture::setToolName("gweni_bench");
+    gweni::app::setToolName("gweni_bench");
     bench::countAllocationsOnThisThread();
 
 
@@ -627,7 +627,7 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    gweni::capture::Backend backend;
+    gweni::app::Backend backend;
     if(!gweni::capture::chooseBackend(rendererName, backend))
         return EXIT_FAILURE;
 
@@ -636,7 +636,7 @@ int main(int argc, char *argv[])
     if(frames < 0) frames=info->defaultFrames;
     if(warmup < 0) warmup=info->defaultWarmup;
 
-#if !GWENI_EXAMPLE_EGL
+#if !GWENI_APP_EGL
     std::cerr<<"gweni_bench: needs the surfaceless EGL path, which this platform lacks\n";
     return EXIT_FAILURE;
 #else
@@ -644,17 +644,17 @@ int main(int argc, char *argv[])
     // Unlike the examples, a frame drawn from missing resources measures nothing
     // worth having, so each of these stops the run.
     bool resourcesFound=true;
-    const std::unique_ptr<gweni::ResourcePaths> paths=gweni::capture::resourcePaths(resourceDir, resourcesFound);
+    const std::unique_ptr<gweni::ResourcePaths> paths=gweni::app::resourcePaths(resourceDir, resourcesFound);
     if(!resourcesFound)
         return EXIT_FAILURE;
 
     // always headless: surfaceless EGL, or a Vulkan device with no window
-    gweni::capture::DeviceOptions deviceOptions;
+    gweni::app::DeviceOptions deviceOptions;
     deviceOptions.size=size;
     deviceOptions.capturing=true;
     deviceOptions.headless=true;
 
-    std::unique_ptr<gweni::capture::Device> device=gweni::capture::openDevice(backend, deviceOptions);
+    std::unique_ptr<gweni::app::Device> device=gweni::app::openDevice(backend, deviceOptions);
     if(!device)
         return EXIT_FAILURE;
 
@@ -672,7 +672,7 @@ int main(int argc, char *argv[])
     gweni::skin::textured::TexturedSkin *skin=new gweni::skin::textured::TexturedSkin(renderer);
     if(!skin->init("DefaultSkin.json"))
         return EXIT_FAILURE;
-    if(gweni::capture::loadDefaultFont(*renderer, skin->getDefaultFont()) != gweni::Font::Status::Loaded)
+    if(gweni::app::loadDefaultFont(*renderer, skin->getDefaultFont()) != gweni::Font::Status::Loaded)
         return EXIT_FAILURE;
 
     const gweni::Color background=gweni::skin::textured::tokyonight::Canvas.top;
@@ -721,7 +721,7 @@ int main(int argc, char *argv[])
     summary.warmup=warmup;
     summary.scaling=bench::scalingName(info->scaling);
     summary.size=size;
-    summary.renderer=gweni::capture::backendName(backend);
+    summary.renderer=gweni::app::backendName(backend);
     summary.device=device->deviceName();
 
     // Under callgrind only the measured work is collected: the build scene's

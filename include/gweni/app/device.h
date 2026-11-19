@@ -1,17 +1,17 @@
 /*
- *  Gweni - shared offscreen capture plumbing for the examples' capture modes
- *  (ControlTest --shot, OpenGLCore --screenshot, gweni_bench): the device a run
- *  draws with, of either backend (--renderer gl|vulkan, Device below): a GL
- *  context with or without a display (desktop GL 3.3 core, GLES 3.0 in the GLES
- *  tree, GWENI_GL_ES, or WebGL 2 in the browser) or a headless Vulkan device,
- *  an offscreen target, and readback to PNG. Also where
- *  both examples choose their resource directory, load their fonts and work
- *  out the scale they draw at.
+ *  Gweni - the app shell's device layer (gweni_app, gweni::app): the device a
+ *  run draws with, of either backend (Device below): a GL context with or
+ *  without a display (desktop GL 3.3 core, GLES 3.0 in the GLES tree,
+ *  GWENI_GL_ES, or WebGL 2 in the browser) or a Vulkan device, headless or in a
+ *  window with a swapchain, an offscreen target, readback to PNG, the window
+ *  loop, the resource directory, the default font and the scale a window draws
+ *  at. The examples, the bench and the GL unit tests are built on it; what
+ *  parses their command lines is theirs (examples/openglcore/capture.h).
  *
  *  See license in Gweni.h
  */
-#ifndef _gweni_example_capture_h_
-#define _gweni_example_capture_h_
+#ifndef _gweni_app_device_h_
+#define _gweni_app_device_h_
 
 #include <gweni/platforms/renderers/glApi.h>
 #include <GLFW/glfw3.h>
@@ -25,19 +25,19 @@
 #include <string>
 #include <vector>
 
-// GWENI_EXAMPLE_EGL: the headless context path, the one --headless takes. On
+// GWENI_APP_EGL: the headless context path, the one --headless takes. On
 // Linux it is a surfaceless EGL context; in the browser (Emscripten) it is a
-// WebGL 2 context on the page's canvas (GWENI_EXAMPLE_WEBGL), which keeps the
-// EGL path's names (initEglContext) so the examples and the tests take it for
+// WebGL 2 context on the page's canvas (GWENI_APP_WEBGL), which keeps the
+// EGL path's names (initEglContext) so the apps and the tests take it for
 // --headless as they are. Either way a capture draws into the offscreen
 // Framebuffer below, never into a window's.
 #if defined(__EMSCRIPTEN__)
-#define GWENI_EXAMPLE_EGL 1
-#define GWENI_EXAMPLE_WEBGL 1
+#define GWENI_APP_EGL 1
+#define GWENI_APP_WEBGL 1
 #include <emscripten/emscripten.h>
 #include <emscripten/html5.h>
 #elif defined(__linux__)
-#define GWENI_EXAMPLE_EGL 1
+#define GWENI_APP_EGL 1
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #endif
@@ -58,12 +58,12 @@ class VulkanTarget;
 #endif
 }
 
-namespace capture
+namespace app
 {
 
 //! Prefix for this binary's diagnostics, e.g. "ControlTest".
 void setToolName(const std::string &name);
-//! The prefix setToolName set ("capture" until it is called).
+//! The prefix setToolName set ("gweni" until it is called).
 const std::string &toolName();
 
 //! Report GLFW errors on stderr under the tool-name prefix. Call it before the
@@ -74,7 +74,7 @@ void installGlfwErrorHandler();
 // Resources
 //-----------------------------------------------------------------------------
 
-//! The ResourcePaths an example loads everything through: \a dir (relative to
+//! The ResourcePaths an app loads everything through: \a dir (relative to
 //! the working directory, or absolute) when --resources gave one, otherwise the
 //! resources/ the build copies next to the executable. If the directory does not
 //! exist it prints one line naming it and sets \a found to false, but still
@@ -91,70 +91,12 @@ std::unique_ptr<ResourcePaths> resourcePaths(const std::string &dir, bool &found
 //! loader has already printed the path it tried.
 Font::Status loadDefaultFont(IResourceLoader &loader, const Font &skinFont);
 
-//! The exit status of a capture run that found a resource missing: it wrote
-//! what it rendered, but not from the resources it was given.
-constexpr int ExitDegraded=2;
-
-//! The exit status of a non-interactive run: \a result, or ExitDegraded, after
-//! one line saying so, when \a result is EXIT_SUCCESS and \a degraded (the
-//! resource dir, the skin config or the default font was missing; each of those
-//! has printed its own line already). A failure (EXIT_FAILURE) wins over it.
-int exitStatus(int result, bool degraded);
-
-//! What a capture's profile clock (platform::profileTimeMicros()) advances per
-//! read: installFixedProfileClock() makes it count reads, from 0, so the times
-//! a frame records (CanvasFrameStats::times, the flush's) depend on how many
-//! reads the frame makes and not on how fast it ran, and a shot showing them
-//! (a tools::StatsOverlay's) is the same in every run. A window keeps the
-//! default steady_clock.
-constexpr uint64_t FixedProfileStepMicros=100;
-void installFixedProfileClock();
-
-//! A switch taking an optional on|off, at argv[i] (--stats-overlay, whether
-//! gweni::tools::StatsOverlay is open at start-up, and --depth-view): on, unless
-//! the word after it is "off"; an "on" or "off" there is taken (i moves past
-//! it), so a later --stats-overlay off overrides an earlier one.
-bool onOffArgument(int argc, char *argv[], int &i);
-
-//! --depth-view: opens the canvas's depth view (gweni::tools::DepthView) the
-//! first time it is called for that canvas once its z labels are numbered
-//! (Canvas::highestZIndex(), after an updateCanvas()), so the view's default
-//! spacing fits them; call it after each frame's updateCanvas(), before the
-//! render. A canvas whose view it opened is not opened again, so Escape or F9
-//! closes it for good.
-void openDepthViewOnce(controls::Canvas &canvas);
-
-#if GWENI_EXAMPLE_WEBGL
-//! Tells the page of \p canvas's depth view from now on, each call only if the
-//! page set it: Module.gweniDepthViewChanged(open) as the view opens or closes
-//! (F9, Escape, the shell's Depth button, --depth-view, an export), and
-//! Module.gweniDepthViewSpacingChanged(factor) as its spacing factor
-//! (DepthView::spacingFactor()) changes, R and the open included, so a page's
-//! controls follow the view. Call once per canvas; never undone (the window
-//! loop does not return in the browser).
-void tellPageOfDepthView(controls::Canvas *canvas);
-//! gweni_web_depth_view_spacing's work, in both apps: \p factor > 0 sets the
-//! open view's spacing factor (clamped to x0.1..x20, the front layer kept),
-//! anything else only reads; returns "view=open factor=<f>" or
-//! "view=closed factor=0", after
-std::string depthViewSpacing(controls::Canvas *canvas, double factor);
-#endif
-
 //-----------------------------------------------------------------------------
 // Scale: device pixels per logical unit. The canvas is laid out in logical
 // units and the renderer draws it at framebuffer pixels; the effective scale is
 // the window's OS content scale times a manual factor, which doubles as an
 // app-level zoom.
 //-----------------------------------------------------------------------------
-
-//! A scale given as text: a number in (0, 16]. \return false otherwise.
-bool parseScale(const char *value, float &scale);
-
-//! The manual factor: \a scale as --scale left it when \a given, otherwise
-//! GWENI_SCALE when it is set, otherwise 1 (the flag beats the environment).
-//! \return false, after one line naming the value, if GWENI_SCALE is not a
-//! scale.
-bool manualScale(bool given, float &scale);
 
 //! The OS content scale of \a window (glfwGetWindowContentScale, its x axis):
 //! 2 on a Retina display, 1.5 on a desktop scaled to 150 %. 1 with no window
@@ -185,9 +127,9 @@ void fitCanvasToWindow(GLFWwindow *window, float manual, renderer::Base &rendere
 struct Context
 {
     GLFWwindow *window=nullptr;     // null when running on EGL
-#if GWENI_EXAMPLE_WEBGL
+#if GWENI_APP_WEBGL
     EMSCRIPTEN_WEBGL_CONTEXT_HANDLE webgl=0;
-#elif GWENI_EXAMPLE_EGL
+#elif GWENI_APP_EGL
     EGLDisplay eglDisplay=EGL_NO_DISPLAY;
     EGLContext eglContext=EGL_NO_CONTEXT;
 #endif
@@ -224,13 +166,8 @@ void runWindowLoop(const Context &ctx, controls::Canvas *canvas, renderer::Base 
 //! A window's loop options: idle, with the verify mode when
 //! GWENI_IDLE_VERIFY=1.
 platform::LoopOptions loopOptions();
-//! Reads --loop's value, argv[i+1], into \a options: idle or continuous.
-//! \return false, after one line naming the tool, for another or none.
-bool loopArgument(int argc, char **argv, int &i, platform::LoopOptions &options);
-//! The --help text of --loop, for each tool's usage
-extern const char *const LoopHelp;
 
-#if GWENI_EXAMPLE_EGL
+#if GWENI_APP_EGL
 //! The headless context, current: surfaceless EGL (GL 3.3 core, or GLES 3.0 in
 //! the GLES tree), or in the browser WebGL 2 on the page's #canvas with a depth
 //! buffer and no antialiasing (the capture reads its own Framebuffer, never the
@@ -289,18 +226,9 @@ enum class Backend
 //! "gl" or "vulkan", as --renderer takes it
 const char *backendName(Backend backend);
 
-//! The backend a run draws with: \a flag (--renderer's value) when it is not
-//! empty, otherwise GWENI_RENDERER when it is set, otherwise gl. \return false,
-//! after one line, for a name that is neither, or vulkan in a tree built without
-//! it.
-bool chooseBackend(const std::string &flag, Backend &backend);
-
 //! Whether GWENI_VULKAN_VALIDATION=1 asks for the validation layer (the Vulkan
 //! tests set it): a Vulkan device is then made with it, any message aborting.
 bool vulkanValidation();
-
-//! The --help text of --renderer, for each tool's usage
-extern const char *const RendererHelp;
 
 //! What a run draws with: a device of one backend and, for a capture, the
 //! offscreen target its renderer draws into (for a GL window, the window's
@@ -339,7 +267,7 @@ public:
 
     //! Runs the window on input::GlfwLoop over \a canvas until it is closed,
     //! then waits for the device: \a frame each time the loop draws (idle:
-    //! when the canvas has work, \a options). GL: capture::runWindowLoop
+    //! when the canvas has work, \a options). GL: app::runWindowLoop
     //! (\a frame and a buffer swap; in the browser one call per animation
     //! frame, never returning). Vulkan: beginWindowFrame, \a frame and
     //! presentWindowFrame, a frame not shown (out of date, minimised since)
@@ -429,7 +357,7 @@ struct DeviceOptions
 //! \a options.size, with no GL or EGL context. A capture has no window, so with
 //! or without --headless it is the same. An interactive run (no capture) opens
 //! a GLFW window with no client API (GLFW_NO_API), a Vulkan surface on it and
-//! a FIFO swapchain (vulkanWindow.cpp), the target the framebuffer's size. With
+//! a FIFO swapchain (source/app/vulkanWindow.cpp), the target the framebuffer's size. With
 //! GWENI_VULKAN_VALIDATION=1 (the Vulkan tests set it) the device has the
 //! validation layer, and any warning or error aborts; it fails without the layer.
 //!
@@ -439,7 +367,7 @@ std::unique_ptr<Device> openDevice(Backend backend, const DeviceOptions &options
 //! Create \a dir (and parents) if it is not there yet.
 bool ensureDirectory(const fs::path &dir);
 
-}//namespace capture
+}//namespace app
 }//namespace gweni
 
-#endif//_gweni_example_capture_h_
+#endif//_gweni_app_device_h_

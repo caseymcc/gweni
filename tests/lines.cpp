@@ -712,7 +712,7 @@ TEST_CASE("Line (style 3): segments drawn without their neighbours join without 
                 {
                     std::snprintf(name, sizeof(name), "/polyline_%gx_t%g_%s.png", scale, thickness,
                         frame == &opaque ? "opaque" : "half");
-                    gweni::capture::writeRgbaPng(frame->pixels, gweni::test::viewSize().x,
+                    gweni::app::writeRgbaPng(frame->pixels, gweni::test::viewSize().x,
                         gweni::test::viewSize().y, std::string(dir)+name);
                 }
             }
@@ -889,7 +889,7 @@ TEST_CASE("Line (style 3): a polyline drawn with its neighbours blends every pix
                     {
                         std::snprintf(name, sizeof(name), "/neighbours_%gx_t%g_%s_%s.png", scale, thickness,
                             floatDepth ? "d32f" : "d24", frame == &opaque ? "opaque" : "half");
-                        gweni::capture::writeRgbaPng(frame->pixels, gweni::test::viewSize().x,
+                        gweni::app::writeRgbaPng(frame->pixels, gweni::test::viewSize().x,
                             gweni::test::viewSize().y, std::string(dir)+name);
                     }
                 }

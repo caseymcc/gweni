@@ -1348,13 +1348,13 @@ blocked wait and is drawn in the next frame.
   never paused (`emscripten_pause_main_loop`): a missed wake there would leave the
   page frozen.
 
-`capture::runWindowLoop` and `Device::runWindowLoop(canvas, renderer, options, frame,
+`app::runWindowLoop` and `Device::runWindowLoop(canvas, renderer, options, frame,
 afterIteration)` put both apps' windows on it, GL and Vulkan, native and web.
 `drawFrame` is the update, clear, render and swap on GL, and `beginWindowFrame`, the
 frame and `presentWindowFrame` on Vulkan. A Vulkan frame that was not shown (an
 out-of-date acquire) calls `canvas->redraw()`, so the next iteration draws it again.
 The windows are idle by default: `--loop idle|continuous` in both apps
-(`capture::loopOptions`), and on the web too. Captures, `--window-test` and the bench
+(`app::loopOptions`), and on the web too. Captures, `--window-test` and the bench
 step their own frames and draw every one.
 
 Measured under Xvfb (debug tree), the process's CPU time (`getrusage` of the child,
@@ -2026,7 +2026,7 @@ round a value the other way.
 
 **The apps on either backend.** ControlTest, the OpenGLCore example and `gweni_bench`
 take `--renderer gl|vulkan` (or `GWENI_RENDERER`). What a run draws with is a
-`capture::Device` (`examples/openglcore/capture.h`), made by `capture::openDevice`:
+`app::Device` (`include/gweni/app/device.h`, the app shell `gweni_app`), made by `app::openDevice`:
 for GL the context the examples always made (a window, a hidden one for a capture,
 or surfaceless EGL) with the offscreen `Framebuffer` a capture draws into; for Vulkan
 a `VulkanDevice` from `createVulkanDevice` (validated with
@@ -2123,8 +2123,8 @@ gweni each hold to (`VulkanDevice` and `VulkanTarget` in `vulkan.h` say the same
 ### The Vulkan window
 
 An interactive run on Vulkan (`OpenGLCore --renderer vulkan`, ControlTest without a
-capture) gets its `capture::Device` from `openVulkanWindowDevice`
-(`examples/openglcore/vulkanWindow.cpp`): a GLFW window with no client API
+capture) gets its `app::Device` from `openVulkanWindowDevice`
+(`source/app/vulkanWindow.cpp`): a GLFW window with no client API
 (`GLFW_NO_API`, `GLFW_SCALE_TO_MONITOR` as a GL window), a `VulkanDevice` made with
 the instance extensions `glfwGetRequiredInstanceExtensions` names and
 `VK_KHR_swapchain`, the window's surface (`glfwCreateWindowSurface`; GLFW opens the
@@ -2135,7 +2135,7 @@ renderer::Vulkan draws into the device's `VulkanTarget` as in a capture, the tar
 kept at the framebuffer's size, and showing a frame is the application's.
 
 **One loop, three steps.** `Device::runWindowLoop(canvas, renderer, options, frame)` is
-the loop both apps run on either backend (GL: `capture::runWindowLoop`, the browser's
+the loop both apps run on either backend (GL: `app::runWindowLoop`, the browser's
 included), on `input::GlfwLoop`, idle by default ("Threads, posts and the idle loop").
 On Vulkan a frame is `beginWindowFrame()`, then `frame()` (update, clear, render,
 which submits the renderer's frame) and `presentWindowFrame()`; when
@@ -2336,9 +2336,9 @@ two programs and the draws. What follows describes both together:
   (`GWENI_GL_ES` is a public compile definition of `gweni`, and Emscripten defines it
   by itself there); freetype-gl includes no GL header at all (a gweni patch), and
   `GLFW_INCLUDE_NONE` keeps `<GLFW/glfw3.h>` from bringing the desktop `<GL/gl.h>`
-  back. The examples' context (`examples/openglcore/capture.cpp`) is GLES 3.0 there: the
+  back. The examples' context (`source/app/device.cpp`) is GLES 3.0 there: the
   surfaceless EGL one binds `EGL_OPENGL_ES_API` with an `EGL_OPENGL_ES3_BIT` config,
-  and a window asks GLFW for `GLFW_OPENGL_ES_API` 3.0; `capture::initGL` loads
+  and a window asks GLFW for `GLFW_OPENGL_ES_API` 3.0; `app::initGL` loads
   nothing (glewInit on desktop). In every tree `initGL` checks a window's framebuffer,
   and `createFramebuffer` the offscreen one, for a 24-bit depth buffer, failing with one
   line if it has less: `OpenGLCore` spreads its 65536 z values over the depth range. On
@@ -2351,7 +2351,7 @@ two programs and the draws. What follows describes both together:
   against Emscripten's `<GLES3/gl3.h>` (`glApi.h` defines `GWENI_GL_ES` under
   `__EMSCRIPTEN__`) and links Emscripten's WebGL 2 library. A context there is WebGL 2
   on the page's `#canvas`, made by `emscripten_webgl_create_context`
-  (`capture::initEglContext`, `GWENI_EXAMPLE_WEBGL`). Its `GL_VERSION` reads `OpenGL ES
+  (`app::initEglContext`, `GWENI_APP_WEBGL`). Its `GL_VERSION` reads `OpenGL ES
   3.0 (WebGL 2.0 ...)`, so `init()` takes the ES dialect as on the GLES tree. There is no
   multi-draw (`OpenGLCore` resolves `glMultiDrawElementsEXT` only through EGL, in the GLES
   tree) and no `GL_EXT_blend_func_extended` (WebGL's is `WEBGL_blend_func_extended`, which
@@ -2363,10 +2363,10 @@ two programs and the draws. What follows describes both together:
   reads it back with `glReadPixels`, which WebGL does synchronously, so it needs no
   main loop. The interactive window is emscripten-glfw's (Emscripten's
   `contrib.glfw3` port) on the same `#canvas`, with a WebGL 2 context of its own
-  (`capture::initGlfwContext`: `GLFW_CONTEXT_VERSION_MAJOR` is the WebGL version there;
+  (`app::initGlfwContext`: `GLFW_CONTEXT_VERSION_MAJOR` is the WebGL version there;
   24 depth bits, no alpha, so nothing behind the page shows through a translucent
   blend, no stencil, no multisampling). A browser cannot run a blocking loop and still
-  draw or deliver input, so `capture::runWindowLoop`, the one loop both apps' windows
+  draw or deliver input, so `app::runWindowLoop`, the one loop both apps' windows
   run, is `emscripten_set_main_loop_arg` there: one callback per animation frame, each a
   `glfwPollEvents()` (where emscripten-glfw applies a resize; input arrives between
   callbacks) and, when the canvas has work or a post asked for a frame, the frame
@@ -6049,7 +6049,7 @@ two programs and the draws. What follows describes both together:
   scale of the space being drawn in: the canvas's, times every ZoomPanel's zoom the
   control is in (see "The zoom panel").
 - **Where the scale comes from, and a change of it.** The GLFW examples size the
-  canvas in logical units: `capture::fitCanvasToWindow` (`examples/openglcore/capture.cpp`,
+  canvas in logical units: `app::fitCanvasToWindow` (`source/app/device.cpp`,
   run once when the window is made and from the framebuffer-size and content-scale
   callbacks) gives the renderer the framebuffer in device pixels as its view, and the
   canvas `round(framebuffer/scale)` at `scale = glfwGetWindowContentScale x` the manual
@@ -8279,7 +8279,7 @@ a toggle button kept in step; not for a view whose canvas is deleted under it). 
 renderer draws one canvas's view at a time. It sets the canvas's `needsRedraw()` on each
 camera move, for a loop that waits for one. The camera is built from the renderer's view
 rect, so an app calls `DepthView::viewChanged(canvas)` after a resize
-(`capture::fitCanvasToWindow` does).
+(`app::fitCanvasToWindow` does).
 The demo shell's **Depth** toggle (`Demo::depthButton()`, left of Stats in its status
 bar) is such a button: a click opens the view on the skin's renderer, and it follows
 F9, Escape and `--depth-view` through `onOpenChangedCaller` (and `find()` when the
@@ -8600,7 +8600,7 @@ capture, a test and the bench do not, so what they paste never depends on the ho
   pastes nothing, without a GLFW error line), and null gives the buffer back, before
   the window is destroyed. The examples call it for the interactive window only:
   `GlDevice::open` for a shown GL window and the Vulkan window
-  (`capture::DeviceOptions::systemClipboard`, which ControlTest's `--window-test`
+  (`app::DeviceOptions::systemClipboard`, which ControlTest's `--window-test`
   turns off), undone by `destroyContext`. Another `input::GLFW3` app calls it once with
   its window. On X11 the text is the `CLIPBOARD` selection: after a copy the window owns
   it and serves other clients from `glfwPollEvents()`, which the window loop runs, and
@@ -8976,9 +8976,9 @@ The library reports a resource it cannot load and goes on drawing; it never exit
   of the chain ("Font fallback").
 
 What to do about it is the application's choice. The examples (`OpenGLCore`,
-`ControlTest`) keep going: `capture::resourcePaths()` reports a missing resource
+`ControlTest`) keep going: `app::resourcePaths()` reports a missing resource
 directory and returns the paths anyway, and a `false` from `init` or a default font
-that is not `Loaded` (`capture::loadDefaultFont` returns the status) only marks the run
+that is not `Loaded` (`app::loadDefaultFont` returns the status) only marks the run
 degraded. A window keeps running and exits as usual. A capture writes what it drew and
 `capture::exitStatus` turns its exit status into `capture::ExitDegraded` (2), after one
 `<exe>: resources incomplete, exiting 2` line, so a script notices; a failure (1) wins

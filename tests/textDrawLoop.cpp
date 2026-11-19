@@ -48,7 +48,7 @@ std::vector<uint8_t> drawFrame()
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
     renderer.begin();
     renderer.end();
-    gweni::capture::readFramebufferRgba(size.x, size.y, pixels);
+    gweni::app::readFramebufferRgba(size.x, size.y, pixels);
     return pixels;
 }
 

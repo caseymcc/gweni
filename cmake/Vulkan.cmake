@@ -27,7 +27,7 @@
 #                                  the vcpkg validation layer alone on the
 #                                  loader's layer path, enabled in the examples
 #                                  and the bench (GWENI_VULKAN_VALIDATION=1, which
-#                                  capture::openDevice reads), and the device
+#                                  app::openDevice reads), and the device
 #                                  pinned to Mesa's lavapipe
 #                                  (GWENI_VULKAN_TEST_ICD); also the labels gpu
 #                                  and vulkan

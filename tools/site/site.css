@@ -61,7 +61,7 @@ select { background: #24283b; color: #c0caf5; border: 1px solid #414868; border-
 .landing footer { margin-top: 32px; color: #565f89; font-size: 13px; }
 
 /* a page running one of the apps: the header, the #canvas-container the
-   window keeps its canvas at (capture::initGlfwContext), the #output panel
+   window keeps its canvas at (app::initGlfwContext), the #output panel
    with the run's stdout and stderr (web/pre.js) */
 .app { display: flex; flex-direction: column; overflow: hidden; }
 .app header { flex: 0 0 auto; }

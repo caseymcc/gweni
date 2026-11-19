@@ -2145,7 +2145,7 @@ static void scroll_callback(GLFWwindow*, double x, double y)
 static void fitCanvas(GLFWwindow *window)
 {
     if(g_renderer && g_canvas)
-        gweni::capture::fitCanvasToWindow(window, g_manualScale, *g_renderer, *g_canvas, g_glfwInput);
+        gweni::app::fitCanvasToWindow(window, g_manualScale, *g_renderer, *g_canvas, g_glfwInput);
 }
 static void framebuffer_size_callback(GLFWwindow *window, int, int)
 {   fitCanvas(window); }
@@ -2336,9 +2336,9 @@ static void printUsage(std::ostream &out)
 
 //-----------------------------------------------------------------------------
 
-using gweni::capture::ensureDirectory;
-using gweni::capture::writeRendererPng;
-using gweni::capture::writeRgbaPng;
+using gweni::app::ensureDirectory;
+using gweni::app::writeRendererPng;
+using gweni::app::writeRgbaPng;
 
 // The control that first re-dirtied layout in a frame, as Type#id, or "none".
 static std::string redirtiedBy(const gweni::controls::LayoutStats &layout)
@@ -2473,7 +2473,7 @@ struct Session
 {
     gweni::renderer::SlotRenderer *renderer=nullptr;
     gweni::controls::Canvas *canvas=nullptr;
-    gweni::capture::Device *device=nullptr; // the offscreen target's
+    gweni::app::Device *device=nullptr; // the offscreen target's
     gweni::Color background;            // what each frame clears it to
     gweni::Point size;                  // the canvas, logical units
     float scale=1.0f;                   // --scale
@@ -27009,7 +27009,7 @@ static bool runImeScenario(Session &s, const std::string &shotDir, bool &passed)
     return ok;
 }
 
-#if GWENI_EXAMPLE_WEBGL
+#if GWENI_APP_WEBGL
 //-----------------------------------------------------------------------------
 // The interactive window in the browser: what a script driving the page reads
 // (tests/web/interactive.mjs), through Module.ccall(name, 'string'). Each
@@ -27419,7 +27419,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_probe(const char *query)
     return result.c_str();
 }
 
-#endif//GWENI_EXAMPLE_WEBGL
+#endif//GWENI_APP_WEBGL
 
 //-----------------------------------------------------------------------------
 // --window-test: the interactive window, scripted (window_vulkan,
@@ -27435,14 +27435,14 @@ static constexpr int kWindowSettleFrames=kSettleFrames;
 // how long the window system has to do a resize, an iconify or a restore
 static constexpr double kWindowDeadlineSeconds=10.0;
 
-static bool runWindowTest(gweni::capture::Device &device, gweni::controls::Canvas *canvas,
+static bool runWindowTest(gweni::app::Device &device, gweni::controls::Canvas *canvas,
     gweni::renderer::SlotRenderer *renderer, const gweni::Color &background,
     const gweni::Point &size, const std::string &dir)
 {
     typedef std::chrono::steady_clock Clock;
 
     GLFWwindow *window=device.context().window;
-    const gweni::capture::Device::WindowStats *stats=device.windowStats();
+    const gweni::app::Device::WindowStats *stats=device.windowStats();
 
     if(!stats)
     {
@@ -27531,7 +27531,7 @@ static bool runWindowTest(gweni::capture::Device &device, gweni::controls::Canva
 
     if(!ensureDirectory(dir))
         return false;
-    std::cout<<"window-test: content_scale="<<gweni::capture::contentScale(window)<<"\n";
+    std::cout<<"window-test: content_scale="<<gweni::app::contentScale(window)<<"\n";
 
     // 1. the size it opened at; 2. two others and back, each a recreate
     const gweni::Point sizes[]=
@@ -27666,14 +27666,14 @@ static double processCpuSeconds()
         +double(usage.ru_stime.tv_sec)+double(usage.ru_stime.tv_usec)*1e-6;
 }
 
-static bool runIdleTest(gweni::capture::Device &device, gweni::controls::Canvas *canvas,
+static bool runIdleTest(gweni::app::Device &device, gweni::controls::Canvas *canvas,
     gweni::renderer::SlotRenderer *renderer, const gweni::Color &background,
     gweni::controls::Base *control, gweni::platform::LoopOptions options)
 {
     typedef std::chrono::steady_clock Clock;
 
     GLFWwindow *window=device.context().window;
-    const gweni::capture::Device::WindowStats *stats=device.windowStats();
+    const gweni::app::Device::WindowStats *stats=device.windowStats();
     // a GL window swaps once a drawn frame; a Vulkan one counts its presents
     auto presents=[&](const gweni::platform::IdleLoop &loop) {
         return stats ? stats->presents : long(loop.frames());
@@ -27817,8 +27817,8 @@ static bool runIdleTest(gweni::capture::Device &device, gweni::controls::Canvas 
 
 int main(int argc, char *argv[])
 {
-    gweni::capture::setToolName("ControlTest");
-    gweni::capture::installGlfwErrorHandler();
+    gweni::app::setToolName("ControlTest");
+    gweni::app::installGlfwErrorHandler();
 
     std::string which="ButtonDemo";
     std::string shotPath;
@@ -27827,7 +27827,7 @@ int main(int argc, char *argv[])
     std::string rendererName;
     std::string windowTestDir;
     bool idleTest=false;
-    gweni::platform::LoopOptions loopOptions=gweni::capture::loopOptions();
+    gweni::platform::LoopOptions loopOptions=gweni::app::loopOptions();
     g_verifyIdle=loopOptions.verify;
     gweni::Point screenSize(640, 480);
     float scale=1.0f;
@@ -28027,7 +28027,7 @@ int main(int argc, char *argv[])
     if(!gweni::capture::manualScale(scaleGiven, scale))
         return EXIT_FAILURE;
 
-    gweni::capture::Backend backend;
+    gweni::app::Backend backend;
     if(!gweni::capture::chooseBackend(rendererName, backend))
         return EXIT_FAILURE;
 
@@ -28127,7 +28127,7 @@ int main(int argc, char *argv[])
 
     // a script, in the window: the steps run as in a capture, drawing into
     // the window's framebuffer, and the clipboard is the system's
-    if(clipboardTest && (!scripted || forceHeadless || !windowTestDir.empty() || backend != gweni::capture::Backend::GL))
+    if(clipboardTest && (!scripted || forceHeadless || !windowTestDir.empty() || backend != gweni::app::Backend::GL))
     {
         std::cerr<<"ControlTest: --clipboard-test runs a script (--key, --type, ...) in a GL window;"
                    " drop --headless, --window-test and --renderer vulkan\n";
@@ -28144,9 +28144,9 @@ int main(int argc, char *argv[])
     // directory is reported here and the run carries on: what loads from it
     // degrades below.
     bool resourcesFound=true;
-    const std::unique_ptr<gweni::ResourcePaths> paths=gweni::capture::resourcePaths(resourceDir, resourcesFound);
+    const std::unique_ptr<gweni::ResourcePaths> paths=gweni::app::resourcePaths(resourceDir, resourcesFound);
 
-    gweni::capture::DeviceOptions deviceOptions;
+    gweni::app::DeviceOptions deviceOptions;
     deviceOptions.size=screenPixels;
     deviceOptions.title="Gweni ControlTest - "+which;
     deviceOptions.capturing=capturing && !clipboardTest;
@@ -28154,11 +28154,11 @@ int main(int argc, char *argv[])
     // the scripted window reads nothing from the host's clipboard
     deviceOptions.systemClipboard=windowTestDir.empty();
 
-    std::unique_ptr<gweni::capture::Device> device=gweni::capture::openDevice(backend, deviceOptions);
+    std::unique_ptr<gweni::app::Device> device=gweni::app::openDevice(backend, deviceOptions);
     if(!device)
         return EXIT_FAILURE;
 
-    const gweni::capture::Context &ctx=device->context();
+    const gweni::app::Context &ctx=device->context();
 
     gweni::renderer::SlotRenderer *renderer=
         device->newRenderer(*paths, gweni::Rect(gweni::Point(0,0), screenPixels));
@@ -28176,7 +28176,7 @@ int main(int argc, char *argv[])
     if(capturing && !renderer->preloadGlyphFallbacks())
         degraded=true;
 
-    if(gweni::capture::loadDefaultFont(*renderer, skin->getDefaultFont()) != gweni::Font::Status::Loaded)
+    if(gweni::app::loadDefaultFont(*renderer, skin->getDefaultFont()) != gweni::Font::Status::Loaded)
         degraded=true;
 
     // The canvas fill comes from the theme, so a "theme" block in
@@ -28865,7 +28865,7 @@ int main(int argc, char *argv[])
     {
         gweni::controls::Base *control=createControl(canvas, which);
         control->setDock(gweni::DockPosition::Center);
-#if GWENI_EXAMPLE_WEBGL
+#if GWENI_APP_WEBGL
         g_windowLabel=which;
         // the page's depth view controls follow the view
         gweni::capture::tellPageOfDepthView(canvas);
@@ -28928,7 +28928,7 @@ int main(int argc, char *argv[])
                     gweni::capture::openDepthViewOnce(*canvas);
                 renderer->clearTarget(background);
                 canvas->renderCanvas();
-#if GWENI_EXAMPLE_WEBGL
+#if GWENI_APP_WEBGL
                 countWebFrame(*canvas, *renderer);
 #endif
             });

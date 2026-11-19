@@ -1,11 +1,12 @@
 /*
- *  Gweni - shared framebuffer readback + PNG encode for the examples' capture
- *  modes.
+ *  Gweni - the app shell's device layer (gweni/app/device.h): contexts, the
+ *  offscreen framebuffer and PNG readback, the GL and Vulkan devices, the
+ *  window loop and the scale a window draws at.
  *
  *  See license in Gweni.h
  */
 
-#include "capture.h"
+#include <gweni/app/device.h>
 
 #include <gweni/controls/canvas.h>
 #include <gweni/platforms/baseRender.h>
@@ -19,7 +20,7 @@
 #include "vulkanWindow.h"
 #endif
 
-#if GWENI_EXAMPLE_WEBGL
+#if GWENI_APP_WEBGL
 #include <GLFW/emscripten_glfw3.h>
 #endif
 
@@ -29,15 +30,14 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
-#include <unordered_set>
 #include <vector>
 
 namespace gweni
 {
-namespace capture
+namespace app
 {
 
-static std::string g_tool="capture";
+static std::string g_tool="gweni";
 
 void setToolName(const std::string &name)
 {
@@ -77,137 +77,6 @@ std::unique_ptr<ResourcePaths> resourcePaths(const std::string &dir, bool &found
 Font::Status loadDefaultFont(IResourceLoader &loader, const Font &skinFont)
 {
     return loader.loadFont(skinFont);
-}
-
-int exitStatus(int result, bool degraded)
-{
-    if(result != EXIT_SUCCESS || !degraded)
-        return result;
-
-    std::cerr<<g_tool<<": resources incomplete, exiting "<<ExitDegraded<<"\n";
-    return ExitDegraded;
-}
-
-void installFixedProfileClock()
-{
-    static uint64_t reads=0;
-
-    reads=0;
-    platform::setProfileClock([]() { return (++reads)*FixedProfileStepMicros; });
-}
-
-bool onOffArgument(int argc, char *argv[], int &i)
-{
-    if(i+1 < argc)
-    {
-        const std::string value=argv[i+1];
-
-        if(value == "on" || value == "off")
-        {
-            ++i;
-            return value == "on";
-        }
-    }
-    return true;
-}
-
-void openDepthViewOnce(controls::Canvas &canvas)
-{
-    // by control id, never reused, so a canvas made at a deleted one's address
-    // is opened too
-    static std::unordered_set<size_t> opened;
-
-    if(canvas.highestZIndex() <= 0 || opened.count(canvas.getControlId()))
-        return;
-    opened.insert(canvas.getControlId());
-    if(tools::DepthView::open(&canvas))
-        std::cout<<"the depth view is open; F9 or Escape closes it, +/- or Alt+wheel: z spacing, R reset\n";
-}
-
-#if GWENI_EXAMPLE_WEBGL
-namespace
-{
-
-struct PageDepthViewNotice: public event::Handler
-{
-    controls::Canvas *canvas=nullptr;
-
-    void onOpenChanged(event::Info info)
-    {
-        if(info.control != canvas)
-            return;
-        EM_ASM({
-            if(Module['gweniDepthViewChanged'])
-                Module['gweniDepthViewChanged']($0 != 0);
-        }, (int)info.integer);
-    }
-
-    void onSpacingChanged(event::Info info)
-    {
-        const tools::DepthView *view=(info.control == canvas)?tools::DepthView::find(canvas):nullptr;
-
-        if(!view)
-            return;
-        EM_ASM({
-            if(Module['gweniDepthViewSpacingChanged'])
-                Module['gweniDepthViewSpacingChanged']($0);
-        }, (double)view->spacingFactor());
-    }
-};
-
-}//namespace
-
-void tellPageOfDepthView(controls::Canvas *canvas)
-{
-    PageDepthViewNotice *notice=new PageDepthViewNotice;
-
-    notice->canvas=canvas;
-    tools::DepthView::onOpenChangedCaller.add(notice, &PageDepthViewNotice::onOpenChanged);
-    tools::DepthView::onSpacingChangedCaller.add(notice, &PageDepthViewNotice::onSpacingChanged);
-}
-
-std::string depthViewSpacing(controls::Canvas *canvas, double factor)
-{
-    tools::DepthView *view=canvas?tools::DepthView::find(canvas):nullptr;
-
-    if(!view)
-        return "view=closed factor=0";
-    if(factor > 0.0)
-        view->setSpacingFactor((float)factor);
-
-    char text[64];
-
-    std::snprintf(text, sizeof(text), "view=open factor=%.6g", (double)view->spacingFactor());
-    return text;
-}
-#endif
-
-bool parseScale(const char *value, float &scale)
-{
-    char *end=nullptr;
-    const float parsed=std::strtof(value, &end);
-    if(end == value || *end != '\0' || !(parsed > 0.0f) || parsed > 16.0f)
-        return false;
-
-    scale=parsed;
-    return true;
-}
-
-bool manualScale(bool given, float &scale)
-{
-    if(given)
-        return true;
-
-    scale=1.0f;
-
-    const char *env=std::getenv("GWENI_SCALE");
-    if(env && *env && !parseScale(env, scale))
-    {
-        std::cerr<<g_tool<<": GWENI_SCALE wants a number in (0, 16], e.g. 1.5, not '"
-                 <<env<<"'\n";
-        return false;
-    }
-    return true;
 }
 
 float contentScale(GLFWwindow *window)
@@ -252,7 +121,7 @@ void fitCanvasToWindow(GLFWwindow *window, float manual, renderer::Base &rendere
     tools::DepthView::viewChanged(&canvas);
 }
 
-#if GWENI_EXAMPLE_WEBGL
+#if GWENI_APP_WEBGL
 //! Tells the page (web/pre.js) what the current WebGL context is: the browser
 //! runner fails a run whose context is not WebGL 2.
 static void reportWebGLContext()
@@ -274,7 +143,7 @@ bool initGlfwContext(Context &ctx, const Point &size, const std::string &title, 
     // depth buffer, 256 steps each in 24 bits, as in the EGL path's framebuffer
     // (initGL checks what the window got)
     glfwWindowHint(GLFW_DEPTH_BITS, 24);
-#if GWENI_EXAMPLE_WEBGL
+#if GWENI_APP_WEBGL
     // emscripten-glfw: the WebGL version is the context's major version, and the
     // framebuffer is the canvas's CSS size times devicePixelRatio, the content
     // scale (GLFW_SCALE_FRAMEBUFFER; GLFW_SCALE_TO_MONITOR is deprecated there).
@@ -305,7 +174,7 @@ bool initGlfwContext(Context &ctx, const Point &size, const std::string &title, 
         return false;
     }
     glfwMakeContextCurrent(ctx.window);
-#if GWENI_EXAMPLE_WEBGL
+#if GWENI_APP_WEBGL
     reportWebGLContext();
     // a window on the page fills its container and follows its size: each
     // change is a new framebuffer size through GLFW's callback
@@ -327,30 +196,13 @@ platform::LoopOptions loopOptions()
     return options;
 }
 
-bool loopArgument(int argc, char **argv, int &i, platform::LoopOptions &options)
-{
-    if(i+1 >= argc || !platform::LoopOptions::parseMode(argv[i+1], options.mode))
-    {
-        std::cerr<<g_tool<<": --loop wants idle or continuous\n";
-        return false;
-    }
-    ++i;
-    return true;
-}
-
-const char *const LoopHelp=
-    "  --loop <idle|continuous>  how the window draws: idle (the default) only\n"
-    "                       when the canvas has work, sleeping in between;\n"
-    "                       continuous every frame. GWENI_IDLE_VERIFY=1 draws\n"
-    "                       the frames idle skips and fails one that writes\n";
-
 void runWindowLoop(const Context &ctx, controls::Canvas *canvas, renderer::Base *renderer,
     const platform::LoopOptions &options, std::function<void()> frame,
     std::function<void(const platform::IdleLoop &)> afterIteration)
 {
     input::GlfwLoop::Callbacks callbacks;
 
-#if GWENI_EXAMPLE_WEBGL
+#if GWENI_APP_WEBGL
     // The browser swaps after each callback that drew (emscripten-glfw's
     // glfwSwapBuffers only logs that it is not implemented) and delivers the
     // input between them; the poll that applies a resize opens each callback.
@@ -387,7 +239,7 @@ void runWindowLoop(const Context &ctx, controls::Canvas *canvas, renderer::Base 
 #endif
 }
 
-#if GWENI_EXAMPLE_WEBGL
+#if GWENI_APP_WEBGL
 bool initEglContext(Context &ctx)
 {
     EmscriptenWebGLContextAttributes attributes;
@@ -426,7 +278,7 @@ bool initEglContext(Context &ctx)
     reportWebGLContext();
     return true;
 }
-#elif GWENI_EXAMPLE_EGL
+#elif GWENI_APP_EGL
 bool initEglContext(Context &ctx)
 {
     ctx.eglDisplay=eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, nullptr);
@@ -501,7 +353,7 @@ bool initEglContext(Context &ctx)
     }
     return true;
 }
-#endif//GWENI_EXAMPLE_EGL
+#endif//GWENI_APP_EGL
 
 void destroyContext(Context &ctx)
 {
@@ -513,14 +365,14 @@ void destroyContext(Context &ctx)
         ctx.window=nullptr;
         return;
     }
-#if GWENI_EXAMPLE_WEBGL
+#if GWENI_APP_WEBGL
     if(ctx.webgl)
     {
         emscripten_webgl_make_context_current(0);
         emscripten_webgl_destroy_context(ctx.webgl);
         ctx.webgl=0;
     }
-#elif GWENI_EXAMPLE_EGL
+#elif GWENI_APP_EGL
     if(ctx.eglDisplay != EGL_NO_DISPLAY)
     {
         eglMakeCurrent(ctx.eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
@@ -685,53 +537,11 @@ const char *backendName(Backend backend)
     return (backend == Backend::Vulkan) ? "vulkan" : "gl";
 }
 
-bool chooseBackend(const std::string &flag, Backend &backend)
-{
-    std::string name=flag;
-    const char *source="--renderer";
-
-    if(name.empty())
-    {
-        const char *env=std::getenv("GWENI_RENDERER");
-
-        name=(env && *env) ? env : "gl";
-        source="GWENI_RENDERER";
-    }
-
-    if(name == "gl")
-    {
-        backend=Backend::GL;
-        return true;
-    }
-    if(name == "vulkan")
-    {
-#ifdef GWENI_HAS_VULKAN
-        backend=Backend::Vulkan;
-        return true;
-#else
-        std::cerr<<g_tool<<": "<<source<<(flag.empty() ? "=" : " ")<<"vulkan: this build has no Vulkan renderer"
-                   " (configure with -DGWENI_RENDER_VULKAN=ON, as ./generate.sh does)\n";
-        return false;
-#endif
-    }
-    std::cerr<<g_tool<<": "<<source<<" wants gl or vulkan, not '"<<name<<"'\n";
-    return false;
-}
-
-const char *const RendererHelp=
-    "  --renderer <gl|vulkan>  the backend to draw with (default gl, or\n"
-    "                       GWENI_RENDERER; the flag beats it): OpenGLCore on a\n"
-    "                       GL context, or renderer::Vulkan on a Vulkan device\n"
-    "                       (no GL or EGL context: a capture is always\n"
-    "                       headless, a window has a Vulkan swapchain; with\n"
-    "                       GWENI_VULKAN_VALIDATION=1 the validation layer is on\n"
-    "                       and any message aborts)\n";
-
 void Device::runWindowLoop(controls::Canvas *canvas, renderer::Base *renderer,
     const platform::LoopOptions &options, std::function<void()> frame,
     std::function<void(const platform::IdleLoop &)> afterIteration)
 {
-    capture::runWindowLoop(m_context, canvas, renderer, options, std::move(frame), std::move(afterIteration));
+    app::runWindowLoop(m_context, canvas, renderer, options, std::move(frame), std::move(afterIteration));
 }
 
 namespace
@@ -806,7 +616,7 @@ bool GlDevice::open(const DeviceOptions &options)
     // the build container as it stands.
     if(options.headless)
     {
-#if GWENI_EXAMPLE_EGL
+#if GWENI_APP_EGL
         if(!initEglContext(m_context))
             return false;
 #else
@@ -822,7 +632,7 @@ bool GlDevice::open(const DeviceOptions &options)
                        " interactive mode needs a display\n";
             return false;
         }
-#if GWENI_EXAMPLE_EGL
+#if GWENI_APP_EGL
         std::cerr<<g_tool<<": GLFW could not open a window"
                    " (no display?); falling back to surfaceless EGL\n";
         if(!initEglContext(m_context))
@@ -964,5 +774,5 @@ bool ensureDirectory(const fs::path &dir)
     return false;
 }
 
-}//namespace capture
+}//namespace app
 }//namespace gweni

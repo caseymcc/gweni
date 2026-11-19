@@ -9,8 +9,8 @@
 //
 //      node tests/web/interactive.mjs [--out <dir>] <dir holding ControlTest.html and OpenGLCore.html>
 //
-//  Each page runs its window (capture::initGlfwContext on emscripten-glfw, one
-//  idle loop through capture::runWindowLoop, a frame only when the canvas has
+//  Each page runs its window (app::initGlfwContext on emscripten-glfw, one
+//  idle loop through app::runWindowLoop, a frame only when the canvas has
 //  work); the script waits after each input for the page to settle: drawn,
 //  then a tick with nothing to draw (frames.mjs, gweniRun.frames and .ticks,
 //  web/pre.js),

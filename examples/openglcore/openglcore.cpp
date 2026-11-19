@@ -190,7 +190,7 @@ static void urlChanged(const std::string &url)
 //! state directory. \return False if there is none to keep it in.
 static bool openStorage()
 {
-#if GWENI_EXAMPLE_WEBGL
+#if GWENI_APP_WEBGL
     gweni::platform::setStoragePrefix("gweni-demo/");
     return true;
 #else
@@ -207,7 +207,7 @@ static bool openStorage()
     else if(home && home[0])
         dir=std::string(home)+"/.local/state/gweni";
 #endif
-    if(dir.empty() || !gweni::capture::ensureDirectory(fs::path(dir)))
+    if(dir.empty() || !gweni::app::ensureDirectory(fs::path(dir)))
         return false;
     gweni::platform::setStorageFile((fs::path(dir)/"OpenGLCore.json").string());
     return true;
@@ -246,7 +246,7 @@ static std::string open(GLFWwindow *window, gweni::Demo &demo, const std::string
 
 }//namespace navigation
 
-#if GWENI_EXAMPLE_WEBGL
+#if GWENI_APP_WEBGL
 
 //! For a script driving the page (tests/web/interactive.mjs, through
 //! Module.ccall(name, 'string')): whether the canvas's stats overlay is open,
@@ -353,7 +353,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_demo_entry(const char *nam
     }
     return state.c_str();
 }
-#endif//GWENI_EXAMPLE_WEBGL
+#endif//GWENI_APP_WEBGL
 
 static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
@@ -425,7 +425,7 @@ static void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 static void fitCanvas(GLFWwindow* window)
 {
     if(g_renderer && g_canvas)
-        gweni::capture::fitCanvasToWindow(window, g_manualScale, *g_renderer, *g_canvas, g_glfwInput);
+        gweni::app::fitCanvasToWindow(window, g_manualScale, *g_renderer, *g_canvas, g_glfwInput);
 }
 
 static void framebuffer_size_callback(GLFWwindow* window, int /*width*/, int /*height*/)
@@ -594,7 +594,7 @@ int main(int argc, char *argv[])
 {
     const gweni::Point screenSize(1024,768);
 
-    gweni::capture::setToolName("OpenGLCore");
+    gweni::app::setToolName("OpenGLCore");
 
     std::string demoName;
     std::string shotPath;
@@ -606,7 +606,7 @@ int main(int argc, char *argv[])
     bool forceHeadless=false;
     bool statsOverlay=false;
     bool depthView=false;
-    gweni::platform::LoopOptions loopOptions=gweni::capture::loopOptions();
+    gweni::platform::LoopOptions loopOptions=gweni::app::loopOptions();
 
     for(int i=1; i<argc; ++i)
     {
@@ -669,7 +669,7 @@ int main(int argc, char *argv[])
     if(!gweni::capture::manualScale(scaleGiven, g_manualScale))
         return EXIT_FAILURE;
 
-    gweni::capture::Backend backend;
+    gweni::app::Backend backend;
 
     if(!gweni::capture::chooseBackend(rendererName, backend))
         return EXIT_FAILURE;
@@ -694,34 +694,34 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    if(writingPng && !gweni::capture::ensureDirectory(fs::path(shotPath).parent_path()))
+    if(writingPng && !gweni::app::ensureDirectory(fs::path(shotPath).parent_path()))
         return EXIT_FAILURE;
 
     // Declared before the renderer, which keeps a reference to it. A missing
     // directory is reported here and the run carries on: what loads from it
     // degrades below.
     bool resourcesFound=true;
-    const std::unique_ptr<gweni::ResourcePaths> paths=gweni::capture::resourcePaths(resourceDir, resourcesFound);
+    const std::unique_ptr<gweni::ResourcePaths> paths=gweni::app::resourcePaths(resourceDir, resourcesFound);
 
-    gweni::capture::installGlfwErrorHandler();
+    gweni::app::installGlfwErrorHandler();
 
     // A capture draws into an offscreen target and needs no display (GL falls
     // back to a surfaceless EGL context without one, Vulkan has no window at
     // all), so the demo can be photographed in the build container as it
     // stands; anything else is the window.
-    gweni::capture::DeviceOptions deviceOptions;
+    gweni::app::DeviceOptions deviceOptions;
 
     deviceOptions.size=screenSize;
     deviceOptions.title="Gweni OpenGL Core Profile Sample";
     deviceOptions.capturing=capturing;
     deviceOptions.headless=forceHeadless;
 
-    std::unique_ptr<gweni::capture::Device> device=gweni::capture::openDevice(backend, deviceOptions);
+    std::unique_ptr<gweni::app::Device> device=gweni::app::openDevice(backend, deviceOptions);
 
     if(!device)
         return EXIT_FAILURE;
 
-    const gweni::capture::Context &ctx=device->context();
+    const gweni::app::Context &ctx=device->context();
 
     // Create a Gweni renderer: OpenGLCore, or renderer::Vulkan
     gweni::renderer::SlotRenderer *renderer=
@@ -744,7 +744,7 @@ int main(int argc, char *argv[])
     if(capturing && !renderer->preloadGlyphFallbacks())
         degraded=true;
 
-    if(gweni::capture::loadDefaultFont(*renderer, skin->getDefaultFont()) != gweni::Font::Status::Loaded)
+    if(gweni::app::loadDefaultFont(*renderer, skin->getDefaultFont()) != gweni::Font::Status::Loaded)
         degraded=true;
 
     // Create a Canvas (it's root, on which all other Gweni panels are created)
@@ -759,13 +759,13 @@ int main(int argc, char *argv[])
     // units. An offscreen capture has no OS content scale, so only the manual
     // factor counts; the window's own is applied once it is shown, below.
     gweni::controls::Canvas* canvas = new gweni::controls::Canvas(skin);
-    const gweni::Point canvasSize=gweni::capture::logicalSize(screenSize, g_manualScale);
+    const gweni::Point canvasSize=gweni::app::logicalSize(screenSize, g_manualScale);
     canvas->setScale(g_manualScale);
     canvas->setSize(canvasSize.x, canvasSize.y);
 
     g_renderer=renderer;
     g_canvas=canvas;
-#if GWENI_EXAMPLE_WEBGL
+#if GWENI_APP_WEBGL
     // the page's depth view controls (demo.html's Z spacing) follow the view
     gweni::capture::tellPageOfDepthView(canvas);
 #endif
@@ -898,7 +898,7 @@ int main(int argc, char *argv[])
 
         if(writingPng)
         {
-            if(gweni::capture::writeRendererPng(*renderer, screenSize.x, screenSize.y, shotPath))
+            if(gweni::app::writeRendererPng(*renderer, screenSize.x, screenSize.y, shotPath))
                 std::cout<<"wrote "<<shotPath<<"\n";
             else
                 result=EXIT_FAILURE;

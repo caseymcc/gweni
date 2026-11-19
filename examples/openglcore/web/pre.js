@@ -32,14 +32,14 @@
 //    aborted   null, or why it aborted (an assertion, a trap, out of memory)
 //    output    every line written to stdout and stderr, in order, each
 //              {stream: 'stdout'|'stderr', text}
-//    webgl     the WebGL context the run made (capture::initEglContext reports
+//    webgl     the WebGL context the run made (app::initEglContext reports
 //              it through Module.gweniWebGLContext): {webgl2, version, renderer,
 //              vendor, depthBits}, null if it made none
 //    argv      the arguments pre.js gave main (gweniDefaultArgs, then the
 //              URL's unless gweniQueryArgs is false), without argv[0]; null
 //              under node
 //    frames    how many frames an interactive window has drawn
-//              (capture::runWindowLoop: idle, a frame in an animation frame
+//              (app::runWindowLoop: idle, a frame in an animation frame
 //              only when its canvas has work), 0 for a capture, which draws
 //              offscreen in one blocking main
 //    ticks     how many animation-frame callbacks the window's loop has had,

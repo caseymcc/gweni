@@ -6,7 +6,7 @@
 #  gweni_web_page(<target>): makes an Emscripten executable a page of the web
 #  tree, <target>.html beside its .js, .wasm and .data:
 #  - shell.html, a bare page with the #canvas the WebGL 2 context is made on
-#    (capture::initEglContext) and a panel showing the output;
+#    (app::initEglContext) and a panel showing the output;
 #  - pre.js, which turns the page's URL query into argv and hands the run's
 #    exit code, output and files to the browser runner (tests/web/run.mjs);
 #  - resources/ preloaded at /resources, where RelativeToExecutablePaths
@@ -17,7 +17,7 @@
 #  - WebGL 2 (from gweni), a heap that grows, a 4 MB stack (Emscripten's default
 #    is 64 KB; the layout and render walks recurse once per tree level) and the
 #    runtime exiting when main returns, so a capture run ends as natively (an
-#    interactive window's main loop, capture::runWindowLoop, keeps it alive);
+#    interactive window's main loop, app::runWindowLoop, keeps it alive);
 #  - Module._malloc, Module._free and Module.HEAPU8, for a script handing a
 #    page bytes (a fetched image, ControlTest's gweni_web_set_image);
 #  - Module.ccall, for a script reading what a page exports with
@@ -30,8 +30,8 @@
 #    may be a capture (any flag the interactive window does not take), or
 #    always with PRELOAD_LAZY (gweni_unittests), so what a capture draws never
 #    waits on a fetch.
-#  An interactive window fills the shell's #canvas-container (capture.h's
-#  initGlfwContext), and runs one frame per animation frame.
+#  An interactive window fills the shell's #canvas-container (gweni/app/device.h's
+#  app::initGlfwContext), and runs one frame per animation frame.
 #  Defined once, for the examples here and gweni_unittests (tests/).
 #
 function(gweni_web_page target)

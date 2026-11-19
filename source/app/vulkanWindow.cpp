@@ -14,7 +14,7 @@
  *  to wait on is the swapchain image's, so it is free again once the image is
  *  acquired again. The swapchain is made again, after the device has finished
  *  everything sent to it, when the framebuffer changes size (the size callback
- *  has already fitted the canvas and the renderer's view to it, capture.h) and
+ *  has already fitted the canvas and the renderer's view to it, gweni/app/device.h) and
  *  when an acquire or a present says it is out of date or suboptimal. While the
  *  window is minimised (iconified, or a 0x0 framebuffer, as Windows makes it)
  *  nothing is drawn, acquired or presented: the loop waits for events. The loop
@@ -25,7 +25,7 @@
  */
 
 #ifdef GWENI_HAS_VULKAN
-// before GLFW's header (through capture.h), which declares its Vulkan
+// before GLFW's header (through gweni/app/device.h), which declares its Vulkan
 // functions (glfwCreateWindowSurface) only once Vulkan's are
 #include <gweni/platforms/renderers/vulkan.h>
 #endif
@@ -44,7 +44,7 @@
 
 namespace gweni
 {
-namespace capture
+namespace app
 {
 
 namespace
@@ -821,7 +821,7 @@ std::unique_ptr<Device> openVulkanWindowDevice(const DeviceOptions &options)
     return std::move(device);
 }
 
-}//namespace capture
+}//namespace app
 }//namespace gweni
 
 #endif//GWENI_HAS_VULKAN

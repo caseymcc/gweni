@@ -141,7 +141,7 @@ bool drawFrame(renderer::SlotRenderer &renderer, const char *backend)
 
 #ifdef PACKAGE_HAS_GL
 //! A headless GL context with an offscreen framebuffer bound, as an app drawing
-//! headless makes one (gweni has none to give: capture.cpp is its examples'):
+//! headless makes one (gweni::gweni has none to give; gweni_app is not in the package):
 //! surfaceless EGL natively, WebGL 2 on the page's #canvas on the web
 class GlContext
 {

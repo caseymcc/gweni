@@ -1,5 +1,5 @@
 # HudExample: gweni as a HUD over an app's own GL scene (hud.cpp), on the
-# examples' capture plumbing (gweni_capture). It draws its scene with GL, so it
+# app shell (gweni_app) through the examples' gweni_capture. It draws its scene with GL, so it
 # is built with the GL renderer only (examples/CMakeLists.txt), and not in the
 # web tree.
 add_executable(HudExample hud.cpp)
@@ -10,7 +10,7 @@ target_link_libraries(HudExample
     glfw
 )
 
-# It loads the resources/ next to it through capture::resourcePaths, as the
+# It loads the resources/ next to it through app::resourcePaths, as the
 # other examples do, from a mirror of its own (cmake/mirrorDirectory.cmake),
 # with the lazy CJK face's resources-lazy/ beside it.
 get_property(hud_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)

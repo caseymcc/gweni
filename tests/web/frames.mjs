@@ -3,7 +3,7 @@
 //  Copyright (c) 2010 Facepunch Studios
 //  MIT License, see LICENSE
 //
-//  Waiting on an interactive page's window (capture::runWindowLoop on
+//  Waiting on an interactive page's window (app::runWindowLoop on
 //  input::GlfwLoop): the loop is idle, so a page draws a frame
 //  (gweniRun.frames, web/pre.js) only when its canvas has work and otherwise
 //  returns from its animation-frame callback at once (gweniRun.ticks counts
