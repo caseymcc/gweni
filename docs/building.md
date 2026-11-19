@@ -278,10 +278,12 @@ name, so an exported one would override an app asking for more.
 
 - natively it mirrors them to `resources/` in the target's output directory
   on every build (the rules of `cmake/mirrorDirectory.cmake`: a file the
-  package no longer has is removed from the copy). The directory is the
-  target's `RUNTIME_OUTPUT_DIRECTORY`, else `CMAKE_RUNTIME_OUTPUT_DIRECTORY`,
-  else its binary directory, read when the function is called, so set those
-  first;
+  package no longer has is removed from the copy). The directory is where
+  CMake puts the executable: the target's `RUNTIME_OUTPUT_DIRECTORY` (which
+  `CMAKE_RUNTIME_OUTPUT_DIRECTORY` sets on a target made after it), else its
+  binary directory, with the configuration's directory under a multi-config
+  generator unless the property names it in a generator expression. It is read
+  when the function is called, so set the property first;
 - on the web it preloads them into the page's `.data` at `/resources`, the
   license texts left out, as link dependencies (an update relinks).
 
@@ -298,9 +300,14 @@ Limits and caveats:
 - static only: `GWENI_EXPORT` is empty, there is no shared library;
 - Linux x64 and wasm32 are what is built and tested;
 - the vendored freetype-gl is gweni's patched copy, built into `libgweni.a`
-  under freetype-gl's own C names: an app that also links vcpkg's `freetype-gl`
-  port gets duplicate symbols (its headers do not collide: gweni's are under
-  `include/gweni/third_party/`);
+  under freetype-gl's own C names and included by gweni's headers as
+  `<freetype-gl/...>` from `include/gweni/third_party/`, so gweni cannot be used
+  beside vcpkg's `freetype-gl` port. An app linking both gets duplicate symbols.
+  The headers collide as well: the port's `include/freetype-gl/` shadows
+  gweni's copies wherever it comes first on the include path, so gweni's headers
+  compile against the unpatched port. It always comes first when both are
+  installed into one prefix (one `vcpkg_installed/<triplet>/`), because an
+  installed gweni lists `include/` before `include/gweni/third_party/`;
 - the lazy CJK face is not in the package: CJK text draws as the missing glyph,
   after one stderr line, unless the app ships `resources-lazy/` beside its
   executable (above);
