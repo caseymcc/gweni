@@ -67,6 +67,7 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "capture.h"
+#include <gweni/app/window.h>
 
 #include <cmath>
 #include <cstdio>
@@ -402,11 +403,10 @@ private:
 };
 
 //-----------------------------------------------------------------------------
-// The window's input: the UI first, the scene what it did not take
+// The window's input: the UI first (app::Window gives every event to the
+// canvas), the scene what it did not take
 //-----------------------------------------------------------------------------
 
-gweni::input::GLFW3 g_glfwInput;
-gweni::renderer::Base *g_renderer=nullptr;
 gweni::controls::Canvas *g_canvas=nullptr;
 Panel *g_panel=nullptr;
 float g_manualScale=1.0f;
@@ -417,104 +417,73 @@ bool g_orbiting=false;
 double g_lastX=0.0;
 double g_lastY=0.0;
 
-void keyCallback(GLFWwindow *, int key, int scancode, int action, int mods)
+void hookInput(gweni::app::Window &window)
 {
-    if(key == GLFW_KEY_F10)
+    gweni::app::Window::Hooks &hooks=window.hooks;
+    GLFWwindow *glfw=window.glfwWindow();
+
+    hooks.keyFirst=[](const gweni::input::GLFW3::KeyEvent &event)
     {
-        if((action == GLFW_PRESS) && g_canvas)
+        if(event.key != GLFW_KEY_F10)
+            return false;
+        if((event.action == GLFW_PRESS) && g_canvas)
             gweni::tools::StatsOverlay::toggle(g_canvas);
-        return;
-    }
-
-    const gweni::input::GLFW3::KeyEvent event={key, scancode, action, mods};
-
-    if(g_glfwInput.processKeyEvent(event) || (action != GLFW_PRESS))
-        return;
-    // the UI does not have the keyboard: the key is the scene's
-    if(key == GLFW_KEY_SPACE && g_panel)
-        g_panel->toggleSpin();
-    else if(key == GLFW_KEY_R)
-        resetView();
-}
-
-void charCallback(GLFWwindow *, unsigned int codepoint)
-{
-    g_glfwInput.processCharEvent(codepoint);
-}
-
-void focusCallback(GLFWwindow *, int focused)
-{
-    g_glfwInput.processFocus(focused == GLFW_TRUE);
-    if(focused != GLFW_TRUE)
-        g_orbiting=false;
-}
-
-void cursorCallback(GLFWwindow *, double x, double y)
-{
+        return true;
+    };
+    hooks.key=[](const gweni::input::GLFW3::KeyEvent &event, bool taken)
+    {
+        if(taken || (event.action != GLFW_PRESS))
+            return;
+        // the UI does not have the keyboard: the key is the scene's
+        if(event.key == GLFW_KEY_SPACE && g_panel)
+            g_panel->toggleSpin();
+        else if(event.key == GLFW_KEY_R)
+            resetView();
+    };
+    hooks.focus=[](bool focused)
+    {
+        if(!focused)
+            g_orbiting=false;
+    };
     // the canvas hovers what is under the cursor, an orbit going on or not;
-    // the moves of a press the scene got are the scene's (false) all the way
-    const bool taken=g_glfwInput.processMouseMove(x, y);
-
-    if(g_orbiting && !taken)
+    // the moves of a press the scene got are the scene's (not taken) all the way
+    hooks.mouseMove=[](double x, double y, bool taken)
     {
-        g_scene.yaw-=float(x-g_lastX)*0.01f;
-        g_scene.pitch=std::fmax(-1.5f, std::fmin(1.5f, g_scene.pitch+float(y-g_lastY)*0.01f));
-    }
-    g_lastX=x;
-    g_lastY=y;
-}
-
-void enterCallback(GLFWwindow *, int entered)
-{
-    g_glfwInput.processCursorEnter(entered == GLFW_TRUE);
-}
-
-void buttonCallback(GLFWwindow *window, int button, int action, int mods)
-{
-    const bool taken=g_glfwInput.processMouseButtons(button, action, mods);
-
-    if(button != GLFW_MOUSE_BUTTON_LEFT)
-        return;
-    // every left press starts afresh, so an orbit whose release was lost (to
-    // an input capture, a window that lost it) does not run on
-    if(action == GLFW_PRESS)
-        g_orbiting=false;
-    if(taken)
-        return;
-    // a release gets its press's answer, so the orbit's comes here wherever
-    // the cursor is, over the panel too
-    if(action == GLFW_PRESS)
+        if(g_orbiting && !taken)
+        {
+            g_scene.yaw-=float(x-g_lastX)*0.01f;
+            g_scene.pitch=std::fmax(-1.5f, std::fmin(1.5f, g_scene.pitch+float(y-g_lastY)*0.01f));
+        }
+        g_lastX=x;
+        g_lastY=y;
+    };
+    hooks.mouseButton=[glfw](int button, int action, int, bool taken)
     {
-        glfwGetCursorPos(window, &g_lastX, &g_lastY);
-        g_orbiting=true;
-    }
-    else if(action == GLFW_RELEASE)
-        g_orbiting=false;
-}
-
-void scrollCallback(GLFWwindow *, double xoffset, double yoffset)
-{
+        if(button != GLFW_MOUSE_BUTTON_LEFT)
+            return;
+        // every left press starts afresh, so an orbit whose release was lost
+        // (to an input capture, a window that lost it) does not run on
+        if(action == GLFW_PRESS)
+            g_orbiting=false;
+        if(taken)
+            return;
+        // a release gets its press's answer, so the orbit's comes here
+        // wherever the cursor is, over the panel too
+        if(action == GLFW_PRESS)
+        {
+            glfwGetCursorPos(glfw, &g_lastX, &g_lastY);
+            g_orbiting=true;
+        }
+        else if(action == GLFW_RELEASE)
+            g_orbiting=false;
+    };
     // a wheel no control scrolled is not the scene's while it is over the HUD
     // (a Label, the panel's bare part)
-    if(!g_glfwInput.processScroll(xoffset, yoffset) && g_canvas && !g_canvas->pointerOverControl())
-        g_scene.distance=std::fmax(2.0f, std::fmin(12.0f, g_scene.distance*float(std::pow(0.9, yoffset))));
-}
-
-void fitCanvas(GLFWwindow *window)
-{
-    glfwGetFramebufferSize(window, &g_framebuffer.x, &g_framebuffer.y);
-    if(g_renderer && g_canvas)
-        gweni::app::fitCanvasToWindow(window, g_manualScale, *g_renderer, *g_canvas, g_glfwInput);
-}
-
-void framebufferCallback(GLFWwindow *window, int, int)
-{
-    fitCanvas(window);
-}
-
-void contentScaleCallback(GLFWwindow *window, float, float)
-{
-    fitCanvas(window);
+    hooks.scroll=[](double, double dy, bool taken)
+    {
+        if(!taken && g_canvas && !g_canvas->pointerOverControl())
+            g_scene.distance=std::fmax(2.0f, std::fmin(12.0f, g_scene.distance*float(std::pow(0.9, dy))));
+    };
 }
 
 //-----------------------------------------------------------------------------
@@ -660,57 +629,41 @@ int main(int argc, char *argv[])
     if(capturing && !gweni::app::ensureDirectory(fs::path(shotPath).parent_path()))
         return EXIT_FAILURE;
 
-    bool resourcesFound=true;
-    const std::unique_ptr<gweni::ResourcePaths> paths=gweni::app::resourcePaths(resourceDir, resourcesFound);
-
     gweni::app::installGlfwErrorHandler();
 
-    gweni::app::DeviceOptions deviceOptions;
-
-    deviceOptions.size=screenSize;
-    deviceOptions.title="gweni HUD over a GL scene";
-    deviceOptions.capturing=capturing;
-    deviceOptions.headless=forceHeadless;
-
-    std::unique_ptr<gweni::app::Device> device=gweni::app::openDevice(backend, deviceOptions);
-
-    if(!device)
-        return EXIT_FAILURE;
-
-    const gweni::app::Context &ctx=device->context();
-
     Cube cube;
+    gweni::app::ShellOptions shellOptions;
 
-    if(!cube.init())
-        return EXIT_FAILURE;
-
-    gweni::renderer::SlotRenderer *renderer=
-        device->newRenderer(*paths, gweni::Rect(gweni::Point(0, 0), screenSize));
+    shellOptions.size=screenSize;
+    shellOptions.scale=g_manualScale;
+    shellOptions.title="gweni HUD over a GL scene";
+    shellOptions.resources=resourceDir;
+    shellOptions.capturing=capturing;
+    shellOptions.headless=forceHeadless;
+    // the scene's GL objects, on the context before the renderer is made
+    shellOptions.afterDevice=[&cube](gweni::app::Device &) { return cube.init(); };
     // the scene's GL state comes back after each of gweni's frames
-    if(auto *gl=dynamic_cast<gweni::renderer::OpenGLCore *>(renderer))
-        gl->setPreserveAppState(true);
-    renderer->init();
-
-    gweni::skin::textured::TexturedSkin *skin=new gweni::skin::textured::TexturedSkin(renderer);
-    bool degraded=!resourcesFound;
-
-    if(!skin->init("DefaultSkin.json"))
-        degraded=true;
-    if(gweni::app::loadDefaultFont(*renderer, skin->getDefaultFont()) != gweni::Font::Status::Loaded)
-        degraded=true;
+    shellOptions.beforeInit=[](gweni::renderer::SlotRenderer &renderer)
+    {
+        if(auto *gl=dynamic_cast<gweni::renderer::OpenGLCore *>(&renderer))
+            gl->setPreserveAppState(true);
+    };
 
     // The HUD's panel is the theme's Panel surface, flat and translucent, so
-    // the scene shows through it; this app has no other control drawn with it.
+    // the scene shows through it; this app has no other control drawn with
+    // it. Set once the skin has loaded the theme, before the panel is made.
+    gweni::app::Shell shell;
+
+    if(!shell.open(shellOptions))
+        return EXIT_FAILURE;
     tokyonight::Panel.top=gweni::Color(0x20, 0x23, 0x36, 0xb0);
     tokyonight::Panel.bottom=tokyonight::Panel.top;
 
+    gweni::renderer::SlotRenderer *renderer=shell.renderer.get();
     // The canvas draws no background (Canvas::setDrawBackground is off by
     // default): the scene shows wherever no control draws.
-    gweni::controls::Canvas *canvas=new gweni::controls::Canvas(skin);
-    const gweni::Point canvasSize=gweni::app::logicalSize(screenSize, g_manualScale);
-
-    canvas->setScale(g_manualScale);
-    canvas->setSize(canvasSize.x, canvasSize.y);
+    gweni::controls::Canvas *canvas=shell.canvas.get();
+    const bool degraded=shell.degraded;
 
     Panel *panel=canvas->newChild<Panel>();
 
@@ -724,7 +677,6 @@ int main(int argc, char *argv[])
     tag->setToolTipText("Toggles the spin");
     tag->onPressCaller.add(panel, &Panel::onTag);
 
-    g_renderer=renderer;
     g_canvas=canvas;
     g_panel=panel;
     g_framebuffer=screenSize;
@@ -735,8 +687,9 @@ int main(int argc, char *argv[])
     int result=EXIT_SUCCESS;
 
     // The app's frame: its scene with its own depth, then the scene's depth
-    // cleared so it hides no control, then the UI over it.
-    auto frame=[canvas, renderer, tag, &cube, clear]()
+    // cleared so it hides no control, then the UI over it. Before the update
+    // the cube turns and the tag follows it; before the render the scene.
+    auto place=[canvas, tag]()
     {
         advance(gweni::platform::getTimeInSeconds());
 
@@ -745,10 +698,11 @@ int main(int argc, char *argv[])
         // as high as the panel's buttons, so it is drawn as they are
         tag->setSize(64, g_panel->fasterButton()->getHeight());
         tag->setPos(centre.x-tag->getWidth()/2, centre.y-tag->getHeight()/2);
-        canvas->updateCanvas();
+    };
+    auto drawScene=[renderer, &cube, clear]()
+    {
         cube.draw(g_framebuffer, clear);
         renderer->clearDepth();
-        canvas->renderCanvas();
     };
 
     if(capturing)
@@ -758,10 +712,12 @@ int main(int argc, char *argv[])
 
         for(int i=0; i < CaptureFrames; ++i)
         {
-            frame();
+            place();
+            canvas->updateCanvas();
+            drawScene();
+            canvas->renderCanvas();
             ++g_clockSteps;
         }
-
         if(gweni::app::writeRendererPng(*renderer, screenSize.x, screenSize.y, shotPath))
         {
             // where the test reads its pixels: the scene clear of the cube and
@@ -794,34 +750,45 @@ int main(int argc, char *argv[])
     }
     else
     {
-        g_glfwInput.initialize(canvas);
+        // the scene moves every frame, so the loop draws every frame; the
+        // scene clears the target itself
+        gweni::app::WindowOptions windowOptions;
 
-        glfwSetKeyCallback(ctx.window, keyCallback);
-        glfwSetCharCallback(ctx.window, charCallback);
-        glfwSetWindowFocusCallback(ctx.window, focusCallback);
-        glfwSetCursorPosCallback(ctx.window, cursorCallback);
-        glfwSetCursorEnterCallback(ctx.window, enterCallback);
-        glfwSetMouseButtonCallback(ctx.window, buttonCallback);
-        glfwSetScrollCallback(ctx.window, scrollCallback);
-        glfwSetFramebufferSizeCallback(ctx.window, framebufferCallback);
-        glfwSetWindowContentScaleCallback(ctx.window, contentScaleCallback);
-        fitCanvas(ctx.window);
+        windowOptions.loop=gweni::app::loopOptions();
+        windowOptions.loop.mode=gweni::platform::LoopMode::Continuous;
+        windowOptions.clear=false;
 
-        // the scene moves every frame, so the loop draws every frame
-        gweni::platform::LoopOptions options=gweni::app::loopOptions();
+        gweni::app::Window window(std::move(shell), windowOptions);
 
-        options.mode=gweni::platform::LoopMode::Continuous;
-        g_scene.lastTime=gweni::platform::getTimeInSeconds();
-        device->runWindowLoop(canvas, renderer, options, frame);
+        if(!window.ok())
+            result=EXIT_FAILURE;
+        else
+        {
+            hookInput(window);
+            window.hooks.beforeUpdate=[&window, place]()
+            {
+                g_framebuffer=window.framebufferSize();
+                place();
+            };
+            window.hooks.beforeRender=drawScene;
+            g_scene.lastTime=gweni::platform::getTimeInSeconds();
+            window.run();
+        }
+        // the canvas, then the scene's objects while the context is there
+        g_canvas=nullptr;
+        g_panel=nullptr;
+        window.shell().canvas.reset();
+        cube.destroy();
     }
 
     g_panel=nullptr;
     g_canvas=nullptr;
-    delete canvas;
-    delete skin;
-    delete renderer;
-    cube.destroy();
-    device.reset();
+    if(capturing)
+    {
+        // the canvas, then the scene's objects, then the rest of the shell
+        shell.canvas.reset();
+        cube.destroy();
+    }
 
     return capturing ? gweni::capture::exitStatus(result, degraded) : result;
 }

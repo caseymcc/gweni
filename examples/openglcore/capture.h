@@ -50,6 +50,14 @@ void installFixedProfileClock();
 //! it), so a later --stats-overlay off overrides an earlier one.
 bool onOffArgument(int argc, char *argv[], int &i);
 
+//! The examples' tool keys, for app::Window's keyFirst hook: F12 opens and
+//! closes the inspector, F11 the theme editor (saving to and loading from
+//! gweni-theme.json in the working directory), F10 the stats overlay, F9 the
+//! depth view (the library binds no key). Coming before the canvas, they work
+//! while the depth view takes its input. \return true for one of them, press
+//! or release, which the canvas is then not given.
+bool toolKey(controls::Canvas *canvas, int key, int action);
+
 //! --depth-view: opens the canvas's depth view (gweni::tools::DepthView) the
 //! first time it is called for that canvas once its z labels are numbered
 //! (Canvas::highestZIndex(), after an updateCanvas()), so the view's default

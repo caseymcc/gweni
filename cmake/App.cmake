@@ -7,7 +7,9 @@
 #  opens a window or renders headless (include/gweni/app/, source/app/): the GL
 #  context (a GLFW window, surfaceless EGL, or WebGL 2 in the browser), the
 #  offscreen framebuffer and PNG readback, the Vulkan device and window with
-#  GWENI_RENDER_VULKAN, the window loop and the scale a window draws at.
+#  GWENI_RENDER_VULKAN, the window loop and the scale a window draws at
+#  (device.h); the parts an app draws with (shell.h); and app::Window, those
+#  parts in a window with every GLFW callback wired (window.h).
 #
 #  Built with the GL renderer (the desktop, GLES and web trees; not the
 #  Vulkan-only one) unless GWENI_BUILD_APP is off, so an app taking gweni with
@@ -43,6 +45,11 @@ endif()
 add_library(gweni_app STATIC
     include/gweni/app/device.h
     source/app/device.cpp
+    include/gweni/app/shell.h
+    source/app/shell.cpp
+    include/gweni/app/window.h
+    source/app/window.cpp
+    source/app/instance.h
     # the Vulkan window's swapchain; empty without GWENI_RENDER_VULKAN
     source/app/vulkanWindow.h
     source/app/vulkanWindow.cpp

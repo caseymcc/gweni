@@ -80,6 +80,7 @@
 #include <GLFW/glfw3.h>
 
 #include "capture.h"
+#include <gweni/app/window.h>
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -96,8 +97,6 @@
 //}
 //}
 
-static gweni::input::GLFW3 g_glfwInput;
-static gweni::renderer::Base *g_renderer=nullptr;
 static gweni::controls::Canvas *g_canvas=nullptr;
 static float g_manualScale=1.0f;        // --scale or GWENI_SCALE
 
@@ -354,90 +353,6 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *gweni_web_demo_entry(const char *nam
     return state.c_str();
 }
 #endif//GWENI_APP_WEBGL
-
-static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
-{
-    // F12 opens and closes the inspector, F11 the theme editor, F10 the stats
-    // overlay, F9 the depth view; the library binds no key. They come before
-    // the canvas, so they work while the depth view takes its input.
-    if(key == GLFW_KEY_F9)
-    {
-        if((action == GLFW_PRESS) && g_canvas)
-            gweni::tools::DepthView::toggle(g_canvas);
-        return;
-    }
-    if(key == GLFW_KEY_F10)
-    {
-        if((action == GLFW_PRESS) && g_canvas)
-            gweni::tools::StatsOverlay::toggle(g_canvas);
-        return;
-    }
-    if(key == GLFW_KEY_F12)
-    {
-        if((action == GLFW_PRESS) && g_canvas)
-            gweni::tools::Inspector::toggle(g_canvas);
-        return;
-    }
-    if(key == GLFW_KEY_F11)
-    {
-        if((action == GLFW_PRESS) && g_canvas && gweni::tools::ThemeEditor::toggle(g_canvas))
-            gweni::tools::ThemeEditor::find(g_canvas)->setThemePath("gweni-theme.json");
-        return;
-    }
-
-    const gweni::input::GLFW3::KeyEvent evt = { key, scancode, action, mods };
-    g_glfwInput.processKeyEvent(evt);
-}
-
-static void char_callback(GLFWwindow* window, unsigned int codepoint)
-{
-    g_glfwInput.processCharEvent(codepoint);
-}
-
-static void window_focus_callback(GLFWwindow* window, int focused)
-{
-    g_glfwInput.processFocus(focused == GLFW_TRUE);
-}
-
-static void cursor_pos_callback(GLFWwindow* window, double xpos, double ypos)
-{
-    g_glfwInput.processMouseMove(xpos, ypos);
-}
-
-static void cursor_enter_callback(GLFWwindow* window, int entered)
-{
-    g_glfwInput.processCursorEnter(entered == GLFW_TRUE);
-}
-
-static void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
-{
-    g_glfwInput.processMouseButtons(button, action, mods);
-}
-
-static void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
-{
-    g_glfwInput.processScroll(xoffset, yoffset);
-}
-
-// The view is the framebuffer in device pixels and the canvas that in logical
-// units, so docked controls re-layout to the new window size; the cursor is
-// mapped through the same sizes and scale.
-static void fitCanvas(GLFWwindow* window)
-{
-    if(g_renderer && g_canvas)
-        gweni::app::fitCanvasToWindow(window, g_manualScale, *g_renderer, *g_canvas, g_glfwInput);
-}
-
-static void framebuffer_size_callback(GLFWwindow* window, int /*width*/, int /*height*/)
-{
-    fitCanvas(window);
-}
-
-// The window moved to a monitor with another scale, or the desktop's changed.
-static void content_scale_callback(GLFWwindow* window, float /*xscale*/, float /*yscale*/)
-{
-    fitCanvas(window);
-}
 
 // A capture's clock: one fixed step per rendered frame, so every run sees the
 // same times. 1/60 s is the step, i.e. a nominal 60fps. It counts whole steps
@@ -697,57 +612,41 @@ int main(int argc, char *argv[])
     if(writingPng && !gweni::app::ensureDirectory(fs::path(shotPath).parent_path()))
         return EXIT_FAILURE;
 
-    // Declared before the renderer, which keeps a reference to it. A missing
-    // directory is reported here and the run carries on: what loads from it
-    // degrades below.
-    bool resourcesFound=true;
-    const std::unique_ptr<gweni::ResourcePaths> paths=gweni::app::resourcePaths(resourceDir, resourcesFound);
-
     gweni::app::installGlfwErrorHandler();
 
     // A capture draws into an offscreen target and needs no display (GL falls
     // back to a surfaceless EGL context without one, Vulkan has no window at
     // all), so the demo can be photographed in the build container as it
-    // stands; anything else is the window.
-    gweni::app::DeviceOptions deviceOptions;
+    // stands; anything else is the window. The framebuffer is screenSize device
+    // pixels and the canvas that in logical units; an offscreen capture has no
+    // OS content scale, so only the manual factor counts, and the window's own
+    // is applied once it is shown, below. A missing resource directory, skin
+    // config or default font is reported by the library and drawn degraded
+    // (every surface magenta; the built-in face, or no text if that fails
+    // too): the window keeps running, a capture exits 2.
+    gweni::app::ShellOptions shellOptions;
 
-    deviceOptions.size=screenSize;
-    deviceOptions.title="Gweni OpenGL Core Profile Sample";
-    deviceOptions.capturing=capturing;
-    deviceOptions.headless=forceHeadless;
-
-    std::unique_ptr<gweni::app::Device> device=gweni::app::openDevice(backend, deviceOptions);
-
-    if(!device)
-        return EXIT_FAILURE;
-
-    const gweni::app::Context &ctx=device->context();
-
-    // Create a Gweni renderer: OpenGLCore, or renderer::Vulkan
-    gweni::renderer::SlotRenderer *renderer=
-        device->newRenderer(*paths, gweni::Rect(gweni::Point(0,0), screenSize));
-    renderer->init();
-
-    // Create a Gweni skin
-    gweni::skin::textured::TexturedSkin *skin = new gweni::skin::textured::TexturedSkin(renderer);
-
-    // A skin config or default font that does not load is reported by the
-    // library and drawn degraded (every surface magenta; the built-in face, or no
-    // text if that fails too). The window keeps running; a capture exits 2.
-    bool degraded=!resourcesFound;
-
-    if(!skin->init("DefaultSkin.json"))
-        degraded=true;
-
+    shellOptions.size=screenSize;
+    shellOptions.scale=g_manualScale;
+    shellOptions.title="Gweni OpenGL Core Profile Sample";
+    shellOptions.backend=backend;
+    shellOptions.resources=resourceDir;
+    shellOptions.capturing=capturing;
+    shellOptions.headless=forceHeadless;
     // every chain face before the first layout, so a capture never draws a
     // lazy face's glyphs as missing (on the web pre.js has fetched them)
-    if(capturing && !renderer->preloadGlyphFallbacks())
-        degraded=true;
+    shellOptions.preloadGlyphFallbacks=capturing;
 
-    if(gweni::app::loadDefaultFont(*renderer, skin->getDefaultFont()) != gweni::Font::Status::Loaded)
-        degraded=true;
+    gweni::app::Shell shell;
 
-    // Create a Canvas (it's root, on which all other Gweni panels are created)
+    if(!shell.open(shellOptions))
+        return EXIT_FAILURE;
+
+    // OpenGLCore, or renderer::Vulkan; the shell's until it goes
+    gweni::renderer::SlotRenderer *renderer=shell.renderer.get();
+    gweni::controls::Canvas *canvas=shell.canvas.get();
+    const bool degraded=shell.degraded;
+
     // The canvas fill comes from the theme, so a "theme" block in
     // resources/DefaultSkin.json moves it too. The target is cleared to its
     // colour each frame, which shows wherever no control draws: the canvas
@@ -755,15 +654,6 @@ int main(int argc, char *argv[])
     // default).
     const gweni::Color background=gweni::skin::textured::tokyonight::Canvas.top;
 
-    // The framebuffer is screenSize device pixels and the canvas that in logical
-    // units. An offscreen capture has no OS content scale, so only the manual
-    // factor counts; the window's own is applied once it is shown, below.
-    gweni::controls::Canvas* canvas = new gweni::controls::Canvas(skin);
-    const gweni::Point canvasSize=gweni::app::logicalSize(screenSize, g_manualScale);
-    canvas->setScale(g_manualScale);
-    canvas->setSize(canvasSize.x, canvasSize.y);
-
-    g_renderer=renderer;
     g_canvas=canvas;
 #if GWENI_APP_WEBGL
     // the page's depth view controls (demo.html's Z spacing) follow the view
@@ -777,7 +667,7 @@ int main(int argc, char *argv[])
     g_demo=demo;
 
     // the window's page comes from --demo, else from the storage
-    const std::string startDemo=capturing?demoName:navigation::open(ctx.window, *demo, demoName);
+    const std::string startDemo=capturing?demoName:navigation::open(shell.device->context().window, *demo, demoName);
 
     if(!startDemo.empty() && !demo->showDemo(startDemo))
     {
@@ -788,9 +678,6 @@ int main(int argc, char *argv[])
         gweni::platform::setUrlChangedHandler(nullptr);
         g_demo=nullptr;
         delete demo;
-        delete canvas;
-        delete skin;
-        delete renderer;
         return EXIT_FAILURE;
     }
 #else//SINGLE_CONTROL
@@ -807,6 +694,7 @@ int main(int argc, char *argv[])
     }
 
     int result=EXIT_SUCCESS;
+    gweni::app::Window *window=nullptr;
 
     if(capturing)
     {
@@ -906,38 +794,31 @@ int main(int argc, char *argv[])
     }
     else
     {
-        g_glfwInput.initialize(canvas);
-        // a page's touches and text field (nothing natively); g_glfwInput
-        // outlives the window
-        g_glfwInput.useBrowserInput(true);
+        // The window: the shell's parts, every GLFW callback wired to the
+        // canvas. Held on the heap: in the browser run() never returns and
+        // main's stack is unwound before the first frame, so the hooks hold
+        // only the canvas, a heap object.
+        gweni::app::WindowOptions windowOptions;
 
-        glfwSetKeyCallback(ctx.window, key_callback);
-        glfwSetCharCallback(ctx.window, char_callback);
-        glfwSetWindowFocusCallback(ctx.window, window_focus_callback);
-        glfwSetCursorPosCallback(ctx.window, cursor_pos_callback);
-        glfwSetCursorEnterCallback(ctx.window, cursor_enter_callback);
-        glfwSetMouseButtonCallback(ctx.window, mouse_button_callback);
-        glfwSetScrollCallback(ctx.window, scroll_callback);
-        glfwSetFramebufferSizeCallback(ctx.window, framebuffer_size_callback);
-        glfwSetWindowContentScaleCallback(ctx.window, content_scale_callback);
-
-        // Apply the actual framebuffer size and content scale now (the
-        // framebuffer differs from the window size on high-DPI displays).
-        fitCanvas(ctx.window);
-
-        // The main loop until the window closes (in the browser, per animation
-        // frame, never returning): idle, a frame only when the canvas has work,
-        // continuous one per displayed frame (--loop). The frame
-        // holds only the canvas and the renderer, heap objects, and the colour,
-        // a copy, as the browser's loop needs.
-        device->runWindowLoop(canvas, renderer, loopOptions, [canvas, renderer, background, depthView]()
+        windowOptions.loop=loopOptions;
+        windowOptions.background=background;
+        window=new gweni::app::Window(std::move(shell), windowOptions);
+        if(!window->ok())
+            result=EXIT_FAILURE;
+        else
         {
-            canvas->updateCanvas();
+            window->hooks.keyFirst=[canvas](const gweni::input::GLFW3::KeyEvent &event)
+            {
+                return gweni::capture::toolKey(canvas, event.key, event.action);
+            };
             if(depthView)
-                gweni::capture::openDepthViewOnce(*canvas);
-            renderer->clearTarget(background);
-            canvas->renderCanvas();
-        });
+                window->hooks.afterUpdate=[canvas]() { gweni::capture::openDepthViewOnce(*canvas); };
+
+            // The main loop until the window closes (in the browser, per
+            // animation frame, never returning): idle, a frame only when the
+            // canvas has work, continuous one per displayed frame (--loop).
+            window->run();
+        }
     }
 
 #ifndef SINGLE_CONTROL
@@ -948,10 +829,8 @@ int main(int argc, char *argv[])
     delete button;
 #endif//SINGLE_CONTROL
 
-    delete canvas;
-    delete skin;
-    delete renderer;
-    device.reset();
+    // the shell's parts, the canvas first
+    delete window;
 
     return capturing?gweni::capture::exitStatus(result, degraded):result;
 }

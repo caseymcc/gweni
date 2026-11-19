@@ -1722,6 +1722,37 @@ if(GWENI_RENDER_VULKAN AND NOT EMSCRIPTEN)
     endif()
 endif()
 
+# gweni_app's app::Window in a real window (app/window.cmake, app/window.cpp's
+# header says what it checks): the exe links gweni_app alone, as an app does,
+# under an Xvfb of its own, on GL and, with Vulkan, validated. Without Xvfb it
+# fails rather than skips.
+if(TARGET gweni_app AND NOT EMSCRIPTEN)
+    add_executable(gweni_app_window_test app/window.cpp)
+    gweni_set_warnings(gweni_app_window_test)
+    target_link_libraries(gweni_app_window_test gweni_app)
+    add_test(NAME app_window
+        COMMAND ${CMAKE_COMMAND}
+            -DEXE=$<TARGET_FILE:gweni_app_window_test>
+            -DRESOURCES=${GWENI_SOURCE_DIR}/resources
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/app/window.cmake)
+    set_tests_properties(app_window PROPERTIES
+        ENVIRONMENT GWENI_RENDERER=gl
+        LABELS gpu
+        TIMEOUT 180)
+    if(GWENI_RENDER_VULKAN)
+        add_test(NAME app_window_vulkan
+            COMMAND ${CMAKE_COMMAND}
+                -DEXE=$<TARGET_FILE:gweni_app_window_test>
+                -DRESOURCES=${GWENI_SOURCE_DIR}/resources
+                -DSERVERNUM=140
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/app/window.cmake)
+        set_tests_properties(app_window_vulkan PROPERTIES
+            ENVIRONMENT GWENI_RENDERER=vulkan
+            TIMEOUT 300)
+        gweni_vulkan_test_environment(app_window_vulkan)
+    endif()
+endif()
+
 # the example window's idle loop in a real window (windowIdle.cmake, whose
 # header says what it runs): ControlTest --idle-test under an Xvfb of its own,
 # on GL and, with Vulkan, on renderer::Vulkan validated. Without Xvfb it fails

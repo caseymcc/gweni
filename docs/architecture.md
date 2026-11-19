@@ -1710,6 +1710,16 @@ so its moves and release stay `false` until it is let go, and only new input is
 blocked. The cursor leaving, the window losing focus and quitting are the scene's too (`false`).
 `tests/unit/inputPassThrough.cpp` pins them.
 
+**In an `app::Window`.** HudExample's window is gweni_app's `app::Window`
+(`include/gweni/app/window.h`), which gives every GLFW event to the canvas and then to
+its hooks with that answer: `key`, `mouseMove`, `mouseButton` and `scroll` get the
+event and `taken`, `focus` the focus, and `keyFirst` sees a key before the canvas does
+(the F10 the app keeps for the stats overlay). Its frame is the four steps above with
+`WindowOptions::clear` off (the scene clears the target itself): `beforeUpdate` turns
+the cube and places its tag, `updateCanvas()`, `beforeRender` draws the scene and calls
+`clearDepth()`, `renderCanvas()`. A capture draws the same frame on an `app::Shell`
+of its own (`shell.h`, the parts a Window holds, with no window), on the stepped clock.
+
 **The GL state.** `OpenGLCore::setPreserveAppState(true)` (off by default, so a frame
 makes no GL call beyond its own) has `begin()` save what the frame and its uploads
 change or depend on and set gweni's own, and `end()`, after `flush()`, put it all back:
@@ -6051,7 +6061,7 @@ two programs and the draws. What follows describes both together:
 - **Where the scale comes from, and a change of it.** The GLFW examples size the
   canvas in logical units: `app::fitCanvasToWindow` (`source/app/device.cpp`,
   run once when the window is made and from the framebuffer-size and content-scale
-  callbacks) gives the renderer the framebuffer in device pixels as its view, and the
+  callbacks, `app::Window::fit`) gives the renderer the framebuffer in device pixels as its view, and the
   canvas `round(framebuffer/scale)` at `scale = glfwGetWindowContentScale x` the manual
   factor (`--scale`, else `GWENI_SCALE`, else 1; it multiplies, so it is also an app
   zoom). An offscreen capture and the EGL context have a content scale of 1. A visible
@@ -8267,7 +8277,7 @@ closed, and a held press (a Button, a slider's thumb, a Window's title bar) ends
 the canvas has the mouse, its mouse focus let go: a Button held under it is clicked, as
 a release there would click it. A key or button pressed while the capture is set was
 never down on the canvas, so its release after the capture is gone goes nowhere. A canvas deleted with a capture set tells it (`captureCanvasDeleted`). The apps'
-F9-F12 are handled in their key callbacks before the canvas, so the other tools still
+F9-F12 are handled in their `app::Window`'s `keyFirst` hook (`capture::toolKey`) before the canvas, so the other tools still
 toggle while the view is open. The web reaches the canvas through `input::GLFW3` as
 native does, so it needs nothing of its own.
 

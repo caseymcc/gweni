@@ -9,6 +9,9 @@
 #include <gweni/controls/canvas.h>
 #include <gweni/platforms/platform.h>
 #include <gweni/tools/depthView.h>
+#include <gweni/tools/inspector.h>
+#include <gweni/tools/statsOverlay.h>
+#include <gweni/tools/themeEditor.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -49,6 +52,24 @@ bool onOffArgument(int argc, char *argv[], int &i)
             return value == "on";
         }
     }
+    return true;
+}
+
+bool toolKey(controls::Canvas *canvas, int key, int action)
+{
+    if(((key != GLFW_KEY_F12) && (key != GLFW_KEY_F11) && (key != GLFW_KEY_F10)
+        && (key != GLFW_KEY_F9)) || !canvas)
+        return false;
+    if(action != GLFW_PRESS)
+        return true;
+    if(key == GLFW_KEY_F9)
+        tools::DepthView::toggle(canvas);
+    else if(key == GLFW_KEY_F12)
+        tools::Inspector::toggle(canvas);
+    else if(key == GLFW_KEY_F10)
+        tools::StatsOverlay::toggle(canvas);
+    else if(tools::ThemeEditor::toggle(canvas))
+        tools::ThemeEditor::find(canvas)->setThemePath("gweni-theme.json");
     return true;
 }
 
