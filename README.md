@@ -240,6 +240,23 @@ version is published are in [`docs/building.md`](docs/building.md) → "gweni fr
 without vcpkg, `cmake --install` of a build tree is the same package ("gweni as an installed
 package").
 
+### From Python
+
+The `gweni` Python module (CPython 3.12+, Linux x86_64) builds and drives gweni UIs in a window
+gweni owns, or headless for tests and captures:
+
+```python
+import gweni
+app = gweni.App(title="Hello", size=(800, 600))
+win = app.canvas.add(gweni.Window, title="Settings")
+btn = win.add(gweni.Button, text="Click me", dock=gweni.Dock.TOP)
+btn.on_press(lambda event: print("pressed"))
+app.run()
+```
+
+It is built as a wheel with `./tools/build_wheel.sh`; [`docs/python.md`](docs/python.md) has the
+API, the rules and the tests.
+
 ## Running the examples
 
 The examples are built in the build container (`./run_docker.sh ./generate.sh linux`, then
