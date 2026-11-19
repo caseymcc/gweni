@@ -81,8 +81,8 @@ if(GWENI_RENDER_OPENGL_CORE)
     # are header-only), so a build of the library alone (a vcpkg port's, with
     # GWENI_BUILD_APP off too: gweni_app finds its own, cmake/App.cmake) needs
     # no glfw3.
-    # on the web GLFW is Emscripten's contrib.glfw3 port, which the examples
-    # link through --use-port (examples/openglcore/CMakeLists.txt)
+    # on the web GLFW is Emscripten's contrib.glfw3 port, which gweni_app and
+    # the apps on it link through --use-port (cmake/App.cmake)
     if(GWENI_USE_GLFW AND NOT EMSCRIPTEN AND (GWENI_BUILD_EXAMPLES OR GWENI_BUILD_TESTS))
         find_package(glfw3 CONFIG REQUIRED)
     endif()
