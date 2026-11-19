@@ -46,6 +46,9 @@ option(GWENI_BUILD_TESTS "Build tests" ${GWENI_TOP_LEVEL})
 option(GWENI_DEBUG_LOGGING "Verbose per-control update/layout debug logging" OFF)
 set(GWENI_SANITIZE "" CACHE STRING "Sanitizers to build with, e.g. address")
 option(GWENI_FRAME_POINTERS "Keep frame pointers (-fno-omit-frame-pointer), for profiling" OFF)
+# The Python module gweni (python/), on in the desktop Linux trees ./generate.sh
+# configures; Python_EXECUTABLE names the interpreter (generate.sh passes it)
+option(GWENI_BUILD_PYTHON "Build the Python module gweni" OFF)
 
 project(gweni VERSION 0.1.0 LANGUAGES CXX)
 

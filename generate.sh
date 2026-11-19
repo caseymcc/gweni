@@ -11,6 +11,13 @@ gles=""
 vulkan_only=""
 manifest_features=""
 vulkan="ON"
+print_args=""
+python_build="ON"
+# The interpreter the Python module (GWENI_BUILD_PYTHON) is built for: the
+# image's CPython 3.12 venv (GWENI_PYTHON, Dockerfile), or another one named by
+# GWENI_PYTHON, so CMake never takes Jammy's /usr/bin/python3 (3.10).
+python_executable="${GWENI_PYTHON:-/opt/python/venv/bin/python}"
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 for var in "$@"; do
     if [ "$var" = "x64" ]; then
@@ -49,6 +56,11 @@ for var in "$@"; do
     fi
     if [ "$var" = "vulkan" ]; then
         vulkan_only="vulkan"
+    fi
+    if [ "$var" = "--print-cmake-args" ]; then
+        # print the arguments the configure would get, one a line, and exit
+        # (tools/build_wheel.sh configures its tree with them)
+        print_args="1"
     fi
     if [[ $var = -DVCPKG_MANIFEST_FEATURES=* || $var = -DVCPKG_MANIFEST_FEATURES:*=* ]]; then
         # merged with the features this script adds, below
@@ -125,7 +137,9 @@ if [ "$platform" = "web" ]; then
     fi
 fi
 
-echo "**Building $platform $arch for $build_type"
+if [ -z "$print_args" ]; then
+    echo "**Building $platform $arch for $build_type"
+fi
 
 if [ "$build_type" = "debug" ]; then
     cmake_options="$cmake_options \
@@ -159,7 +173,7 @@ if [ "$platform" = "linux" ]; then
     # settings (e.g. OpenGL GLVND preference) still apply.
     cmake_options="$cmake_options \
         -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake \
-        -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$(pwd)/cmake/linux_toolchain.cmake \
+        -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$repo_dir/cmake/linux_toolchain.cmake \
         -DVCPKG_TARGET_TRIPLET=x64-linux \
         -DGWENI_RENDER_OPENGL_CORE=ON \
         -DGWENI_RENDER_VULKAN=ON"
@@ -195,7 +209,20 @@ if [ "$platform" = "web" ]; then
     # the native GLES tree of the same build type, which the web_*_native tests
     # compare the browser with (tests/web/native.cmake); a -D after it wins
     cmake_options="$cmake_options \
-        -DGWENI_NATIVE_REFERENCE_DIR=$(pwd)/build_linux_x64_${build_type}_gles"
+        -DGWENI_NATIVE_REFERENCE_DIR=$repo_dir/build_linux_x64_${build_type}_gles"
+fi
+
+if [ "$platform" = "linux" ]; then
+    # The Python module is the desktop GL build: on in the debug, release and
+    # profile trees, off in the GLES, Vulkan-only and ASAN ones (an ASAN module
+    # would need the sanitizer runtime LD_PRELOADed into python) and on the web.
+    # A -DGWENI_BUILD_PYTHON passed through comes after this and wins.
+    if [ -n "$gles" ] || [ -n "$vulkan_only" ] || [ -n "$sanitize" ]; then
+        python_build="OFF"
+    fi
+    cmake_options="$cmake_options \
+        -DGWENI_BUILD_PYTHON=$python_build \
+        -DPython_EXECUTABLE=$python_executable"
 fi
 
 # Always passed, empty or not, so a feature cached by an earlier configure of
@@ -221,6 +248,13 @@ if [ "$sanitize" = "asan" ]; then
     # AddressSanitizer tree, next to the plain one: build_linux_x64_debug_asan
     cmake_options="$cmake_options -DGWENI_SANITIZE=address"
     build_dir="${build_dir}_asan"
+fi
+
+if [ -n "$print_args" ]; then
+    for arg in $cmake_options $cmake_custom_options; do
+        echo "$arg"
+    done
+    exit 0
 fi
 
 cmake -H. -B$build_dir \

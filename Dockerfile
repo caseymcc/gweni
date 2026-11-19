@@ -126,6 +126,34 @@ RUN git clone --depth 1 --branch ${EMSDK_VERSION} https://github.com/emscripten-
     /opt/playwright/node_modules/.bin/playwright install-deps chromium-headless-shell && \
     chown -R ${USER_NAME}:${USER_NAME} ${EMSDK} /opt/playwright
 
+# Python for the gweni module (GWENI_BUILD_PYTHON, python/), the versions
+# pinned here and nowhere else. Jammy's own python3 (3.10) stays for tools/*.py;
+# the module is built for and tested on this one:
+# - uv at ${GWENI_PYTHON_ROOT}/uv (pip3 --target, on PATH), which installs
+# - a uv-managed CPython 3.12 with its headers under ${GWENI_PYTHON_ROOT}/managed,
+#   linked at ${GWENI_PYTHON_ROOT}/3.12 so no path below names its patch release,
+# - the venv ${GWENI_PYTHON_ROOT}/venv on it (GWENI_PYTHON, the interpreter
+#   ./generate.sh configures with) holding the pinned build and test tools,
+# - and those pins' wheels with their dependencies in GWENI_WHEELHOUSE, so a
+#   wheel build and an install into a fresh venv need no network
+#   (--no-index --find-links).
+# A container from an older image has no GWENI_PYTHON (echo $GWENI_PYTHON tells).
+ARG UV_VERSION=0.13.9
+ARG GWENI_PYTHON_VERSION=3.12.16
+ARG GWENI_PYTHON_PINS="pytest==9.2.0 mypy==2.4.1 nanobind==3.1.0 scikit-build-core==1.1.2 auditwheel==6.8.2 patchelf==0.19.3.0"
+ENV GWENI_PYTHON_ROOT=/opt/python
+ENV GWENI_PYTHON=${GWENI_PYTHON_ROOT}/venv/bin/python
+ENV GWENI_WHEELHOUSE=${GWENI_PYTHON_ROOT}/wheelhouse
+ENV PATH=${GWENI_PYTHON_ROOT}/uv/bin:${PATH}
+RUN pip3 install --no-cache-dir --target ${GWENI_PYTHON_ROOT}/uv uv==${UV_VERSION} && \
+    UV_PYTHON_INSTALL_DIR=${GWENI_PYTHON_ROOT}/managed uv python install --no-cache ${GWENI_PYTHON_VERSION} && \
+    ln -s $(ls -d ${GWENI_PYTHON_ROOT}/managed/cpython-${GWENI_PYTHON_VERSION}-linux-x86_64-gnu) ${GWENI_PYTHON_ROOT}/3.12 && \
+    test -f ${GWENI_PYTHON_ROOT}/3.12/include/python3.12/Python.h && \
+    uv venv --no-cache --seed --python ${GWENI_PYTHON_ROOT}/3.12/bin/python3.12 ${GWENI_PYTHON_ROOT}/venv && \
+    ${GWENI_PYTHON} -m pip download --no-cache-dir --only-binary=:all: --dest ${GWENI_WHEELHOUSE} pip==26.3 ${GWENI_PYTHON_PINS} && \
+    uv pip install --no-cache --link-mode=copy --python ${GWENI_PYTHON} --no-index --find-links ${GWENI_WHEELHOUSE} ${GWENI_PYTHON_PINS} && \
+    chmod -R a+rX ${GWENI_PYTHON_ROOT}
+
 #clean up apt files, reduce docker size
 RUN rm -rf /var/lib/apt/lists/*
 
