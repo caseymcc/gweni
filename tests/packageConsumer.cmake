@@ -99,63 +99,6 @@ endif()
 list(LENGTH installed installed_count)
 message(STATUS "package_consumer: installed ${installed_count} files into ${prefix}")
 
-# 2. the consumer, configured and built against it
-set(configure_args
-    -S "${CONSUMER_DIR}" -B "${build}" -G "${GENERATOR}"
-    "-DCMAKE_BUILD_TYPE=${BUILD_TYPE}"
-    "-DCMAKE_TOOLCHAIN_FILE=${TOOLCHAIN}"
-    "-DVCPKG_TARGET_TRIPLET=${TRIPLET}"
-    "-DVCPKG_INSTALLED_DIR=${INSTALLED_DIR}"
-    -DVCPKG_MANIFEST_MODE=OFF
-    "-DCMAKE_PREFIX_PATH=${prefix}"
-    # the config itself too: Emscripten's toolchain finds packages inside its
-    # sysroot and vcpkg_installed alone (CMAKE_FIND_ROOT_PATH), not in a prefix
-    "-Dgweni_DIR=${prefix}/share/gweni")
-if(CHAINLOAD)
-    list(APPEND configure_args "-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=${CHAINLOAD}")
-endif()
-if(C_COMPILER)
-    list(APPEND configure_args "-DCMAKE_C_COMPILER=${C_COMPILER}")
-endif()
-if(CXX_COMPILER)
-    list(APPEND configure_args "-DCMAKE_CXX_COMPILER=${CXX_COMPILER}")
-endif()
-if(WEB_PAGE_DIR)
-    list(APPEND configure_args "-DPACKAGE_WEB_PAGE_DIR=${WEB_PAGE_DIR}")
-endif()
-if(SANITIZE)
-    list(APPEND configure_args
-        "-DCMAKE_CXX_FLAGS=-fsanitize=${SANITIZE} -fno-omit-frame-pointer"
-        "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=${SANITIZE}")
-endif()
-check_run("configuring tests/package against the package"
-    COMMAND "${CMAKE_COMMAND}" ${configure_args})
-# A job count of its own: a bare --parallel is an unlimited make -j, which
-# ignores CMAKE_BUILD_PARALLEL_LEVEL and, one translation unit per installed
-# header, ran 200 compilers at once (the Pages runner has 4 cores, #579).
-if(DEFINED ENV{CMAKE_BUILD_PARALLEL_LEVEL} AND NOT "$ENV{CMAKE_BUILD_PARALLEL_LEVEL}" STREQUAL "")
-    set(jobs "$ENV{CMAKE_BUILD_PARALLEL_LEVEL}")
-else()
-    cmake_host_system_information(RESULT jobs QUERY NUMBER_OF_LOGICAL_CORES)
-endif()
-check_run("building tests/package against the package"
-    COMMAND "${CMAKE_COMMAND}" --build "${build}" --parallel ${jobs})
-
-# 3. the run
-set(consumer "${build}/package_consumer")
-if(RUNNER)
-    string(APPEND consumer ".html")
-endif()
-if(NOT EXISTS "${consumer}")
-    message(FATAL_ERROR "package_consumer: the build made no ${consumer}")
-endif()
-find_program(mm_program mm)
-if(RUNNER)
-    set(run_command "${NODE}" "${RUNNER}" "${consumer}")
-elseif(mm_program)
-    set(run_command "${mm_program}" run --lock render -- "${consumer}")
-else()
-    message(STATUS "package_consumer: mm is not on PATH, so the run takes no render lock")
-    set(run_command "${consumer}")
-endif()
-check_run("package_consumer" COMMAND ${run_command} WORKING_DIRECTORY "${SCRATCH_DIR}")
+# 2. the consumer, configured and built against it, and 3. its run
+set(package_test_name package_consumer)
+include("${CMAKE_CURRENT_LIST_DIR}/packageConsumerBuild.cmake")

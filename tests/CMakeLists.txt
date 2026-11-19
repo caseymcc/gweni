@@ -1166,6 +1166,43 @@ if(GWENI_RENDER_OPENGL_CORE OR GWENI_RENDER_VULKAN)
     endif()
 endif()
 
+# ports/gweni/ through vcpkg (vcpkgPort.cmake): an overlay of the port whose
+# source is this checkout, installed in manifest mode with vcpkg's own
+# freetype-gl beside it, then tests/package/ built and run against it, as
+# package_consumer is. In the native release tree only (both renderers, no
+# sanitizer: the port's build is vcpkg's, with the stock triplet and flags), as
+# web_site_smoke is in the web one: it builds gweni twice (debug and release)
+# from scratch. Label package; the script runs the consumer under the render
+# lock itself.
+if(NOT EMSCRIPTEN AND CMAKE_BUILD_TYPE STREQUAL "Release" AND GWENI_RENDER_OPENGL_CORE
+        AND GWENI_RENDER_VULKAN AND NOT GWENI_GL_ES AND NOT GWENI_SANITIZE)
+    if(Z_VCPKG_ROOT_DIR)
+        set(gweni_vcpkg_root "${Z_VCPKG_ROOT_DIR}")
+    else()
+        get_filename_component(gweni_vcpkg_root "${CMAKE_TOOLCHAIN_FILE}/../../.." ABSOLUTE)
+    endif()
+    add_test(NAME vcpkg_port
+        COMMAND ${CMAKE_COMMAND}
+            -DTEST_NAME=vcpkg_port
+            -DSOURCE_DIR=${GWENI_SOURCE_DIR}
+            -DCONSUMER_DIR=${CMAKE_CURRENT_SOURCE_DIR}/package
+            -DSCRATCH_DIR=${CMAKE_CURRENT_BINARY_DIR}/vcpkg_port
+            -DVCPKG_ROOT=${gweni_vcpkg_root}
+            "-DGENERATOR=${CMAKE_GENERATOR}"
+            -DBUILD_TYPE=Release
+            -DTOOLCHAIN=${CMAKE_TOOLCHAIN_FILE}
+            -DCHAINLOAD=${VCPKG_CHAINLOAD_TOOLCHAIN_FILE}
+            -DTRIPLET=${VCPKG_TARGET_TRIPLET}
+            -DFEATURES=opengl,vulkan
+            -DEXTRA_PORTS=freetype-gl
+            -DC_COMPILER=${CMAKE_C_COMPILER}
+            -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/vcpkgPort.cmake)
+    set_tests_properties(vcpkg_port PROPERTIES LABELS package TIMEOUT 2400)
+    gweni_vulkan_test_environment_variables(vcpkg_port_vulkan_environment)
+    set_property(TEST vcpkg_port APPEND PROPERTY ENVIRONMENT ${vcpkg_port_vulkan_environment})
+endif()
+
 # Resource tooling runs on the host even in a cross-compiled tree.
 add_test(NAME fetch_pinned_file
     COMMAND ${CMAKE_COMMAND}
