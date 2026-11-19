@@ -65,6 +65,11 @@ void setFinalizing()
     interpreterFinalizing=true;
 }
 
+bool callbackErrorPending()
+{
+    return firstError.is_valid();
+}
+
 bool inCallback()
 {
     return callbackDepth > 0;

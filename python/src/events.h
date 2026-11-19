@@ -66,6 +66,8 @@ void setFinalizing();
 //! Keeps the exception being handled (the error indicator) for the outermost
 //! CallScope; called with the GIL held.
 void keepCallbackError();
+//! Whether a callback raised an error the outermost CallScope has yet to raise.
+bool callbackErrorPending();
 //! Whether a callback is running now.
 bool inCallback();
 void enterCallback();

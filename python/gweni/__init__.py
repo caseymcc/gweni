@@ -11,6 +11,7 @@ id on each use and raises ``ControlDeletedError`` once it is gone.
 """
 
 from ._gweni import (
+    App,
     Button,
     Canvas,
     Control,
@@ -26,6 +27,7 @@ from ._gweni import (
 )
 
 __all__ = [
+    "App",
     "Button",
     "Canvas",
     "Control",

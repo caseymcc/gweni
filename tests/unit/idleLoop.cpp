@@ -14,8 +14,11 @@
  *  draws every iteration, and a loop that cannot draw (an iconified window)
  *  waits for an event, continuous or idle; the verify mode draws a frame
  *  wherever it would have skipped one and fails it, with its number, when it
- *  wrote a slot, as when the canvas's work is not reported; and a web loop's
- *  tick() draws only when work is due or a frame was wanted.
+ *  wrote a slot, as when the canvas's work is not reported; a web loop's
+ *  tick() draws only when work is due or a frame was wanted; and the options'
+ *  beforeWait and afterWait (the Python module's GIL release) are called
+ *  around every wait, and only around a wait, the events it delivers between
+ *  them.
  */
 #include "headlessFixture.h"
 
@@ -441,4 +444,46 @@ TEST_CASE("Idle loop: a web tick draws only when work is due or a frame was want
     loop.wantFrame();
     loop.tick();
     CHECK(loop.frames() == settled+2);
+}
+
+TEST_CASE("Idle loop: beforeWait and afterWait bracket every wait and nothing else")
+{
+    Scene scene;
+    controls::Base *panel=scene.canvas->newChild<controls::Base>("panel");
+    panel->setBounds(10, 10, 100, 50);
+
+    std::vector<std::string> calls;
+    LoopOptions options;
+
+    options.beforeWait=[&calls]() { calls.push_back("before"); };
+    options.afterWait=[&calls]() { calls.push_back("after"); };
+
+    // an event the second wait delivers, between its two hooks
+    scene.events.push_back({scene.clock+5.0, [&calls]() { calls.push_back("event"); }});
+
+    IdleLoop loop(scene.hooks(), options);
+
+    loop.iterate(); // draws the new tree, waits for nothing
+    CHECK(calls.empty());
+    scene.settle(loop);
+
+    const size_t waits=loop.waits();
+
+    calls.clear();
+    loop.iterate(); // waits until the event
+    CHECK(loop.waits() == waits+1);
+    CHECK(calls == std::vector<std::string>{"before", "event", "after"});
+
+    // a loop that cannot draw waits too, with the hooks
+    calls.clear();
+    scene.end=scene.clock+1.0;
+
+    platform::IdleLoop::Hooks hooks=scene.hooks();
+
+    hooks.canDraw=[]() { return false; };
+
+    IdleLoop iconified(hooks, options);
+
+    iconified.iterate();
+    CHECK(calls == std::vector<std::string>{"before", "after"});
 }

@@ -13,6 +13,8 @@
 #    python_exports     the module exports PyInit__gweni alone (exports.cmake)
 #    python_parity      ButtonDemo from Python against ControlTest's (parity.py;
 #                       label gpu)
+#    python_window_idle App.run() in a window under Xvfb (window_idle.cmake;
+#                       label gpu)
 #
 
 set(gweni_pytest_env
@@ -57,3 +59,15 @@ if(TARGET ControlTest)
         ENVIRONMENT "${gweni_pytest_env}"
         TIMEOUT 300)
 endif()
+
+# python_window_idle: App.run()'s idle loop, the post, Ctrl+C and the wakeup fd
+# in a window under Xvfb (window_idle.cmake)
+add_test(NAME python_window_idle
+    COMMAND ${CMAKE_COMMAND}
+        -DPYTHON=${Python_EXECUTABLE}
+        -DSCRIPT=${CMAKE_CURRENT_LIST_DIR}/window_idle.py
+        -P ${CMAKE_CURRENT_LIST_DIR}/window_idle.cmake)
+set_tests_properties(python_window_idle PROPERTIES
+    LABELS "python;gpu"
+    ENVIRONMENT "${gweni_pytest_env}"
+    TIMEOUT 180)

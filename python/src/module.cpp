@@ -18,6 +18,7 @@ namespace python
 void bindControls(nb::module_ &m);
 void bindEvents(nb::module_ &m);
 void bindHeadless(nb::module_ &m);
+void bindApp(nb::module_ &m);
 }
 }
 
@@ -29,4 +30,5 @@ NB_MODULE(_gweni, m)
     gweni::python::bindEvents(m);
     gweni::python::bindControls(m);
     gweni::python::bindHeadless(m);
+    gweni::python::bindApp(m);
 }

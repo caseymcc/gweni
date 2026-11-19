@@ -55,7 +55,7 @@ if(gweni_python_missing)
     if(GWENI_BUILD_TESTS)
         # registered to fail, never skipped: a tree that should test the
         # module says why it cannot
-        foreach(test python_pytest python_pytest_gpu python_exports python_parity)
+        foreach(test python_pytest python_pytest_gpu python_exports python_parity python_window_idle)
             add_test(NAME ${test}
                 COMMAND ${CMAKE_COMMAND}
                     "-DMESSAGE=${test}: the Python module is not built: ${gweni_python_missing}; from a host, ./run_docker.sh -r rebuilds the image with CPython 3.12 (Dockerfile)"
@@ -73,6 +73,7 @@ nanobind_add_module(_gweni STABLE_ABI NB_STATIC
     src/control.h
     src/control.cpp
     src/headless.cpp
+    src/app.cpp
     src/controls.cpp
     src/events.h
     src/events.cpp
