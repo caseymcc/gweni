@@ -21,6 +21,7 @@ from ._gweni import (
     Label,
     Layout,
     Panel,
+    SizeFlag,
     ThreadError,
 )
 
@@ -35,5 +36,6 @@ __all__ = [
     "Label",
     "Layout",
     "Panel",
+    "SizeFlag",
     "ThreadError",
 ]

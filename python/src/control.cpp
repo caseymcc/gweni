@@ -117,6 +117,13 @@ void bindControl(nb::module_ &m)
         .value("BOTTOM", DockPosition::Bottom)
         .value("CENTER", DockPosition::Center);
 
+    nb::enum_<SizeFlag>(m, "SizeFlag", "How a control's size follows its parent's room on one axis (SizeFlag).")
+        .value("FIXED", SizeFlag::Fixed)
+        .value("EXPAND", SizeFlag::Expand)
+        .value("SHRINK", SizeFlag::Shrink)
+        .value("ELASTIC", SizeFlag::Elastic)
+        .value("BLOAT", SizeFlag::Bloat);
+
     nb::enum_<LayoutKind>(m, "Layout", "How a control stacks its children (controls::VerticalLayout, HorizontalLayout).")
         .value("NONE", LayoutKind::None)
         .value("VERTICAL", LayoutKind::Vertical)
@@ -215,6 +222,34 @@ void bindControl(nb::module_ &m)
 
                 return "<gweni control #"+std::to_string(self.id)+" "+name+">";
             })
+        .def_prop_rw("size",
+            [](const Control &self) {
+                const Rect &bounds=resolveBase(self)->getBounds();
+                return std::make_tuple(bounds.w, bounds.h);
+            },
+            [](const Control &self, std::tuple<int, int> size) {
+                inCall([&]() { resolveBase(self)->setSize(std::get<0>(size), std::get<1>(size)); });
+            },
+            "(width, height) in logical units; a dock or a layout may size it again.")
+        .def_prop_rw("size_flags",
+            [](const Control &self) {
+                const SizeFlags flags=resolveBase(self)->getSizeFlags();
+                return std::make_tuple(flags.horizontal, flags.vertical);
+            },
+            [](const Control &self, std::tuple<SizeFlag, SizeFlag> flags) {
+                resolveBase(self)->setSizeFlags(SizeFlags(std::get<0>(flags), std::get<1>(flags)));
+            },
+            "(horizontal, vertical) SizeFlags.")
+        .def_prop_rw("enabled",
+            [](const Control &self) { return !resolveBase(self)->isDisabled(); },
+            [](const Control &self, bool enabled) {
+                inCall([&]() { resolveBase(self)->setDisabled(!enabled); });
+            },
+            "Whether it takes input (a disabled control draws its disabled look).")
+        .def_prop_rw("tooltip",
+            [](const Control &self) { return resolveBase(self)->getToolTipText(); },
+            [](const Control &self, const std::string &text) { resolveBase(self)->setToolTipText(text); },
+            "The text the canvas's tooltip shows after the hover delay (\"\" for none).")
         .def_prop_ro("bounds", [](const Control &self) {
                 const Rect &bounds=resolveBase(self)->getBounds();
                 return std::make_tuple(bounds.x, bounds.y, bounds.w, bounds.h);

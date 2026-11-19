@@ -11,6 +11,8 @@
 #    python_pytest_gpu  the suite's gpu-marked tests (a Headless or an App):
 #                       label gpu, so under the render lock
 #    python_exports     the module exports PyInit__gweni alone (exports.cmake)
+#    python_parity      ButtonDemo from Python against ControlTest's (parity.py;
+#                       label gpu)
 #
 
 set(gweni_pytest_env
@@ -43,3 +45,15 @@ add_test(NAME python_exports
         -DMODULE=$<TARGET_FILE:_gweni>
         -P ${CMAKE_CURRENT_LIST_DIR}/exports.cmake)
 set_tests_properties(python_exports PROPERTIES LABELS python)
+
+# python_parity: ButtonDemo from Python (python/examples/button_demo.py)
+# against ControlTest's, pixels and counters (parity.py's header)
+if(TARGET ControlTest)
+    add_test(NAME python_parity
+        COMMAND ${Python_EXECUTABLE} ${CMAKE_CURRENT_LIST_DIR}/parity.py
+            $<TARGET_FILE:ControlTest> ${CMAKE_CURRENT_BINARY_DIR}/parity)
+    set_tests_properties(python_parity PROPERTIES
+        LABELS "python;gpu"
+        ENVIRONMENT "${gweni_pytest_env}"
+        TIMEOUT 300)
+endif()
