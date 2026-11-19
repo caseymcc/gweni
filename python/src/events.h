@@ -130,6 +130,11 @@ Event toEvent(const event::Info &info);
 //! control is the one with id \p controlId, when not 0.
 void callEvent(const Callable &callable, const event::Info &info, size_t controlId);
 
+//! The stub signature of an event method \p name: it takes and gives back an
+//! EventCallbackT, a TypeVar bound to Callable[[Event], object] (module.cpp),
+//! so a decorated function keeps its type. Kept for the module's life.
+const char *eventSignature(const char *name);
+
 //! Binds \p name (on_press, ...) on \p cls: a method taking a callable of one
 //! Event, adding it to the control's \p caller, and returning it, so it is a
 //! decorator too.
@@ -144,7 +149,7 @@ void bindEvent(Class &cls, const char *name, event::Caller T::*caller, const cha
                     callEvent(*callable, info, 0);
                 });
             return function;
-        }, nanobind::arg("callback"), doc);
+        }, nanobind::sig(eventSignature(name)), nanobind::arg("callback"), doc);
 }
 
 //! As bindEvent, for a caller of a part of the control (a CheckBoxWithLabel's
@@ -161,7 +166,7 @@ void bindPartEvent(Class &cls, const char *name, Find caller, const char *doc)
                     callEvent(*callable, info, id);
                 });
             return function;
-        }, nanobind::arg("callback"), doc);
+        }, nanobind::sig(eventSignature(name)), nanobind::arg("callback"), doc);
 }
 
 void bindEvents(nanobind::module_ &m);

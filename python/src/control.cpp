@@ -16,6 +16,7 @@
 #include <nanobind/stl/tuple.h>
 #include <nanobind/stl/vector.h>
 
+#include <algorithm>
 #include <unordered_map>
 #include <vector>
 
@@ -110,6 +111,15 @@ nb::object wrap(controls::Base *control)
 
 void bindControl(nb::module_ &m)
 {
+    m.def("_bound_type_names", []() {
+            std::vector<std::string> names;
+
+            for(const auto &type : typesByName())
+                names.push_back(type.first);
+            std::sort(names.begin(), names.end());
+            return names;
+        }, "The C++ control type names a bound class shows (python/tools/unbound_controls.py).");
+
     nb::enum_<DockPosition>(m, "Dock", "Where a control docks in its parent (DockPosition).")
         .value("NONE", DockPosition::None)
         .value("LEFT", DockPosition::Left)
@@ -144,13 +154,13 @@ void bindControl(nb::module_ &m)
                 return std::string(resolveBase(self)->getTypeName());
             }, "The C++ type name (Base::getTypeName).")
         .def_prop_ro("parent", [](const Control &self) {
-                return wrap(resolveBase(self)->getParent());
+                return wrapAs<std::optional<Control>>(resolveBase(self)->getParent());
             }, "The parent's handle, or None.")
         .def_prop_ro("children", [](const Control &self) {
-                std::vector<nb::object> children;
+                std::vector<Typed<Control>> children;
 
                 for(controls::Base *child : resolveBase(self)->getChildren())
-                    children.push_back(wrap(child));
+                    children.push_back(wrapAs<Control>(child));
                 return children;
             }, "The children's handles, in order (an inner panel's, where there is one).")
         .def("add", [](const Control &self, nb::type_object type, nb::kwargs props) {
@@ -183,7 +193,8 @@ void bindControl(nb::module_ &m)
                 }
                 scope.finish();
                 return handle;
-            }, nb::arg("type"), nb::arg("props"),
+            }, nb::sig("def add(self, type: type[ControlT], /, **props: object) -> ControlT"),
+            nb::arg("type"), nb::arg("props"),
             "Makes a child of \\p type, sets each keyword as a property and returns its handle.")
         .def("delete_later", [](const Control &self) { resolveBase(self)->delayedDelete(); },
             "Deletes the control in the next frame's update (Base::delayedDelete).")

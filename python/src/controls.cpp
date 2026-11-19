@@ -30,7 +30,7 @@ void bindControls(nb::module_ &m)
 {
     auto canvas=nb::class_<Canvas, Control>(m, "Canvas",
         "The root of the tree (controls::Canvas): an App's or Headless's canvas.")
-        .def("post", [](const Control &self, nb::object function) {
+        .def("post", [](const Control &self, nb::typed<nb::callable, nb::object()> function) {
                 // the one call allowed from any thread: no lookup in the tree
                 PostTarget target=postTarget();
 

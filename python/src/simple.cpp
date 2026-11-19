@@ -29,6 +29,7 @@
 #include <gweni/controls/textBox.h>
 #include <gweni/controls/verticalSlider.h>
 
+#include <nanobind/stl/optional.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/tuple.h>
 
@@ -75,7 +76,7 @@ void bindSimpleControls(nb::module_ &m)
             [](const Control &self, bool left) { resolve<controls::CheckBoxWithLabel>(self)->setLabelOnLeft(left); },
             "The text on the left of the box (default: right).")
         .def_prop_ro("check_box", [](const Control &self) {
-                return wrap(resolve<controls::CheckBoxWithLabel>(self)->checkBox());
+                return wrapAs<CheckBox>(resolve<controls::CheckBoxWithLabel>(self)->checkBox());
             }, "Its CheckBox.");
     auto boxOf=[](controls::CheckBoxWithLabel *c) -> event::Caller & { return c->checkBox()->onCheckChanged; };
     bindPartEvent<decltype(checkBoxWithLabel), controls::CheckBoxWithLabel>(checkBoxWithLabel, "on_check_changed",
@@ -109,11 +110,11 @@ void bindSimpleControls(nb::module_ &m)
         "A group of RadioButtons of which one at most is selected (controls::RadioButtonController).")
         .def("add_option", [](const Control &self, const std::string &text, const std::string &name) {
                 return inCall([&]() {
-                    return wrap(resolve<controls::RadioButtonController>(self)->addOption(text, name));
+                    return wrapAs<RadioButton>(resolve<controls::RadioButtonController>(self)->addOption(text, name));
                 });
             }, nb::arg("text"), nb::arg("name")="", "Adds an option; returns its RadioButton.")
         .def_prop_ro("selected", [](const Control &self) {
-                return wrap(resolve<controls::RadioButtonController>(self)->getSelected());
+                return wrapAs<std::optional<RadioButton>>(resolve<controls::RadioButtonController>(self)->getSelected());
             }, "The selected RadioButton, or None.")
         .def_prop_ro("selected_name", [](const Control &self) {
                 controls::LabeledRadioButton *selected=resolve<controls::RadioButtonController>(self)->getSelected();
@@ -233,7 +234,7 @@ void bindSimpleControls(nb::module_ &m)
     auto comboBox=nb::class_<ComboBox, Button>(m, "ComboBox",
         "A button opening a list to choose one item from (controls::ComboBox).")
         .def("add_item", [](const Control &self, const std::string &label, const std::string &name) {
-                return inCall([&]() { return wrap(resolve<controls::ComboBox>(self)->addItem(label, name)); });
+                return inCall([&]() { return wrapAs<MenuItem>(resolve<controls::ComboBox>(self)->addItem(label, name)); });
             }, nb::arg("label"), nb::arg("name")="", "Adds an item; returns its handle.")
         .def("select", [](const Control &self, const std::string &name) {
                 inCall([&]() { resolve<controls::ComboBox>(self)->selectItemByName(name); });
@@ -257,7 +258,7 @@ void bindSimpleControls(nb::module_ &m)
 
     auto listBox=nb::class_<ListBox, ScrollControl>(m, "ListBox", "A scrolling list of rows to select (controls::ListBox).")
         .def("add_item", [](const Control &self, const std::string &label, const std::string &name) {
-                return inCall([&]() { return wrap(resolve<controls::ListBox>(self)->addItem(label, name)); });
+                return inCall([&]() { return wrapAs<Control>(resolve<controls::ListBox>(self)->addItem(label, name)); });
             }, nb::arg("label"), nb::arg("name")="", "Adds a row; returns its handle.")
         .def("select", [](const Control &self, const std::string &text) {
                 inCall([&]() { resolve<controls::ListBox>(self)->selectByString(text); });

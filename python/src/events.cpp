@@ -10,10 +10,12 @@
 #include <gweni/controls/canvas.h>
 #include <gweni/postQueue.h>
 
+#include <nanobind/stl/optional.h>
 #include <nanobind/stl/pair.h>
 #include <nanobind/stl/string.h>
 
 #include <atomic>
+#include <deque>
 
 namespace nb=nanobind;
 
@@ -166,6 +168,14 @@ Event toEvent(const event::Info &info)
     return event;
 }
 
+const char *eventSignature(const char *name)
+{
+    static std::deque<std::string> signatures;
+
+    signatures.push_back(std::string("def ")+name+"(self, callback: EventCallbackT, /) -> EventCallbackT");
+    return signatures.back().c_str();
+}
+
 void callEvent(const Callable &callable, const event::Info &info, size_t controlId)
 {
     nb::gil_scoped_acquire gil;
@@ -183,7 +193,8 @@ void callEvent(const Callable &callable, const event::Info &info, size_t control
 void bindEvents(nb::module_ &m)
 {
     nb::class_<Event>(m, "Event", "What an event callback gets (event::Info).")
-        .def_ro("control", &Event::control, "The control the event is about, or None.")
+        .def_prop_ro("control", [](const Event &event) { return nb::borrow<Typed<std::optional<Control>>>(event.control); },
+            "The control the event is about, or None.")
         .def_ro("string", &Event::string, "The event's text, where it has one.")
         .def_ro("point", &Event::point, "The event's point, where it has one.")
         .def_ro("integer", &Event::integer, "The event's number, where it has one.")

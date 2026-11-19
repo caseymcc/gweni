@@ -11,6 +11,10 @@
 #    python_pytest_gpu  the suite's gpu-marked tests (a Headless or an App):
 #                       label gpu, so under the render lock
 #    python_exports     the module exports PyInit__gweni alone (exports.cmake)
+#    python_stubs       python/gweni/_gweni.pyi is the stub nanobind's stubgen
+#                       gives for the built module (python/stubs.cmake)
+#    python_mypy        mypy --strict over python/examples/, with the staged
+#                       package's stubs
 #    python_parity      ButtonDemo from Python against ControlTest's (parity.py;
 #                       label gpu)
 #    python_window_idle App.run() in a window under Xvfb (window_idle.cmake;
@@ -71,3 +75,19 @@ set_tests_properties(python_window_idle PROPERTIES
     LABELS "python;gpu"
     ENVIRONMENT "${gweni_pytest_env}"
     TIMEOUT 180)
+
+add_test(NAME python_stubs
+    COMMAND ${CMAKE_COMMAND} -DPYTHON=${Python_EXECUTABLE} -DSTAGE=${GWENI_PYTHON_STAGE}
+        -DOUT=${CMAKE_CURRENT_BINARY_DIR}/_gweni.pyi
+        -DCHECK=${GWENI_SOURCE_DIR}/python/gweni/_gweni.pyi
+        -P ${GWENI_SOURCE_DIR}/python/stubs.cmake)
+set_tests_properties(python_stubs PROPERTIES LABELS python)
+
+add_test(NAME python_mypy
+    COMMAND ${Python_EXECUTABLE} -m mypy --strict --no-incremental
+        --cache-dir ${CMAKE_CURRENT_BINARY_DIR}/mypy-cache
+        ${GWENI_SOURCE_DIR}/python/examples
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+set_tests_properties(python_mypy PROPERTIES
+    LABELS python
+    ENVIRONMENT "${gweni_pytest_env}")

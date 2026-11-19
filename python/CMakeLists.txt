@@ -55,7 +55,7 @@ if(gweni_python_missing)
     if(GWENI_BUILD_TESTS)
         # registered to fail, never skipped: a tree that should test the
         # module says why it cannot
-        foreach(test python_pytest python_pytest_gpu python_exports python_parity python_window_idle)
+        foreach(test python_pytest python_pytest_gpu python_exports python_parity python_window_idle python_stubs python_mypy)
             add_test(NAME ${test}
                 COMMAND ${CMAKE_COMMAND}
                     "-DMESSAGE=${test}: the Python module is not built: ${gweni_python_missing}; from a host, ./run_docker.sh -r rebuilds the image with CPython 3.12 (Dockerfile)"
@@ -121,6 +121,16 @@ add_custom_target(gweni_python_stage ALL
     COMMENT "Staging the Python package in ${GWENI_PYTHON_STAGE}/gweni"
     VERBATIM)
 add_dependencies(gweni_python_stage _gweni)
+
+# Writes the checked-in stub, python/gweni/_gweni.pyi, from the module just
+# built (stubs.cmake); python_stubs fails while the two differ. Not part of
+# all: it writes the source tree.
+add_custom_target(gweni_python_stubs
+    COMMAND ${CMAKE_COMMAND} -DPYTHON=${Python_EXECUTABLE} -DSTAGE=${GWENI_PYTHON_STAGE}
+        -DOUT=${CMAKE_CURRENT_SOURCE_DIR}/gweni/_gweni.pyi -P ${CMAKE_CURRENT_SOURCE_DIR}/stubs.cmake
+    COMMENT "Writing python/gweni/_gweni.pyi from the built module"
+    VERBATIM)
+add_dependencies(gweni_python_stubs gweni_python_stage)
 
 if(GWENI_BUILD_TESTS)
     include(${CMAKE_CURRENT_SOURCE_DIR}/tests/tests.cmake)

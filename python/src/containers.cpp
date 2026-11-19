@@ -103,7 +103,7 @@ void bindContainers(nb::module_ &m)
     // TabControl
     auto tabButton=nb::class_<TabButton, Button>(m, "TabButton",
         "A TabControl's tab (controls::TabButton): made by add_page().")
-        .def_prop_ro("page", [](const Control &self) { return wrap(resolve<controls::TabButton>(self)->getPage()); },
+        .def_prop_ro("page", [](const Control &self) { return wrapAs<Panel>(resolve<controls::TabButton>(self)->getPage()); },
             "The page it shows: add the page's controls to it.")
         .def_prop_ro("active", [](const Control &self) { return resolve<controls::TabButton>(self)->isActive(); },
             "Whether it is the selected tab.")
@@ -128,7 +128,7 @@ void bindContainers(nb::module_ &m)
     auto tabControl=nb::class_<TabControl, Control>(m, "TabControl",
         "Pages selected by a strip of tabs (controls::TabControl).")
         .def("add_page", [](const Control &self, const std::string &text) {
-                return inCall([&]() { return wrap(resolve<controls::TabControl>(self)->addPage(text)); });
+                return inCall([&]() { return wrapAs<TabButton>(resolve<controls::TabControl>(self)->addPage(text)); });
             }, nb::arg("text"), "Adds a tab and its page; returns the TabButton (its page is .page).")
         .def_prop_ro("tab_count", [](const Control &self) { return resolve<controls::TabControl>(self)->tabCount(); })
         .def("tab", [](const Control &self, int index) {
@@ -136,10 +136,10 @@ void bindContainers(nb::module_ &m)
 
                 if(index < 0 || index >= control->tabCount())
                     throw nb::index_error("gweni.TabControl.tab: no such tab");
-                return wrap(control->getTab(index));
+                return wrapAs<TabButton>(control->getTab(index));
             }, nb::arg("index"), "The index-th TabButton.")
         .def_prop_ro("current", [](const Control &self) {
-                return wrap(resolve<controls::TabControl>(self)->getCurrentButton());
+                return wrapAs<std::optional<TabButton>>(resolve<controls::TabControl>(self)->getCurrentButton());
             }, "The selected TabButton, or None.")
         .def("close_tab", [](const Control &self, const Control &tab) {
                 inCall([&]() { resolve<controls::TabControl>(self)->closeTab(resolve<controls::TabButton>(tab)); });
@@ -191,7 +191,7 @@ void bindContainers(nb::module_ &m)
         .def_prop_rw("checked",
             [](const Control &self) { return resolve<controls::MenuItem>(self)->isChecked(); },
             [](const Control &self, bool on) { inCall([&]() { resolve<controls::MenuItem>(self)->setChecked(on); }); })
-        .def_prop_ro("menu", [](const Control &self) { return wrap(resolve<controls::MenuItem>(self)->getMenu()); },
+        .def_prop_ro("menu", [](const Control &self) { return wrapAs<Menu>(resolve<controls::MenuItem>(self)->getMenu()); },
             "Its submenu, made on first use: add items to it.")
         .def("set_accelerator", [](const Control &self, const std::string &accelerator) {
                 resolve<controls::MenuItem>(self)->setAccelerator(accelerator);
@@ -205,7 +205,7 @@ void bindContainers(nb::module_ &m)
     auto menu=nb::class_<Menu, ScrollControl>(m, "Menu",
         "A list of items (controls::Menu): a context menu, a submenu or a canvas menu.")
         .def("add_item", [](const Control &self, const std::string &text, const std::string &accelerator) {
-                return inCall([&]() { return wrap(resolve<controls::Menu>(self)->addItem(text, "", accelerator)); });
+                return inCall([&]() { return wrapAs<MenuItem>(resolve<controls::Menu>(self)->addItem(text, "", accelerator)); });
             }, nb::arg("text"), nb::arg("accelerator")="", "Adds an item; returns its MenuItem.")
         .def("add_divider", [](const Control &self) { resolve<controls::Menu>(self)->addDivider(); })
         .def("clear_items", [](const Control &self) { inCall([&]() { resolve<controls::Menu>(self)->clearItems(); }); })
@@ -241,12 +241,12 @@ void bindContainers(nb::module_ &m)
             [](const Control &self) { return std::string(resolve<dialogs::Dialog>(self)->getTitle()); },
             [](const Control &self, const std::string &title) { resolve<dialogs::Dialog>(self)->setTitle(title); })
         .def_prop_ro("is_open", [](const Control &self) { return resolve<dialogs::Dialog>(self)->isOpen(); })
-        .def_prop_ro("content", [](const Control &self) { return wrap(resolve<dialogs::Dialog>(self)->getContent()); },
+        .def_prop_ro("content", [](const Control &self) { return wrapAs<ScrollControl>(resolve<dialogs::Dialog>(self)->getContent()); },
             "The ScrollControl between the text and the buttons: add controls to it.")
         .def("add_button", [](const Control &self, const std::string &label, std::optional<dialogs::Result> result) {
                 return inCall([&]() {
                     dialogs::Dialog *d=resolve<dialogs::Dialog>(self);
-                    return wrap(result ? d->addButton(label, *result) : d->addButton(label));
+                    return wrapAs<Button>(result ? d->addButton(label, *result) : d->addButton(label));
                 });
             }, nb::arg("label"), nb::arg("result")=nb::none(),
             "Adds a footer button; with a result its press closes the dialog with it.")
@@ -264,30 +264,36 @@ void bindContainers(nb::module_ &m)
     registerControl<Dialog, dialogs::Dialog, false>(dialog);
 
     auto promptDialog=nb::class_<PromptDialog, Dialog>(m, "PromptDialog", "prompt()'s dialog, with its text field.")
-        .def_prop_ro("field", [](const Control &self) { return wrap(resolve<dialogs::PromptDialog>(self)->getField()); },
+        .def_prop_ro("field", [](const Control &self) { return wrapAs<TextBox>(resolve<dialogs::PromptDialog>(self)->getField()); },
             "Its TextBox.");
     registerControl<PromptDialog, dialogs::PromptDialog, false>(promptDialog);
 
     m.def("message", [](const Control &canvas, const std::string &title, const std::string &text, nb::object onResult) {
             return inCall([&]() {
-                return wrap(dialogs::message(canvasOf(canvas), title, text, resultHandler(onResult)));
+                return wrapAs<Dialog>(dialogs::message(canvasOf(canvas), title, text, resultHandler(onResult)));
             });
-        }, nb::arg("canvas"), nb::arg("title"), nb::arg("text"), nb::arg("on_result")=nb::none(),
+        }, nb::sig("def message(canvas: Canvas, title: str, text: str, on_result: "
+            "collections.abc.Callable[[DialogResult, str], object] | None = None) -> Dialog"),
+        nb::arg("canvas"), nb::arg("title"), nb::arg("text"), nb::arg("on_result")=nb::none(),
         "Opens a dialog with text and an OK button; on_result(result, text) once it closes.");
     m.def("confirm", [](const Control &canvas, const std::string &title, const std::string &text,
             dialogs::Buttons buttons, nb::object onResult) {
             return inCall([&]() {
-                return wrap(dialogs::confirm(canvasOf(canvas), title, text, buttons, resultHandler(onResult)));
+                return wrapAs<Dialog>(dialogs::confirm(canvasOf(canvas), title, text, buttons, resultHandler(onResult)));
             });
-        }, nb::arg("canvas"), nb::arg("title"), nb::arg("text"), nb::arg("buttons")=dialogs::Buttons::YesNo,
+        }, nb::sig("def confirm(canvas: Canvas, title: str, text: str, buttons: DialogButtons = ..., "
+            "on_result: collections.abc.Callable[[DialogResult, str], object] | None = None) -> Dialog"),
+        nb::arg("canvas"), nb::arg("title"), nb::arg("text"), nb::arg("buttons")=dialogs::Buttons::YesNo,
         nb::arg("on_result")=nb::none(),
         "Opens a dialog asking Yes/No (or OK/Cancel); on_result(result, text) once it closes.");
     m.def("prompt", [](const Control &canvas, const std::string &title, const std::string &text,
             const std::string &initial, nb::object onResult) {
             return inCall([&]() {
-                return wrap(dialogs::prompt(canvasOf(canvas), title, text, initial, resultHandler(onResult)));
+                return wrapAs<PromptDialog>(dialogs::prompt(canvasOf(canvas), title, text, initial, resultHandler(onResult)));
             });
-        }, nb::arg("canvas"), nb::arg("title"), nb::arg("text"), nb::arg("initial")="", nb::arg("on_result")=nb::none(),
+        }, nb::sig("def prompt(canvas: Canvas, title: str, text: str, initial: str = '', "
+            "on_result: collections.abc.Callable[[DialogResult, str], object] | None = None) -> PromptDialog"),
+        nb::arg("canvas"), nb::arg("title"), nb::arg("text"), nb::arg("initial")="", nb::arg("on_result")=nb::none(),
         "Opens a dialog with a text field; on_result(result, text) gets the text with OK.");
 
     // toasts
@@ -345,7 +351,7 @@ void bindNotify(nb::module_ &)
                 if(timeout)
                     options.timeout=*timeout;
                 options.title=title;
-                return wrap(canvasOf(self)->notify(kind, text, options));
+                return wrapAs<Toast>(canvasOf(self)->notify(kind, text, options));
             });
         }, nb::is_method(), nb::scope(canvas), nb::name("notify"),
         nb::arg("kind"), nb::arg("text"), nb::arg("timeout")=nb::none(), nb::arg("title")="",

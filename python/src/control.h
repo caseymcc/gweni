@@ -58,6 +58,17 @@ T *resolve(const Control &handle)
 //! Panel, which only a plain Base gets), else Control. None for null.
 nanobind::object wrap(controls::Base *control);
 
+//! wrap() annotated as \p H for the stubs (a bound handle class, or
+//! std::optional of one where it may be None); the object is wrap()'s.
+template<typename H>
+using Typed=nanobind::typed<nanobind::object, H>;
+
+template<typename H>
+Typed<H> wrapAs(controls::Base *control)
+{
+    return nanobind::borrow<Typed<H>>(wrap(control));
+}
+
 using CreateChild=std::function<controls::Base *(controls::Base *parent)>;
 using MakeHandle=std::function<nanobind::object(size_t id)>;
 

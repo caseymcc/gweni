@@ -9,6 +9,7 @@
 
 #include "control.h"
 #include "events.h"
+#include "handles.h"
 
 #include <gweni/app/headless.h>
 #include <gweni/controls/canvas.h>
@@ -127,10 +128,10 @@ void bindHeadless(nb::module_ &m)
             "directory to load the skin and fonts from (the package's by default).")
         .def("close", &Headless::close, "Deletes the canvas and frees the device; the handles go stale.")
         .def_prop_ro("closed", &Headless::closed)
-        .def("__enter__", [](nb::handle self) { return nb::borrow(self); })
-        .def("__exit__", [](Headless &self, nb::args) { self.close(); })
+        .def("__enter__", [](nb::handle self) { return nb::borrow<nb::typed<nb::object, Headless>>(self); })
+        .def("__exit__", [](Headless &self, nb::args) { self.close(); }, nb::sig("def __exit__(self, *args: object) -> None"))
         .def_prop_ro("canvas", [](Headless &self) {
-                return wrap(self.get().canvas());
+                return wrapAs<Canvas>(self.get().canvas());
             }, "The canvas's handle.")
         .def_prop_ro("pixel_size", [](Headless &self) {
                 const Point size=self.get().pixelSize();

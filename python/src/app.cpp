@@ -23,6 +23,7 @@
 
 #include "control.h"
 #include "events.h"
+#include "handles.h"
 
 #include <gweni/app/window.h>
 #include <gweni/controls/canvas.h>
@@ -288,9 +289,9 @@ void bindApp(nb::module_ &m)
         .def_prop_ro("closed", &App::closed)
         .def_prop_ro("frame_count", &App::frameCount,
             "Frames run() has drawn (read from any thread).")
-        .def("__enter__", [](nb::handle self) { return nb::borrow(self); })
-        .def("__exit__", [](App &self, nb::args) { self.close(); })
-        .def_prop_ro("canvas", [](App &self) { return wrap(self.get().canvas()); }, "The canvas's handle.")
+        .def("__enter__", [](nb::handle self) { return nb::borrow<nb::typed<nb::object, App>>(self); })
+        .def("__exit__", [](App &self, nb::args) { self.close(); }, nb::sig("def __exit__(self, *args: object) -> None"))
+        .def_prop_ro("canvas", [](App &self) { return wrapAs<Canvas>(self.get().canvas()); }, "The canvas's handle.")
         .def_prop_ro("degraded", [](App &self) { return self.get().degraded(); },
             "A resource did not load (its line is on stderr).");
 }
