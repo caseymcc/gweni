@@ -7,7 +7,8 @@
 #  a package an app builds and draws with. Run as a cmake -P script
 #  (tests/CMakeLists.txt registers it in the native release tree, label
 #  package, and in the release web tree as vcpkg_port_web, labels web and
-#  package):
+#  package, with FEATURES opengl, no EXTRA_PORTS and the web tree's NODE,
+#  RUNNER and WEB_PAGE_DIR):
 #
 #      cmake -DTEST_NAME=<name> -DSOURCE_DIR=<repo> -DCONSUMER_DIR=<tests/package>
 #            -DSCRATCH_DIR=<dir> -DVCPKG_ROOT=<vcpkg> -DGENERATOR=<generator>
