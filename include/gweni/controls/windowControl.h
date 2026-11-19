@@ -38,6 +38,7 @@ public:
     void renderUnder(skin::Base *skin) override;
 
     virtual void setTitle(String title);
+    const String &getTitle() const;
 
     virtual void setClosable(bool closeable);
 

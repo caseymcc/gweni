@@ -158,6 +158,11 @@ void WindowControl::setTitle(gweni::String title)
     m_title->setText(title);
 }
 
+const gweni::String &WindowControl::getTitle() const
+{
+    return m_title->getText();
+}
+
 void WindowControl::setClosable(bool closeable)
 {
     m_closeButton->setHidden(!closeable);

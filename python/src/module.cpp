@@ -20,6 +20,8 @@ void bindEvents(nb::module_ &m);
 void bindHeadless(nb::module_ &m);
 void bindApp(nb::module_ &m);
 void bindSimpleControls(nb::module_ &m);
+void bindContainers(nb::module_ &m);
+void bindNotify(nb::module_ &m);
 }
 }
 
@@ -30,7 +32,9 @@ NB_MODULE(_gweni, m)
     gweni::python::bindControl(m);
     gweni::python::bindEvents(m);
     gweni::python::bindControls(m);
+    gweni::python::bindContainers(m);
     gweni::python::bindSimpleControls(m);
+    gweni::python::bindNotify(m);
     gweni::python::bindHeadless(m);
     gweni::python::bindApp(m);
 }

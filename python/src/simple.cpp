@@ -255,7 +255,7 @@ void bindSimpleControls(nb::module_ &m)
         "An item was chosen.");
     registerControl<ComboBox, controls::ComboBox>(comboBox);
 
-    auto listBox=nb::class_<ListBox, Control>(m, "ListBox", "A scrolling list of rows to select (controls::ListBox).")
+    auto listBox=nb::class_<ListBox, ScrollControl>(m, "ListBox", "A scrolling list of rows to select (controls::ListBox).")
         .def("add_item", [](const Control &self, const std::string &label, const std::string &name) {
                 return inCall([&]() { return wrap(resolve<controls::ListBox>(self)->addItem(label, name)); });
             }, nb::arg("label"), nb::arg("name")="", "Adds a row; returns its handle.")

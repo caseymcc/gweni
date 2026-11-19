@@ -43,7 +43,7 @@ def cpu_seconds() -> float:
 
 def main() -> int:
     app = gweni.App(title="Hello", size=(800, 600))
-    win = app.canvas.add(gweni.Panel, dock=gweni.Dock.CENTER)
+    win = app.canvas.add(gweni.Window, title="Settings")
     label = win.add(gweni.Label, text="0 clicks", dock=gweni.Dock.TOP)
     btn = win.add(gweni.Button, text="Click me", dock=gweni.Dock.TOP)
     clicks = 0
