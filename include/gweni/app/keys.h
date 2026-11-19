@@ -4,7 +4,8 @@
  *  GLFW key events a keyboard sends, and UTF-8 text as the codepoints the char
  *  callback delivers. One table, so the two take the same names.
  *
- *  See license in Gweni.h
+ *  Copyright (c) 2010 Facepunch Studios
+ *  MIT License, see LICENSE
  */
 #ifndef _gweni_app_keys_h_
 #define _gweni_app_keys_h_

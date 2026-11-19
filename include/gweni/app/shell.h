@@ -5,7 +5,8 @@
  *  the reverse one. app::Window shows them in a window; an app's own capture
  *  loop (the examples', the bench's) draws them offscreen.
  *
- *  See license in Gweni.h
+ *  Copyright (c) 2010 Facepunch Studios
+ *  MIT License, see LICENSE
  */
 #ifndef _gweni_app_shell_h_
 #define _gweni_app_shell_h_
@@ -74,7 +75,9 @@ struct ShellOptions
 
 //! What an app draws with. Its members are its own and given back in the
 //! reverse of their order (the canvas first, the paths last), so an app may
-//! replace one (a canvas built again) through its unique_ptr.
+//! replace one (a canvas built again) through its unique_ptr, but not while an
+//! app::Window or app::Headless holds the Shell: their input::GLFW3 is pointed
+//! at the canvas once, as they open, and would be left on the deleted one.
 class Shell
 {
 public:
@@ -88,8 +91,9 @@ public:
     //! skin's default font (loadDefaultFont) and the canvas at the canvas
     //! size and the scale. A missing resource directory, skin config or font
     //! has printed its line and sets degraded(), and the parts still open,
-    //! drawing as the library degrades them. \return false, after one line,
-    //! only when the device cannot be made or afterDevice fails.
+    //! drawing as the library degrades them. \return false only when the
+    //! device cannot be made (after its line on stderr) or afterDevice
+    //! returns false (which prints what it likes).
     bool open(const ShellOptions &options);
 
     std::unique_ptr<ResourcePaths> paths;

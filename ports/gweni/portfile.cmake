@@ -34,7 +34,9 @@ if("vulkan" IN_LIST FEATURES)
 endif()
 
 # The library alone: without the examples and the tests nothing is downloaded
-# (cmake/LazyFont.cmake) and no test-only dependency is looked for
+# (cmake/LazyFont.cmake) and no test-only dependency is looked for. No app shell
+# either (gweni_app, gweni::app, which needs GLFW and EGL): the port feature for
+# it is later work, so the port depends on no glfw3
 vcpkg_cmake_configure(
     SOURCE_PATH "${SOURCE_PATH}"
     OPTIONS
@@ -42,6 +44,7 @@ vcpkg_cmake_configure(
         ${GWENI_PORT_OPTIONS}
         -DGWENI_BUILD_EXAMPLES=OFF
         -DGWENI_BUILD_TESTS=OFF
+        -DGWENI_BUILD_APP=OFF
 )
 
 vcpkg_cmake_install()

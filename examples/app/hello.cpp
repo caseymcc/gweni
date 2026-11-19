@@ -18,6 +18,8 @@ int main()
     using namespace gweni;
 
     auto *app=new app::Window(app::ShellOptions());
+    if(!app->ok()) // no display, no GL driver, ...: the reason is on stderr
+        return 1;
     auto *window=app->canvas()->newChild<controls::WindowControl>();
     auto *label=window->newChild<controls::Label>();
     auto *button=window->newChild<controls::Button>();

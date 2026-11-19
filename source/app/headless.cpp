@@ -1,7 +1,8 @@
 /*
  *  Gweni - a gweni canvas rendered headless (gweni/app/headless.h).
  *
- *  See license in Gweni.h
+ *  Copyright (c) 2010 Facepunch Studios
+ *  MIT License, see LICENSE
  */
 
 #include <gweni/app/headless.h>
@@ -72,6 +73,7 @@ void Headless::open(const HeadlessOptions &options)
     if(!m_shell.open(shell))
     {
         m_error="app::Headless: the headless device did not open";
+        std::cerr<<toolName()<<": "<<m_error<<"\n";
         return;
     }
 

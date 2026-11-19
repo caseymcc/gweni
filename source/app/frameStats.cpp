@@ -1,7 +1,8 @@
 /*
  *  Gweni - a frame's counters as key=value fields (gweni/app/frameStats.h).
  *
- *  See license in Gweni.h
+ *  Copyright (c) 2010 Facepunch Studios
+ *  MIT License, see LICENSE
  */
 
 #include <gweni/app/frameStats.h>

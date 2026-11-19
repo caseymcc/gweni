@@ -1,7 +1,8 @@
 /*
  *  Gweni - the parts an app draws with (gweni/app/shell.h).
  *
- *  See license in Gweni.h
+ *  Copyright (c) 2010 Facepunch Studios
+ *  MIT License, see LICENSE
  */
 
 #include <gweni/app/shell.h>

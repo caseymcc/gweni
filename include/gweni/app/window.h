@@ -9,14 +9,16 @@
  *
  *  One app::Window (or app::Headless) is alive at a time in a process: the
  *  clock, the input handler's state and GLFW are the process's. A second is
- *  refused (ok() false, error() saying so); one after another works.
+ *  refused (ok() false, error() saying so); one after another works. Its
+ *  Shell's canvas is not to be replaced while it lives (shell.h).
  *
  *  In the browser run() never returns and main's stack is unwound before the
  *  first frame: allocate the Window with new there (and natively too, if the
  *  code is shared), and let its hooks hold only what outlives main's locals
  *  (heap objects, statics, copies), never a reference to one of them.
  *
- *  See license in Gweni.h
+ *  Copyright (c) 2010 Facepunch Studios
+ *  MIT License, see LICENSE
  */
 #ifndef _gweni_app_window_h_
 #define _gweni_app_window_h_
@@ -53,7 +55,11 @@ class Window
 public:
     //! Opens a Shell for the window (\a shell's capturing off) and shows it.
     explicit Window(const ShellOptions &shell, const WindowOptions &options=WindowOptions());
-    //! Shows \a shell, opened by the app for its window (not capturing).
+    //! Shows \a shell, opened by the app for its window (not capturing),
+    //! taking it only when this Window is not refused: a refused one leaves
+    //! \a shell as it was, the caller's. (Opening that Shell while another
+    //! Window lives is itself not supported: its device and the live Window's
+    //! share GLFW, which the first of them to close terminates.)
     explicit Window(Shell &&shell, const WindowOptions &options=WindowOptions());
     ~Window();
 
@@ -62,7 +68,7 @@ public:
 
     //! Whether the window is shown: false when its Shell did not open, it had
     //! no GLFW window, or another Window or Headless is alive (error() says
-    //! which, and its line is on stderr).
+    //! which, and has been printed on stderr).
     bool ok() const { return m_ok; }
     const std::string &error() const { return m_error; }
 
@@ -107,7 +113,8 @@ public:
     //! framebuffer and the content scale times the Shell's scale
     //! (fitCanvasToWindow); the size and content-scale callbacks call it.
     void fit();
-    //! One frame as run() draws it: the hooks, the update, the clear, the render.
+    //! One frame as run() draws it: the hooks, the update, the clear, the
+    //! render; nothing when the window is not ok().
     void frame();
     //! The window's loop until it closes (Device::runWindowLoop); in the
     //! browser it never returns.

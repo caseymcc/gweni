@@ -14,8 +14,10 @@
  *
  *  One app::Headless (or app::Window) is alive at a time in a process: a
  *  second is refused (ok() false, error() saying so); one after another works.
+ *  Its Shell's canvas is not to be replaced while it lives (shell.h).
  *
- *  See license in Gweni.h
+ *  Copyright (c) 2010 Facepunch Studios
+ *  MIT License, see LICENSE
  */
 #ifndef _gweni_app_headless_h_
 #define _gweni_app_headless_h_

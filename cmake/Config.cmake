@@ -78,7 +78,8 @@ if(GWENI_RENDER_OPENGL_CORE)
     # GLEW (or GLES and EGL) with OpenGLCore alone, nothing GL for the slot core.
     # GLFW is found here, at the top level, for the examples, the bench and the
     # tests, which link it; the library does not (input/glfw3.h and glfwLoop.h
-    # are header-only), so a build of the library alone (a vcpkg port's) needs
+    # are header-only), so a build of the library alone (a vcpkg port's, with
+    # GWENI_BUILD_APP off too: gweni_app finds its own, cmake/App.cmake) needs
     # no glfw3.
     # on the web GLFW is Emscripten's contrib.glfw3 port, which the examples
     # link through --use-port (examples/openglcore/CMakeLists.txt)

@@ -1103,7 +1103,7 @@ Erm, and I think it comes down to a choice between "The League Against Salivatin
         endforeach()
     endforeach()
 elseif(NOT EMSCRIPTEN)
-    message(STATUS "tests: ControlTest tests skipped, no ControlTest (GWENI_BUILD_EXAMPLES off, or no GL renderer)")
+    message(STATUS "tests: ControlTest tests skipped, no ControlTest (GWENI_BUILD_EXAMPLES off, no GL renderer, or GWENI_BUILD_APP off)")
 endif()
 
 # The mirror that keeps the resources/ next to the examples in step with the
@@ -1534,7 +1534,7 @@ if(TARGET gweni_capture)
         endif()
     endif()
 else()
-    message(STATUS "tests: GL unit tests (gweni_unittests) skipped, they need gweni_capture (GWENI_BUILD_EXAMPLES and the GL renderer)")
+    message(STATUS "tests: GL unit tests (gweni_unittests) skipped, they need gweni_capture (GWENI_BUILD_EXAMPLES and gweni_app, which needs the GL renderer and GWENI_BUILD_APP)")
 endif()
 
 # web_probe: the image's pinned headless Chromium gives a WebGL 2 context with
@@ -1764,6 +1764,10 @@ if(TARGET gweni_app AND TARGET ControlTest AND NOT EMSCRIPTEN)
     add_executable(gweni_app_headless_test app/headless.cpp)
     gweni_set_warnings(gweni_app_headless_test)
     target_link_libraries(gweni_app_headless_test gweni_app)
+    # HeadlessOptions' preloadGlyphFallbacks reads <tree>/tests/resources-lazy
+    if(TARGET gweni_test_lazy_resources)
+        add_dependencies(gweni_app_headless_test gweni_test_lazy_resources)
+    endif()
     foreach(variant "" _vulkan)
         if(variant STREQUAL "_vulkan" AND NOT GWENI_RENDER_VULKAN)
             continue()

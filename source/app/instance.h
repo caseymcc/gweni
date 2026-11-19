@@ -3,7 +3,8 @@
  *  app::Window or app::Headless alive in a process, since the clock, the
  *  input handler's state and GLFW are the process's.
  *
- *  See license in Gweni.h
+ *  Copyright (c) 2010 Facepunch Studios
+ *  MIT License, see LICENSE
  */
 #ifndef _gweni_app_instance_h_
 #define _gweni_app_instance_h_

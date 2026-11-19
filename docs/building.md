@@ -356,6 +356,8 @@ int main()
     using namespace gweni;
 
     auto *app=new app::Window(app::ShellOptions());
+    if(!app->ok()) // no display, no GL driver, ...: the reason is on stderr
+        return 1;
     auto *window=app->canvas()->newChild<controls::WindowControl>();
     auto *label=window->newChild<controls::Label>();
     auto *button=window->newChild<controls::Button>();
@@ -507,7 +509,10 @@ Limits:
   an installed package", #868);
 - the lazy CJK face is not in the port: CJK text draws as the missing glyph,
   after one stderr line, unless the app ships `resources-lazy/` beside its
-  executable ("gweni in a Vulkan app").
+  executable ("gweni in a Vulkan app");
+- no app shell: the port builds with `-DGWENI_BUILD_APP=OFF`, so it has no
+  `gweni::app` ("A window with gweni_app"); a port feature for it is later
+  work.
 
 ### Publishing a version (the owner's steps)
 

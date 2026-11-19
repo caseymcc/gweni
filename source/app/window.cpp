@@ -2,7 +2,8 @@
  *  Gweni - a gweni window (gweni/app/window.h), and gweni_app's one-at-a-time
  *  rule (instance.h).
  *
- *  See license in Gweni.h
+ *  Copyright (c) 2010 Facepunch Studios
+ *  MIT License, see LICENSE
  */
 
 #include <gweni/app/window.h>
@@ -60,18 +61,21 @@ Window::Window(const ShellOptions &shell, const WindowOptions &options):
     if(!m_shell.open(windowShell))
     {
         m_error="app::Window: the window's device did not open";
+        std::cerr<<toolName()<<": "<<m_error<<"\n";
         return;
     }
     show();
 }
 
 Window::Window(Shell &&shell, const WindowOptions &options):
-    m_shell(std::move(shell)),
     m_options(options)
 {
+    // claimed before the Shell is taken: a refused Window leaves it the
+    // caller's, so this one does not close a device under the live Window
     if(!internal::claimInstance("app::Window", m_error))
         return;
     m_claimed=true;
+    m_shell=std::move(shell);
     show();
 }
 
@@ -169,6 +173,9 @@ void Window::fit()
 
 void Window::frame()
 {
+    if(!m_ok)
+        return;
+
     controls::Canvas *canvas=m_shell.canvas.get();
 
     if(hooks.beforeUpdate)

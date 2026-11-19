@@ -5,7 +5,8 @@
  *  app::Headless::stats() and ControlTest's line are both made of, so the
  *  names cannot drift apart.
  *
- *  See license in Gweni.h
+ *  Copyright (c) 2010 Facepunch Studios
+ *  MIT License, see LICENSE
  */
 #ifndef _gweni_app_frameStats_h_
 #define _gweni_app_frameStats_h_

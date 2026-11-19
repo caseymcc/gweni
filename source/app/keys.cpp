@@ -1,7 +1,8 @@
 /*
  *  Gweni - the names a script gives keys (gweni/app/keys.h).
  *
- *  See license in Gweni.h
+ *  Copyright (c) 2010 Facepunch Studios
+ *  MIT License, see LICENSE
  */
 
 #include <gweni/app/keys.h>
