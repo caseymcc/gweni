@@ -7,6 +7,9 @@
 
 #include "session.h"
 
+#include <gweni/controls/canvas.h>
+#include <gweni/postQueue.h>
+
 #include <nanobind/stl/string.h>
 
 namespace nb=nanobind;
@@ -22,7 +25,13 @@ Session &session()
     return s;
 }
 
-void beginSession(const char *kind, controls::Canvas *canvas)
+namespace
+{
+std::mutex postMutex;
+PostTarget postTargetNow;
+}
+
+void beginSession(const char *kind, controls::Canvas *canvas, std::function<void()> close)
 {
     Session &s=session();
 
@@ -30,11 +39,29 @@ void beginSession(const char *kind, controls::Canvas *canvas)
     s.kind=kind;
     s.thread=std::this_thread::get_id();
     s.canvas=canvas;
+    s.close=std::move(close);
+
+    std::lock_guard<std::mutex> lock(postMutex);
+
+    postTargetNow.queue=canvas->postHandle();
+    postTargetNow.canvasId=canvas->getControlId();
 }
 
 void endSession()
 {
+    {
+        std::lock_guard<std::mutex> lock(postMutex);
+
+        postTargetNow=PostTarget();
+    }
     session()=Session();
+}
+
+PostTarget postTarget()
+{
+    std::lock_guard<std::mutex> lock(postMutex);
+
+    return postTargetNow;
 }
 
 std::string packageResources()

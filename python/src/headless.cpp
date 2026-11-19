@@ -8,6 +8,7 @@
  */
 
 #include "control.h"
+#include "events.h"
 
 #include <gweni/app/headless.h>
 #include <gweni/controls/canvas.h>
@@ -49,15 +50,14 @@ public:
             m_headless.reset();
             throw std::runtime_error("gweni.Headless: "+error);
         }
-        beginSession("Headless", m_headless->canvas());
+        beginSession("Headless", m_headless->canvas(), [this]() { release(); });
     }
 
     ~Headless()
     {
         // never throws: a handle dropped on another thread still frees it
-        m_headless.reset();
-        if(session().kind == std::string("Headless"))
-            endSession();
+        if(m_headless)
+            release();
     }
 
     void close()
@@ -65,6 +65,14 @@ public:
         if(!m_headless)
             return;
         checkThread();
+        checkNotInCallback("Headless.close()");
+        inCall([this]() { release(); });
+    }
+
+    //! Deletes the canvas (its controls' callbacks with it) and ends the
+    //! session, whatever the thread.
+    void release()
+    {
         m_headless.reset();
         endSession();
     }
@@ -75,6 +83,15 @@ public:
             throw std::runtime_error("gweni.Headless: it is closed");
         checkThread();
         return *m_headless;
+    }
+
+    //! A driving method's Headless: refused inside a callback.
+    app::Headless &drive(const char *what)
+    {
+        app::Headless &headless=get();
+
+        checkNotInCallback(what);
+        return headless;
     }
 
     bool closed() const { return !m_headless; }
@@ -124,26 +141,42 @@ void bindHeadless(nb::module_ &m)
         .def_prop_ro("seconds", [](Headless &self) { return self.get().seconds(); }, "The clock now.")
         .def_prop_ro("frame_count", [](Headless &self) { return self.get().frameCount(); },
             "Frames drawn so far.")
-        .def("frame", [](Headless &self, int count) { self.get().frame(count); }, nb::arg("count")=1,
+        .def("frame", [](Headless &self, int count) { inCall([&]() { self.drive("Headless.frame()").frame(count); }); },
+            nb::arg("count")=1,
             "Draws count frames: the update, the render, the clock a step on.")
-        .def("move", [](Headless &self, int x, int y) { self.get().move(x, y); }, nb::arg("x"), nb::arg("y"),
+        .def("move", [](Headless &self, int x, int y) { inCall([&]() { self.drive("Headless.move()").move(x, y); }); },
+            nb::arg("x"), nb::arg("y"),
             "The mouse to (x, y), in logical units.")
-        .def("press", [](Headless &self, int x, int y, int button) { self.get().press(x, y, button); },
+        .def("press", [](Headless &self, int x, int y, int button) {
+                inCall([&]() { self.drive("Headless.press()").press(x, y, button); });
+            },
             nb::arg("x"), nb::arg("y"), nb::arg("button")=0,
             "A button (0 left, 1 right) pressed at (x, y), the clock a second on.")
-        .def("release", [](Headless &self, int x, int y, int button) { self.get().release(x, y, button); },
+        .def("release", [](Headless &self, int x, int y, int button) {
+                inCall([&]() { self.drive("Headless.release()").release(x, y, button); });
+            },
             nb::arg("x"), nb::arg("y"), nb::arg("button")=0, "A button released at (x, y).")
-        .def("click", [](Headless &self, int x, int y, int button) { self.get().click(x, y, button); },
+        .def("click", [](Headless &self, int x, int y, int button) {
+                inCall([&]() { self.drive("Headless.click()").click(x, y, button); });
+            },
             nb::arg("x"), nb::arg("y"), nb::arg("button")=0, "press() and release() at (x, y).")
-        .def("wheel", [](Headless &self, int delta) { return self.get().wheel(delta); }, nb::arg("delta"),
+        .def("wheel", [](Headless &self, int delta) {
+                return inCall([&]() { return self.drive("Headless.wheel()").wheel(delta); });
+            }, nb::arg("delta"),
             "A vertical wheel of delta (60 a notch, down negative); whether the UI took it.")
-        .def("wheel_h", [](Headless &self, int delta) { return self.get().wheelH(delta); }, nb::arg("delta"),
+        .def("wheel_h", [](Headless &self, int delta) {
+                return inCall([&]() { return self.drive("Headless.wheel_h()").wheelH(delta); });
+            }, nb::arg("delta"),
             "A horizontal wheel of delta; whether the UI took it.")
         .def("key", [](Headless &self, const std::string &chord) {
-                if(!self.get().key(chord))
+                const bool known=inCall([&]() { return self.drive("Headless.key()").key(chord); });
+
+                if(!known)
                     throw nb::value_error(("gweni.Headless.key: not a key or chord: "+chord).c_str());
             }, nb::arg("chord"), "A key or chord as ControlTest's --key takes it: \"return\", \"ctrl+a\", \"x\".")
-        .def("type", [](Headless &self, const std::string &text) { self.get().type(text); }, nb::arg("text"),
+        .def("type", [](Headless &self, const std::string &text) {
+                inCall([&]() { self.drive("Headless.type()").type(text); });
+            }, nb::arg("text"),
             "Text typed, one codepoint at a time.")
         .def("pixels", [](Headless &self) {
                 std::vector<uint8_t> rows=self.get().pixels();

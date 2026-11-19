@@ -6,11 +6,13 @@
  */
 
 #include "control.h"
+#include "events.h"
 
 #include <gweni/controls/layout/layout.h>
 #include <gweni/uiTypes.h>
 
 #include <nanobind/stl/string.h>
+#include <nanobind/stl/tuple.h>
 #include <nanobind/stl/vector.h>
 
 #include <unordered_map>
@@ -120,7 +122,7 @@ void bindControl(nb::module_ &m)
         .value("VERTICAL", LayoutKind::Vertical)
         .value("HORIZONTAL", LayoutKind::Horizontal);
 
-    nb::class_<Control>(m, "Control",
+    auto control=nb::class_<Control>(m, "Control",
         "A handle of a control in the C++ tree, which owns it. Every use looks the\n"
         "control up by its id: a deleted one raises ControlDeletedError, and\n"
         "dropping a handle deletes nothing.")
@@ -144,6 +146,7 @@ void bindControl(nb::module_ &m)
                 return children;
             }, "The children's handles, in order (an inner panel's, where there is one).")
         .def("add", [](const Control &self, nb::type_object type, nb::kwargs props) {
+                CallScope scope;
                 controls::Base *parent=resolveBase(self);
                 auto found=typesByClass().find(type.ptr());
 
@@ -170,6 +173,7 @@ void bindControl(nb::module_ &m)
                     child->delayedDelete();
                     throw;
                 }
+                scope.finish();
                 return handle;
             }, nb::arg("type"), nb::arg("props"),
             "Makes a child of \\p type, sets each keyword as a property and returns its handle.")
@@ -210,7 +214,15 @@ void bindControl(nb::module_ &m)
                 std::string name=control ? control->getTypeName() : "deleted";
 
                 return "<gweni control #"+std::to_string(self.id)+" "+name+">";
-            });
+            })
+        .def_prop_ro("bounds", [](const Control &self) {
+                const Rect &bounds=resolveBase(self)->getBounds();
+                return std::make_tuple(bounds.x, bounds.y, bounds.w, bounds.h);
+            }, "(x, y, width, height) in its parent, in logical units.");
+    bindEvent<decltype(control), controls::Base>(control, "on_hover_enter", &controls::Base::onHoverEnter,
+        "The mouse came onto it.");
+    bindEvent<decltype(control), controls::Base>(control, "on_hover_leave", &controls::Base::onHoverLeave,
+        "The mouse left it.");
 }
 
 }//namespace python

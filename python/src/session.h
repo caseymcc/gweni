@@ -11,12 +11,17 @@
 
 #include <nanobind/nanobind.h>
 
+#include <functional>
+#include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <thread>
 
 namespace gweni
 {
+class PostQueue;
+
 namespace controls
 {
 class Canvas;
@@ -46,13 +51,25 @@ struct Session
     const char *kind="";
     std::thread::id thread;
     controls::Canvas *canvas=nullptr;
+    //! closes the App or Headless whatever the thread (the atexit hook)
+    std::function<void()> close;
 };
 
 Session &session();
 
-//! Starts the session of a Headless or App on this thread.
-void beginSession(const char *kind, controls::Canvas *canvas);
+//! Starts the session of a Headless or App on this thread; \p close is how
+//! the atexit hook closes it.
+void beginSession(const char *kind, controls::Canvas *canvas, std::function<void()> close);
 void endSession();
+
+//! The session canvas's post queue and id, for canvas.post() from any thread
+//! (read under a lock of their own: the rest of Session is the UI thread's).
+struct PostTarget
+{
+    std::shared_ptr<PostQueue> queue;
+    size_t canvasId=0;
+};
+PostTarget postTarget();
 
 //! Raises ThreadError when a session is alive and this is not its thread:
 //! the one compare every call into the tree makes.
