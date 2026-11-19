@@ -70,6 +70,17 @@ static controls::Base *g_mouseCanvas=nullptr;
 static double g_fLastClickTime[c_MaxMouseButtons];
 static Point g_pntLastClickPos;
 
+void resetPointerState()
+{
+    g_keyData=KeyData();
+    g_mousePosition=Point(0, 0);
+    g_mouseCanvas=nullptr;
+    // no last click: the next press is a single click whatever the clock reads
+    for(double &time : g_fLastClickTime)
+        time=-std::numeric_limits<double>::infinity();
+    g_pntLastClickPos=Point(0, 0);
+}
+
 
 // While a control on this canvas holds the mouse (MouseFocus), it is the
 // hovered control: a move hit-tests nothing and sends no leave or enter, so a

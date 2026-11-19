@@ -1753,6 +1753,38 @@ if(TARGET gweni_app AND NOT EMSCRIPTEN)
     endif()
 endif()
 
+# gweni_app's app::Headless (app/headless.cmake, app/headless.cpp's header
+# says what it checks): the exe links gweni_app alone, as an app does, its
+# stats' keys held to ControlTest --stats's line, on GL and, with Vulkan,
+# validated.
+if(TARGET gweni_app AND TARGET ControlTest AND NOT EMSCRIPTEN)
+    add_executable(gweni_app_headless_test app/headless.cpp)
+    gweni_set_warnings(gweni_app_headless_test)
+    target_link_libraries(gweni_app_headless_test gweni_app)
+    foreach(variant "" _vulkan)
+        if(variant STREQUAL "_vulkan" AND NOT GWENI_RENDER_VULKAN)
+            continue()
+        endif()
+        add_test(NAME app_headless${variant}
+            COMMAND ${CMAKE_COMMAND}
+                -DEXE=$<TARGET_FILE:gweni_app_headless_test>
+                -DCONTROLTEST=$<TARGET_FILE:ControlTest>
+                -DRESOURCES=${GWENI_SOURCE_DIR}/resources
+                -DSCRATCH=${CMAKE_CURRENT_BINARY_DIR}/app_headless${variant}
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/app/headless.cmake)
+    endforeach()
+    set_tests_properties(app_headless PROPERTIES
+        ENVIRONMENT GWENI_RENDERER=gl
+        LABELS gpu
+        TIMEOUT 300)
+    if(GWENI_RENDER_VULKAN)
+        set_tests_properties(app_headless_vulkan PROPERTIES
+            ENVIRONMENT GWENI_RENDERER=vulkan
+            TIMEOUT 600)
+        gweni_vulkan_test_environment(app_headless_vulkan)
+    endif()
+endif()
+
 # the example window's idle loop in a real window (windowIdle.cmake, whose
 # header says what it runs): ControlTest --idle-test under an Xvfb of its own,
 # on GL and, with Vulkan, on renderer::Vulkan validated. Without Xvfb it fails

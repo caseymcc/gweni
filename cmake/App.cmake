@@ -8,8 +8,11 @@
 #  context (a GLFW window, surfaceless EGL, or WebGL 2 in the browser), the
 #  offscreen framebuffer and PNG readback, the Vulkan device and window with
 #  GWENI_RENDER_VULKAN, the window loop and the scale a window draws at
-#  (device.h); the parts an app draws with (shell.h); and app::Window, those
-#  parts in a window with every GLFW callback wired (window.h).
+#  (device.h); the parts an app draws with (shell.h); app::Window, those
+#  parts in a window with every GLFW callback wired (window.h); app::Headless,
+#  those parts offscreen on a stepped clock, driven by script steps
+#  (headless.h); the key names scripts take (keys.h); and a frame's counters
+#  as ControlTest --stats prints them (frameStats.h).
 #
 #  Built with the GL renderer (the desktop, GLES and web trees; not the
 #  Vulkan-only one) unless GWENI_BUILD_APP is off, so an app taking gweni with
@@ -49,6 +52,12 @@ add_library(gweni_app STATIC
     source/app/shell.cpp
     include/gweni/app/window.h
     source/app/window.cpp
+    include/gweni/app/headless.h
+    source/app/headless.cpp
+    include/gweni/app/keys.h
+    source/app/keys.cpp
+    include/gweni/app/frameStats.h
+    source/app/frameStats.cpp
     source/app/instance.h
     # the Vulkan window's swapchain; empty without GWENI_RENDER_VULKAN
     source/app/vulkanWindow.h

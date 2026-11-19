@@ -84,6 +84,17 @@ bool GWENI_EXPORT dropLostKeyboardFocus();
 //! hit_tests=). Input arrives between frames, so it is in no per-frame stats.
 size_t GWENI_EXPORT hitTestVisits();
 
+//! Forgets the process-wide pointer and key state a fresh canvas must not
+//! inherit from an earlier one: the last click's time, point and button per
+//! mouse button (so a press at the same point on a restarted clock is a single
+//! click, not the second of a double-click), the mouse position (0,0), the
+//! canvas the mouse was on, the held mouse buttons and keys and their repeat
+//! times and press targets. Call it between canvases, with none receiving
+//! input (gweni_app's Window and Headless call it as they open), never while
+//! one is mid-press. The hover, mouse and keyboard focus are not touched: they
+//! name controls, and ~Base clears them.
+void GWENI_EXPORT resetPointerState();
+
 }//namespace input
 }//namespace gweni
 

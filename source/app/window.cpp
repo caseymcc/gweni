@@ -10,6 +10,7 @@
 #include "instance.h"
 
 #include <gweni/controls/canvas.h>
+#include <gweni/inputHandler.h>
 #include <gweni/platforms/renderers/slotRenderer.h>
 #include <gweni/skins/textured/texturedSkin.h>
 #include <gweni/skins/textured/tokyoNight.h>
@@ -128,6 +129,8 @@ void Window::show()
         : skin::textured::tokyonight::Canvas.top;
     m_framebuffer=Point(0, 0);
 
+    // nothing of an earlier canvas's pointer state
+    input::resetPointerState();
     m_input.initialize(m_shell.canvas.get());
     // a page's touches and text field (nothing natively)
     m_input.useBrowserInput(true);

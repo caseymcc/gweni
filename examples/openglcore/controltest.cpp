@@ -1919,6 +1919,8 @@
 #include <GLFW/glfw3.h>
 #include <gweni/utils/filesystem.h>
 #include "capture.h"
+#include <gweni/app/frameStats.h>
+#include <gweni/app/keys.h>
 #include <gweni/app/window.h>
 #include <cctype>
 #include <chrono>
@@ -2305,21 +2307,8 @@ using gweni::app::writeRendererPng;
 using gweni::app::writeRgbaPng;
 
 // The control that first re-dirtied layout in a frame, as Type#id, or "none".
-static std::string redirtiedBy(const gweni::controls::LayoutStats &layout)
-{
-    if(!layout.redirtiedType)
-        return "none";
-    return std::string(layout.redirtiedType)+"#"+std::to_string(layout.redirtiedId);
-}
-
-// The control that first recorded a request during a pass in a frame, as
-// Type#id, or "none" (LayoutStats::requests).
-static std::string requestedBy(const gweni::controls::LayoutStats &layout)
-{
-    if(!layout.requestedType)
-        return "none";
-    return std::string(layout.requestedType)+"#"+std::to_string(layout.requestedId);
-}
+using gweni::app::redirtiedBy;
+using gweni::app::requestedBy;
 
 // measureTextCalls() and invalidateCalls() after the last frame line, or when
 // the frames started: measure_calls= and invalidations= are every measure and
@@ -2345,26 +2334,9 @@ static void printFrameStats(int frame, const std::string &control,
     const size_t invalidations=gweni::controls::invalidateCalls()-g_invalidationsAtFrame;
 
     restartFrameCounts();
-    std::printf("frame=%d control=%s controls_changed=%zu created=%zu visibility=%zu"
-        " geometry=%zu background=%zu text=%zu prim_slots_written=%zu text_slots_written=%zu"
-        " upload_calls=%zu upload_bytes=%zu mirror_bytes=%zu draw_calls=%zu primitive_slots_culled=%zu text_runs_culled=%zu"
-        " atlas_upload_calls=%zu atlas_upload_bytes=%zu buffer_regrows=%zu image_regrows=%zu"
-        " layout_passes=%d redirtied_by=%s render_layout=%d layout_requests=%d requested_by=%s"
-        " layout_visited=%zu layout_children_scanned=%zu measure_calls=%zu invalidations=%zu"
-        " visited=%zu render_carried=%zu z_visited=%zu anims_run=%zu prim_ids=%zu excluded_changed=%zu"
-        " sorted_slots=%zu sorted_runs=%zu sorted_groups=%zu sorted_builds=%zu overlap_visited=%zu\n",
-        frame, control.c_str(),
-        changes.controls, changes.created, changes.visibility,
-        changes.geometry, changes.background, changes.text,
-        gpu.primitiveSlotsWritten, gpu.textSlotsWritten,
-        gpu.uploadCalls, gpu.uploadBytes, gpu.mirrorBytes, gpu.drawCalls, gpu.primitiveSlotsCulled, gpu.textRunsCulled,
-        gpu.atlasUploadCalls, gpu.atlasUploadBytes, gpu.bufferRegrows, gpu.imagePageRegrows,
-        layout.passes, redirtiedBy(layout).c_str(), layout.renderLayout ? 1 : 0,
-        layout.requests, requestedBy(layout).c_str(),
-        layout.visited, layout.childrenScanned, measures, invalidations,
-        changes.visited, changes.renderCarried, update.zVisited, update.animsRun,
-        gweni::primitiveIdCount()-gweni::releasedPrimitiveIdCount(), changes.excluded,
-        gpu.sortedSlots, gpu.sortedRuns, gpu.sortedGroups, gpu.sortedScheduleBuilds, gpu.overlapVisited);
+    // gweni_app's one list, app::Headless::stats()'s too
+    std::printf("%s\n", gweni::app::formatStatFields(gweni::app::frameStatFields(frame, control,
+        changes, gpu, layout, update, measures, invalidations)).c_str());
     std::fflush(stdout);
 }
 
@@ -2920,33 +2892,7 @@ static void doubleClickMouse(Session &s, int x, int y)
     mouseUp(s, x, y);
 }
 
-// Named keys as the GLFW key codes a keyboard sends, so --key goes through
-// gweni::input::GLFW3's translator exactly as the examples' key callback does.
-static const struct { const char *name; int key; } g_namedKeys[]=
-{
-    {"return", GLFW_KEY_ENTER},          {"backspace", GLFW_KEY_BACKSPACE},
-    {"delete", GLFW_KEY_DELETE},         {"left", GLFW_KEY_LEFT},
-    {"right", GLFW_KEY_RIGHT},           {"shift", GLFW_KEY_LEFT_SHIFT},
-    {"tab", GLFW_KEY_TAB},               {"space", GLFW_KEY_SPACE},
-    {"home", GLFW_KEY_HOME},             {"end", GLFW_KEY_END},
-    {"control", GLFW_KEY_LEFT_CONTROL},  {"up", GLFW_KEY_UP},
-    {"down", GLFW_KEY_DOWN},             {"escape", GLFW_KEY_ESCAPE},
-    {"alt", GLFW_KEY_LEFT_ALT},          {"command", GLFW_KEY_LEFT_SUPER},
-    {"kp-enter", GLFW_KEY_KP_ENTER},     {"f9", GLFW_KEY_F9},
-    {"f10", GLFW_KEY_F10},               {"f11", GLFW_KEY_F11},
-    {"f12", GLFW_KEY_F12},               {"pageup", GLFW_KEY_PAGE_UP},
-    {"pagedown", GLFW_KEY_PAGE_DOWN},    {"f4", GLFW_KEY_F4},
-};
-
-// The modifiers a --key chord may hold, with the mods bit GLFW reports for them.
-static const struct { const char *name; int key; int mod; } g_chordModifiers[]=
-{
-    {"ctrl", GLFW_KEY_LEFT_CONTROL, GLFW_MOD_CONTROL},
-    {"control", GLFW_KEY_LEFT_CONTROL, GLFW_MOD_CONTROL},
-    {"shift", GLFW_KEY_LEFT_SHIFT, GLFW_MOD_SHIFT},
-    {"alt", GLFW_KEY_LEFT_ALT, GLFW_MOD_ALT},
-    {"command", GLFW_KEY_LEFT_SUPER, GLFW_MOD_SUPER},
-};
+// --key's names are gweni_app's (app/keys.h), app::Headless::key()'s too.
 
 // The GLFW translator, pointed at this session's canvas. Looked up per event,
 // since the resize scenario replaces the canvas part way through.
@@ -2956,17 +2902,6 @@ static gweni::input::GLFW3 &glfwInput(Session &s)
     return g_glfwInput;
 }
 
-static std::string glfwKeyName(int key)
-{
-    for(const auto &named : g_namedKeys)
-        if(named.key == key)
-            return named.name;
-    if(key >= GLFW_KEY_A && key <= GLFW_KEY_Z)
-        return std::string(1, static_cast<char>(key));
-    if(key >= GLFW_KEY_0 && key <= GLFW_KEY_9)
-        return std::string(1, static_cast<char>(key));
-    return std::to_string(key);
-}
 
 // One synthesised GLFW key event, as glfwSetKeyCallback would deliver it.
 static void glfwKey(Session &s, int key, int action, int mods)
@@ -2974,7 +2909,7 @@ static void glfwKey(Session &s, int key, int action, int mods)
     const gweni::input::GLFW3::KeyEvent event={key, 0, action, mods};
     if(!gweni::capture::toolKey(g_canvas, key, action))
         glfwInput(s).processKeyEvent(event);
-    trace(s, std::string("key ")+glfwKeyName(key)+(action == GLFW_PRESS ? " press" : " release")
+    trace(s, std::string("key ")+gweni::app::keyName(key)+(action == GLFW_PRESS ? " press" : " release")
         +" mods="+std::to_string(mods));
 }
 
@@ -2987,31 +2922,6 @@ static void glfwChar(Session &s, unsigned int codepoint)
     trace(s, std::string("char ")+hex+(used ? " consumed" : " ignored"));
 }
 
-// A chord's last part: a named key or a single letter or digit. GLFW names a
-// letter by its uppercase ASCII code, and a digit by its own.
-static bool parseKeyPart(const std::string &part, int &key)
-{
-    for(const auto &named : g_namedKeys)
-    {
-        if(part == named.name)
-        {
-            key=named.key;
-            return true;
-        }
-    }
-
-    if(part.size() == 1 && std::isalpha(static_cast<unsigned char>(part[0])))
-    {
-        key=GLFW_KEY_A+(std::toupper(static_cast<unsigned char>(part[0]))-'A');
-        return true;
-    }
-    if(part.size() == 1 && part[0] >= '0' && part[0] <= '9')
-    {
-        key=GLFW_KEY_0+(part[0]-'0');
-        return true;
-    }
-    return false;
-}
 
 // --key: a single printable character is typed (the char callback); anything
 // else is a key, or a chord of modifiers and a key joined by '+', sent as GLFW
@@ -3021,115 +2931,33 @@ static bool parseKeyPart(const std::string &part, int &key)
 // no char for Ctrl+letter.
 static bool sendKey(Session &s, const std::string &name)
 {
-    if(name.size() == 1 && name[0]>=' ' && name[0]<'\x7f')
-    {
-        glfwChar(s, static_cast<unsigned char>(name[0]));
-        return true;
-    }
+    gweni::app::Chord chord;
+    std::string part;
 
-    std::vector<std::string> parts;
-    for(size_t from=0;;)
+    switch(gweni::app::parseChord(name, chord, part))
     {
-        const size_t plus=name.find('+', from);
-        parts.push_back(name.substr(from, plus == std::string::npos ? std::string::npos : plus-from));
-        if(plus == std::string::npos)
-            break;
-        from=plus+1;
-    }
-
-    std::vector<int> modifierKeys;
-    std::vector<int> modifierBits;
-    for(size_t i=0; i+1 < parts.size(); ++i)
-    {
-        bool found=false;
-        for(const auto &modifier : g_chordModifiers)
-        {
-            if(parts[i] != modifier.name)
-                continue;
-            modifierKeys.push_back(modifier.key);
-            modifierBits.push_back(modifier.mod);
-            found=true;
-            break;
-        }
-        if(!found)
-        {
-            std::cerr<<"ControlTest: --key "<<name<<": "<<parts[i]
-                     <<" is not a modifier (ctrl, shift, alt, command)\n";
-            return false;
-        }
-    }
-
-    int key=0;
-    if(!parseKeyPart(parts.back(), key))
-    {
+    case gweni::app::ChordError::NotAModifier:
+        std::cerr<<"ControlTest: --key "<<name<<": "<<part
+                 <<" is not a modifier (ctrl, shift, alt, command)\n";
+        return false;
+    case gweni::app::ChordError::UnknownKey:
         std::cerr<<"ControlTest: unknown key name: "<<name<<"\n";
         return false;
+    case gweni::app::ChordError::None:
+        break;
     }
 
-    int mods=0;
-    for(size_t i=0; i < modifierKeys.size(); ++i)
+    if(chord.isCharacter)
     {
-        glfwKey(s, modifierKeys[i], GLFW_PRESS, mods);
-        mods|=modifierBits[i];
+        glfwChar(s, chord.character);
+        return true;
     }
-
-    glfwKey(s, key, GLFW_PRESS, mods);
-    glfwKey(s, key, GLFW_RELEASE, mods);
-
-    for(size_t i=modifierKeys.size(); i-- > 0;)
-    {
-        glfwKey(s, modifierKeys[i], GLFW_RELEASE, mods);
-        mods&=~modifierBits[i];
-    }
+    for(const gweni::app::KeyStroke &stroke : chord.strokes)
+        glfwKey(s, stroke.key, stroke.action, stroke.mods);
     return true;
 }
 
-// UTF-8 to codepoints. A malformed sequence (a stray continuation byte, a
-// truncated, overlong or surrogate encoding) decodes to U+FFFD and decoding
-// resumes at the next byte.
-static std::vector<unsigned int> decodeUtf8(const std::string &text)
-{
-    std::vector<unsigned int> codepoints;
-    const size_t size=text.size();
-
-    for(size_t i=0; i < size;)
-    {
-        const unsigned char lead=static_cast<unsigned char>(text[i]);
-        size_t length=0;
-        unsigned int codepoint=0;
-        unsigned int minimum=0;
-
-        if(lead < 0x80){ length=1; codepoint=lead; }
-        else if((lead & 0xE0) == 0xC0){ length=2; codepoint=lead & 0x1F; minimum=0x80; }
-        else if((lead & 0xF0) == 0xE0){ length=3; codepoint=lead & 0x0F; minimum=0x800; }
-        else if((lead & 0xF8) == 0xF0){ length=4; codepoint=lead & 0x07; minimum=0x10000; }
-
-        bool valid=length != 0 && i+length <= size;
-        for(size_t j=1; valid && j < length; ++j)
-        {
-            const unsigned char next=static_cast<unsigned char>(text[i+j]);
-            if((next & 0xC0) != 0x80)
-                valid=false;
-            else
-                codepoint=(codepoint << 6) | (next & 0x3F);
-        }
-        if(valid && (codepoint < minimum || codepoint > 0x10FFFF
-            || (codepoint >= 0xD800 && codepoint <= 0xDFFF)))
-            valid=false;
-
-        if(valid)
-        {
-            codepoints.push_back(codepoint);
-            i+=length;
-        }
-        else
-        {
-            codepoints.push_back(0xFFFD);
-            ++i;
-        }
-    }
-    return codepoints;
-}
+using gweni::app::decodeUtf8;
 
 // --type: the text one codepoint at a time through the char callback's path.
 static void typeText(Session &s, const std::string &text)
