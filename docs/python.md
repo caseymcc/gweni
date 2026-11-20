@@ -108,10 +108,10 @@ A keyword that is no property of `Type` raises `AttributeError` and makes
 nothing; a value of the wrong type raises `TypeError` and the half-made child
 is deleted.
 
-A `Window` `add()` makes is 300x200 at (0, 0) unless `size` or `bounds` is
-among the keywords (the C++ control is `Base`'s 100x40, where the title bar
-leaves no room for what is docked under it), so the example above shows its
-label and button.
+A `Window` `add()` makes is 300x200 at (0, 0) unless `size` is among the
+keywords (`bounds` is read-only; the C++ control is `Base`'s 100x40, where
+the title bar leaves no room for what is docked under it), so the example
+above shows its label and button.
 
 ### Events
 

@@ -418,7 +418,7 @@ class TabControl(Control):
 class Window(Control):
     """
     A movable, resizable window with a title bar (controls::WindowControl). add() makes it
-    300x200 at (0, 0) unless its size or bounds are given: the C++ control is Base's 100x40,
+    300x200 at (0, 0) unless size= is given (bounds is read-only): the C++ control is Base's 100x40,
     in which a title bar leaves no room for what is docked under it.
     """
 
@@ -1050,7 +1050,10 @@ class Chip(Button):
 
     @property
     def palette_index(self) -> int:
-        """A palette colour (0..7) in place of the tone; -1 for the tone."""
+        """
+        A palette colour (0..7, any other index taken mod 8) in place of the tone; -1 while the
+        tone is used, and set to -1 to use the tone again (as setting tone does).
+        """
 
     @palette_index.setter
     def palette_index(self, arg: int, /) -> None: ...

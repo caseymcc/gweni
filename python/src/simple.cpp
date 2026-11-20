@@ -367,8 +367,18 @@ void bindSimpleControls(nb::module_ &m)
             [](const Control &self, controls::ChipTone tone) { resolve<controls::Chip>(self)->setTone(tone); })
         .def_prop_rw("palette_index",
             [](const Control &self) { return resolve<controls::Chip>(self)->getPaletteIndex(); },
-            [](const Control &self, int index) { resolve<controls::Chip>(self)->setPaletteIndex(index); },
-            "A palette colour (0..7) in place of the tone; -1 for the tone.")
+            [](const Control &self, int index) {
+                controls::Chip *chip=resolve<controls::Chip>(self);
+
+                // -1 is the tone again (C++'s setPaletteIndex would take it
+                // mod 8, entry 7); any other index is taken mod 8
+                if(index == -1)
+                    chip->setTone(chip->getTone());
+                else
+                    chip->setPaletteIndex(index);
+            },
+            "A palette colour (0..7, any other index taken mod 8) in place of the tone; -1 while the\n"
+            "tone is used, and set to -1 to use the tone again (as setting tone does).")
         .def_prop_rw("clickable",
             [](const Control &self) { return resolve<controls::Chip>(self)->isClickable(); },
             [](const Control &self, bool on) { resolve<controls::Chip>(self)->setClickable(on); },

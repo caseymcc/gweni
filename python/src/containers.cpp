@@ -187,7 +187,7 @@ void bindContainers(nb::module_ &m)
     // Window
     auto window=nb::class_<Window, Control>(m, "Window",
         "A movable, resizable window with a title bar (controls::WindowControl). add() makes it\n"
-        "300x200 at (0, 0) unless its size or bounds are given: the C++ control is Base's 100x40,\n"
+        "300x200 at (0, 0) unless size= is given (bounds is read-only): the C++ control is Base's 100x40,\n"
         "in which a title bar leaves no room for what is docked under it.")
         .def_prop_rw("title",
             [](const Control &self) { return resolve<controls::WindowControl>(self)->getTitle(); },
@@ -208,7 +208,7 @@ void bindContainers(nb::module_ &m)
     bindEvent<decltype(window), controls::WindowControl>(window, "on_closed", &controls::WindowControl::onWindowClosed,
         "Its close button closed it.");
     // add() gives it the C++ demos' size before the keywords are set, so a
-    // size= or bounds= among them wins
+    // size= among them wins
     registerControlType(controls::WindowControl::getTypeNameStatic(), window,
         [](size_t id) { Window handle; handle.id=id; return nb::cast(handle); },
         [](controls::Base *parent) -> controls::Base * {

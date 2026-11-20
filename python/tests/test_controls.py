@@ -284,6 +284,10 @@ def test_chip_removed_from_its_handler(headless: gweni.Headless) -> None:
     assert chip.tone == gweni.ChipTone.ACCENT and chip.removable
     chip.palette_index = 3
     assert chip.palette_index == 3
+    chip.palette_index = 11
+    assert chip.palette_index == 3
+    chip.palette_index = -1
+    assert chip.palette_index == -1 and chip.tone == gweni.ChipTone.ACCENT
     removed: list[gweni.Control] = []
 
     @chip.on_remove
