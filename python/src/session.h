@@ -17,6 +17,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <unordered_set>
 
 namespace gweni
 {
@@ -53,6 +54,11 @@ struct Session
     controls::Canvas *canvas=nullptr;
     //! closes the App or Headless whatever the thread (the atexit hook)
     std::function<void()> close;
+    //! the controls delete_later() may delete: those add() made and the
+    //! dialogs message(), confirm() and prompt() opened. Any other is a part
+    //! its owner keeps a pointer to (a CheckBoxWithLabel's box, a TabButton's
+    //! page, a list's items), which delete_later() refuses.
+    std::unordered_set<size_t> deletable;
 };
 
 Session &session();

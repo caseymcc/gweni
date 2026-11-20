@@ -8,6 +8,7 @@
 #include "control.h"
 #include "events.h"
 
+#include <gweni/controls/canvas.h>
 #include <gweni/controls/layout/layout.h>
 #include <gweni/uiTypes.h>
 
@@ -195,6 +196,8 @@ void bindControl(nb::module_ &m)
                 controls::Base *child=found->second.create(parent);
                 nb::object handle=found->second.make(child->getControlId());
 
+                session().deletable.insert(child->getControlId());
+
                 try
                 {
                     for(auto item : props)
@@ -210,8 +213,27 @@ void bindControl(nb::module_ &m)
             }, nb::sig("def add(self, type: type[ControlT], /, **props: object) -> ControlT"),
             nb::arg("type"), nb::arg("props"),
             "Makes a child of \\p type, sets each keyword as a property and returns its handle.")
-        .def("delete_later", [](const Control &self) { resolveBase(self)->delayedDelete(); },
-            "Deletes the control in the next frame's update (Base::delayedDelete).")
+        .def("delete_later", [](const Control &self) {
+                controls::Base *control=resolveBase(self);
+                const Session &s=session();
+
+                if(control == s.canvas)
+                    throw nb::value_error("gweni: the canvas cannot be deleted (close the App or Headless)");
+                // a part its owner made keeps a pointer there (a
+                // CheckBoxWithLabel's box, a TabButton's page, a selected
+                // option, a dialog's field): deleting it under the owner
+                // would leave that pointer dangling
+                if(s.deletable.count(self.id) == 0)
+                    throw nb::value_error(("gweni: "+std::string(control->getTypeName())+" #"+std::to_string(self.id)
+                        +" is a part its owner made, not a control add() made, so delete_later() cannot delete it:"
+                        " delete its owner, or remove it the owner's way (TabControl.close_tab, Menu.clear_items,"
+                        " ComboBox.clear_items, ListBox.clear, Toast.dismiss, Dialog.close)").c_str());
+                control->delayedDelete();
+            },
+            "Deletes the control in the next frame's update (Base::delayedDelete): one add() made, a\n"
+            "dialog, a TabButton (closed as close_tab closes it) or a Toast (dismissed). Any other\n"
+            "part an owner made (a CheckBoxWithLabel's box, a page, an item, an option) and the\n"
+            "canvas raise ValueError.")
         .def_prop_rw("dock",
             [](const Control &self) { return resolveBase(self)->getDock(); },
             [](const Control &self, DockPosition dock) { resolveBase(self)->setDock(dock); },

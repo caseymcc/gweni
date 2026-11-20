@@ -177,7 +177,7 @@ count the same, byte for byte.
 | `Panel` | a plain `controls::Base` |
 | `Canvas`, `canvas.post(fn)`, `canvas.notify(...)` | `controls::Canvas`, `Canvas::post`, `Canvas::notify` |
 | `ctrl.add(Type, **props)` | `parent->newChild<T>()` and the setters |
-| `ctrl.delete_later()` | `Base::delayedDelete()` |
+| `ctrl.delete_later()` | `Base::delayedDelete()` (`TabControl::closeTab()` for a tab, `Toast::dismiss()` for a toast) |
 | `dock`, `layout` | `setDock(DockPosition)`, `setLayout(VerticalLayout/HorizontalLayout)` |
 | `position`, `size`, `bounds`, `canvas_bounds` | `setPos`/`getPos`, `setSize`, `getBounds`, `getCanvasBounds` |
 | `size_flags`, `margin`, `padding` | `setSizeFlags(SizeFlags)`, `setMargin`, `setPadding` |
@@ -213,6 +213,15 @@ next frame, a closed dialog, a dismissed toast, a removed chip, or the App or
 Headless closed. Dropping a handle, or garbage collection, deletes nothing.
 A control C++ made (`event.control`, `children`, a dialog's buttons) comes back
 as its bound class by type name, else as `Control`.
+
+**What `delete_later()` deletes.** A control `add()` made (and what it holds),
+a dialog `message()`, `confirm()` or `prompt()` opened, a `TabButton` (closed
+with its page as `TabControl.close_tab()` closes it) and a `Toast` (dismissed).
+A part an owner made and keeps a pointer to (a `CheckBoxWithLabel`'s
+`check_box`, a tab's `page`, a `PromptDialog`'s `field`, a dialog's `content`
+and buttons, a `RadioButtonController`'s options, a menu's or list's items, a
+`MenuItem`'s `menu`) and the canvas raise `ValueError`: delete the owner, or
+remove it the owner's way (`clear_items()`, `ListBox.clear()`, `Dialog.close()`).
 
 **Errors in callbacks.** An exception a callback raises never unwinds through
 gweni: the event or frame finishes (the other callbacks of the event run too),

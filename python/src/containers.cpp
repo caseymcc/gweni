@@ -56,6 +56,14 @@ dialogs::ResultHandler resultHandler(nb::object callback)
     return [callable](dialogs::Result result, const String &text) { callBack(*callable, result, text); };
 }
 
+//! \p control, which delete_later() may delete (a dialog the module opened)
+template<typename T>
+T *deletable(T *control)
+{
+    session().deletable.insert(control->getControlId());
+    return control;
+}
+
 controls::Canvas *canvasOf(const Control &handle)
 {
     return resolve<controls::Canvas>(handle);
@@ -122,7 +130,17 @@ void bindContainers(nb::module_ &m)
 
                 info.controlCaller=tab;
                 inCall([&]() { control->onTabPressed(info); });
-            }, "Makes it the selected tab, showing its page.");
+            }, "Makes it the selected tab, showing its page.")
+        .def("delete_later", [](const Control &self) {
+                controls::TabButton *tab=resolve<controls::TabButton>(self);
+                controls::TabControl *control=tab->getTabControl();
+
+                if(control == nullptr)
+                    throw std::runtime_error("gweni.TabButton.delete_later: not in a TabControl");
+                // the TabControl keeps the selected tab and every page: take
+                // it out as a close does (the next tab selected, on_lose_tab)
+                inCall([&]() { control->closeTab(tab); });
+            }, "Closes it and its page as TabControl.close_tab() does (on_close is not fired).");
     registerControl<TabButton, controls::TabButton, false>(tabButton);
 
     auto tabControl=nb::class_<TabControl, Control>(m, "TabControl",
@@ -270,7 +288,7 @@ void bindContainers(nb::module_ &m)
 
     m.def("message", [](const Control &canvas, const std::string &title, const std::string &text, nb::object onResult) {
             return inCall([&]() {
-                return wrapAs<Dialog>(dialogs::message(canvasOf(canvas), title, text, resultHandler(onResult)));
+                return wrapAs<Dialog>(deletable(dialogs::message(canvasOf(canvas), title, text, resultHandler(onResult))));
             });
         }, nb::sig("def message(canvas: Canvas, title: str, text: str, on_result: "
             "collections.abc.Callable[[DialogResult, str], object] | None = None) -> Dialog"),
@@ -279,7 +297,7 @@ void bindContainers(nb::module_ &m)
     m.def("confirm", [](const Control &canvas, const std::string &title, const std::string &text,
             dialogs::Buttons buttons, nb::object onResult) {
             return inCall([&]() {
-                return wrapAs<Dialog>(dialogs::confirm(canvasOf(canvas), title, text, buttons, resultHandler(onResult)));
+                return wrapAs<Dialog>(deletable(dialogs::confirm(canvasOf(canvas), title, text, buttons, resultHandler(onResult))));
             });
         }, nb::sig("def confirm(canvas: Canvas, title: str, text: str, buttons: DialogButtons = ..., "
             "on_result: collections.abc.Callable[[DialogResult, str], object] | None = None) -> Dialog"),
@@ -289,7 +307,7 @@ void bindContainers(nb::module_ &m)
     m.def("prompt", [](const Control &canvas, const std::string &title, const std::string &text,
             const std::string &initial, nb::object onResult) {
             return inCall([&]() {
-                return wrapAs<PromptDialog>(dialogs::prompt(canvasOf(canvas), title, text, initial, resultHandler(onResult)));
+                return wrapAs<PromptDialog>(deletable(dialogs::prompt(canvasOf(canvas), title, text, initial, resultHandler(onResult))));
             });
         }, nb::sig("def prompt(canvas: Canvas, title: str, text: str, initial: str = '', "
             "on_result: collections.abc.Callable[[DialogResult, str], object] | None = None) -> PromptDialog"),
@@ -311,7 +329,9 @@ void bindContainers(nb::module_ &m)
         .def_prop_ro("title", [](const Control &self) { return std::string(resolve<controls::Toast>(self)->getTitle()); })
         .def_prop_ro("dismissed", [](const Control &self) { return resolve<controls::Toast>(self)->isDismissed(); })
         .def("dismiss", [](const Control &self) { inCall([&]() { resolve<controls::Toast>(self)->dismiss(); }); },
-            "Takes it off the stack now (deleted in the next frame).");
+            "Takes it off the stack now (deleted in the next frame).")
+        .def("delete_later", [](const Control &self) { inCall([&]() { resolve<controls::Toast>(self)->dismiss(); }); },
+            "Dismisses it (the toast host keeps its toasts): deleted in the next frame.");
     registerControl<Toast, controls::Toast, false>(toast);
 
     // layout::Flow

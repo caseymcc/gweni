@@ -87,7 +87,12 @@ class Control:
         """
 
     def delete_later(self) -> None:
-        """Deletes the control in the next frame's update (Base::delayedDelete)."""
+        """
+        Deletes the control in the next frame's update (Base::delayedDelete): one add() made, a
+        dialog, a TabButton (closed as close_tab closes it) or a Toast (dismissed). Any other
+        part an owner made (a CheckBoxWithLabel's box, a page, an item, an option) and the
+        canvas raise ValueError.
+        """
 
     @property
     def dock(self) -> Dock:
@@ -362,6 +367,11 @@ class TabButton(Button):
     def select(self) -> None:
         """Makes it the selected tab, showing its page."""
 
+    def delete_later(self) -> None:
+        """
+        Closes it and its page as TabControl.close_tab() does (on_close is not fired).
+        """
+
 class TabControl(Control):
     """Pages selected by a strip of tabs (controls::TabControl)."""
 
@@ -589,6 +599,11 @@ class Toast(Control):
 
     def dismiss(self) -> None:
         """Takes it off the stack now (deleted in the next frame)."""
+
+    def delete_later(self) -> None:
+        """
+        Dismisses it (the toast host keeps its toasts): deleted in the next frame.
+        """
 
 class Flow(Control):
     """
