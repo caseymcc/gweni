@@ -50,8 +50,8 @@
 #                           the build (python_wheel_build_dirs)
 #    --help                 this text
 #
-#  The wheel is linux_x86_64, not yet manylinux: the auditwheel repair is the
-#  publishing task's (#858). The build holds no lock.
+#  The wheel is linux_x86_64, which PyPI refuses: tools/repair_wheel.py makes
+#  it manylinux_2_35_x86_64 and checks it. The build holds no lock.
 #
 set -euo pipefail
 
