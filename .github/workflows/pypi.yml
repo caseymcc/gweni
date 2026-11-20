@@ -1,0 +1,244 @@
+#
+#  Gweni
+#  Copyright (c) 2010 Facepunch Studios
+#  MIT License, see LICENSE
+#
+#  The Python wheel on PyPI (https://pypi.org/p/gweni): on a pushed v* tag,
+#  build the repo's own build image, run tools/ci_wheel.sh in it (the wheel
+#  built, repaired to manylinux_2_35_x86_64 with the GL libraries left the
+#  system's, checked, installed and smoke-tested, the tag against project()'s
+#  version), upload it to TestPyPI, install it from there into fresh venvs on
+#  CPython 3.12, 3.13 and 3.14 and run the smoke set on each
+#  (tools/ci_wheel_install.sh), and only then publish it to PyPI, in the
+#  environment `pypi`, which the owner gates with required reviewers. By hand
+#  (Actions -> pypi -> Run workflow) it is a dry run: the same build and
+#  TestPyPI steps, never PyPI. If a step fails, the run says why in an
+#  ::error:: annotation, which the public API shows without a token.
+#
+#  Every build step is in tools/ci_wheel.sh, and every check of the published
+#  wheel in tools/ci_wheel_install.sh, so a run can be repeated by hand in the
+#  container; this file only gets the image, the caches and the runner ready,
+#  and uploads. The image and the vcpkg cache are pages.yml's (the same keys).
+#
+#  Uploads are trusted publishing (OIDC, no token or password anywhere), with
+#  the attestations it makes. TestPyPI's upload skips a file already there
+#  (skip-existing), so a failed tag's run can be run again; the install then
+#  fails unless the index's file is this build's (--expect), as a version is
+#  never replaced on an index.
+#
+#  Once, by the repository's owner (docs/building.md -> "Publishing the
+#  wheel"): register gweni on PyPI and TestPyPI or add a pending publisher,
+#  add the trusted publisher (caseymcc/gweni, workflow pypi.yml, environment
+#  testpypi on TestPyPI and pypi on PyPI), and create the two environments,
+#  pypi with required reviewers.
+#
+#  Every action is pinned to a full commit SHA, its version in the comment.
+
+name: pypi
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+# no job gets more than it asks for below
+permissions: {}
+
+# one release of a ref at a time, never cancelled half-published
+concurrency:
+  group: pypi-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    permissions:
+      contents: read
+    env:
+      IMAGE: gweni_build
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # as pages.yml: the image and its build cache need more than the
+      # runner's free disk; these are toolchains the build never uses
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+              /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium \
+              /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # the runner's UID/GID, as run_docker.sh passes the host's
+      - name: Runner UID/GID
+        id: ids
+        run: |
+          echo "uid=$(id -u)" >> "$GITHUB_OUTPUT"
+          echo "gid=$(id -g)" >> "$GITHUB_OUTPUT"
+
+      - name: Build the image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          tags: ${{ env.IMAGE }}
+          build-args: |
+            USER_ID=${{ steps.ids.outputs.uid }}
+            GROUP_ID=${{ steps.ids.outputs.gid }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: vcpkg cache key
+        id: vcpkg
+        run: |
+          commit="$(docker run --rm --entrypoint git "$IMAGE" -C /opt/vcpkg rev-parse HEAD)"
+          echo "key=vcpkg-${commit}-${{ hashFiles('vcpkg.json') }}" >> "$GITHUB_OUTPUT"
+          echo "prefix=vcpkg-${commit}-" >> "$GITHUB_OUTPUT"
+          mkdir -p "$RUNNER_TEMP/vcpkg-cache/binary" "$RUNNER_TEMP/vcpkg-cache/downloads"
+
+      - name: Restore the vcpkg cache
+        id: vcpkg-restore
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/vcpkg-cache
+          key: ${{ steps.vcpkg.outputs.key }}
+          restore-keys: ${{ steps.vcpkg.outputs.prefix }}
+
+      # Everything is in the script. GITHUB_REF_NAME and GITHUB_REF_TYPE are
+      # the tag it checks against project()'s version (a run by hand is a
+      # branch's, with no tag). It builds with CMAKE_BUILD_PARALLEL_LEVEL jobs,
+      # nproc by default (4 here). Its output goes into ci_wheel.log too, for
+      # the step below.
+      - name: Build, repair and check the wheel (tools/ci_wheel.sh)
+        run: |
+          set +e
+          docker run --rm \
+              -e GITHUB_REF_NAME -e GITHUB_REF_TYPE \
+              -e VCPKG_DEFAULT_BINARY_CACHE=/vcpkg-cache/binary \
+              -e VCPKG_DOWNLOADS=/vcpkg-cache/downloads \
+              -v "$GITHUB_WORKSPACE:/home/developer/gweni" \
+              -v "$RUNNER_TEMP/vcpkg-cache:/vcpkg-cache" \
+              -w /home/developer/gweni \
+              "$IMAGE" ./tools/ci_wheel.sh --out dist 2>&1 | tee "$RUNNER_TEMP/ci_wheel.log"
+          exit "${PIPESTATUS[0]}"
+
+      # After a failed step: the script's FAIL line, the memory, the disk and
+      # the kernel's out-of-memory kills, in one ::error:: annotation
+      - name: Why the build failed
+        if: failure()
+        run: |
+          free -m
+          df -h /
+          kills="$(sudo dmesg | grep -i -E 'killed process|out of memory' || true)"
+          if [ -n "$kills" ]; then
+              oom="$(echo "$kills" | wc -l) out-of-memory line(s) in dmesg, the last: $(echo "$kills" | tail -n 1)"
+          else
+              oom="no out-of-memory kill in dmesg"
+          fi
+          failed="$(grep -E 'FAIL' "$RUNNER_TEMP/ci_wheel.log" 2>/dev/null | tail -n 1 || true)"
+          disk="$(df -h / | awk 'NR == 2 { print $4 " free on /" }')"
+          summary="${failed:-no FAIL line in the script's output}; $oom; $disk"
+          echo "::error title=pypi build failed::$(echo "$summary" | sed 's/%/%25/g' | tr -s ' ')"
+
+      # saved whatever the build did, unless this exact key was restored
+      - name: Save the vcpkg cache
+        if: always() && steps.vcpkg-restore.outputs.cache-hit != 'true' && steps.vcpkg.outputs.key != ''
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/vcpkg-cache
+          key: ${{ steps.vcpkg.outputs.key }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wheel
+          path: dist/gweni-*-cp312-abi3-manylinux_2_35_x86_64.whl
+          if-no-files-found: error
+
+  testpypi:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read     # the checkout, for the smoke set
+      id-token: write    # trusted publishing
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/gweni
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: wheel
+          path: dist
+
+      - name: Upload to TestPyPI
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          packages-dir: dist
+          skip-existing: true
+
+      # the smoke set draws headless on surfaceless EGL: glvnd and Mesa's
+      # llvmpipe, which the runner image does not have; uv for the venvs and
+      # the CPython downloads
+      - name: Mesa's EGL and llvmpipe
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends libegl1 libopengl0 libglx0 libegl-mesa0 libgl1-mesa-dri
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.9"   # the image's (Dockerfile)
+          enable-cache: false
+
+      - name: Install from TestPyPI and smoke-test (tools/ci_wheel_install.sh)
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: |
+          set +e
+          ./tools/ci_wheel_install.sh --index-url https://test.pypi.org/simple/ \
+              --expect dist/gweni-*-cp312-abi3-manylinux_2_35_x86_64.whl \
+              3.12 3.13 3.14 2>&1 | tee "$RUNNER_TEMP/ci_wheel_install.log"
+          exit "${PIPESTATUS[0]}"
+
+      - name: Why the TestPyPI check failed
+        if: failure()
+        run: |
+          failed="$(grep -E 'FAIL' "$RUNNER_TEMP/ci_wheel_install.log" 2>/dev/null | tail -n 1 || true)"
+          summary="${failed:-the upload or a setup step failed: no FAIL line from tools/ci_wheel_install.sh}"
+          echo "::error title=pypi testpypi failed::$(echo "$summary" | sed 's/%/%25/g' | tr -s ' ')"
+
+  pypi:
+    needs: testpypi
+    # a tag's run only: a run by hand stops at TestPyPI
+    if: github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      id-token: write    # trusted publishing
+    environment:
+      name: pypi
+      url: https://pypi.org/p/gweni
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: wheel
+          path: dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          packages-dir: dist
+
+      - name: Why the upload failed
+        if: failure()
+        run: |
+          echo "::error title=pypi upload failed::the PyPI upload of $(ls dist 2>/dev/null | tr '\n' ' ')failed: a version PyPI already has is refused, and trusted publishing needs the publisher for workflow pypi.yml, environment pypi"
