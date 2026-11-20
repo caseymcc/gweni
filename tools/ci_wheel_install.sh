@@ -17,8 +17,10 @@
 #    --index-url URL   the index to install from (with no other index, so
 #                      nothing else can stand in for gweni)
 #    --find-links DIR  a directory of wheels instead of an index
-#    --expect WHEEL    fail unless the installed module is byte for byte the
-#                      one in WHEEL (the workflow's artifact): an upload
+#    --expect WHEEL    fail unless every file WHEEL's RECORD hashes (the
+#                      workflow's artifact: the module, the Python files,
+#                      resources and licenses) is installed byte for byte
+#                      as WHEEL holds it: an upload
 #                      skipped as existing (skip-existing) leaves the index's
 #                      older file of that version, which is then not tested
 #                      as if it were this build's
@@ -37,8 +39,9 @@
 #    2. a fresh venv on it, and `uv pip install gweni==V` from the index alone,
 #       retried every 20 s with uv's cache bypassed until it installs or
 #       --timeout passes;
-#    3. the installed distribution is version V and, with --expect, its module
-#       is the artifact's;
+#    3. the installed distribution is version V and, with --expect, every file
+#       the artifact's RECORD hashes is installed with that hash (the first
+#       one that differs or is missing named in the FAIL line);
 #    4. python/tests/wheel_smoke.py run by the venv's interpreter from a
 #       directory outside the checkout, its one GL step under
 #       `mm run --lock render` when mm is on PATH (unlocked otherwise, as on a
@@ -66,7 +69,7 @@ fail() { echo "ci_wheel_install.sh: FAIL: $*" >&2; exit 1; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --index-url) [ $# -ge 2 ] || fail "--index-url needs a URL"; index=(--index-url "$2"); shift 2 ;;
+        --index-url) [ $# -ge 2 ] || fail "--index-url needs a URL"; index=(--index-url "$2"); local_dir=0; shift 2 ;;
         --find-links) [ $# -ge 2 ] || fail "--find-links needs a directory"
             index=(--no-index --find-links "$(realpath "$2")"); local_dir=1; shift 2 ;;
         --expect) [ $# -ge 2 ] || fail "--expect needs a wheel"; expect="$(realpath "$2")"; shift 2 ;;
@@ -123,22 +126,41 @@ print("ci_wheel_install.sh: " + sys.version.split()[0] + " at " + sys.executable
         sleep 20
     done
 
-    # 3. the version, and the artifact's module
+    # 3. the version, and the artifact's files
     "$venv/bin/python" - "$version" "$expect" <<'PY' || fail "the installed gweni on CPython $py is not the expected one"
-import hashlib, importlib.metadata, importlib.util, pathlib, sys, zipfile
+import base64, csv, hashlib, importlib.metadata, io, pathlib, sys, zipfile
 version, expect = sys.argv[1], sys.argv[2]
-got = importlib.metadata.version("gweni")
+dist = importlib.metadata.distribution("gweni")
+got = dist.version
 if got != version:
     sys.exit(f"ci_wheel_install.sh: FAIL: the installed gweni is {got}, not {version}")
-module = pathlib.Path(importlib.util.find_spec("gweni._gweni").origin)
+checked = 0
 if expect:
+    # Every file the artifact's RECORD hashes (all of it but RECORD itself)
+    # must be installed with that hash. The wheel's own sha256 cannot be the
+    # check: auditwheel re-zips with the files' mtimes, so two builds of one
+    # commit differ as zips while their RECORDs are the same.
     with zipfile.ZipFile(expect) as z:
-        want = hashlib.sha256(z.read("gweni/_gweni.abi3.so")).hexdigest()
-    have = hashlib.sha256(module.read_bytes()).hexdigest()
-    if have != want:
-        sys.exit(f"ci_wheel_install.sh: FAIL: the index's gweni {version} is another build than {pathlib.Path(expect).name} "
-                 f"(module sha256 {have[:12]}, the artifact's {want[:12]}): a version already uploaded is not replaced")
-print(f"ci_wheel_install.sh: gweni {got} installed, {module}" + (", the artifact's module" if expect else ""))
+        record = next(n for n in z.namelist() if n.endswith(".dist-info/RECORD"))
+        rows = list(csv.reader(io.StringIO(z.read(record).decode("utf-8"))))
+    for row in rows:
+        if len(row) < 2 or not row[1]:
+            continue
+        path, digest = row[0], row[1]
+        algo, _, want = digest.partition("=")
+        file = pathlib.Path(dist.locate_file(path))
+        if not file.is_file():
+            sys.exit(f"ci_wheel_install.sh: FAIL: the index's gweni {version} has no {path}, which "
+                     f"{pathlib.Path(expect).name} holds: it is another build, and a version already uploaded is not replaced")
+        have = base64.urlsafe_b64encode(hashlib.new(algo, file.read_bytes()).digest()).rstrip(b"=").decode()
+        if have != want:
+            sys.exit(f"ci_wheel_install.sh: FAIL: the index's gweni {version} is another build than {pathlib.Path(expect).name}: "
+                     f"its {path} differs ({algo} {have[:12]}, the artifact's {want[:12]}): a version already uploaded is not replaced")
+        checked += 1
+    if checked == 0:
+        sys.exit(f"ci_wheel_install.sh: FAIL: {pathlib.Path(expect).name}'s RECORD hashes no file")
+print(f"ci_wheel_install.sh: gweni {got} installed at {dist.locate_file('gweni')}"
+      + (f", every one of the artifact's {checked} hashed files" if expect else ""))
 PY
 
     # 4. the smoke set

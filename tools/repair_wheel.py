@@ -28,7 +28,8 @@ Then (and with --check, on a wheel alone) it fails, one line per check, unless:
   2. nothing GL is vendored: the wheel holds one shared object,
      gweni/_gweni.abi3.so (no gweni.libs/), and the only libraries keeping it
      from manylinux_2_35 in `auditwheel show` (libs_to_eliminate) are the
-     excluded glvnd ones;
+     excluded glvnd ones, with no symbol the policy forbids
+     (blacklisted_symbols) and no unsupported instruction set;
   3. GLFW's X11 and Wayland libraries are loaded at run time: no libX*,
      libxcb*, libwayland*, libxkbcommon* or libdecor* is NEEDED by the module
      (readelf -d), which names libX11.so.6 for GLFW's dlopen;
@@ -162,7 +163,13 @@ def check_contents(wheel, names, dist_info, root):
         fail(f"the wheel holds the shared objects {objects}, not [{MODULE!r}] alone (something was vendored)")
     if any(n.startswith("gweni.libs/") for n in names):
         fail("the wheel has a gweni.libs/ directory (something was vendored)")
-    eliminate = report.get("policy_upgrades", {}).get(PLAT, {}).get("libs_to_eliminate", [])
+    if report.get("unsupported_isa"):
+        fail("auditwheel show finds the module built for an instruction set no manylinux policy covers")
+    upgrade = report.get("policy_upgrades", {}).get(PLAT, {})
+    blacklisted = upgrade.get("blacklisted_symbols", {})
+    if blacklisted:
+        fail(f"auditwheel show finds symbols {PLAT} forbids: {blacklisted}")
+    eliminate = upgrade.get("libs_to_eliminate", [])
     outside = sorted(set(eliminate) - set(GLVND))
     if outside:
         fail(f"auditwheel show finds libraries outside {PLAT} that are not glvnd's: {outside}")

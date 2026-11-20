@@ -28,8 +28,8 @@
 #  Uploads are trusted publishing (OIDC, no token or password anywhere), with
 #  the attestations it makes. TestPyPI's upload skips a file already there
 #  (skip-existing), so a failed tag's run can be run again; the install then
-#  fails unless the index's file is this build's (--expect), as a version is
-#  never replaced on an index.
+#  fails unless every file the artifact's RECORD hashes is installed as the
+#  artifact holds it (--expect), as a version is never replaced on an index.
 #
 #  Once, by the repository's owner (docs/building.md -> "Publishing the
 #  wheel"): register gweni on PyPI and TestPyPI or add a pending publisher,

@@ -16,7 +16,7 @@
 #  1. tools/build_wheel.sh in the persistent build_linux_x64_release_wheel_installed/
 #     (a rerun is incremental), with the release tree's vcpkg_installed and no
 #     manifest install (vcpkg builds and fetches nothing) and uv --offline:
-#     one wheel, gweni-<project() version>-cp312-abi3-linux_x86_64.whl;
+#     the wheel it makes (its name and tag are checked on the repaired one);
 #  2. tools/repair_wheel.py: auditwheel's manylinux_2_35_x86_64 repair with the
 #     glvnd libraries left the system's, and its checks (its header: the tag,
 #     nothing GL vendored, GLFW's X11 loaded at run time, libstdc++ within the

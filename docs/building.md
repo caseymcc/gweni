@@ -615,9 +615,12 @@ by hand (*Actions → pypi → Run workflow*) as a dry run that stops at TestPyP
   --expect dist/<wheel> 3.12 3.13 3.14`: for each CPython (`uv python
   install --no-bin`, the GIL build) a fresh venv, `gweni==<version>` from that index
   alone, retried every 20 s for up to 10 minutes while the index catches up,
-  its module byte for byte the artifact's (a version an index already has is
-  never replaced, so a skipped upload fails here rather than testing the old
-  file), and the smoke set;
+  every file the artifact's RECORD hashes (the module, the Python files, the
+  resources and licenses) installed byte for byte as the artifact holds it,
+  the first that differs named (a version an index already has is never
+  replaced, so a skipped upload fails here rather than testing the old file;
+  the RECORD, not the wheel's own hash, since auditwheel re-zips with the
+  files' mtimes and two builds of one commit differ as zips), and the smoke set;
 - `pypi` (environment `pypi`, on a tag only, after `testpypi-install`)
   publishes the same file to PyPI through trusted publishing, the upload
   alone.
@@ -625,7 +628,10 @@ by hand (*Actions → pypi → Run workflow*) as a dry run that stops at TestPyP
 The YAML holds no build logic; every action is pinned to a commit SHA, each
 job has only its own permissions (`contents: read`; `id-token: write` only in
 the two publish jobs), one run of the workflow goes at a time whatever its
-ref (a dry run and a tag's run never race on one TestPyPI file), and a
+ref (a dry run and a tag's run never race on one TestPyPI file; GitHub keeps
+one pending run of the group, so a run queued behind another, the `pypi`
+approval's wait included, is cancelled by a later one: re-run a tag's run so
+cancelled, and approve or reject a waiting `pypi` job before a dry run), and a
 failure ends in one `::error::` annotation saying why (the scripts' first
 `FAIL` line, the cause rather than a wrapper's, the memory, the disk). The scripts run
 by hand in the container just the same:
@@ -654,8 +660,8 @@ Then a release: bump `project(gweni VERSION ...)` and the port's
 dry run of that version), tag and push the tag (`git tag v0.1.0 && git push
 origin v0.1.0`), approve the `pypi` job, and do the port's steps
 ("Publishing a version"). A version is never uploaded twice: one already on
-TestPyPI from a dry run fails the tag run's `--expect` unless its module is
-byte for byte the dry run's, so a version is dry-run from the commit it is
+TestPyPI from a dry run fails the tag run's `--expect` unless every file of
+it is byte for byte the dry run's, so a version is dry-run from the commit it is
 tagged on, and soon before the tag: the image's vcpkg clone is not pinned
 (`Dockerfile`), so an image built again in between (the layer cache evicted)
 can build another module and fail the tag at `--expect`, and then only a new
