@@ -6,8 +6,8 @@
 #
 #  Installs the published gweni wheel from a package index into fresh venvs,
 #  one per CPython version, and runs the smoke set on each, as the PyPI
-#  workflow's testpypi job (.github/workflows/pypi.yml) runs it after the
-#  upload: every step of that check is here, so the YAML holds none of it.
+#  workflow's testpypi-install job (.github/workflows/pypi.yml) runs it after
+#  the upload: every step of that check is here, so the YAML holds none of it.
 #
 #      ./tools/ci_wheel_install.sh --index-url https://test.pypi.org/simple/ \
 #          --expect dist/gweni-0.1.0-cp312-abi3-manylinux_2_35_x86_64.whl 3.12 3.13 3.14
