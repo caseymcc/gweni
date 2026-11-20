@@ -28,7 +28,8 @@ import gweni
 
 
 def example(h: gweni.Headless) -> gweni.Label:
-    win = h.canvas.add(gweni.Window, title="Settings", position=(20, 20), size=(300, 200))
+    # the feature's example as a user writes it: no position or size
+    win = h.canvas.add(gweni.Window, title="Settings")
     label = win.add(gweni.Label, text="0 clicks", dock=gweni.Dock.TOP)
     btn = win.add(gweni.Button, text="Click me", dock=gweni.Dock.TOP)
     clicks = 0

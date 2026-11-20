@@ -108,6 +108,11 @@ A keyword that is no property of `Type` raises `AttributeError` and makes
 nothing; a value of the wrong type raises `TypeError` and the half-made child
 is deleted.
 
+A `Window` `add()` makes is 300x200 at (0, 0) unless `size` or `bounds` is
+among the keywords (the C++ control is `Base`'s 100x40, where the title bar
+leaves no room for what is docked under it), so the example above shows its
+label and button.
+
 ### Events
 
 Every event is a method taking a callable of one `Event` (`control`, `string`,
@@ -199,7 +204,7 @@ count the same, byte for byte.
 | `TextBox`, `TextBoxMultiline`, `TextBoxNumeric`, `PasswordTextBox` | the same-named controls (`onTextChangedCaller`, `onReturnPressedCaller`) |
 | `HorizontalSlider`, `VerticalSlider` (`value`, `range`, its minimum below its maximum) | `controls::HorizontalSlider`, `VerticalSlider` (`setFloatValue`, `setRange`) |
 | `ComboBox`, `ListBox`, `ProgressBar`, `Switch`, `Spinner`, `Chip` | the same-named controls |
-| `ScrollControl`, `GroupBox`, `TabControl`/`TabButton`, `Window` | the same-named controls, `WindowControl` |
+| `ScrollControl`, `GroupBox`, `TabControl`/`TabButton`, `Window` (made 300x200 by `add()` unless sized) | the same-named controls, `WindowControl` |
 | `MenuStrip`, `Menu` (made closed by `canvas.add()`, on the canvas only, shown by `open_at()`), `MenuItem` | the same-named controls |
 | `message`, `confirm`, `prompt` (`on_result(result, text)`), `Dialog`, `PromptDialog`, `DialogResult` | `dialogs::message`, `confirm`, `prompt`, `ResultHandler`, `dialogs::Dialog`, `dialogs::Result` |
 | `Toast`, `ToastKind` | `controls::Toast`, `ToastKind` |

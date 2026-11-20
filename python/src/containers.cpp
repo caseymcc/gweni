@@ -186,7 +186,9 @@ void bindContainers(nb::module_ &m)
 
     // Window
     auto window=nb::class_<Window, Control>(m, "Window",
-        "A movable, resizable window with a title bar (controls::WindowControl).")
+        "A movable, resizable window with a title bar (controls::WindowControl). add() makes it\n"
+        "300x200 at (0, 0) unless its size or bounds are given: the C++ control is Base's 100x40,\n"
+        "in which a title bar leaves no room for what is docked under it.")
         .def_prop_rw("title",
             [](const Control &self) { return resolve<controls::WindowControl>(self)->getTitle(); },
             [](const Control &self, const std::string &title) { resolve<controls::WindowControl>(self)->setTitle(title); })
@@ -205,7 +207,16 @@ void bindContainers(nb::module_ &m)
         .def_prop_ro("modal", [](const Control &self) { return resolve<controls::WindowControl>(self)->isModal(); });
     bindEvent<decltype(window), controls::WindowControl>(window, "on_closed", &controls::WindowControl::onWindowClosed,
         "Its close button closed it.");
-    registerControl<Window, controls::WindowControl>(window);
+    // add() gives it the C++ demos' size before the keywords are set, so a
+    // size= or bounds= among them wins
+    registerControlType(controls::WindowControl::getTypeNameStatic(), window,
+        [](size_t id) { Window handle; handle.id=id; return nb::cast(handle); },
+        [](controls::Base *parent) -> controls::Base * {
+            controls::WindowControl *made=parent->newChild<controls::WindowControl>();
+
+            made->setSize(300, 200);
+            return made;
+        });
 
     // Menu, MenuStrip, MenuItem
     auto menuItem=nb::class_<MenuItem, Button>(m, "MenuItem", "An item of a Menu or a MenuStrip (controls::MenuItem).")

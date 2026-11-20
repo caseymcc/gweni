@@ -417,7 +417,9 @@ class TabControl(Control):
 
 class Window(Control):
     """
-    A movable, resizable window with a title bar (controls::WindowControl).
+    A movable, resizable window with a title bar (controls::WindowControl). add() makes it
+    300x200 at (0, 0) unless its size or bounds are given: the C++ control is Base's 100x40,
+    in which a title bar leaves no room for what is docked under it.
     """
 
     @property

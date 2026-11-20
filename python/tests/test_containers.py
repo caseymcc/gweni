@@ -116,6 +116,30 @@ def test_window(headless: gweni.Headless) -> None:
     assert closed == [] and win.visible
 
 
+def test_the_feature_example_verbatim_counts_a_click(headless: gweni.Headless) -> None:
+    # hello.py's and the README's tree, no size given: add() makes the
+    # Window 300x200, so its button is inside it (Base's 100x40 left it
+    # below the window's bottom edge, clipped away, and a click counted none)
+    win = headless.canvas.add(gweni.Window, title="Settings")
+    label = win.add(gweni.Label, text="0 clicks", dock=gweni.Dock.TOP)
+    btn = win.add(gweni.Button, text="Click me", dock=gweni.Dock.TOP)
+    clicks = 0
+
+    @btn.on_press
+    def _(event: gweni.Event) -> None:
+        nonlocal clicks
+        clicks += 1
+        label.text = f"{clicks} clicks"
+
+    headless.frame()
+    click(headless, btn)
+    assert label.text == "1 clicks"
+    assert win.size == (300, 200)
+    # a size given wins over the default
+    other = headless.canvas.add(gweni.Window, size=(150, 90))
+    assert other.size == (150, 90)
+
+
 def test_menu_strip(headless: gweni.Headless) -> None:
     strip = headless.canvas.add(gweni.MenuStrip, dock=gweni.Dock.TOP)
     file_item = strip.add_item("File")
