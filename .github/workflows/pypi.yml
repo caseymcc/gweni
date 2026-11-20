@@ -7,9 +7,11 @@
 #  build the repo's own build image, run tools/ci_wheel.sh in it (the wheel
 #  built, repaired to manylinux_2_35_x86_64 with the GL libraries left the
 #  system's, checked, installed and smoke-tested, the tag against project()'s
-#  version), upload it to TestPyPI, install it from there into fresh venvs on
-#  CPython 3.12, 3.13 and 3.14 and run the smoke set on each
-#  (tools/ci_wheel_install.sh), and only then publish it to PyPI, in the
+#  version), upload it to TestPyPI (job testpypi, the upload alone), install
+#  it from there into fresh venvs on CPython 3.12, 3.13 and 3.14 and run the
+#  smoke set on each (job testpypi-install, tools/ci_wheel_install.sh, with no
+#  id-token: nothing it runs can mint a publishing token), and only then
+#  publish it to PyPI (job pypi, the upload alone), in the
 #  environment `pypi`, which the owner gates with required reviewers. By hand
 #  (Actions -> pypi -> Run workflow) it is a dry run: the same build and
 #  TestPyPI steps, never PyPI. If a step fails, the run says why in an
@@ -18,7 +20,10 @@
 #  Every build step is in tools/ci_wheel.sh, and every check of the published
 #  wheel in tools/ci_wheel_install.sh, so a run can be repeated by hand in the
 #  container; this file only gets the image, the caches and the runner ready,
-#  and uploads. The image and the vcpkg cache are pages.yml's (the same keys).
+#  and uploads. The image and the vcpkg cache are pages.yml's (the same keys);
+#  the vcpkg cache is only restored here, never saved: this build fills only
+#  the x64-linux ports, and a save under pages.yml's key would leave pages
+#  restoring it without wasm32's.
 #
 #  Uploads are trusted publishing (OIDC, no token or password anywhere), with
 #  the attestations it makes. TestPyPI's upload skips a file already there
@@ -44,9 +49,11 @@ on:
 # no job gets more than it asks for below
 permissions: {}
 
-# one release of a ref at a time, never cancelled half-published
+# one run of the workflow at a time, whatever its ref, never cancelled
+# half-published: a dry run on main and a tag's run would otherwise race on
+# one TestPyPI file of the version
 concurrency:
-  group: pypi-${{ github.ref }}
+  group: pypi
   cancel-in-progress: false
 
 jobs:
@@ -140,18 +147,11 @@ jobs:
           else
               oom="no out-of-memory kill in dmesg"
           fi
-          failed="$(grep -E 'FAIL' "$RUNNER_TEMP/ci_wheel.log" 2>/dev/null | tail -n 1 || true)"
+          # the first FAIL line is the cause; the last is a wrapper's
+          failed="$(grep -m1 -E ': FAIL: ' "$RUNNER_TEMP/ci_wheel.log" 2>/dev/null || true)"
           disk="$(df -h / | awk 'NR == 2 { print $4 " free on /" }')"
-          summary="${failed:-no FAIL line in the script's output}; $oom; $disk"
+          summary="${failed:-no FAIL line in the output of the script}; $oom; $disk"
           echo "::error title=pypi build failed::$(echo "$summary" | sed 's/%/%25/g' | tr -s ' ')"
-
-      # saved whatever the build did, unless this exact key was restored
-      - name: Save the vcpkg cache
-        if: always() && steps.vcpkg-restore.outputs.cache-hit != 'true' && steps.vcpkg.outputs.key != ''
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ runner.temp }}/vcpkg-cache
-          key: ${{ steps.vcpkg.outputs.key }}
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -159,21 +159,17 @@ jobs:
           path: dist/gweni-*-cp312-abi3-manylinux_2_35_x86_64.whl
           if-no-files-found: error
 
+  # the upload alone: the one job with TestPyPI's id-token
   testpypi:
     needs: build
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 30
     permissions:
-      contents: read     # the checkout, for the smoke set
       id-token: write    # trusted publishing
     environment:
       name: testpypi
       url: https://test.pypi.org/p/gweni
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: wheel
@@ -185,6 +181,28 @@ jobs:
           repository-url: https://test.pypi.org/legacy/
           packages-dir: dist
           skip-existing: true
+
+      - name: Why the upload failed
+        if: failure()
+        run: |
+          echo "::error title=pypi testpypi upload failed::the TestPyPI upload of $(ls dist 2>/dev/null | tr '\n' ' ')failed: trusted publishing needs the publisher for workflow pypi.yml, environment testpypi"
+
+  # the published wheel installed and used, with no token
+  testpypi-install:
+    needs: testpypi
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read     # the checkout, for the scripts and the smoke set
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: wheel
+          path: dist
 
       # the smoke set draws headless on surfaceless EGL: glvnd and Mesa's
       # llvmpipe, which the runner image does not have; uv for the venvs and
@@ -212,12 +230,13 @@ jobs:
       - name: Why the TestPyPI check failed
         if: failure()
         run: |
-          failed="$(grep -E 'FAIL' "$RUNNER_TEMP/ci_wheel_install.log" 2>/dev/null | tail -n 1 || true)"
-          summary="${failed:-the upload or a setup step failed: no FAIL line from tools/ci_wheel_install.sh}"
-          echo "::error title=pypi testpypi failed::$(echo "$summary" | sed 's/%/%25/g' | tr -s ' ')"
+          failed="$(grep -m1 -E ': FAIL: ' "$RUNNER_TEMP/ci_wheel_install.log" 2>/dev/null || true)"
+          summary="${failed:-a setup step failed: no FAIL line from tools/ci_wheel_install.sh}"
+          echo "::error title=pypi testpypi check failed::$(echo "$summary" | sed 's/%/%25/g' | tr -s ' ')"
 
+  # the upload alone: the one job with PyPI's id-token
   pypi:
-    needs: testpypi
+    needs: testpypi-install
     # a tag's run only: a run by hand stops at TestPyPI
     if: github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
     runs-on: ubuntu-24.04

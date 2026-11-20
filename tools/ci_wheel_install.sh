@@ -25,13 +25,15 @@
 #    --version V       the version to install (default project(gweni VERSION
 #                      ...) in CMakeLists.txt)
 #    --timeout S       how long to keep retrying the install while the index
-#                      catches up with the upload (default 600)
+#                      catches up with the upload (default 600; with
+#                      --find-links nothing catches up, so it is not retried)
 #    --help            this text
 #
 #  For each version given (CPython 3.12 and newer, the wheel being cp312-abi3),
 #  stopping at the first failure:
-#    1. `uv python install` of that CPython, the GIL build (abi3 does not cover
-#       the free-threaded one), into a scratch directory;
+#    1. `uv python install --no-bin` of that CPython, the GIL build (abi3 does
+#       not cover the free-threaded one), into a scratch directory, linking
+#       nothing into ~/.local/bin;
 #    2. a fresh venv on it, and `uv pip install gweni==V` from the index alone,
 #       retried every 20 s with uv's cache bypassed until it installs or
 #       --timeout passes;
@@ -52,6 +54,7 @@ index=()
 expect=""
 version=""
 timeout=600
+local_dir=0
 pythons=()
 
 usage()
@@ -65,7 +68,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --index-url) [ $# -ge 2 ] || fail "--index-url needs a URL"; index=(--index-url "$2"); shift 2 ;;
         --find-links) [ $# -ge 2 ] || fail "--find-links needs a directory"
-            index=(--no-index --find-links "$(realpath "$2")"); shift 2 ;;
+            index=(--no-index --find-links "$(realpath "$2")"); local_dir=1; shift 2 ;;
         --expect) [ $# -ge 2 ] || fail "--expect needs a wheel"; expect="$(realpath "$2")"; shift 2 ;;
         --version) [ $# -ge 2 ] || fail "--version needs a version"; version="$2"; shift 2 ;;
         --timeout) [ $# -ge 2 ] || fail "--timeout needs seconds"; timeout="$2"; shift 2 ;;
@@ -99,7 +102,7 @@ for py in "${pythons[@]}"; do
     echo
     echo "ci_wheel_install.sh: == CPython $py"
     # 1. the interpreter: the GIL build, uv's own
-    uv python install --quiet "cpython-$py" || fail "uv python install $py failed"
+    uv python install --quiet --no-bin "cpython-$py" || fail "uv python install $py failed"
     venv="$scratch/venv-$py"
     uv venv --quiet --managed-python --python "cpython-$py" "$venv" || fail "uv venv on CPython $py failed"
     "$venv/bin/python" -c 'import sys, sysconfig
@@ -111,8 +114,9 @@ print("ci_wheel_install.sh: " + sys.version.split()[0] + " at " + sys.executable
     deadline=$((SECONDS + timeout))
     until uv pip install --quiet --no-cache --python "$venv/bin/python" "${index[@]}" "gweni==$version" \
             2> "$scratch/install.log"; do
-        if [ "$SECONDS" -ge "$deadline" ]; then
+        if [ "$local_dir" = 1 ] || [ "$SECONDS" -ge "$deadline" ]; then
             cat "$scratch/install.log" >&2
+            [ "$local_dir" = 1 ] && fail "gweni==$version did not install on CPython $py from ${index[*]}"
             fail "gweni==$version did not install on CPython $py from ${index[*]} within ${timeout} s"
         fi
         echo "ci_wheel_install.sh: gweni==$version not installable yet ($(tail -n 1 "$scratch/install.log")); again in 20 s"
@@ -125,14 +129,14 @@ import hashlib, importlib.metadata, importlib.util, pathlib, sys, zipfile
 version, expect = sys.argv[1], sys.argv[2]
 got = importlib.metadata.version("gweni")
 if got != version:
-    sys.exit(f"ci_wheel_install.sh: the installed gweni is {got}, not {version}")
+    sys.exit(f"ci_wheel_install.sh: FAIL: the installed gweni is {got}, not {version}")
 module = pathlib.Path(importlib.util.find_spec("gweni._gweni").origin)
 if expect:
     with zipfile.ZipFile(expect) as z:
         want = hashlib.sha256(z.read("gweni/_gweni.abi3.so")).hexdigest()
     have = hashlib.sha256(module.read_bytes()).hexdigest()
     if have != want:
-        sys.exit(f"ci_wheel_install.sh: the index's gweni {version} is another build than {pathlib.Path(expect).name} "
+        sys.exit(f"ci_wheel_install.sh: FAIL: the index's gweni {version} is another build than {pathlib.Path(expect).name} "
                  f"(module sha256 {have[:12]}, the artifact's {want[:12]}): a version already uploaded is not replaced")
 print(f"ci_wheel_install.sh: gweni {got} installed, {module}" + (", the artifact's module" if expect else ""))
 PY

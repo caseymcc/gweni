@@ -26,9 +26,12 @@
 #    1. the tag against project(gweni VERSION ...) in CMakeLists.txt: the tag
 #       is GITHUB_REF_NAME when it is set and GITHUB_REF_TYPE is not `branch`
 #       (a workflow_dispatch run is a branch's, and has no tag to check), and
-#       it must be v<project() version>. These v* tags are the vcpkg port's
-#       too (tools/vcpkg_publish.sh makes the same check). It comes first, so
-#       a wrong tag fails before the build.
+#       it must be v<project() version>; and, tag or not, the vcpkg port's
+#       version-semver in ports/gweni/vcpkg.json must be that version too.
+#       These v* tags are the port's as well, and tools/vcpkg_publish.sh
+#       makes the same three-way check: a PyPI upload cannot be taken back, so
+#       a forgotten port bump would leave a tag that can never release the
+#       port. It comes first, so a wrong version fails before the build.
 #    2. tools/build_wheel.sh, in its manifest mode (the persistent
 #       build_linux_x64_release_wheel/, vcpkg's binary cache reused): the
 #       linux_x86_64 wheel; its METADATA's Version must be the project()
@@ -90,6 +93,12 @@ trap 'rm -rf "$scratch"' EXIT
 version="$(sed -n 's/^project(gweni VERSION \([0-9.]*\).*/\1/p' "$repo/CMakeLists.txt" | tr -d '\r' | head -n 1)"
 [ -n "$version" ] || fail "CMakeLists.txt has no project(gweni VERSION ...)"
 step "1. the version: project(gweni VERSION $version)"
+port_version="$(sed -n 's/^ *"version-semver": *"\([^"]*\)".*/\1/p' "$repo/ports/gweni/vcpkg.json" 2>/dev/null \
+    | tr -d '\r' | head -n 1 || true)"
+[ -n "$port_version" ] || fail "ports/gweni/vcpkg.json has no version-semver"
+[ "$port_version" = "$version" ] \
+    || fail "version-semver $port_version in ports/gweni/vcpkg.json is not $version, project(gweni VERSION $version) in CMakeLists.txt: they must be one version"
+echo "ci_wheel.sh: the vcpkg port's version-semver is project()'s version"
 if [ -n "${GITHUB_REF_NAME:-}" ] && [ "${GITHUB_REF_TYPE:-tag}" != branch ]; then
     [ "$GITHUB_REF_NAME" = "v$version" ] \
         || fail "the tag $GITHUB_REF_NAME is not v$version, project(gweni VERSION $version) in CMakeLists.txt: they must be one version"

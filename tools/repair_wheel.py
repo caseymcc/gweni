@@ -14,16 +14,17 @@ auditwheel and patchelf; the venv's bin/ is put on PATH for auditwheel.
 
 The repair is `auditwheel repair --plat manylinux_2_35_x86_64` with the glvnd
 libraries the module links excluded (libEGL.so.1, libOpenGL.so.0,
-libGLX.so.0, libGLdispatch.so.0, and libGL.so.1 should it appear): they are on
-no manylinux whitelist, and a vendored glvnd breaks the dispatch to the
-machine's driver, so they stay the system's and the wheel needs a glvnd GL
+libGLX.so.0, libGLdispatch.so.0, and libGL.so.1 should it appear): all but
+libGL.so.1 are on no manylinux whitelist, and a vendored glvnd breaks the
+dispatch to the machine's driver, so they stay the system's and the wheel needs a glvnd GL
 driver, as the container-built exes do. The repaired wheel goes into --out
 (default: the input's directory) and its path is printed last.
 
 Then (and with --check, on a wheel alone) it fails, one line per check, unless:
   1. the wheel's name and its WHEEL file's one Tag are
-     cp312-abi3-manylinux_2_35_x86_64, and `auditwheel show --json` gives the
-     symbol versions the tag manylinux_2_35_x86_64 (sym_tag);
+     cp312-abi3-manylinux_2_35_x86_64 (the repair passes --only-plat, so the
+     name has that one platform tag), and the symbol versions `auditwheel show
+     --json` gives (sym_tag) are manylinux_2_35_x86_64's or an older one's;
   2. nothing GL is vendored: the wheel holds one shared object,
      gweni/_gweni.abi3.so (no gweni.libs/), and the only libraries keeping it
      from manylinux_2_35 in `auditwheel show` (libs_to_eliminate) are the
@@ -53,7 +54,10 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-PLAT = "manylinux_2_35_x86_64"
+GLIBC = (2, 35)
+POLICY = f"manylinux_{GLIBC[0]}_{GLIBC[1]}"
+PLAT = POLICY + "_x86_64"
+LEGACY = {"manylinux1": (2, 5), "manylinux2010": (2, 12), "manylinux2014": (2, 17)}
 TAG = "cp312-abi3-" + PLAT
 GLVND = ["libEGL.so.1", "libOpenGL.so.0", "libGLX.so.0", "libGLdispatch.so.0", "libGL.so.1"]
 MODULE = "gweni/_gweni.abi3.so"
@@ -66,6 +70,15 @@ failures = []
 def fail(message):
     failures.append(message)
     print(f"repair_wheel: FAIL: {message}", file=sys.stderr)
+
+
+def glibc_of(tag):
+    """The glibc version of a manylinux x86_64 platform tag, or None."""
+    m = re.fullmatch(r"manylinux_(\d+)_(\d+)_x86_64", tag or "")
+    if m:
+        return (int(m.group(1)), int(m.group(2)))
+    m = re.fullmatch(r"(manylinux1|manylinux2010|manylinux2014)_x86_64", tag or "")
+    return LEGACY[m.group(1)] if m else None
 
 
 def tool_env():
@@ -85,7 +98,7 @@ def repair(wheel, out):
     scratch = Path(tempfile.mkdtemp(prefix="gweni-repair-"))
     try:
         excludes = [arg for lib in GLVND for arg in ("--exclude", lib)]
-        result = auditwheel("repair", "--plat", PLAT, *excludes, "-w", str(scratch), str(wheel))
+        result = auditwheel("repair", "--plat", PLAT, "--only-plat", *excludes, "-w", str(scratch), str(wheel))
         if result.returncode != 0:
             sys.stderr.write(result.stdout + result.stderr)
             sys.exit(f"repair_wheel: FAIL: auditwheel repair exited {result.returncode}")
@@ -99,10 +112,10 @@ def repair(wheel, out):
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def policy_2_35():
+def load_policy():
     import auditwheel as package  # noqa: the venv's, for its policy file
     with open(Path(package.__file__).parent / "policy" / "manylinux-policy.json") as f:
-        return next(p for p in json.load(f) if p["name"] == "manylinux_2_35")
+        return next(p for p in json.load(f) if p["name"] == POLICY)
 
 
 def needed(module):
@@ -139,8 +152,9 @@ def check_contents(wheel, names, dist_info, root):
         fail(f"auditwheel show exited {show.returncode}")
         return
     report = json.loads(show.stdout)
-    if report.get("sym_tag") != PLAT:
-        fail(f"auditwheel show gives the symbol versions the tag {report.get('sym_tag')}, not {PLAT}")
+    sym = glibc_of(report.get("sym_tag"))
+    if sym is None or sym > GLIBC:
+        fail(f"auditwheel show gives the symbol versions the tag {report.get('sym_tag')}, not {PLAT} or older")
 
     # 2. nothing GL vendored, and only glvnd outside the policy
     objects = [n for n in names if re.search(r"\.so(\.|$)", n)]
@@ -167,19 +181,19 @@ def check_contents(wheel, names, dist_info, root):
         fail("the module does not name libX11.so.6 (GLFW's X11 dlopen)")
 
     # 4. libstdc++ the system's, within the policy
-    policy = policy_2_35()
+    policy = load_policy()
     if "libstdc++.so.6" not in libs:
         fail(f"the module does not NEED the system's libstdc++.so.6 (NEEDED: {libs})")
     if "libstdc++.so.6" not in policy["lib_whitelist"]:
-        fail("libstdc++.so.6 is not on manylinux_2_35's whitelist")
+        fail(f"libstdc++.so.6 is not on {POLICY}'s whitelist")
     allowed = policy["symbol_versions"]["x86_64"]
     for version in report.get("versioned_symbols", {}).get("libstdc++.so.6", []):
         name, _, number = version.partition("_")
         if number not in allowed.get(name, []):
-            fail(f"the module asks libstdc++ for {version}, which manylinux_2_35 does not allow")
+            fail(f"the module asks libstdc++ for {version}, which {POLICY} does not allow")
     unknown = sorted(set(libs) - set(policy["lib_whitelist"]) - set(GLVND) - {"ld-linux-x86-64.so.2"})
     if unknown:
-        fail(f"the module NEEDs libraries outside manylinux_2_35's whitelist and glvnd: {unknown}")
+        fail(f"the module NEEDs libraries outside {POLICY}'s whitelist and glvnd: {unknown}")
 
     # 5. the licenses
     licenses = f"{dist_info}/licenses/"
@@ -204,6 +218,10 @@ def main():
     parser.add_argument("--out", type=Path, help="where the repaired wheel goes (default: beside the input)")
     parser.add_argument("--check", action="store_true", help="check a repaired wheel, repair nothing")
     args = parser.parse_args()
+    if not (Path(sys.executable).parent / "auditwheel").is_file():
+        # the shebang's python3 is Jammy's 3.10 in the image, which has none
+        sys.exit(f"repair_wheel: FAIL: no auditwheel beside {sys.executable}: run it with GWENI_PYTHON "
+                 "(\"$GWENI_PYTHON\" tools/repair_wheel.py ...)")
     wheel = args.wheel.resolve()
     if not wheel.is_file():
         sys.exit(f"repair_wheel: FAIL: no wheel {wheel}")

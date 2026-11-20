@@ -47,7 +47,7 @@ mkdir -p "$scratch/dist"
     > "$scratch/build.log" 2>&1 || { tail -40 "$scratch/build.log"; fail "tools/build_wheel.sh failed ($scratch/build.log)"; }
 
 # 2. the repair and its checks
-linux="$(ls "$scratch/dist"/*.whl 2>/dev/null)"
+linux="$(ls "$scratch/dist"/*.whl 2>/dev/null || true)"
 [ "$(echo "$linux" | wc -w)" -eq 1 ] || fail "tools/build_wheel.sh made $(ls "$scratch/dist"), not one wheel"
 "$python" "$repo/tools/repair_wheel.py" --out "$scratch/repaired" "$linux" \
     || fail "tools/repair_wheel.py failed on $(basename "$linux")"
