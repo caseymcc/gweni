@@ -14,10 +14,12 @@
  *  pipe of its own. A helper thread blocks on it, and for each byte calls
  *  glfwPostEmptyEvent(), ending the wait, and forwards the byte to the fd that
  *  was set before (an asyncio loop's, say); run() restores that fd when it
- *  returns. After every iteration PyErr_CheckSignals() runs the Python
- *  handlers: an error (KeyboardInterrupt) stops the loop and run() raises it,
- *  as it does the first error a callback raised. The handlers run in the main
- *  thread only, so run() off it raises RuntimeError.
+ *  returns and stops the helper through a second pipe (a process forked in a
+ *  callback keeps the first one's write end, so its EOF cannot be the stop).
+ *  After every iteration PyErr_CheckSignals() runs the Python handlers: an
+ *  error (KeyboardInterrupt) stops the loop and run() raises it, as it does
+ *  the first error a callback raised. The handlers run in the main thread
+ *  only, so run() off it raises RuntimeError.
  *
  *  Copyright (c) 2010 Facepunch Studios
  *  MIT License, see LICENSE
@@ -46,6 +48,7 @@
 #include <fcntl.h>
 #include <memory>
 #include <optional>
+#include <poll.h>
 #include <pthread.h>
 #include <thread>
 #include <unistd.h>
@@ -68,24 +71,35 @@ public:
     WakeupPipe()
     {
         int fds[2];
+        int stop[2];
 
         if(pipe2(fds, O_CLOEXEC) != 0)
             throw std::runtime_error("gweni.App.run: pipe2 failed");
+        if(pipe2(stop, O_CLOEXEC) != 0)
+        {
+            close(fds[0]);
+            close(fds[1]);
+            throw std::runtime_error("gweni.App.run: pipe2 failed");
+        }
         m_read=fds[0];
         m_write=fds[1];
+        m_stopRead=stop[0];
+        m_stopWrite=stop[1];
         // set_wakeup_fd needs a non-blocking fd; the helper's end blocks
         fcntl(m_write, F_SETFL, fcntl(m_write, F_GETFL)|O_NONBLOCK);
 
         nb::module_ signal=nb::module_::import_("signal");
 
         m_previous=nb::cast<int>(signal.attr("set_wakeup_fd")(m_write, nb::arg("warn_on_full_buffer")=false));
-        m_thread=std::thread([read=m_read, previous=m_previous]() { forward(read, previous); });
+        m_thread=std::thread([read=m_read, stop=m_stopRead, previous=m_previous]() { forward(read, stop, previous); });
     }
 
     ~WakeupPipe()
     {
-        // the earlier fd back first, then the pipe closed, which ends the
-        // helper's read
+        // the earlier fd back first, then the helper told to stop through a
+        // pipe of its own: not by closing the wakeup pipe, whose write end a
+        // process a callback forked (multiprocessing's 'fork') keeps open, so
+        // its EOF would wait for that process to exit
         try
         {
             nb::module_::import_("signal").attr("set_wakeup_fd")(m_previous);
@@ -94,17 +108,24 @@ public:
         {
             error.discard_as_unraisable("gweni.App.run restoring the wakeup fd");
         }
-        close(m_write);
+        ssize_t written;
+
+        do
+            written=::write(m_stopWrite, "", 1);
+        while(written < 0 && errno == EINTR);
         if(m_thread.joinable())
             m_thread.join();
+        close(m_write);
         close(m_read);
+        close(m_stopWrite);
+        close(m_stopRead);
     }
 
     WakeupPipe(const WakeupPipe &)=delete;
     WakeupPipe &operator=(const WakeupPipe &)=delete;
 
 private:
-    static void forward(int read, int previous)
+    static void forward(int read, int stop, int previous)
     {
         // signals are the main thread's: none lands here
         sigset_t all;
@@ -116,6 +137,19 @@ private:
 
         for(;;)
         {
+            pollfd fds[2]={{read, POLLIN, 0}, {stop, POLLIN, 0}};
+
+            if(poll(fds, 2, -1) < 0)
+            {
+                if(errno == EINTR)
+                    continue;
+                return;
+            }
+            if(fds[1].revents != 0)
+                return;
+            if(fds[0].revents == 0)
+                continue;
+
             const ssize_t got=::read(read, bytes, sizeof(bytes));
 
             if(got < 0 && errno == EINTR)
@@ -137,6 +171,8 @@ private:
 
     int m_read=-1;
     int m_write=-1;
+    int m_stopRead=-1;
+    int m_stopWrite=-1;
     int m_previous=-1;
     std::thread m_thread;
 };

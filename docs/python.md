@@ -266,7 +266,9 @@ handler only sets a flag and writes the wakeup fd, and GLFW's wait retries on
 `EINTR`, so `run()` points `signal.set_wakeup_fd` at a pipe of its own whose
 helper thread wakes the loop (`glfwPostEmptyEvent`) and passes each byte on to
 the fd set before (an asyncio loop's); `run()` gives that fd back when it
-returns. After every iteration the signal handlers run: Ctrl+C ends `run()`
+returns and stops the helper through a second pipe, so a process a callback
+forked (a `ProcessPoolExecutor` on 3.12's default `fork`), which keeps the
+wakeup pipe open, does not hold `run()` up after `quit()`. After every iteration the signal handlers run: Ctrl+C ends `run()`
 with `KeyboardInterrupt`. Python delivers signals to the main thread only, so
 `run()` off it raises `RuntimeError`.
 
@@ -298,5 +300,5 @@ the `render` lock (`AGENTS.md` → "Tests"):
 | `python_stubs` | the checked-in stub is the built module's |
 | `python_mypy` | `mypy --strict python/examples/` |
 | `python_parity` (`gpu`) | `button_demo.py` against `ControlTest --headless --control ButtonDemo`: the same pixels and counters |
-| `python_window_idle` (`gpu`) | `App.run()` under Xvfb: a silent idle, one frame per post, Ctrl+C, the wakeup fd, a worker's post landing while a Spinner turns |
+| `python_window_idle` (`gpu`) | `App.run()` under Xvfb: a silent idle, one frame per post, Ctrl+C, the wakeup fd, a worker's post landing while a Spinner turns, `quit()` with a forked child alive |
 | `python_wheel` | the release tree only: the wheel built offline, installed with pip and uv, smoke-tested from the installed package |

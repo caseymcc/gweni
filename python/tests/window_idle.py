@@ -24,7 +24,11 @@ Before the example's window, two Apps of their own:
      off the main thread (the thread rule passes there, the App being that
      thread's);
   8. App(resources=...) reads the directory given: a copy of the package's
-     resources/ loads complete, an empty directory leaves the App degraded.
+     resources/ loads complete, an empty directory leaves the App degraded;
+  9. run() returns within 0.5 s of quit() though a callback forked a child
+     that outlives the loop (os.fork, as multiprocessing's default 'fork'
+     start method does on 3.12): the child holds a copy of the wakeup pipe,
+     so the helper thread is stopped through a pipe of its own, not by EOF.
 
 It prints "python_window_idle: passed" and exits 0, or names each failure and
 exits 1; a run() that never returns is the test's timeout.
@@ -46,6 +50,8 @@ SETTLE_S = 1.0
 IDLE_S = 2.0
 CPU_LIMIT_S = 0.1
 SIGINT_LIMIT_S = 0.5
+FORK_QUIT_LIMIT_S = 0.5
+FORK_CHILD_S = 3.0
 BUSY_POST_LIMIT_S = 0.5
 BUSY_SLEEP_S = 0.3
 BUSY_GIVE_UP_S = 4.0
@@ -91,6 +97,32 @@ def own_apps() -> None:
         if not app.degraded:
             failures.append(f"App(resources={empty!r}) is not degraded: the directory given was not read")
         app.close()
+
+    # 9. quit() with a forked child alive
+    app = gweni.App(title="Fork", size=(320, 240))
+    forked: dict[str, float] = {}
+
+    def fork_and_quit() -> None:
+        pid = os.fork()
+        if pid == 0:
+            time.sleep(FORK_CHILD_S)
+            os._exit(0)
+        forked["pid"] = pid
+        forked["quit_at"] = time.monotonic()
+        app.quit()
+
+    app.canvas.post(fork_and_quit)
+    app.run()
+    if "quit_at" not in forked:
+        failures.append("the forking post never ran")
+    else:
+        took = time.monotonic() - forked["quit_at"]
+        print(f"python_window_idle: run() returned {took:.3f} s after quit() with a forked child alive")
+        if took >= FORK_QUIT_LIMIT_S:
+            failures.append(f"run() returned {took:.3f} s after quit() with a forked child alive "
+                            f"(limit {FORK_QUIT_LIMIT_S}): it waited for the child")
+        os.waitpid(int(forked["pid"]), 0)
+    app.close()
 
 
 def main() -> int:
