@@ -254,8 +254,10 @@ btn.on_press(lambda event: print("pressed"))
 app.run()
 ```
 
-It is built as a wheel with `./tools/build_wheel.sh`; [`docs/python.md`](docs/python.md) has the
-API, the rules and the tests.
+Install it with `pip install gweni` (or `uv add gweni`, `poetry add gweni`): one wheel for
+CPython 3.12+ on Linux x86_64 with glibc 2.35+ (Ubuntu 22.04+), needing a glvnd OpenGL driver.
+[`docs/python.md`](docs/python.md) has the platforms, the API, the rules, the tests and how the
+wheel is built (`./tools/build_wheel.sh`).
 
 ## Running the examples
 

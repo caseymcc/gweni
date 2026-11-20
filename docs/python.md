@@ -24,9 +24,36 @@ def _(event: gweni.Event) -> None:
 app.run()
 ```
 
-It is Linux x86_64 only, for CPython 3.12 and newer (one `cp312-abi3` wheel),
-and needs a glvnd OpenGL driver (`libOpenGL.so.0`, `libGLX.so.0`,
-`libEGL.so.1`), as the container-built exes do.
+## Installing it
+
+From PyPI, with any installer (they read the same metadata):
+
+```bash
+pip install gweni
+uv add gweni          # or: uv pip install gweni
+poetry add gweni
+```
+
+The wheel is `gweni-<version>-cp312-abi3-manylinux_2_35_x86_64.whl`, so it
+installs on:
+
+- **Linux x86_64** only (no Windows, macOS or aarch64 wheel yet, and no sdist:
+  an install elsewhere finds nothing to install);
+- **glibc 2.35 or newer**: Ubuntu 22.04+, Debian 12+, Fedora 36+;
+- **CPython 3.12 or newer** (the stable ABI: one wheel for 3.12, 3.13, 3.14
+  and later), not the free-threaded build, which the stable ABI does not
+  cover.
+
+It needs nothing else from PyPI, and no compiler: the skin, its atlas and the
+fonts are in the package, and every library it links but the system's is
+linked in. The system's are libc, libstdc++ and **a glvnd OpenGL driver**
+(`libOpenGL.so.0`, `libGLX.so.0`, `libEGL.so.1`, with a vendor library behind
+them: Mesa's, NVIDIA's), which the wheel deliberately does not carry, as the
+container-built exes do not: a desktop with working OpenGL has them, and a
+headless machine needs Mesa's (on Debian and Ubuntu `libegl1 libopengl0
+libglx0 libegl-mesa0 libgl1-mesa-dri`, what the release workflow installs on
+its runner), whose llvmpipe draws `Headless` with no GPU. A window also needs X11
+(GLFW loads `libX11.so.6` and its extensions when one opens).
 
 ## Building it
 
@@ -75,7 +102,10 @@ tree given as `--build-dir` (the release tree, say) is refused, never cleared.
 wheel: the module, its stub, `py.typed`, `resources/` (the skin, its atlas and
 the fonts) and `licenses/` (the licence of every library the module links
 statically; `python/THIRD_PARTY_NOTICES.md` lists them). The wheel is
-`linux_x86_64`; the manylinux repair and publishing are a later task's.
+`linux_x86_64`, which PyPI refuses; `tools/repair_wheel.py` makes it the
+`manylinux_2_35_x86_64` wheel PyPI is given, and `tools/ci_wheel.sh` builds,
+repairs and checks it as the release workflow does (`docs/building.md` →
+"Publishing the wheel").
 
 Install it into any 3.12+ environment, with no compiler, vcpkg or build tree:
 

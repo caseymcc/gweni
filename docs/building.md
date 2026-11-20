@@ -548,6 +548,101 @@ build and run `tests/package/` against it (`tests/vcpkgPort.cmake`);
 `vcpkg_publish` (every native tree) runs the script on a scratch repository
 and resolves gweni from what it wrote (`tests/vcpkgPublish.sh`).
 
+## Publishing the wheel
+
+The Python package (`docs/python.md`) goes to PyPI as one wheel,
+`gweni-<version>-cp312-abi3-manylinux_2_35_x86_64.whl`, from a `v*` tag: the
+tags the vcpkg port's versions use ("Publishing a version"), so one tag
+releases both, and its version is `project(gweni VERSION ...)`'s, written
+nowhere else (`pyproject.toml` reads it).
+
+**The wheel.** `tools/ci_wheel.sh [--out DIR]` (in the build container, from
+any directory, no lock; the smoke set's GL step under `mm run --lock render`
+when `mm` is on `PATH`) is every step, stopping at the first failure:
+
+1. the tag, `GITHUB_REF_NAME` when it is set (and `GITHUB_REF_TYPE` is not
+   `branch`), must be `v<project() version>`; it refuses before the build:
+
+   ```
+   $ GITHUB_REF_NAME=v0.2.0 GITHUB_REF_TYPE=tag ./tools/ci_wheel.sh
+   ci_wheel.sh: FAIL: the tag v0.2.0 is not v0.1.0, project(gweni VERSION 0.1.0) in CMakeLists.txt: they must be one version
+   ```
+2. `tools/build_wheel.sh` (the `linux_x86_64` wheel, `docs/python.md` → "The
+   wheel"), whose METADATA's `Version` must be the same version;
+3. `tools/repair_wheel.py`: `auditwheel repair --plat manylinux_2_35_x86_64`
+   with the glvnd libraries the module links (`libEGL.so.1`, `libOpenGL.so.0`,
+   `libGLX.so.0`, `libGLdispatch.so.0`, `libGL.so.1`) excluded, so they stay
+   the system's (they are on no manylinux whitelist, and a vendored glvnd
+   breaks the dispatch to the machine's driver), then its checks: the tag,
+   nothing vendored, GLFW's X11 libraries `dlopen()`ed and not NEEDED,
+   libstdc++ the system's and every version asked of it within the policy
+   (GCC 11 needs `GLIBCXX_3.4.29`), and the licenses (gweni's, the
+   third-party notice and every file it names, the fonts'). `auditwheel show`
+   alone calls the repaired wheel `linux_x86_64`, since it does not know of
+   the excludes; the script reads its `--json`, whose symbol tag is
+   `manylinux_2_35_x86_64` and whose only libraries to eliminate are glvnd's.
+   `--check <wheel>` checks a wheel without repairing it;
+4. `python/tests/wheelChecks.sh`, `python_wheel`'s checks, on the repaired
+   wheel: pip and uv installs into fresh 3.12 venvs, the smoke set
+   (`python/tests/wheel_smoke.py`) from each, and Jammy's pip refusing it;
+5. the wheel, alone, into `--out` (`dist/` by default, git-ignored).
+
+`python_wheel` (the release tree's ctest) builds, repairs and checks the same
+way, offline from the release tree's `vcpkg_installed`. Builds run at most
+`CMAKE_BUILD_PARALLEL_LEVEL` jobs, `nproc` unless set, as `tools/ci_site.sh`'s
+(#579).
+
+**The workflow.** `.github/workflows/pypi.yml` runs on a pushed `v*` tag, and
+by hand (*Actions → pypi → Run workflow*) as a dry run that stops at TestPyPI:
+
+- `build` builds the image and restores the vcpkg cache as `pages.yml` does
+  (the same keys), runs `tools/ci_wheel.sh --out dist` in it and uploads the
+  wheel as the artifact `wheel`;
+- `testpypi` (environment `testpypi`) uploads it to TestPyPI through trusted
+  publishing with `skip-existing` (a failed tag's run can be run again), then
+  installs Mesa's EGL and llvmpipe on the runner and runs
+  `tools/ci_wheel_install.sh --index-url https://test.pypi.org/simple/
+  --expect dist/<wheel> 3.12 3.13 3.14`: for each CPython (`uv python
+  install`, the GIL build) a fresh venv, `gweni==<version>` from that index
+  alone, retried every 20 s for up to 10 minutes while the index catches up,
+  its module byte for byte the artifact's (a version an index already has is
+  never replaced, so a skipped upload fails here rather than testing the old
+  file), and the smoke set;
+- `pypi` (environment `pypi`, on a tag only, after `testpypi`) publishes the
+  same file to PyPI through trusted publishing.
+
+The YAML holds no build logic; every action is pinned to a commit SHA, each
+job has only its own permissions (`contents: read`; `id-token: write` only in
+the two publish jobs), and a failure ends in one `::error::` annotation
+saying why (the script's `FAIL` line, the memory, the disk). The scripts run
+by hand in the container just the same:
+`tools/ci_wheel_install.sh --find-links dist 3.12 3.13 3.14` tries a local
+wheel (it needs the network for uv's CPythons).
+
+**The owner's one-time steps.** Agents never register, publish, tag or change
+settings; only the owner:
+
+1. registers `gweni` on [PyPI](https://pypi.org) and
+   [TestPyPI](https://test.pypi.org) (two accounts), or instead adds a
+   *pending* trusted publisher on each, which creates the project at its first
+   upload;
+2. adds the trusted publisher on each (*Your projects → gweni → Publishing*,
+   or *Account → Publishing* for a pending one): owner `caseymcc`,
+   repository `gweni`, workflow `pypi.yml`, environment `testpypi` on TestPyPI
+   and `pypi` on PyPI;
+3. creates the two environments in the repository (*Settings →
+   Environments*): `testpypi`, and `pypi` with required reviewers (the owner),
+   so a tag's PyPI upload waits for an approval; deployment branches and
+   tags limited to `v*` tags on `pypi` keep any other ref out.
+
+Then a release: bump `project(gweni VERSION ...)` and the port's
+`version-semver` in one commit, run the workflow by hand once (the TestPyPI
+dry run of that version), tag and push the tag (`git tag v0.1.0 && git push
+origin v0.1.0`), approve the `pypi` job, and do the port's steps
+("Publishing a version"). A version is never uploaded twice: one already on
+TestPyPI from a dry run of another commit fails the next run's `--expect`,
+so a version is dry-run from the commit it is tagged on.
+
 ## gweni as a HUD: HudExample
 
 `HudExample` (`examples/hud/hud.cpp`) draws gweni over the app's own GL scene: a
@@ -868,7 +963,8 @@ the script, a gallery page over the budget. `node tests/web/site.mjs
 ### Publishing the site
 
 The site is live at <https://caseymcc.github.io/gweni/>. The GitHub Actions
-workflow `.github/workflows/pages.yml` (the repo's only CI) publishes it on
+workflow `.github/workflows/pages.yml` (the repo's CI beside the wheel's
+`pypi.yml`, "Publishing the wheel") publishes it on
 every push to `main`, and on demand from *Actions → pages → Run workflow*. Its
 `build` job:
 
