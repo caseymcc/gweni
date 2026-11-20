@@ -27,7 +27,9 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-extern "C" ssize_t getrandom(void *buffer, size_t length, unsigned int flags)
+// default visibility: a tree with GWENI_BUILD_PYTHON builds everything hidden,
+// and the exe exports this one symbol (exports.list)
+extern "C" __attribute__((visibility("default"))) ssize_t getrandom(void *buffer, size_t length, unsigned int flags)
 {
     if(RUNNING_ON_VALGRIND)
     {

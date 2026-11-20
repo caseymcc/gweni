@@ -1,7 +1,16 @@
 #ifndef _gweni_export_h_
 #define _gweni_export_h_
 
-#ifdef GWENI_STATIC_DEFINE
+// A tree that builds the Python module (GWENI_BUILD_PYTHON) compiles everything
+// position-independent and hidden (CMakeLists.txt). -fvisibility=hidden leaves
+// declarations as they are, so a class's static data (Canvas::s_layingOut) would
+// still be read through the GOT; declared hidden it is read directly, as under
+// the executables' -fPIE. gweni is static, so nothing needs these symbols
+// exported; a consumer that does not define GWENI_HIDDEN_SYMBOLS links them the same.
+#if defined(GWENI_HIDDEN_SYMBOLS) && defined(__GNUC__)
+#  define GWENI_EXPORT __attribute__((visibility("hidden")))
+#  define GWENI_NO_EXPORT __attribute__((visibility("hidden")))
+#elif defined(GWENI_STATIC_DEFINE)
 #  define GWENI_EXPORT
 #  define GWENI_NO_EXPORT
 #else

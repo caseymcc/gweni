@@ -107,10 +107,20 @@ endif()
 # the vendored freetype-gl and imglib into a shared object, so they are built
 # position-independent: set before deps, like the sanitizers. Every symbol of
 # the module but PyInit__gweni is local (python/exports.map), so nothing in it
-# can be interposed, and -fno-semantic-interposition lets GCC inline and call
-# directly as under the executables' -fPIE.
+# can be interposed. Hidden visibility says so to the compiler: a hidden
+# function binds locally, so GCC inlines, clones and calls it directly as under
+# the executables' -fPIE (-fno-semantic-interposition alone still left
+# Base::visible() and setBounds() out of line, the bench's build construct
+# 1.65 % up), and GWENI_HIDDEN_SYMBOLS makes GWENI_EXPORT declare hidden too
+# (export.h), so a class's static data is read without the GOT. gweni is static
+# in every tree, so nothing outside a DSO needs these symbols; what an
+# executable must export (bench/fixedRandom.cpp's getrandom) says so itself.
 if(GWENI_BUILD_PYTHON)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+    set(CMAKE_C_VISIBILITY_PRESET hidden)
+    set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+    set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
+    add_compile_definitions(GWENI_HIDDEN_SYMBOLS)
     add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,GNU>:-fno-semantic-interposition>
         $<$<COMPILE_LANG_AND_ID:C,GNU>:-fno-semantic-interposition>)
 endif()
