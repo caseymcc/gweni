@@ -171,11 +171,25 @@ void bindControl(nb::module_ &m)
                 if(found == typesByClass().end() || !found->second.create)
                     throw nb::type_error(("gweni: "+nb::cast<std::string>(nb::str(type))
                         +" is not a control type add() can make").c_str());
+                // every keyword a property it can set, checked before the
+                // child is made: a read-only one (visible) or a method
+                // (on_press) is refused as an unknown one is
+                nb::object getStatic=nb::module_::import_("inspect").attr("getattr_static");
+
                 for(auto item : props)
                 {
+                    const std::string typeName=nb::cast<std::string>(type.attr("__name__"));
+                    const std::string name=nb::cast<std::string>(nb::str(item.first));
+
                     if(!nb::hasattr(type, item.first))
-                        throw nb::attribute_error(("gweni: "+nb::cast<std::string>(type.attr("__name__"))
-                            +" has no property "+nb::cast<std::string>(nb::str(item.first))).c_str());
+                        throw nb::attribute_error(("gweni: "+typeName+" has no property "+name).c_str());
+
+                    nb::object attribute=getStatic(type, item.first);
+
+                    if(!nb::isinstance(attribute, nb::module_::import_("builtins").attr("property")) ||
+                        nb::getattr(attribute, "fset").is_none())
+                        throw nb::attribute_error(("gweni: "+typeName+"."+name
+                            +" is not a property add() can set (read-only, or a method)").c_str());
                 }
 
                 controls::Base *child=found->second.create(parent);
@@ -228,8 +242,12 @@ void bindControl(nb::module_ &m)
         .def("__hash__", [](const Control &self) { return std::hash<size_t>()(self.id); })
         .def("__repr__", [](const Control &self) {
                 const Session &s=session();
-                controls::Base *control=(s.active && s.thread != std::this_thread::get_id())
-                    ? nullptr : controls::Base::getControlById(self.id);
+
+                // off the session's thread the tree is not this thread's to read
+                if(s.active && s.thread != std::this_thread::get_id())
+                    return "<gweni control #"+std::to_string(self.id)+" (on the "+s.kind+"'s thread)>";
+
+                controls::Base *control=controls::Base::getControlById(self.id);
                 std::string name=control ? control->getTypeName() : "deleted";
 
                 return "<gweni control #"+std::to_string(self.id)+" "+name+">";

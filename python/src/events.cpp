@@ -14,8 +14,10 @@
 #include <nanobind/stl/pair.h>
 #include <nanobind/stl/string.h>
 
+#include <algorithm>
 #include <atomic>
 #include <deque>
+#include <vector>
 
 namespace nb=nanobind;
 
@@ -113,19 +115,46 @@ void keepCallbackError()
         return;
     }
 
-    // at the end of the first one's __context__ chain, once
+    // at the end of the first one's __context__ chain, once. The chain is
+    // walked with the links it has seen, so a loop an app's own __context__
+    // made ends the walk rather than spinning with the GIL held.
+    std::vector<PyObject *> chain;
     nb::object tail=firstError;
 
     for(;;)
     {
         if(tail.is(error))
             return;
+        chain.push_back(tail.ptr());
 
         nb::object context=nb::steal(PyException_GetContext(tail.ptr()));
 
-        if(!context.is_valid() || context.is_none())
+        if(!context.is_valid() || context.is_none() ||
+            (std::find(chain.begin(), chain.end(), context.ptr()) != chain.end()))
             break;
         tail=context;
+    }
+
+    // An error whose own chain reaches back into this one (its __context__
+    // the first error, say) would close a loop: cut its chain there, as
+    // Python does when it sets a context.
+    std::vector<PyObject *> own;
+
+    for(nb::object link=error;;)
+    {
+        own.push_back(link.ptr());
+
+        nb::object context=nb::steal(PyException_GetContext(link.ptr()));
+
+        if(!context.is_valid() || context.is_none())
+            break;
+        if((std::find(own.begin(), own.end(), context.ptr()) != own.end()) ||
+            (std::find(chain.begin(), chain.end(), context.ptr()) != chain.end()))
+        {
+            PyException_SetContext(link.ptr(), nullptr);
+            break;
+        }
+        link=context;
     }
     PyException_SetContext(tail.ptr(), error.release().ptr());
 }

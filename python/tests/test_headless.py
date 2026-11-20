@@ -131,7 +131,10 @@ def test_thread_rule(headless: gweni.Headless) -> None:
         assert isinstance(_off_thread(fn), gweni.ThreadError)
     assert label.text == "mine"
     assert "Label" in repr(label)
-    assert "#" in _off_thread_repr(label)
+    # off the thread a live control is not called deleted: its repr says
+    # whose thread it is on
+    off = _off_thread_repr(label)
+    assert "#" in off and "deleted" not in off and "thread" in off, off
 
 
 def _off_thread_repr(handle: gweni.Control) -> str:

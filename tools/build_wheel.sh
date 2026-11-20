@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 #
+#  Gweni
+#  Copyright (c) 2010 Facepunch Studios
+#  MIT License, see LICENSE
+#
 #  Builds the gweni Python wheel (pyproject.toml, scikit-build-core) in the
 #  build container, from any directory:
 #
@@ -40,7 +44,7 @@ build_dir="$repo/build_linux_x64_release_wheel"
 vcpkg_installed=""
 offline=()
 
-usage() { sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^#  \{0,1\}//; s/^#$//'; }
+usage() { sed -n '7,/^set -euo/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^#  \{0,1\}//; s/^#$//'; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -64,14 +68,24 @@ if ! command -v uv >/dev/null; then
 fi
 
 # ./generate.sh decides the configuration; its pass-through -D come last and win
-mapfile -t args < <(GWENI_PYTHON="$python" "$repo/generate.sh" linux release --print-cmake-args \
-    -DGWENI_RENDER_VULKAN=OFF -DGWENI_BUILD_EXAMPLES=OFF -DGWENI_BUILD_TESTS=OFF -DGWENI_BUILD_PYTHON=ON)
-if [ "${#args[@]}" -eq 0 ]; then
+if ! printed="$(GWENI_PYTHON="$python" "$repo/generate.sh" linux release --print-cmake-args \
+    -DGWENI_RENDER_VULKAN=OFF -DGWENI_BUILD_EXAMPLES=OFF -DGWENI_BUILD_TESTS=OFF -DGWENI_BUILD_PYTHON=ON)"; then
+    echo "build_wheel.sh: ./generate.sh --print-cmake-args failed:" >&2
+    printf '%s\n' "$printed" >&2
+    exit 1
+fi
+mapfile -t args <<< "$printed"
+if [ -z "$printed" ] || [ "${#args[@]}" -eq 0 ]; then
     echo "build_wheel.sh: ./generate.sh --print-cmake-args printed nothing" >&2
     exit 1
 fi
+# The manifest mode and the installed tree are passed on every run, either
+# way: the build directory persists, and its cache would otherwise keep an
+# earlier run's --vcpkg-installed (no manifest install, another tree's deps).
 if [ -n "$vcpkg_installed" ]; then
     args+=("-DVCPKG_MANIFEST_MODE=OFF" "-DVCPKG_INSTALLED_DIR=$vcpkg_installed")
+else
+    args+=("-DVCPKG_MANIFEST_MODE=ON" "-DVCPKG_INSTALLED_DIR=$build_dir/vcpkg_installed")
 fi
 for arg in "${args[@]}"; do
     if [[ $arg == *";"* ]]; then

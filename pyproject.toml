@@ -1,3 +1,8 @@
+#
+#  Gweni
+#  Copyright (c) 2010 Facepunch Studios
+#  MIT License, see LICENSE
+#
 # The Python package gweni (python/): a scikit-build-core build of this
 # CMake project with the Python module on, installing its "python" component
 # (python/CMakeLists.txt) into the wheel. tools/build_wheel.sh builds it with

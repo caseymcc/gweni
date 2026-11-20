@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 #
+#  Gweni
+#  Copyright (c) 2010 Facepunch Studios
+#  MIT License, see LICENSE
+#
 #  python_wheel (python/tests/tests.cmake, the release tree only, no gpu
 #  label): the wheel built, installed and used as an app would, offline.
 #

@@ -237,7 +237,9 @@ stay open to a callback, and `app.quit()` may be called from one.
 **One instance.** At most one App or Headless is alive in a process; a second
 raises `RuntimeError`. One after another works (pytest fixtures). One left open
 at exit is closed by an atexit hook, so its callables are released while
-Python can.
+Python can. Close one (`close()`, or a `with` block) on the thread that made it:
+dropping the last reference on another thread tears its window or EGL
+context down there, which GLFW does not allow off the main thread.
 
 **The idle loop and Ctrl+C.** `run()` draws a frame only when the canvas has
 work and otherwise blocks in GLFW's wait. Python's SIGINT

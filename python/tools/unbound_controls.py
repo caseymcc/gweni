@@ -33,6 +33,9 @@ def declared(header: pathlib.Path) -> list[tuple[str, bool]]:
     pending: str | None = None
     for line in header.read_text(errors="replace").splitlines():
         code = line.split("//", 1)[0]
+        if code.lstrip().startswith("#"):
+            # the macros' own #define lines (GWENI_CONTROL(THISNAME, ...)) name no type
+            code = ""
         for match in CONTROL.finditer(code):
             found.append((match.group(1), "internal" in stack))
         ns = NAMESPACE.search(code)

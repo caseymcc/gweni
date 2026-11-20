@@ -78,6 +78,15 @@ def test_add_refuses_an_unknown_property_and_makes_nothing(headless: gweni.Headl
     assert panel.children == []
 
 
+@pytest.mark.parametrize("name", ["visible", "on_press", "delete_later"])
+def test_add_refuses_a_read_only_property_or_a_method_and_makes_nothing(headless: gweni.Headless, name: str) -> None:
+    panel = headless.canvas.add(gweni.Panel)
+    with pytest.raises(AttributeError, match=name):
+        panel.add(gweni.Button, **{name: True})
+    # refused before the child is made: none even until the next frame
+    assert panel.children == []
+
+
 def test_add_refuses_a_property_of_the_wrong_type_and_makes_nothing(headless: gweni.Headless) -> None:
     panel = headless.canvas.add(gweni.Panel)
     with pytest.raises(TypeError):

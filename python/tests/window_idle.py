@@ -18,14 +18,25 @@ of its own, python/tests/window_idle.cmake). On the feature's example window
      a worker thread still runs: its canvas.post lands within 0.5 s of the
      post (run() holds the GIL only to run Python).
 
+Before the example's window, two Apps of their own:
+
+  7. one made and run on another thread: run() raises RuntimeError for being
+     off the main thread (the thread rule passes there, the App being that
+     thread's);
+  8. App(resources=...) reads the directory given: a copy of the package's
+     resources/ loads complete, an empty directory leaves the App degraded.
+
 It prints "python_window_idle: passed" and exits 0, or names each failure and
 exits 1; a run() that never returns is the test's timeout.
 """
 
+import importlib.resources
 import os
 import resource
+import shutil
 import signal
 import sys
+import tempfile
 import threading
 import time
 
@@ -47,7 +58,43 @@ def cpu_seconds() -> float:
     return usage.ru_utime + usage.ru_stime
 
 
+def own_apps() -> None:
+    # 7. an App of another thread's: run() refused off the main thread
+    caught: list[BaseException] = []
+
+    def other_thread() -> None:
+        app = gweni.App(title="Other thread", size=(320, 240))
+        try:
+            app.run()
+        except BaseException as e:  # noqa: BLE001 - checked below
+            caught.append(e)
+        app.close()
+
+    t = threading.Thread(target=other_thread)
+    t.start()
+    t.join()
+    if not caught or type(caught[0]) is not RuntimeError or "main thread" not in str(caught[0]):
+        failures.append(f"run() on the thread that made the App raised {caught!r}, "
+                        "not RuntimeError for the main thread")
+
+    # 8. App(resources=...)
+    with tempfile.TemporaryDirectory() as scratch:
+        copy = os.path.join(scratch, "resources")
+        shutil.copytree(str(importlib.resources.files("gweni").joinpath("resources")), copy)
+        app = gweni.App(title="Resources", size=(320, 240), resources=copy)
+        if app.degraded:
+            failures.append(f"App(resources={copy!r}) is degraded: the copy did not load")
+        app.close()
+        empty = os.path.join(scratch, "empty")
+        os.mkdir(empty)
+        app = gweni.App(title="No resources", size=(320, 240), resources=empty)
+        if not app.degraded:
+            failures.append(f"App(resources={empty!r}) is not degraded: the directory given was not read")
+        app.close()
+
+
 def main() -> int:
+    own_apps()
     app = gweni.App(title="Hello", size=(800, 600))
     win = app.canvas.add(gweni.Window, title="Settings")
     label = win.add(gweni.Label, text="0 clicks", dock=gweni.Dock.TOP)

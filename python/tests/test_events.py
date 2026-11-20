@@ -118,6 +118,36 @@ def test_later_errors_are_chained_to_the_first(headless: gweni.Headless) -> None
     assert isinstance(raised.value.__context__, KeyError)
 
 
+def test_an_error_whose_context_is_the_first_closes_no_loop(headless: gweni.Headless) -> None:
+    button, (x, y) = _button(headless, text="Press")
+    first_error = Boom("first")
+
+    def first(event: gweni.Event) -> None:
+        raise first_error
+
+    def second(event: gweni.Event) -> None:
+        # an error that already hangs off the first: linking it after the
+        # first would close the chain into a loop
+        error = KeyError("second")
+        error.__context__ = first_error
+        raise error
+
+    def third(event: gweni.Event) -> None:
+        raise ValueError("third")
+
+    for callback in (first, second, third):
+        button.on_press(callback)
+    with pytest.raises(Boom) as raised:
+        headless.click(x, y)
+    chain: list[BaseException] = []
+    error: BaseException | None = raised.value
+    while error is not None:
+        assert error not in chain, f"the __context__ chain loops: {chain!r}"
+        chain.append(error)
+        error = error.__context__
+    assert [type(e) for e in chain] == [Boom, KeyError, ValueError]
+
+
 def test_an_error_from_a_setters_event(headless: gweni.Headless) -> None:
     button, _ = _button(headless, text="Toggle", is_toggle=True)
 
