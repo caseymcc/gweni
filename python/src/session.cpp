@@ -12,6 +12,8 @@
 
 #include <nanobind/stl/string.h>
 
+#include <cmath>
+
 namespace nb=nanobind;
 
 namespace gweni
@@ -69,6 +71,16 @@ std::string packageResources()
     nb::object files=nb::module_::import_("importlib.resources").attr("files")("gweni");
 
     return nb::cast<std::string>(nb::str(files.attr("joinpath")("resources")));
+}
+
+void checkCanvasSize(const char *who, const std::pair<int, int> &size, float scale)
+{
+    if((size.first <= 0) || (size.second <= 0))
+        throw nb::value_error((std::string("gweni.")+who+": size must be positive in both axes, not ("
+            +std::to_string(size.first)+", "+std::to_string(size.second)+")").c_str());
+    if(!std::isfinite(scale) || (scale <= 0.0f))
+        throw nb::value_error((std::string("gweni.")+who+": scale must be a positive number, not "
+            +std::to_string(scale)).c_str());
 }
 
 void bindSession(nb::module_ &m)

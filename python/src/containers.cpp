@@ -228,7 +228,7 @@ void bindContainers(nb::module_ &m)
 
     auto menu=nb::class_<Menu, ScrollControl>(m, "Menu",
         "A list of items (controls::Menu): a context menu, a submenu or a canvas menu;\n"
-        "add() makes it closed (hidden) until open_at().")
+        "canvas.add() makes it closed (hidden) until open_at(); add() on another parent raises ValueError.")
         .def("add_item", [](const Control &self, const std::string &text, const std::string &accelerator) {
                 return inCall([&]() { return wrapAs<MenuItem>(resolve<controls::Menu>(self)->addItem(text, "", accelerator)); });
             }, nb::arg("text"), nb::arg("accelerator")="", "Adds an item; returns its MenuItem.")
@@ -243,10 +243,16 @@ void bindContainers(nb::module_ &m)
         .def("close", [](const Control &self) { inCall([&]() { resolve<controls::Menu>(self)->close(); }); })
         .def_prop_ro("is_open", [](const Control &self) { return resolve<controls::Menu>(self)->visible(); });
     // add() makes a Menu hidden, as a closed one is: open_at() shows it (a
-    // MenuStrip, a bar on its parent, is made shown)
+    // MenuStrip, a bar on its parent, is made shown). Only on the canvas:
+    // openAt() places a menu in canvas coordinates as the canvas's child, and
+    // under another parent it would open in that parent's, clipped by it
     registerControlType(controls::Menu::getTypeNameStatic(), menu,
         [](size_t id) { Menu handle; handle.id=id; return nb::cast(handle); },
         [](controls::Base *parent) -> controls::Base * {
+            if(parent != parent->getCanvas())
+                throw nb::value_error("gweni: a Menu is made on the canvas (canvas.add(gweni.Menu)); "
+                    "a MenuStrip goes on any parent");
+
             controls::Menu *made=parent->newChild<controls::Menu>();
 
             made->setHidden(true);

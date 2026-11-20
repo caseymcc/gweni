@@ -135,14 +135,19 @@ void callEvent(const Callable &callable, const event::Info &info, size_t control
 //! so a decorated function keeps its type. Kept for the module's life.
 const char *eventSignature(const char *name);
 
+//! Raises TypeError unless \p function is callable, as it is registered for
+//! the event \p name, rather than when the event first fires.
+void requireCallable(const char *name, const nanobind::object &function);
+
 //! Binds \p name (on_press, ...) on \p cls: a method taking a callable of one
 //! Event, adding it to the control's \p caller, and returning it, so it is a
 //! decorator too.
 template<typename Class, typename T>
 void bindEvent(Class &cls, const char *name, event::Caller T::*caller, const char *doc)
 {
-    cls.def(name, [caller](const Control &self, nanobind::object function) {
+    cls.def(name, [name, caller](const Control &self, nanobind::object function) {
             T *control=resolve<T>(self);
+            requireCallable(name, function);
             CallablePtr callable=std::make_shared<Callable>(function);
 
             (control->*caller).addCallback(control, [callable](event::Handler &, event::Info info) {
@@ -157,8 +162,9 @@ void bindEvent(Class &cls, const char *name, event::Caller T::*caller, const cha
 template<typename Class, typename T, typename Find>
 void bindPartEvent(Class &cls, const char *name, Find caller, const char *doc)
 {
-    cls.def(name, [caller](const Control &self, nanobind::object function) {
+    cls.def(name, [name, caller](const Control &self, nanobind::object function) {
             T *control=resolve<T>(self);
+            requireCallable(name, function);
             CallablePtr callable=std::make_shared<Callable>(function);
             const size_t id=self.id;
 

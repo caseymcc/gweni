@@ -33,6 +33,8 @@
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/tuple.h>
 
+#include <cmath>
+
 namespace nb=nanobind;
 
 namespace gweni
@@ -198,8 +200,10 @@ void bindSimpleControls(nb::module_ &m)
         .def_prop_rw("value",
             [](const Control &self) { return resolve<controls::Slider>(self)->getFloatValue(); },
             [](const Control &self, float value) {
+                if(std::isnan(value))
+                    throw nb::value_error("gweni.Slider.value: not a number (NaN)");
                 inCall([&]() { resolve<controls::Slider>(self)->setFloatValue(value); });
-            }, "Its value, in its range; setting it fires on_value_changed.")
+            }, "Its value, in its range; setting it fires on_value_changed. NaN raises ValueError.")
         .def_prop_rw("range",
             [](const Control &self) {
                 controls::Slider *s=resolve<controls::Slider>(self);

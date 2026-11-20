@@ -155,6 +155,8 @@ class App
 public:
     App(const std::string &title, std::pair<int, int> size, std::optional<std::string> resources, float scale)
     {
+        checkCanvasSize("App", size, scale);
+
         app::ShellOptions shell;
 
         shell.size=Point(size.first, size.second);

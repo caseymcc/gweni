@@ -477,7 +477,7 @@ class MenuItem(Button):
 class Menu(ScrollControl):
     """
     A list of items (controls::Menu): a context menu, a submenu or a canvas menu;
-    add() makes it closed (hidden) until open_at().
+    canvas.add() makes it closed (hidden) until open_at(); add() on another parent raises ValueError.
     """
 
     def add_item(self, text: str, accelerator: str = '') -> MenuItem:
@@ -832,7 +832,9 @@ class Slider(Control):
 
     @property
     def value(self) -> float:
-        """Its value, in its range; setting it fires on_value_changed."""
+        """
+        Its value, in its range; setting it fires on_value_changed. NaN raises ValueError.
+        """
 
     @value.setter
     def value(self, arg: float, /) -> None: ...

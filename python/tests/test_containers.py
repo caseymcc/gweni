@@ -174,6 +174,24 @@ def test_a_canvas_menu_add_makes_is_closed_until_opened(headless: gweni.Headless
     assert not strip.hidden
 
 
+def test_a_menu_is_made_on_the_canvas_only(headless: gweni.Headless) -> None:
+    # open_at() places a menu in canvas coordinates only when it is the
+    # canvas's child: under a Window it opened in the Window's, clipped by it
+    window = headless.canvas.add(gweni.Window, title="w", size=(200, 150), position=(100, 100))
+    before = len(window.children)
+    with pytest.raises(ValueError, match="a Menu is made on the canvas"):
+        window.add(gweni.Menu)
+    assert len(window.children) == before
+    menu = headless.canvas.add(gweni.Menu)
+    menu.add_item("First")
+    headless.frame()
+    menu.open_at((40, 40))
+    headless.frame()
+    assert menu.canvas_bounds[:2] == (40, 40)
+    # a MenuStrip is a bar on any parent
+    assert not window.add(gweni.MenuStrip, dock=gweni.Dock.TOP).hidden
+
+
 @pytest.mark.parametrize("kind", ["Window", "GroupBox", "ScrollControl", "Panel"])
 def test_layout_set_after_a_layout_lays_the_children_out(headless: gweni.Headless, kind: str) -> None:
     def build(late: bool) -> list[tuple[int, int, int, int]]:

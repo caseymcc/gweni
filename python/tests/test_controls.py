@@ -310,3 +310,11 @@ def test_slider_range_refuses_an_empty_or_reversed_range(headless: gweni.Headles
     # left as it was, its value a number
     assert slider.range == (0, 10) and slider.value == pytest.approx(4)
 
+
+
+def test_slider_value_refuses_nan(headless: gweni.Headless) -> None:
+    slider = top(headless, gweni.HorizontalSlider, size=(200, 20), range=(0, 10))
+    slider.value = 4
+    with pytest.raises(ValueError, match="not a number"):
+        slider.value = float("nan")
+    assert slider.value == pytest.approx(4)

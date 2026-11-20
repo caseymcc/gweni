@@ -205,6 +205,13 @@ const char *eventSignature(const char *name)
     return signatures.back().c_str();
 }
 
+void requireCallable(const char *name, const nb::object &function)
+{
+    if(!PyCallable_Check(function.ptr()))
+        throw nb::type_error((std::string("gweni: ")+name+"() takes a callable of one Event, not "
+            +nb::cast<std::string>(nb::type_name(function.type()))).c_str());
+}
+
 void callEvent(const Callable &callable, const event::Info &info, size_t controlId)
 {
     nb::gil_scoped_acquire gil;

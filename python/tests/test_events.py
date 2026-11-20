@@ -46,6 +46,15 @@ def test_press_calls_back_with_an_event(headless: gweni.Headless) -> None:
     assert "Event" in repr(events[0])
 
 
+def test_a_callback_that_is_not_callable_is_refused_at_registration(headless: gweni.Headless) -> None:
+    button = headless.canvas.add(gweni.Button, text="b", dock=gweni.Dock.TOP)
+    with pytest.raises(TypeError, match=r"on_press\(\) takes a callable of one Event, not int"):
+        button.on_press(3)  # type: ignore[type-var]
+    headless.frame()
+    x, y, w, h = button.canvas_bounds
+    headless.click(x + w // 2, y + h // 2)  # nothing registered: no error later
+
+
 def test_method_form_and_several_callbacks(headless: gweni.Headless) -> None:
     button, (x, y) = _button(headless, text="Press")
     calls: list[str] = []

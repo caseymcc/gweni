@@ -35,6 +35,8 @@ class Headless
 public:
     Headless(std::pair<int, int> size, float scale, std::optional<std::string> resources)
     {
+        checkCanvasSize("Headless", size, scale);
+
         app::HeadlessOptions options;
 
         options.size=Point(size.first, size.second);

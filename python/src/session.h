@@ -17,6 +17,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 #include <unordered_set>
 
 namespace gweni
@@ -91,6 +92,10 @@ inline void checkThread()
 //! The package's resources/ (importlib.resources), for an App or Headless
 //! given none.
 std::string packageResources();
+
+//! Raises ValueError unless \p size is positive in both axes and \p scale
+//! finite and positive, before an App or Headless (\p who) opens with them.
+void checkCanvasSize(const char *who, const std::pair<int, int> &size, float scale);
 
 void bindSession(nanobind::module_ &m);
 

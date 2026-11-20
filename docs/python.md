@@ -200,7 +200,7 @@ count the same, byte for byte.
 | `HorizontalSlider`, `VerticalSlider` (`value`, `range`, its minimum below its maximum) | `controls::HorizontalSlider`, `VerticalSlider` (`setFloatValue`, `setRange`) |
 | `ComboBox`, `ListBox`, `ProgressBar`, `Switch`, `Spinner`, `Chip` | the same-named controls |
 | `ScrollControl`, `GroupBox`, `TabControl`/`TabButton`, `Window` | the same-named controls, `WindowControl` |
-| `MenuStrip`, `Menu` (made closed by `add()`, shown by `open_at()`), `MenuItem` | the same-named controls |
+| `MenuStrip`, `Menu` (made closed by `canvas.add()`, on the canvas only, shown by `open_at()`), `MenuItem` | the same-named controls |
 | `message`, `confirm`, `prompt` (`on_result(result, text)`), `Dialog`, `PromptDialog`, `DialogResult` | `dialogs::message`, `confirm`, `prompt`, `ResultHandler`, `dialogs::Dialog`, `dialogs::Result` |
 | `Toast`, `ToastKind` | `controls::Toast`, `ToastKind` |
 | `Flow` | `controls::layout::Flow` |
