@@ -4233,7 +4233,10 @@ two programs and the draws. What follows describes both together:
   one when it was the last; it leaves through `removePage` (so `onLoseTabCaller` fires),
   and the tab and its page are hidden and `delayedDelete()`d, so a close from the
   button's own click handler is safe and their ids are given back at the start of the
-  next frame. `closeTab` closes without asking. TabCloseDemo has a pinned tab among
+  next frame. `closeTab` closes without asking. A closed tab is off the strip until its
+  delete (`TabControl::holdsTab()` false): a press, `requestClose` and `closeTab` on it do
+  nothing, so it is never selected again (it would be the current tab once freed) and a
+  second close fires `onLoseTabCaller` no second time. TabCloseDemo has a pinned tab among
   closable ones and a Left strip; ShowcaseContainersDemo's TabControl has two closable
   tabs.
 - **Tab overflow and the tab list.** A Top or Bottom strip whose tabs are wider than the
