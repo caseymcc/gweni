@@ -125,12 +125,16 @@ void bindContainers(nb::module_ &m)
 
                 if(control == nullptr)
                     throw std::runtime_error("gweni.TabButton.select: not in a TabControl");
+                // a closed tab waits for its delete: selected, it would be the
+                // TabControl's current tab once freed
+                if(!control->holdsTab(tab))
+                    throw std::runtime_error("gweni.TabButton.select: the tab is closed");
 
                 event::Info info(tab);
 
                 info.controlCaller=tab;
                 inCall([&]() { control->onTabPressed(info); });
-            }, "Makes it the selected tab, showing its page.")
+            }, "Makes it the selected tab, showing its page; raises RuntimeError once it is closed.")
         .def("delete_later", [](const Control &self) {
                 controls::TabButton *tab=resolve<controls::TabButton>(self);
                 controls::TabControl *control=tab->getTabControl();
@@ -138,9 +142,11 @@ void bindContainers(nb::module_ &m)
                 if(control == nullptr)
                     throw std::runtime_error("gweni.TabButton.delete_later: not in a TabControl");
                 // the TabControl keeps the selected tab and every page: take
-                // it out as a close does (the next tab selected, on_lose_tab)
+                // it out as a close does (the next tab selected, on_lose_tab);
+                // a closed tab is left alone, as closeTab() leaves it
                 inCall([&]() { control->closeTab(tab); });
-            }, "Closes it and its page as TabControl.close_tab() does (on_close is not fired).");
+            }, "Closes it and its page as TabControl.close_tab() does (on_close is not fired); "
+               "a closed tab is left as it is.");
     registerControl<TabButton, controls::TabButton, false>(tabButton);
 
     auto tabControl=nb::class_<TabControl, Control>(m, "TabControl",
@@ -161,7 +167,7 @@ void bindContainers(nb::module_ &m)
             }, "The selected TabButton, or None.")
         .def("close_tab", [](const Control &self, const Control &tab) {
                 inCall([&]() { resolve<controls::TabControl>(self)->closeTab(resolve<controls::TabButton>(tab)); });
-            }, nb::arg("tab"), "Closes tab without asking (on_close is not fired).")
+            }, nb::arg("tab"), "Closes tab without asking (on_close is not fired); a tab closed already is left as it is.")
         .def("set_strip_position", [](const Control &self, DockPosition side) {
                 resolve<controls::TabControl>(self)->setTabStripPosition(side);
             }, nb::arg("side"), "The side the tabs are on.")

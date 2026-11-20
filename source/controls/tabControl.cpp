@@ -116,7 +116,9 @@ void TabControl::onTabPressed(event::Info info)
 {
     TabButton *button=gweni_cast<TabButton>(info.controlCaller);
 
-    if(!button)
+    // a closed tab (waiting for its delete, off the strip) is never selected
+    // again: it would be m_currentButton once the delete has freed it
+    if(!button || !holdsTab(button))
         return;
 
     Base *page=button->getPage();
@@ -150,7 +152,7 @@ void TabControl::onTabPressed(event::Info info)
 
 bool TabControl::requestClose(TabButton *button)
 {
-    if(!button || button->getTabControl() != this)
+    if(!holdsTab(button))
         return false;
 
     // a handler may close another tab itself, which asks again
@@ -172,7 +174,8 @@ bool TabControl::requestClose(TabButton *button)
 
 void TabControl::closeTab(TabButton *button)
 {
-    if(!button || button->getTabControl() != this)
+    // a tab closed already is off the strip: a second close fires nothing
+    if(!holdsTab(button))
         return;
 
     if(m_currentButton == button)
@@ -271,6 +274,11 @@ void TabControl::onLoseTab(TabButton *button)
     // TODO: select a tab if any exist.
     onLoseTabCaller.call(this);
     invalidate();
+}
+
+bool TabControl::holdsTab(TabButton *button) const
+{
+    return button && button->getTabControl() == this && button->getParent() == m_tabStrip;
 }
 
 int TabControl::tabCount(void)

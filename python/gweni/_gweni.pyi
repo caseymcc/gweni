@@ -365,11 +365,13 @@ class TabButton(Button):
     def closable(self, arg: bool, /) -> None: ...
 
     def select(self) -> None:
-        """Makes it the selected tab, showing its page."""
+        """
+        Makes it the selected tab, showing its page; raises RuntimeError once it is closed.
+        """
 
     def delete_later(self) -> None:
         """
-        Closes it and its page as TabControl.close_tab() does (on_close is not fired).
+        Closes it and its page as TabControl.close_tab() does (on_close is not fired); a closed tab is left as it is.
         """
 
 class TabControl(Control):
@@ -389,7 +391,9 @@ class TabControl(Control):
         """The selected TabButton, or None."""
 
     def close_tab(self, tab: Control) -> None:
-        """Closes tab without asking (on_close is not fired)."""
+        """
+        Closes tab without asking (on_close is not fired); a tab closed already is left as it is.
+        """
 
     def set_strip_position(self, side: Dock) -> None:
         """The side the tabs are on."""

@@ -4,7 +4,8 @@
 #  MIT License, see LICENSE
 #
 """delete_later() never crashes: it deletes what add() made and the dialogs,
-takes a TabButton out as close_tab() does and dismisses a Toast, and refuses
+takes a TabButton out as close_tab() does (a closed tab never selected or
+closed again) and dismisses a Toast, and refuses
 the canvas and every part an owner made and keeps a pointer to (a
 CheckBoxWithLabel's box, a TabButton's page, a prompt's field, an option, an
 item), the owner still working after the refusal. Each refused case below
@@ -126,6 +127,44 @@ def test_the_selected_tab_is_closed_cleanly(headless: gweni.Headless) -> None:
     headless.click(*centre(b))
     headless.frame()
     assert not a.alive and not page.alive and tabs.current == b
+
+
+@pytest.mark.parametrize("close", ["close_tab", "delete_later"])
+def test_a_closed_tab_is_never_selected_again(headless: gweni.Headless, close: str) -> None:
+    # the closed tab waits for its delete off the strip; selected, it was the
+    # TabControl's current tab once freed (a SIGSEGV on tabs.current or a click)
+    tabs = headless.canvas.add(gweni.TabControl, dock=gweni.Dock.CENTER)
+    a = tabs.add_page("a")
+    b = tabs.add_page("b")
+    headless.frame()
+    if close == "close_tab":
+        tabs.close_tab(a)
+    else:
+        a.delete_later()
+    assert tabs.current == b
+    with pytest.raises(RuntimeError, match="the tab is closed"):
+        a.select()
+    assert tabs.current == b
+    headless.frame()
+    assert tabs.current == b and not a.alive
+    headless.click(*centre(b))
+    headless.frame()
+    assert tabs.current == b
+
+
+def test_a_closed_tab_is_closed_once(headless: gweni.Headless) -> None:
+    tabs = headless.canvas.add(gweni.TabControl, dock=gweni.Dock.CENTER)
+    tabs.add_page("a")
+    b = tabs.add_page("b")
+    tabs.add_page("c")
+    lost: list[int] = []
+    tabs.on_lose_tab(lambda event: lost.append(1))
+    headless.frame()
+    b.delete_later()
+    b.delete_later()
+    tabs.close_tab(b)
+    headless.frame()
+    assert len(lost) == 1 and tabs.tab_count == 2
 
 
 def test_a_toast_is_dismissed(headless: gweni.Headless) -> None:

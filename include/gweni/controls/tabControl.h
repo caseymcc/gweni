@@ -111,6 +111,11 @@ public:
     //! close from the button's own click handler is safe.
     virtual void closeTab(TabButton *button);
 
+    //! Whether \p button is one of its tabs: on its strip, so not one closed
+    //! and waiting for its delete (which closeTab(), requestClose() and a
+    //! press leave alone).
+    bool holdsTab(TabButton *button) const;
+
     virtual void onTabPressed(event::Info info);
     virtual void onLoseTab(TabButton *button);
 
