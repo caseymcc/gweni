@@ -52,8 +52,10 @@ them: Mesa's, NVIDIA's), which the wheel deliberately does not carry, as the
 container-built exes do not: a desktop with working OpenGL has them, and a
 headless machine needs Mesa's (on Debian and Ubuntu `libegl1 libopengl0
 libglx0 libegl-mesa0 libgl1-mesa-dri`, what the release workflow installs on
-its runner), whose llvmpipe draws `Headless` with no GPU. A window also needs X11
-(GLFW loads `libX11.so.6` and its extensions when one opens).
+its runner), whose llvmpipe draws `Headless` with no GPU. `libX11.so.6` is
+needed even headless (glvnd's `libGLX.so.0` links it; `libglx0` depends on
+it); a window also needs an X display, and GLFW loads X11's extension
+libraries (`libXrandr`, `libXcursor`, `libXi`, ...) when one opens.
 
 ## Building it
 
@@ -331,4 +333,4 @@ the `render` lock (`AGENTS.md` → "Tests"):
 | `python_mypy` | `mypy --strict python/examples/` |
 | `python_parity` (`gpu`) | `button_demo.py` against `ControlTest --headless --control ButtonDemo`: the same pixels and counters |
 | `python_window_idle` (`gpu`) | `App.run()` under Xvfb: a silent idle, one frame per post, Ctrl+C, the wakeup fd, a worker's post landing while a Spinner turns, `quit()` with a forked child alive |
-| `python_wheel` | the release tree only: the wheel built offline, installed with pip and uv, smoke-tested from the installed package |
+| `python_wheel` | the release tree only: the wheel built offline, repaired to `manylinux_2_35_x86_64` and checked (`tools/repair_wheel.py`), installed with pip and uv, smoke-tested from the installed package |

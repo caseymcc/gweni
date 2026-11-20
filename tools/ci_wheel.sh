@@ -19,7 +19,8 @@
 #  Options:
 #    --out DIR   where the repaired wheel goes, alone (default dist/ in the
 #                repo, git-ignored, and what the workflow uploads); the
-#                gweni-*.whl already there are removed first, nothing else.
+#                gweni-*.whl already there are removed before step 1, so a
+#                failed run leaves none, and nothing else is.
 #    --help      this text.
 #
 #  In order, stopping at the first failure:
@@ -89,6 +90,10 @@ step() { echo; echo "ci_wheel.sh: == $*"; }
 scratch="$(mktemp -d /tmp/gweni-ci-wheel.XXXXXX)"
 trap 'rm -rf "$scratch"' EXIT
 
+# an earlier run's wheel goes first, so a failed run leaves none in --out
+mkdir -p "$out"
+rm -f "$out"/gweni-*.whl
+
 # 1. the tag and project()
 version="$(sed -n 's/^project(gweni VERSION \([0-9.]*\).*/\1/p' "$repo/CMakeLists.txt" | tr -d '\r' | head -n 1)"
 [ -n "$version" ] || fail "CMakeLists.txt has no project(gweni VERSION ...)"
@@ -138,8 +143,6 @@ GWENI_PYTHON="$python" GWENI_CHECK_LABEL=ci_wheel.sh \
 
 # 5. the wheel, alone in --out
 step "5. the wheel into $out"
-mkdir -p "$out"
-rm -f "$out"/gweni-*.whl
 cp "$wheel" "$out/"
 echo "ci_wheel.sh: passed"
 echo "$out/${repaired[0]}"

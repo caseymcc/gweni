@@ -653,7 +653,10 @@ settings; only the owner:
 3. creates the two environments in the repository (*Settings →
    Environments*): `testpypi`, and `pypi` with required reviewers (the owner),
    so a tag's PyPI upload waits for an approval; deployment branches and
-   tags limited to `v*` tags on `pypi` keep any other ref out.
+   tags limited to `v*` tags on `pypi`, and to `main` and `v*` tags on
+   `testpypi`, keep any other ref out (a run by hand from another branch
+   would put that branch's build on TestPyPI under the release's version,
+   which then fails the tag's `--expect`).
 
 Then a release: bump `project(gweni VERSION ...)` and the port's
 `version-semver` in one commit, run the workflow by hand once (the TestPyPI
@@ -665,7 +668,9 @@ it is byte for byte the dry run's, so a version is dry-run from the commit it is
 tagged on, and soon before the tag: the image's vcpkg clone is not pinned
 (`Dockerfile`), so an image built again in between (the layer cache evicted)
 can build another module and fail the tag at `--expect`, and then only a new
-version releases.
+version releases. For the same reason a run by hand before the bump fails at
+`--expect`: its upload is skipped, and the index holds the released build of
+that version.
 
 ## gweni as a HUD: HudExample
 
