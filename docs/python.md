@@ -223,8 +223,10 @@ stays usable.
 
 **One thread.** Every call that touches the tree checks that it runs on the
 thread that made the App or Headless and raises `gweni.ThreadError` otherwise.
-The GIL is released while `run()` waits for events, so another Python thread
-does run then; it may only call `canvas.post(fn)`, from any thread: `fn` runs
+`run()` releases the GIL for its whole loop, drawing and waiting, and takes it
+only to run Python (a callback, a post, the signal check), so another Python
+thread runs alongside it, also while an animation draws every iteration; it may
+only call `canvas.post(fn)`, from any thread: `fn` runs
 on the UI thread at the top of the next update, and the post wakes an idle
 `run()`. `post` returns False once the canvas is gone.
 
@@ -238,8 +240,7 @@ at exit is closed by an atexit hook, so its callables are released while
 Python can.
 
 **The idle loop and Ctrl+C.** `run()` draws a frame only when the canvas has
-work and otherwise blocks in GLFW's wait with the GIL released (the GLFW
-callbacks the wait delivers take it back only to run Python). Python's SIGINT
+work and otherwise blocks in GLFW's wait. Python's SIGINT
 handler only sets a flag and writes the wakeup fd, and GLFW's wait retries on
 `EINTR`, so `run()` points `signal.set_wakeup_fd` at a pipe of its own whose
 helper thread wakes the loop (`glfwPostEmptyEvent`) and passes each byte on to
@@ -276,5 +277,5 @@ the `render` lock (`AGENTS.md` → "Tests"):
 | `python_stubs` | the checked-in stub is the built module's |
 | `python_mypy` | `mypy --strict python/examples/` |
 | `python_parity` (`gpu`) | `button_demo.py` against `ControlTest --headless --control ButtonDemo`: the same pixels and counters |
-| `python_window_idle` (`gpu`) | `App.run()` under Xvfb: a silent idle, one frame per post, Ctrl+C, the wakeup fd |
+| `python_window_idle` (`gpu`) | `App.run()` under Xvfb: a silent idle, one frame per post, Ctrl+C, the wakeup fd, a worker's post landing while a Spinner turns |
 | `python_wheel` | the release tree only: the wheel built offline, installed with pip and uv, smoke-tested from the installed package |

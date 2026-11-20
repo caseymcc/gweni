@@ -13,7 +13,10 @@ of its own, python/tests/window_idle.cmake). On the feature's example window
   3. a post from another thread wakes the loop and draws exactly one frame;
   4. SIGINT to the idle run() raises KeyboardInterrupt within 0.5 s;
   5. the wakeup fd set before run() got the signal's byte (run() passed it on)
-     and is set again after it (set_wakeup_fd gives it back).
+     and is set again after it (set_wakeup_fd gives it back);
+  6. with a Spinner turning (a frame every iteration, so run() never waits),
+     a worker thread still runs: its canvas.post lands within 0.5 s of the
+     post (run() holds the GIL only to run Python).
 
 It prints "python_window_idle: passed" and exits 0, or names each failure and
 exits 1; a run() that never returns is the test's timeout.
@@ -32,6 +35,9 @@ SETTLE_S = 1.0
 IDLE_S = 2.0
 CPU_LIMIT_S = 0.1
 SIGINT_LIMIT_S = 0.5
+BUSY_POST_LIMIT_S = 0.5
+BUSY_SLEEP_S = 0.3
+BUSY_GIVE_UP_S = 4.0
 
 failures: list[str] = []
 
@@ -145,6 +151,51 @@ def main() -> int:
         failures.append(f"the wakeup fd after run() is {restored}, not the earlier {earlier_w}")
     if bytes([signal.SIGINT]) not in earlier_bytes:
         failures.append(f"the earlier wakeup fd got {earlier_bytes!r}, not SIGINT's byte")
+
+    # 6. a worker thread while the loop draws every iteration
+    spinner = win.add(gweni.Spinner, dock=gweni.Dock.TOP)
+    spinner.start()
+    busy: dict[str, float] = {}
+
+    def landed() -> None:
+        busy["landed_at"] = time.monotonic()
+        app.quit()
+
+    def worker() -> None:
+        time.sleep(BUSY_SLEEP_S)
+        busy["posted_at"] = time.monotonic()
+        canvas.post(landed)
+
+    def give_up(signum: int, frame: object) -> None:
+        raise TimeoutError()
+
+    # a worker the loop starves never posts: SIGALRM ends that run instead
+    signal.signal(signal.SIGALRM, give_up)
+    started = time.monotonic()
+    threading.Thread(target=worker, daemon=True).start()
+    signal.setitimer(signal.ITIMER_REAL, BUSY_GIVE_UP_S)
+    frames_before = app.frame_count
+    try:
+        app.run()
+    except TimeoutError:
+        failures.append(f"with a Spinner turning, run() was still running after {BUSY_GIVE_UP_S} s "
+                        f"(the worker posted {'at ' + format(busy['posted_at'] - started, '.3f') + ' s' if 'posted_at' in busy else 'never'})")
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, signal.SIG_DFL)
+    busy_frames = app.frame_count - frames_before
+    if "landed_at" in busy:
+        latency = busy["landed_at"] - busy["posted_at"]
+        print(f"python_window_idle: busy loop: worker posted at {busy['posted_at'] - started:.3f} s, "
+              f"post landed {latency:.3f} s later, {busy_frames} frames")
+        if busy["posted_at"] - started >= BUSY_SLEEP_S + BUSY_POST_LIMIT_S:
+            failures.append(f"with a Spinner turning, the worker's {BUSY_SLEEP_S} s sleep took "
+                            f"{busy['posted_at'] - started:.3f} s")
+        if latency >= BUSY_POST_LIMIT_S:
+            failures.append(f"with a Spinner turning, the post landed {latency:.3f} s after it "
+                            f"(limit {BUSY_POST_LIMIT_S})")
+    if busy_frames < 2:
+        failures.append(f"the Spinner's run drew {busy_frames} frames: it was not turning")
 
     app.close()
     for failure in failures:

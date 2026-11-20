@@ -34,12 +34,6 @@ struct LoopOptions
     //! it (IdleLoop::failures()) if it wrote a slot or uploaded anything: a
     //! change the canvas did not report as work.
     bool verify=false;
-    //! Called just before and just after each blocking wait of a native loop
-    //! (IdleLoop::iterate), on the loop's thread; the events the wait delivers
-    //! run between them. The Python module releases the GIL there, so other
-    //! Python threads run while the window waits. Empty calls nothing.
-    std::function<void()> beforeWait;
-    std::function<void()> afterWait;
 
     //! "idle" or "continuous"; false for anything else, leaving \p mode as is.
     static bool parseMode(const char *text, LoopMode &mode)
@@ -110,7 +104,8 @@ public:
         // continuous too: a window that cannot draw waits rather than polls
         if(m_hooks.canDraw && !m_hooks.canDraw())
         {
-            waitFor(std::numeric_limits<double>::infinity());
+            ++m_waits;
+            m_hooks.wait(std::numeric_limits<double>::infinity());
             return;
         }
         if(m_options.mode == LoopMode::Continuous)
@@ -130,7 +125,8 @@ public:
 
         if(m_options.verify)
             verifyFrame();
-        waitFor(due-now);
+        ++m_waits;
+        m_hooks.wait(due-now);
     }
 
     //! One animation-frame callback of a web loop: draws when work is due (or
@@ -176,16 +172,6 @@ public:
     const LoopOptions &options() const { return m_options; }
 
 private:
-    void waitFor(double seconds)
-    {
-        ++m_waits;
-        if(m_options.beforeWait)
-            m_options.beforeWait();
-        m_hooks.wait(seconds);
-        if(m_options.afterWait)
-            m_options.afterWait();
-    }
-
     void draw()
     {
         ++m_frames;

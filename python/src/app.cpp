@@ -2,10 +2,12 @@
  *  Gweni - gweni.App (python/src): app::Window, a canvas in a window gweni
  *  owns, and run(), the window's idle loop.
  *
- *  While run() waits for events the GIL is released (LoopOptions::beforeWait
- *  and afterWait around the blocking wait), so other Python threads run; the
- *  GLFW callbacks the wait delivers take it back only to call Python
- *  (callBack). Everything else run() does, the frames included, holds it.
+ *  run() releases the GIL for the whole loop, the polls, frames, swaps and
+ *  waits included, so other Python threads run while it draws as while it
+ *  waits (a turning Spinner draws every iteration and never waits). It is
+ *  taken back only to run Python: a callback or a post (callBack, callEvent),
+ *  a callable released (~Callable), and the signal check after each
+ *  iteration. A scoped release gives it back however the loop ends.
  *
  *  Ctrl+C: Python's SIGINT handler only sets a flag and writes the wakeup fd,
  *  and GLFW's wait retries on EINTR, so run() points signal.set_wakeup_fd at a
@@ -163,11 +165,6 @@ public:
         app::WindowOptions window;
 
         window.loop=app::loopOptions();
-        window.loop.beforeWait=[this]() { m_waitState=PyEval_SaveThread(); };
-        window.loop.afterWait=[this]() {
-            PyEval_RestoreThread(m_waitState);
-            m_waitState=nullptr;
-        };
         m_window=std::make_unique<app::Window>(shell, window);
         if(!m_window->ok())
         {
@@ -239,6 +236,8 @@ public:
             glfwSetWindowShouldClose(window.glfwWindow(), GLFW_FALSE);
             try
             {
+                nb::gil_scoped_release released;
+
                 window.run();
             }
             catch(...)
@@ -255,6 +254,9 @@ private:
     void afterIteration(const platform::IdleLoop &loop)
     {
         m_frames=m_framesAtRun+long(loop.frames());
+
+        nb::gil_scoped_acquire gil;
+
         if(PyErr_CheckSignals() != 0)
             keepCallbackError();
         if(callbackErrorPending())
@@ -262,7 +264,6 @@ private:
     }
 
     std::unique_ptr<app::Window> m_window;
-    PyThreadState *m_waitState=nullptr;
     std::atomic<long> m_frames{0};
     long m_framesAtRun=0;
     bool m_running=false;
