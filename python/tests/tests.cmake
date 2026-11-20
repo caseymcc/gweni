@@ -15,6 +15,8 @@
 #                       gives for the built module (python/stubs.cmake)
 #    python_wheel       the wheel built, installed and smoke-tested (wheel.sh;
 #                       the release tree only)
+#    python_wheel_build_dirs  tools/build_wheel.sh's modes never share a
+#                       configured build directory (wheelBuildDirs.sh)
 #    python_mypy        mypy --strict over python/examples/, with the staged
 #                       package's stubs
 #    python_parity      ButtonDemo from Python against ControlTest's (parity.py;
@@ -107,3 +109,13 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
         ENVIRONMENT "GWENI_PYTHON=${Python_EXECUTABLE}"
         TIMEOUT 3600)
 endif()
+
+# python_wheel_build_dirs: tools/build_wheel.sh's plain and --vcpkg-installed
+# modes each in a build directory of their own, cleared when its record says
+# another mode (wheelBuildDirs.sh's header). It builds nothing, so every tree.
+add_test(NAME python_wheel_build_dirs
+    COMMAND bash ${CMAKE_CURRENT_LIST_DIR}/wheelBuildDirs.sh)
+set_tests_properties(python_wheel_build_dirs PROPERTIES
+    LABELS python
+    ENVIRONMENT "GWENI_PYTHON=${Python_EXECUTABLE}"
+    TIMEOUT 120)

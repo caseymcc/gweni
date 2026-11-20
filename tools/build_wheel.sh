@@ -21,16 +21,30 @@
 #  holds the pinned scikit-build-core and nanobind), in a persistent build
 #  directory, so a second build is incremental.
 #
+#  Each mode has a build directory of its own (vcpkg refuses to switch
+#  VCPKG_MANIFEST_MODE in a configured directory, and the cache keeps the
+#  package paths of the vcpkg_installed it was configured with), and the
+#  directory records what it was configured for (.gweni-wheel-config): a run
+#  whose mode or vcpkg_installed differs from the record clears it first.
+#
 #  Options:
 #    --out DIR              where the wheel goes (default dist/ in the repo,
 #                           git-ignored)
 #    --build-dir DIR        scikit-build-core's build directory (default
-#                           build_linux_x64_release_wheel in the repo)
+#                           build_linux_x64_release_wheel in the repo, or
+#                           build_linux_x64_release_wheel_installed with
+#                           --vcpkg-installed)
 #    --vcpkg-installed DIR  use that vcpkg_installed (a configured tree's) with
 #                           no manifest install, so vcpkg builds and fetches
 #                           nothing (python_wheel does, with the release tree's)
 #    --offline              uv touches no network (with --vcpkg-installed, the
 #                           whole build is offline)
+#    --print-build-dir      print the build directory this run would use and
+#                           exit, touching nothing
+#    --dry-run              prepare the build directory (clear it, record the
+#                           configuration), print `build-dir=DIR` and the
+#                           configure's arguments one a line, and exit before
+#                           the build (python_wheel_build_dirs)
 #    --help                 this text
 #
 #  The wheel is linux_x86_64, not yet manylinux: the auditwheel repair is the
@@ -40,9 +54,11 @@ set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 out="$repo/dist"
-build_dir="$repo/build_linux_x64_release_wheel"
+build_dir=""
 vcpkg_installed=""
 offline=()
+print_build_dir=0
+dry_run=0
 
 usage() { sed -n '7,/^set -euo/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^#  \{0,1\}//; s/^#$//'; }
 
@@ -52,17 +68,51 @@ while [ $# -gt 0 ]; do
         --build-dir) build_dir="$(realpath -m "$2")"; shift 2 ;;
         --vcpkg-installed) vcpkg_installed="$(realpath "$2")"; shift 2 ;;
         --offline) offline=(--offline); shift ;;
+        --print-build-dir) print_build_dir=1; shift ;;
+        --dry-run) dry_run=1; shift ;;
         --help|-h) usage; exit 0 ;;
         *) echo "build_wheel.sh: unknown argument $1 (--help)" >&2; exit 2 ;;
     esac
 done
+
+if [ -z "$build_dir" ]; then
+    if [ -n "$vcpkg_installed" ]; then
+        build_dir="$repo/build_linux_x64_release_wheel_installed"
+    else
+        build_dir="$repo/build_linux_x64_release_wheel"
+    fi
+fi
+if [ "$print_build_dir" = 1 ]; then
+    echo "$build_dir"
+    exit 0
+fi
+
+# The configuration the build directory is for; one configured for another is
+# cleared (only one of ours: a CMake cache of this checkout, or the record).
+if [ -n "$vcpkg_installed" ]; then
+    config="installed $vcpkg_installed"
+else
+    config="manifest"
+fi
+record="$build_dir/.gweni-wheel-config"
+if [ -d "$build_dir" ] && [ -n "$(ls -A "$build_dir")" ] && [ "$(cat "$record" 2>/dev/null)" != "$config" ]; then
+    if [ -f "$record" ] || grep -qxF "CMAKE_HOME_DIRECTORY:INTERNAL=$repo" "$build_dir/CMakeCache.txt" 2>/dev/null; then
+        echo "build_wheel.sh: $build_dir was configured for $(cat "$record" 2>/dev/null || echo 'another vcpkg setup'), not $config: clearing it"
+        rm -rf "$build_dir"
+    else
+        echo "build_wheel.sh: $build_dir is not a wheel build directory of this checkout; give another --build-dir" >&2
+        exit 1
+    fi
+fi
+mkdir -p "$build_dir"
+echo "$config" > "$record"
 
 python="${GWENI_PYTHON:-/opt/python/venv/bin/python}"
 if [ ! -x "$python" ]; then
     echo "build_wheel.sh: no Python at $python (GWENI_PYTHON); from a host, ./run_docker.sh -r rebuilds the image with it" >&2
     exit 1
 fi
-if ! command -v uv >/dev/null; then
+if [ "$dry_run" = 0 ] && ! command -v uv >/dev/null; then
     echo "build_wheel.sh: no uv on PATH (the image's, Dockerfile)" >&2
     exit 1
 fi
@@ -80,8 +130,7 @@ if [ -z "$printed" ] || [ "${#args[@]}" -eq 0 ]; then
     exit 1
 fi
 # The manifest mode and the installed tree are passed on every run, either
-# way: the build directory persists, and its cache would otherwise keep an
-# earlier run's --vcpkg-installed (no manifest install, another tree's deps).
+# way, as the record above says
 if [ -n "$vcpkg_installed" ]; then
     args+=("-DVCPKG_MANIFEST_MODE=OFF" "-DVCPKG_INSTALLED_DIR=$vcpkg_installed")
 else
@@ -94,6 +143,11 @@ for arg in "${args[@]}"; do
     fi
 done
 joined="$(IFS=';'; echo "${args[*]}")"
+if [ "$dry_run" = 1 ]; then
+    echo "build-dir=$build_dir"
+    printf '%s\n' "${args[@]}"
+    exit 0
+fi
 
 export CMAKE_BUILD_PARALLEL_LEVEL="${CMAKE_BUILD_PARALLEL_LEVEL:-$(nproc)}"
 mkdir -p "$out"

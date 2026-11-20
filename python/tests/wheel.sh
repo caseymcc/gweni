@@ -12,7 +12,7 @@
 #  Its venvs and the directory the smoke set runs in are a mktemp -d outside
 #  the checkout, removed when it passes and kept (its path printed) when not.
 #
-#  1. tools/build_wheel.sh in the persistent build_linux_x64_release_wheel/
+#  1. tools/build_wheel.sh in the persistent build_linux_x64_release_wheel_installed/
 #     (a rerun is incremental), with the release tree's vcpkg_installed and no
 #     manifest install (vcpkg builds and fetches nothing) and uv --offline;
 #  2. one wheel, gweni-<project() version>-cp312-abi3-linux_x86_64.whl, whose

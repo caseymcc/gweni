@@ -64,7 +64,11 @@ configure goes on with no module and the Python tests fail, saying so.
 `GWENI_PYTHON` with the configure arguments `./generate.sh linux release
 --print-cmake-args` prints (the one place the configuration is decided), with
 Vulkan, the examples and the tests off and the module on, in the persistent
-`build_linux_x64_release_wheel/` (a second build is incremental).
+`build_linux_x64_release_wheel/` (a second build is incremental), or
+`build_linux_x64_release_wheel_installed/` with `--vcpkg-installed`: vcpkg
+cannot switch a configured directory between its two modes, so each has its
+own, and a directory recorded for another mode or another `vcpkg_installed`
+(`.gweni-wheel-config`) is cleared before it is used.
 `pyproject.toml` (scikit-build-core) reads the version from `CMakeLists.txt`'s
 `project(gweni VERSION ...)` and installs the CMake component `python` into the
 wheel: the module, its stub, `py.typed`, `resources/` (the skin, its atlas and
