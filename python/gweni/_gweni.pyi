@@ -472,7 +472,8 @@ class MenuItem(Button):
 
 class Menu(ScrollControl):
     """
-    A list of items (controls::Menu): a context menu, a submenu or a canvas menu.
+    A list of items (controls::Menu): a context menu, a submenu or a canvas menu;
+    add() makes it closed (hidden) until open_at().
     """
 
     def add_item(self, text: str, accelerator: str = '') -> MenuItem:
@@ -834,7 +835,9 @@ class Slider(Control):
 
     @property
     def range(self) -> tuple[float, float]:
-        """(minimum, maximum)."""
+        """
+        (minimum, maximum), the minimum below the maximum (ValueError otherwise).
+        """
 
     @range.setter
     def range(self, arg: tuple[float, float], /) -> None: ...

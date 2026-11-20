@@ -221,7 +221,8 @@ void bindContainers(nb::module_ &m)
     registerControl<MenuItem, controls::MenuItem, false>(menuItem);
 
     auto menu=nb::class_<Menu, ScrollControl>(m, "Menu",
-        "A list of items (controls::Menu): a context menu, a submenu or a canvas menu.")
+        "A list of items (controls::Menu): a context menu, a submenu or a canvas menu;\n"
+        "add() makes it closed (hidden) until open_at().")
         .def("add_item", [](const Control &self, const std::string &text, const std::string &accelerator) {
                 return inCall([&]() { return wrapAs<MenuItem>(resolve<controls::Menu>(self)->addItem(text, "", accelerator)); });
             }, nb::arg("text"), nb::arg("accelerator")="", "Adds an item; returns its MenuItem.")
@@ -235,7 +236,16 @@ void bindContainers(nb::module_ &m)
             }, nb::arg("at"), "Opens it at (x, y) on the canvas, with the keyboard on its first item.")
         .def("close", [](const Control &self) { inCall([&]() { resolve<controls::Menu>(self)->close(); }); })
         .def_prop_ro("is_open", [](const Control &self) { return resolve<controls::Menu>(self)->visible(); });
-    registerControl<Menu, controls::Menu>(menu);
+    // add() makes a Menu hidden, as a closed one is: open_at() shows it (a
+    // MenuStrip, a bar on its parent, is made shown)
+    registerControlType(controls::Menu::getTypeNameStatic(), menu,
+        [](size_t id) { Menu handle; handle.id=id; return nb::cast(handle); },
+        [](controls::Base *parent) -> controls::Base * {
+            controls::Menu *made=parent->newChild<controls::Menu>();
+
+            made->setHidden(true);
+            return made;
+        });
 
     auto menuStrip=nb::class_<MenuStrip, Menu>(m, "MenuStrip",
         "A menu bar (controls::MenuStrip): dock it TOP, add_item() its menus, and fill each\n"

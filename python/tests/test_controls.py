@@ -299,3 +299,14 @@ def test_chip_removed_from_its_handler(headless: gweni.Headless) -> None:
     assert not chip.alive
     with pytest.raises(gweni.ControlDeletedError):
         chip.text
+
+
+@pytest.mark.parametrize("bad", [(5, 5), (10, 0), (float("nan"), 1)])
+def test_slider_range_refuses_an_empty_or_reversed_range(headless: gweni.Headless, bad: tuple[float, float]) -> None:
+    slider = top(headless, gweni.HorizontalSlider, size=(200, 20), range=(0, 10))
+    slider.value = 4
+    with pytest.raises(ValueError, match="minimum must be below the maximum"):
+        slider.range = bad
+    # left as it was, its value a number
+    assert slider.range == (0, 10) and slider.value == pytest.approx(4)
+

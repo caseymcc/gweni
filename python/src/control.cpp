@@ -175,22 +175,27 @@ void bindControl(nb::module_ &m)
                 // every keyword a property it can set, checked before the
                 // child is made: a read-only one (visible) or a method
                 // (on_press) is refused as an unknown one is
-                nb::object getStatic=nb::module_::import_("inspect").attr("getattr_static");
-
-                for(auto item : props)
+                if(props.size() > 0)
                 {
+                    // looked up once and kept (released: never decref'd after
+                    // the interpreter has gone)
+                    static nb::handle getStatic=nb::object(nb::module_::import_("inspect").attr("getattr_static")).release();
+                    static nb::handle propertyType=nb::object(nb::module_::import_("builtins").attr("property")).release();
                     const std::string typeName=nb::cast<std::string>(type.attr("__name__"));
-                    const std::string name=nb::cast<std::string>(nb::str(item.first));
 
-                    if(!nb::hasattr(type, item.first))
-                        throw nb::attribute_error(("gweni: "+typeName+" has no property "+name).c_str());
+                    for(auto item : props)
+                    {
+                        const std::string name=nb::cast<std::string>(nb::str(item.first));
 
-                    nb::object attribute=getStatic(type, item.first);
+                        if(!nb::hasattr(type, item.first))
+                            throw nb::attribute_error(("gweni: "+typeName+" has no property "+name).c_str());
 
-                    if(!nb::isinstance(attribute, nb::module_::import_("builtins").attr("property")) ||
-                        nb::getattr(attribute, "fset").is_none())
-                        throw nb::attribute_error(("gweni: "+typeName+"."+name
-                            +" is not a property add() can set (read-only, or a method)").c_str());
+                        nb::object attribute=getStatic(type, item.first);
+
+                        if(!nb::isinstance(attribute, propertyType) || nb::getattr(attribute, "fset").is_none())
+                            throw nb::attribute_error(("gweni: "+typeName+"."+name
+                                +" is not a property add() can set (read-only, or a method)").c_str());
+                    }
                 }
 
                 controls::Base *child=found->second.create(parent);
@@ -255,7 +260,16 @@ void bindControl(nb::module_ &m)
                     control->setLayout(new controls::VerticalLayout());
                 else
                     control->setLayout(new controls::HorizontalLayout());
-                control->invalidate();
+                // setLayout() puts it on the innermost panel (a Window's, a
+                // GroupBox's, a ScrollControl's), which is the one that must
+                // lay out again
+                controls::Base *holder=control;
+
+                while(holder->getInnerPanel() != nullptr)
+                    holder=const_cast<controls::Base *>(holder->getInnerPanel());
+                holder->invalidate();
+                if(holder != control)
+                    control->invalidate();
             },
             "How it stacks its children: VERTICAL or HORIZONTAL (a LayoutItem), or NONE.")
         .def("__eq__", [](const Control &self, nb::handle other) {

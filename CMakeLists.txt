@@ -874,6 +874,10 @@ endif()
 
 # the Python module gweni (python/), on gweni_app; after the tests, which it
 # registers its own beside
+# a wheel (scikit-build-core sets SKBUILD) is the module; one without it is an error
+if(SKBUILD AND NOT GWENI_BUILD_PYTHON)
+    message(FATAL_ERROR "gweni: a wheel build needs GWENI_BUILD_PYTHON=ON (tools/build_wheel.sh passes it)")
+endif()
 if(GWENI_BUILD_PYTHON)
     add_subdirectory(python)
 endif()

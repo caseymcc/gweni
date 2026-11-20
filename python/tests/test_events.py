@@ -148,6 +148,77 @@ def test_an_error_whose_context_is_the_first_closes_no_loop(headless: gweni.Head
     assert [type(e) for e in chain] == [Boom, KeyError, ValueError]
 
 
+def _context_chain(error: BaseException | None) -> list[BaseException]:
+    chain: list[BaseException] = []
+    while error is not None:
+        assert error not in chain, f"the __context__ chain loops: {chain!r}"
+        chain.append(error)
+        error = error.__context__
+    return chain
+
+
+def test_a_second_error_whose_context_is_the_first_closes_no_loop(headless: gweni.Headless) -> None:
+    # two callbacks only: with a third, linking it after the second would
+    # break a loop the second closed, hiding the missing cut
+    button, (x, y) = _button(headless, text="Press")
+    first_error = Boom("first")
+
+    def first(event: gweni.Event) -> None:
+        raise first_error
+
+    def second(event: gweni.Event) -> None:
+        error = KeyError("second")
+        error.__context__ = first_error
+        raise error
+
+    button.on_press(first)
+    button.on_press(second)
+    with pytest.raises(Boom) as raised:
+        headless.click(x, y)
+    assert [type(e) for e in _context_chain(raised.value)] == [Boom, KeyError]
+
+
+_LOOPED_CONTEXT_SCRIPT = """
+import gweni
+h = gweni.Headless(size=(320, 240))
+button = h.canvas.add(gweni.Button, text="Press", dock=gweni.Dock.TOP)
+h.frame()
+x, y, w, hh = button.bounds
+a = RuntimeError("a")
+b = LookupError("b")
+a.__context__ = b
+b.__context__ = a   # the app's own loop, before gweni sees either
+
+def first(event):
+    raise a
+
+def second(event):
+    raise ValueError("second")
+
+button.on_press(first)
+button.on_press(second)
+try:
+    h.click(x + w // 2, y + hh // 2)
+except RuntimeError as error:
+    seen = []
+    while error is not None and error not in seen:
+        seen.append(error)
+        error = error.__context__
+    print(" ".join(type(e).__name__ for e in seen))
+h.close()
+"""
+
+
+def test_an_apps_looped_context_chain_ends_the_walk() -> None:
+    # the walk to the first error's chain end must stop at a loop the app
+    # made; without its guard it spins with the GIL held, so run it apart
+    result = subprocess.run([sys.executable, "-c", _LOOPED_CONTEXT_SCRIPT], env=os.environ.copy(),
+                            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr
+    # the second error goes at the end of the walk, the loop's last link
+    assert "ValueError" in result.stdout.split(), result.stdout
+
+
 def test_an_error_from_a_setters_event(headless: gweni.Headless) -> None:
     button, _ = _button(headless, text="Toggle", is_toggle=True)
 

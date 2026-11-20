@@ -154,6 +154,47 @@ def test_canvas_menu_by_keys(headless: gweni.Headless) -> None:
     assert picked == ["First"]
 
 
+def test_a_canvas_menu_add_makes_is_closed_until_opened(headless: gweni.Headless) -> None:
+    headless.frame()
+    blank = headless.pixels()
+    menu = headless.canvas.add(gweni.Menu)
+    menu.add_item("First")
+    menu.add_item("Second")
+    headless.frame()
+    assert not menu.is_open and menu.hidden
+    assert headless.pixels() == blank  # nothing drawn at (0, 0)
+    menu.open_at((40, 40))
+    headless.frame()
+    assert menu.is_open and headless.pixels() != blank
+    menu.close()
+    headless.frame()
+    assert headless.pixels() == blank
+    # a MenuStrip is a bar on its parent: shown as made
+    strip = headless.canvas.add(gweni.MenuStrip, dock=gweni.Dock.TOP)
+    assert not strip.hidden
+
+
+@pytest.mark.parametrize("kind", ["Window", "GroupBox", "ScrollControl", "Panel"])
+def test_layout_set_after_a_layout_lays_the_children_out(headless: gweni.Headless, kind: str) -> None:
+    def build(late: bool) -> list[tuple[int, int, int, int]]:
+        panel = headless.canvas.add(getattr(gweni, kind), size=(300, 300), position=(10, 10))
+        if not late:
+            panel.layout = gweni.Layout.VERTICAL
+        labels = [panel.add(gweni.Label, text=f"label {i}") for i in range(3)]
+        headless.frame()
+        if late:
+            panel.layout = gweni.Layout.VERTICAL
+        headless.frame()
+        bounds = [label.bounds for label in labels]
+        panel.delete_later()
+        headless.frame()
+        return bounds
+
+    first = build(False)
+    assert len({y for _, y, _, _ in first}) == 3  # stacked
+    assert build(True) == first
+
+
 def test_combo_box_items_are_menu_items(headless: gweni.Headless) -> None:
     combo = headless.canvas.add(gweni.ComboBox)
     assert type(combo.add_item("Apple")) is gweni.MenuItem

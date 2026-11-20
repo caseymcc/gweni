@@ -206,8 +206,17 @@ void bindSimpleControls(nb::module_ &m)
                 return std::make_tuple(s->getMin(), s->getMax());
             },
             [](const Control &self, std::tuple<float, float> range) {
-                inCall([&]() { resolve<controls::Slider>(self)->setRange(std::get<0>(range), std::get<1>(range)); });
-            }, "(minimum, maximum).")
+                const float minimum=std::get<0>(range);
+                const float maximum=std::get<1>(range);
+
+                controls::Slider *slider=resolve<controls::Slider>(self);
+                // an empty or reversed range (or a NaN end) makes the value
+                // NaN: refused before the slider takes it
+                if(!(minimum < maximum))
+                    throw nb::value_error(("gweni.Slider.range: the minimum must be below the maximum, got ("
+                        +std::to_string(minimum)+", "+std::to_string(maximum)+")").c_str());
+                inCall([&]() { slider->setRange(minimum, maximum); });
+            }, "(minimum, maximum), the minimum below the maximum (ValueError otherwise).")
         .def_prop_rw("notch_count",
             [](const Control &self) { return resolve<controls::Slider>(self)->getNotchCount(); },
             [](const Control &self, int count) { resolve<controls::Slider>(self)->setNotchCount(count); },

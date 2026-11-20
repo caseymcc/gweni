@@ -21,7 +21,8 @@
 #
 #  Without the interpreter (an image from before it, a tree configured without
 #  ./generate.sh) or nanobind the configure goes on with no module, and the
-#  Python tests are registered to fail, saying what is missing.
+#  Python tests are registered to fail, saying what is missing; in a wheel
+#  build (scikit-build-core's SKBUILD) it is a FATAL_ERROR instead.
 #
 
 set(GWENI_PYTHON_STAGE ${CMAKE_CURRENT_BINARY_DIR})
@@ -51,6 +52,11 @@ if(NOT TARGET gweni_app)
 endif()
 
 if(gweni_python_missing)
+    # a wheel build (scikit-build-core sets SKBUILD) without the module would
+    # be a wheel without _gweni: there it is an error, not a tree without one
+    if(SKBUILD)
+        message(FATAL_ERROR "gweni: the wheel cannot build the Python module: ${gweni_python_missing}")
+    endif()
     message(STATUS "gweni: no Python module: ${gweni_python_missing}")
     if(GWENI_BUILD_TESTS)
         # registered to fail, never skipped: a tree that should test the
