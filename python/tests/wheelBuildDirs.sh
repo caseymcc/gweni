@@ -16,9 +16,11 @@
 #     manifest mode and vcpkg_installed passed to the configure;
 #  3. a directory recorded for one mode, or for another vcpkg_installed, is
 #     cleared before the other uses it, and one recorded for the same is kept;
-#  4. a directory of this checkout's from before the record (a CMake cache, no
-#     record) is cleared, and one that is not a build directory of ours is
-#     refused (exit 1) and left as it was.
+#  4. a wheel build directory of this checkout's from before the record
+#     (scikit-build-core's CMake cache, SKBUILD in it, no record) is cleared;
+#     a tree ./generate.sh configured (this checkout's cache, no SKBUILD: the
+#     release tree given as --build-dir, review 3) and one that is not a build
+#     directory of ours are refused (exit 1) and left as they were.
 #
 #  GWENI_PYTHON names the 3.12 interpreter (the image's venv by default).
 #
@@ -80,19 +82,29 @@ expect_kept "manifest again"
 rm -rf "$dir"
 mkdir -p "$dir"
 touch "$dir/marker"
-echo "CMAKE_HOME_DIRECTORY:INTERNAL=$repo" > "$dir/CMakeCache.txt"
+printf 'CMAKE_HOME_DIRECTORY:INTERNAL=%s\nSKBUILD:STRING=2\n' "$repo" > "$dir/CMakeCache.txt"
 prepare
-expect_cleared "a configured directory with no record"
+expect_cleared "a wheel build directory with no record"
+
+expect_refused() {
+    if "$script" --build-dir "$dir" --dry-run > "$scratch/out" 2>&1; then
+        cat "$scratch/out"
+        fail "$1 was taken"
+    fi
+    grep -q "is not a wheel build directory of this checkout" "$scratch/out" || { cat "$scratch/out"; fail "$1: no refusal line"; }
+    [ -e "$dir/marker" ] && [ ! -e "$dir/.gweni-wheel-config" ] || fail "$1 was changed"
+}
+
+dir="$scratch/tree"
+mkdir -p "$dir"
+touch "$dir/marker"
+echo "CMAKE_HOME_DIRECTORY:INTERNAL=$repo" > "$dir/CMakeCache.txt"
+expect_refused "a tree ./generate.sh configured"
 
 dir="$scratch/other"
 mkdir -p "$dir"
 touch "$dir/marker"
-if "$script" --build-dir "$dir" --dry-run > "$scratch/out" 2>&1; then
-    cat "$scratch/out"
-    fail "a directory that is not ours was taken"
-fi
-grep -q "is not a wheel build directory of this checkout" "$scratch/out" || { cat "$scratch/out"; fail "no refusal line"; }
-[ -e "$dir/marker" ] && [ ! -e "$dir/.gweni-wheel-config" ] || fail "the refused directory was changed"
+expect_refused "a directory that is not ours"
 
 rm -rf "$scratch"
 echo "python_wheel_build_dirs: ok"

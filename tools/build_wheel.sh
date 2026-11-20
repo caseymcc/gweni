@@ -26,6 +26,9 @@
 #  package paths of the vcpkg_installed it was configured with), and the
 #  directory records what it was configured for (.gweni-wheel-config): a run
 #  whose mode or vcpkg_installed differs from the record clears it first.
+#  A directory is cleared only if it is one of these: recorded, or
+#  scikit-build-core's (SKBUILD in its CMake cache); any other configured
+#  tree, ./generate.sh's own say, is refused and left as it is.
 #
 #  Options:
 #    --out DIR              where the wheel goes (default dist/ in the repo,
@@ -88,7 +91,10 @@ if [ "$print_build_dir" = 1 ]; then
 fi
 
 # The configuration the build directory is for; one configured for another is
-# cleared (only one of ours: a CMake cache of this checkout, or the record).
+# cleared, but only one of ours: the record, or with none (a directory from
+# before it) scikit-build-core's CMake cache of this checkout (SKBUILD in it).
+# Any other configured tree, ./generate.sh's release tree given as --build-dir
+# say, is refused and left as it is, --dry-run or not.
 if [ -n "$vcpkg_installed" ]; then
     config="installed $vcpkg_installed"
 else
@@ -96,7 +102,8 @@ else
 fi
 record="$build_dir/.gweni-wheel-config"
 if [ -d "$build_dir" ] && [ -n "$(ls -A "$build_dir")" ] && [ "$(cat "$record" 2>/dev/null)" != "$config" ]; then
-    if [ -f "$record" ] || grep -qxF "CMAKE_HOME_DIRECTORY:INTERNAL=$repo" "$build_dir/CMakeCache.txt" 2>/dev/null; then
+    if [ -f "$record" ] || { grep -qxF "CMAKE_HOME_DIRECTORY:INTERNAL=$repo" "$build_dir/CMakeCache.txt" 2>/dev/null \
+            && grep -q '^SKBUILD:STRING=' "$build_dir/CMakeCache.txt"; }; then
         echo "build_wheel.sh: $build_dir was configured for $(cat "$record" 2>/dev/null || echo 'another vcpkg setup'), not $config: clearing it"
         rm -rf "$build_dir"
     else
